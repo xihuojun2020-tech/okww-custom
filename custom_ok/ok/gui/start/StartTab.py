@@ -71,6 +71,18 @@ class StartTab(Tab):
         self.update_log_text.setReadOnly(True)
         self.update_log_text.setMaximumHeight(180)
         self.update_log_text.setPlainText(self.tr(
+            'v1.03.13 更新：更新日志补充 v1.03.08~v1.03.12（打包发布修复记录）\n'
+            '\n'
+            'v1.03.12 更新：同步全部定制 ok 框架文件（LabelAndLabel 等 8 个），修复启动模块缺失\n'
+            '\n'
+            'v1.03.11 更新：启动时自动同步定制 ok 框架（ConfigItemFactory 支持项目级配置组件）\n'
+            '\n'
+            'v1.03.10 更新：升级 ok-script 1.0.185 → 1.0.190（修复配置类型兼容）\n'
+            '\n'
+            'v1.03.09 更新：修复 src/__init__.py 未提交（gitignore 误匹配 __init__.py）\n'
+            '\n'
+            'v1.03.08 更新：任务后录像时长改为 1.5 秒\n'
+            '\n'
             'v1.03.07 更新：修复任务后录像页面（残像聚落改用首领书正确入口、大月卡改用左上角战令入口）\n'
             '\n'
             'v1.03.06 更新：移除序列切换功能（登录器记住账号在服务器端，本地切换无法绕开 10 个限制）；'
