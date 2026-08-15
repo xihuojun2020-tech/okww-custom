@@ -13,7 +13,7 @@ from src.task.process_feature import process_feature
 
 # okww 版本号（X.Y.Z）：
 #   小改动 → 第三位 +1；中等改动 → 第二位 +1；大改动 → 第一位 +1
-version = "1.03.19"
+version = "1.03.20"
 
 
 def _find_most_recently_run_pc_exe():

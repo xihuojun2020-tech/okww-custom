@@ -68,7 +68,7 @@ def _ensure_single_instance():
 
 
 def _exit_cleanup():
-    """正常退出时，联动结束 pyappify 启动器（关窗口 = 全部进程退出）。
+    """正常退出时，联动结束 pyappify 启动器及其 WebView 子进程（关窗口 = 全部进程退出）。
 
     仅正常退出（python 进程自行结束时 atexit 触发）执行；
     更新/强制结束（外部杀进程）不触发，不会中断 pyappify 更新流程。
@@ -78,11 +78,21 @@ def _exit_cleanup():
         return
     try:
         import subprocess
-        # /t 终止进程树（连带 WebView 等子进程），防止孤儿进程残留
+        base = os.path.basename(exe)
+        exe_dir = os.path.dirname(exe)
+        # 1. 终止 pyappify 启动器进程树（连带其 WebView 子进程）
         subprocess.Popen(
-            ['taskkill', '/f', '/t', '/im', os.path.basename(exe)],
+            ['taskkill', '/f', '/t', '/im', base],
             creationflags=0x08000000,  # CREATE_NO_WINDOW
         )
+        # 2. 清理 okww 相关孤儿 WebView（按 user-data-dir 所在目录匹配，Kill Launcher After Start 残留的）
+        ps = (
+            "Get-CimInstance Win32_Process -Filter \"Name='msedgewebview2.exe'\" | "
+            f"Where-Object {{ $_.CommandLine -like '*{exe_dir}*' }} | "
+            "ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+        )
+        subprocess.Popen(['powershell', '-NoProfile', '-Command', ps],
+                         creationflags=0x08000000)
     except Exception:
         pass
 
