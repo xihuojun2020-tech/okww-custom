@@ -825,4 +825,9 @@ class MainWindow(FluentWindow):
             event.accept()
             if not self.do_not_quit:
                 pyappify.kill_pyappify()
+                # 强制退出应用：防止窗口关闭后 python 进程残留（okww 修改版修复）
+                try:
+                    self.app.quit()
+                except Exception:
+                    pass
                 QApplication.instance().exit()
