@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# 虚拟环境与运行时
+.venv/
+runtime/
+
+# 个性化数据（账号隐私）
+configs/
+configs_backup/
+
+# 运行产物
+logs/
+screenshots/
+recordings/
+cache/
+okww监控室/
+debug.log
+probe_out.txt
+
+# 备份与临时
+backup_合并前_0815/
+okww_更新包_*.zip
+*.tmp
+发布/
+
+# 记忆/诊断（隐私，不推公开仓库）
+.workbuddy-ai/
+_*.py
+
+# 大体积安装包（非项目文件）
+ok-ww-*.exe
+*-setup.exe
+
+# 大体积安装包（非项目文件）
+ok-ww-*.exe
+*-setup.exe
