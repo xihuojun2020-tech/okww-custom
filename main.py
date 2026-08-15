@@ -78,8 +78,9 @@ def _exit_cleanup():
         return
     try:
         import subprocess
+        # /t 终止进程树（连带 WebView 等子进程），防止孤儿进程残留
         subprocess.Popen(
-            ['taskkill', '/f', '/im', os.path.basename(exe)],
+            ['taskkill', '/f', '/t', '/im', os.path.basename(exe)],
             creationflags=0x08000000,  # CREATE_NO_WINDOW
         )
     except Exception:
