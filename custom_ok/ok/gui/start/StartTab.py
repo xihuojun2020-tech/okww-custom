@@ -36,8 +36,8 @@ class StartTab(Tab):
         self.start_card.capture_button.clicked.connect(self.capture)
 
         horizontal_widget = QWidget()
-        horizontal_widget.setMinimumHeight(320)
-        horizontal_widget.setMaximumHeight(240)
+        horizontal_widget.setMinimumHeight(128)
+        horizontal_widget.setMaximumHeight(128)
         horizontal_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         horizontal_layout = QHBoxLayout(horizontal_widget)
         horizontal_layout.setContentsMargins(0, 0, 0, 0)
@@ -57,14 +57,14 @@ class StartTab(Tab):
             device_view_layout.addWidget(self.device_search_box)
         device_view_layout.addWidget(self.device_list)
         self.device_container = Card(self.tr("Choose Window"), device_view_widget, stretch=1)
-        horizontal_layout.addWidget(self.device_container, 2)
+        horizontal_layout.addWidget(self.device_container, 32)
         self.device_list.itemSelectionChanged.connect(self.device_index_changed)
 
         communicate.adb_devices.connect(self.update_capture)
 
         self.capture_list = SelectCaptureListView(self.capture_index_changed)
         self.capture_container = Card(self.tr("Capture Method"), self.capture_list, stretch=1)
-        horizontal_layout.addWidget(self.capture_container, 1)
+        horizontal_layout.addWidget(self.capture_container, 20)
 
         # 更新日志（所有版本一直保留，可滚动查看历史；最新版本在顶部）
         self.update_log_text = QPlainTextEdit()
@@ -116,7 +116,7 @@ class StartTab(Tab):
         author_layout.setContentsMargins(0, 0, 0, 0)
         author_text = QPlainTextEdit()
         author_text.setReadOnly(True)
-        author_text.setMaximumHeight(150)
+        author_text.setMaximumHeight(225)
         author_text.setPlainText(self.tr(
             '如果有人不小心下载到了这个版本，请注意，这是okww的个人自用AI魔改版本，'
             '作者本身是个小白，没有任何计算机经验，此版本存在大量问题，上传github仅为了方便更新。\n'
@@ -128,7 +128,7 @@ class StartTab(Tab):
 
         self.interaction_list = SelectInteractionListView(self.interaction_index_changed)
         self.interaction_container = Card(self.tr("Choose Interaction"), self.interaction_list, stretch=1)
-        horizontal_layout.addWidget(self.interaction_container, 1)
+        horizontal_layout.addWidget(self.interaction_container, 23)
 
         from ok import og
 
