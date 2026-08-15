@@ -37,7 +37,7 @@ class StartTab(Tab):
 
         horizontal_widget = QWidget()
         horizontal_widget.setMinimumHeight(320)
-        horizontal_widget.setMaximumHeight(440)
+        horizontal_widget.setMaximumHeight(240)
         horizontal_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         horizontal_layout = QHBoxLayout(horizontal_widget)
         horizontal_layout.setContentsMargins(0, 0, 0, 0)
@@ -71,13 +71,6 @@ class StartTab(Tab):
         self.update_log_text.setReadOnly(True)
         self.update_log_text.setMaximumHeight(180)
         self.update_log_text.setPlainText(self.tr(
-            '【作者的话】\n'
-            '如果有人不小心下载到了这个版本，请注意，这是okww的个人自用AI魔改版本，'
-            '作者本身是个小白，没有任何计算机经验，此版本存在大量问题，上传github仅为了方便更新。\n'
-            '本作品的原版是okww，点击上方的github链接应该就是，原作者留下的很多东西我都没改，赞助也是他的。\n'
-            '如果你下定决心使用这个版本，有什么问题可以反馈，有需求也可以提，但是不一定看得到，我不太会看。\n'
-            '此版本的核心是优化了多账号支持，但是做的并不好，多账号每日部分还在尝试。\n'
-            '\n'
             'v1.03.15 更新：更新日志加入作者的话\n'
             '\n'
             'v1.03.14 更新：单实例保护 + 关闭窗口时联动结束启动器进程\n'
@@ -116,6 +109,22 @@ class StartTab(Tab):
         update_note_layout.setContentsMargins(0, 0, 0, 0)
         update_note_layout.addWidget(self.update_log_text)
         self.add_card(self.tr('更新日志'), update_note_widget)
+
+        # 作者的话（独立模块，位于更新日志上方）
+        author_widget = QWidget()
+        author_layout = QVBoxLayout(author_widget)
+        author_layout.setContentsMargins(0, 0, 0, 0)
+        author_text = QPlainTextEdit()
+        author_text.setReadOnly(True)
+        author_text.setMaximumHeight(150)
+        author_text.setPlainText(self.tr(
+            '如果有人不小心下载到了这个版本，请注意，这是okww的个人自用AI魔改版本，'
+            '作者本身是个小白，没有任何计算机经验，此版本存在大量问题，上传github仅为了方便更新。\n'
+            '本作品的原版是okww，点击上方的github链接应该就是，原作者留下的很多东西我都没改，赞助也是他的。\n'
+            '如果你下定决心使用这个版本，有什么问题可以反馈，有需求也可以提，但是不一定看得到，我不太会看。\n'
+            '此版本的核心是优化了多账号支持，但是做的并不好，多账号每日部分还在尝试。'))
+        author_layout.addWidget(author_text)
+        self.add_card(self.tr('作者的话'), author_widget)
 
         self.interaction_list = SelectInteractionListView(self.interaction_index_changed)
         self.interaction_container = Card(self.tr("Choose Interaction"), self.interaction_list, stretch=1)
