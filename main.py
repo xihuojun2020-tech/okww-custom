@@ -57,9 +57,13 @@ def _ensure_single_instance():
 
         me = os.getpid()
         this = os.path.normpath(os.path.abspath(__file__))
-        for p in psutil.process_iter(['pid', 'cmdline']):
+        for p in psutil.process_iter(['pid', 'name', 'cmdline']):
             try:
                 if p.info['pid'] == me:
+                    continue
+                # 只匹配 python/pythonw 进程（bash/cmd/其他工具 cmdline 含 main.py 不误拦）
+                pname = (p.info['name'] or '').lower()
+                if pname not in ('python.exe', 'pythonw.exe'):
                     continue
                 parts = p.info['cmdline'] or []
                 for part in parts:
