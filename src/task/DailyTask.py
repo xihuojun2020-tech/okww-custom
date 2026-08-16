@@ -323,6 +323,11 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             except Exception as e:
                 self.log_error('自动退登 PC 端失败（不影响每日任务结果）', e)
         self.log_info('每日任务完成', notify=True)
+        # 记录「今日每日任务已完成」到账号方案（多账号任务据此跳过今日已跑的账号）
+        try:
+            self.record_last_completed('Daily Task')
+        except Exception:
+            pass
 
     def _logout_pc_after_daily(self):
         """每日任务完成后自动退登 PC 端，准备下一个账号登录（退登流程在 WWOneTimeTask 基类）。"""

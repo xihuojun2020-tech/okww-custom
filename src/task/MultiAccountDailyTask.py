@@ -507,7 +507,20 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             self.done_set.add(account)
 
     def _is_done(self, account):
-        return account in self.done_set
+        """账号是否已完成：多账号断点记录，或今天已单独跑过该账号的每日任务（方案文件 last_completed）。"""
+        if account in self.done_set:
+            return True
+        try:
+            from datetime import datetime
+            profiles = self._load_profiles()
+            profile = profiles.get(account) or {}
+            lc = profile.get('last_completed') or {}
+            today = datetime.now().strftime('%Y-%m-%d')
+            if str(lc.get('Daily Task', '')).startswith(today):
+                return True
+        except Exception:
+            pass
+        return False
 
     def _same_account(self, left, right):
         return normalize_account_name(left) == normalize_account_name(right)
