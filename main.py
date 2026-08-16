@@ -102,6 +102,13 @@ if __name__ == '__main__':
     if not _ensure_single_instance():
         print('[okww] 检测到已有实例在运行，本实例退出（单实例保护）')
         sys.exit(0)
+    # 使用端诊断：启动时收集环境/登录器/配置信息输出日志（排查账号登录信息问题）
+    try:
+        from src.diagnose import save_diagnosis
+        diag_file = save_diagnosis()
+        print(f'[okww] 诊断日志: {diag_file}')
+    except Exception:
+        pass
     atexit.register(_exit_cleanup)
     from config import config
     from ok import OK
