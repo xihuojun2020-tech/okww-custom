@@ -513,6 +513,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             profiles[old] = self._merge_profile(profiles.get(old), self.collect_profile_config())
         if new not in profiles:
             profiles[new] = self._merge_profile(profiles.get(new), self.collect_profile_config())
+        # 调试日志：记录切换目标与实际加载内容（排查"选 A 出 B"）
+        self.log_info(f'切换方案：{old} -> {new}（加载配置: 刷取={profiles[new].get("Which to Farm", "?")}, '
+                      f'别名={(profiles[new].get("备用识别名称内容") or "")[:15]}）')
         self.apply_profile_config(profiles[new])
         self.save_daily_profiles(profiles)
 
@@ -819,10 +822,13 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 for w in getattr(card, 'config_widgets', []):
                     if getattr(w, 'key', None) == key and hasattr(w, 'combo_box'):
                         combo = w.combo_box
-                        combo.blockSignals(True)
-                        combo.clear()
-                        combo.addItems(options)
-                        combo.blockSignals(False)
+                        try:
+                            combo.blockSignals(True)
+                            combo.clear()
+                            combo.addItems(options)
+                        finally:
+                            # 无论成败都恢复信号（防 blockSignals 遗留导致下拉失灵/不触发保存）
+                            combo.blockSignals(False)
                         return
         except Exception:
             pass
