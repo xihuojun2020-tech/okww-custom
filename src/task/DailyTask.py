@@ -880,7 +880,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             if not value:
                 return None
             old = self.config.get(DAILY_PROFILE)
-            if old and old != value:
+            # old 为 None/null（当前未选方案）时也必须加载新方案，
+            # 否则主界面下拉切换不会触发 _do_switch_profile，界面显示旧配置（各账号"一样"）
+            if old != value:
                 self._switching_profile = True
                 try:
                     self._do_switch_profile(old, value)
