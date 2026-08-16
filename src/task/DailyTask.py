@@ -163,7 +163,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         }
         material_option_list = ['Resonator EXP', 'Weapon EXP', 'Shell Credit']
         self.config_type = {
-            DAILY_PROFILE: {'type': 'drop_down', 'options': self.get_profile_names()},
+            DAILY_PROFILE: {'type': 'drop_down', 'options': self.get_profile_names(
+                (self.get_profile_sequences() or ['序列1'])[0])},
             # 方案序列：选序列后「账号配置」下拉随之只显示该序列的方案（两级联动，避免翻页）
             PROFILE_SEQUENCE: {
                 'type': 'drop_down',
@@ -239,6 +240,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self._migrate_profiles()
         self.description = "登录、领取月卡、刷声骸并领取每日奖励"
         self._switching_profile = False
+        # 启动即同步序列/方案选项（在任务卡片构建前，保证界面默认只显示当前序列的方案）
+        self._sync_sequence_options()
 
     def run(self):
         self.validate_daily_tasks()

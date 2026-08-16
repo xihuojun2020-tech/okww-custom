@@ -46,6 +46,8 @@ class AboutTab(Tab):
             except Exception:
                 pass
             update_log_text.setPlainText(upstream_note + self.tr(
+                'V1.03.62：修复启动时配置方案下拉显示全部账号（序列过滤在卡片构建前生效）\n'
+                '\n'
                 'V1.03.61：修复方案序列默认值（默认序列1，不再显示全部账号）；多账号联动防污染（目标方案不存在时不创建）\n'
                 '\n'
                 'V1.03.60：更新日志补全 v1.03.56~1.03.59\n'
