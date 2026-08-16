@@ -669,14 +669,17 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             seqs = data.get('sequences')
             if isinstance(seqs, dict):
                 self.save_sequences_data(seqs)
-            # 设置激活方案
+            # 设置激活方案（不保存旧方案——防止把当前（可能被污染的）配置写回覆盖刚导入的干净数据）
             active = data.get('active_profile', '')
             if active not in profiles:
                 active = list(profiles.keys())[0]
             try:
-                old = self.config.get(DAILY_PROFILE)
-                if old != active:
-                    self._do_switch_profile(old, active)
+                self._switching_profile = True
+                try:
+                    self.config[DAILY_PROFILE] = active
+                    self.apply_profile_config(profiles.get(active) or {})
+                finally:
+                    self._switching_profile = False
             except Exception as e:
                 self.log_error('切换激活方案失败', e)
             self.log_info(f'账号配置已导入: {path}（{len(profiles)} 个方案，激活 {active}）', notify=True)

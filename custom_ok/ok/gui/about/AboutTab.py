@@ -46,6 +46,8 @@ class AboutTab(Tab):
             except Exception:
                 pass
             update_log_text.setPlainText(upstream_note + self.tr(
+                'V1.03.67：导入账号配置不再保存旧方案（防当前污染配置覆盖导入的干净数据）\n'
+                '\n'
                 'V1.03.66：导入账号配置时过滤空/null 异常方案（防导入污染数据）\n'
                 '\n'
                 'V1.03.65：修复方案数据污染（下拉空白被当方案名创建 null 方案污染识别名），过滤空/null 键；提供数据修复工具\n'
