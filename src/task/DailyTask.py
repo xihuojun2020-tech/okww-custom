@@ -31,12 +31,16 @@ WEEKLY_GARDEN_CHECK_DAYS = 'Weekly Garden Check Days'
 ADDITIONAL_TASKS = 'Additional Tasks to Run After Daily Task'
 
 DAILY_PROFILE = 'Daily Profile'
+PROFILE_SEQUENCE = '方案序列'
+SEQ_PROFILE_KEYS = ['序列%d 方案' % i for i in range(1, 6)]
 MANAGE_PROFILES = 'Manage Daily Profiles'
 EXPORT_PROFILES = 'Export Account Config'
 IMPORT_PROFILES = 'Import Account Config'
 PROFILE_FILE = get_relative_path('configs', 'daily_profiles.json')
 # 账号配置导出文件的标识
 ACCOUNT_CONFIG_TYPE = 'okww_account_config'
+# 多账号每日任务的配置（序列账号等，随每日任务数据一同备份）
+MULTI_ACCOUNT_CONFIG_FILE = get_relative_path('configs', 'MultiAccountDailyTask.json')
 ACCOUNT_CONFIG_VERSION = 1
 
 # 每周乐园检查日（周一~周日），随账号方案切换
@@ -110,6 +114,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self.support_tasks = ["Tacet Suppression", "Forgery Challenge", "Simulation Challenge"]
         self.default_config = {
             DAILY_PROFILE: '默认',
+            PROFILE_SEQUENCE: '',
+            **{k: '' for k in SEQ_PROFILE_KEYS},
             'Which to Farm': self.support_tasks[0],
             'Which Tacet Suppression to Farm': 1,  # starts with 1
             'Which Forgery Challenge to Farm': 1,  # starts with 1
@@ -139,6 +145,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self.config_description = {
             # 精简版：仅保留必要说明（勾选语义/关键行为），其余删除以节省空间
             DAILY_PROFILE: '',
+            PROFILE_SEQUENCE: '先选账号序列，再在下拉中选择该序列内的账号方案（账号多时免翻页）',
+            MANAGE_PROFILES: '',
             'Which Tacet Suppression to Farm': '',
             'Which Forgery Challenge to Farm': '',
             'Material Selection': 'Resonator EXP / Weapon EXP / Shell Credit',
@@ -158,6 +166,14 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         material_option_list = ['Resonator EXP', 'Weapon EXP', 'Shell Credit']
         self.config_type = {
             DAILY_PROFILE: {'type': 'drop_down', 'options': self.get_profile_names()},
+            # 各序列的方案选择下拉（options 由 _sync_sequence_options 按序列填充）
+            **{k: {'type': 'drop_down', 'options': []} for k in SEQ_PROFILE_KEYS},
+            # 方案序列：先选序列，再在 sub_configs 里选该序列的方案（两级联动，避免翻页）
+            PROFILE_SEQUENCE: {
+                'type': 'drop_down',
+                'options': self.get_profile_sequences(),
+                'sub_configs': {seq: [SEQ_PROFILE_KEYS[i]] for i, seq in enumerate(self.get_profile_sequences())},
+            },
             MANAGE_PROFILES: {'type': 'button', 'text': 'Manage Daily Profiles', 'callback': self.manage_daily_profiles},
             # 导出/导入账号配置已移到「设置 → 数据设置」分组
             # EXPORT_PROFILES: {'type': 'button', 'text': 'Export Account Config', 'callback': self.export_account_config},
@@ -236,6 +252,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self.logged_in = False
         self.ensure_main(time_out=180)
         self.ensure_daily_profiles()
+        self._sync_sequence_options()
 
         auto_farm = self.config.get(AUTO_FARM_NIGHTMARE_NEST)
         daily_echo = self.config.get('Farm Nightmare Nest for Daily Echo')
@@ -589,13 +606,15 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             if not isinstance(profiles, dict) or not profiles:
                 self.log_error('导出文件中没有账号方案')
                 return
-            # 导入前备份现有配置
+            # 导入前备份现有配置（每日任务 + 多账号每日任务数据一同备份）
             try:
-                if os.path.exists(PROFILE_FILE):
-                    backup = PROFILE_FILE + f'.bak_import_{datetime.now():%Y%m%d_%H%M%S}'
-                    import shutil
-                    shutil.copy2(PROFILE_FILE, backup)
-                    self.log_info(f'已备份现有配置: {backup}')
+                import shutil
+                ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+                for f in (PROFILE_FILE, MULTI_ACCOUNT_CONFIG_FILE):
+                    if os.path.exists(f):
+                        backup = f + f'.bak_import_{ts}'
+                        shutil.copy2(f, backup)
+                        self.log_info(f'已备份: {backup}')
             except Exception as e:
                 self.log_error('备份现有配置失败（继续导入）', e)
             # 写入新方案
@@ -693,6 +712,56 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         """
         if DAILY_PROFILE in self.config_type and isinstance(self.config_type[DAILY_PROFILE], dict):
             self.config_type[DAILY_PROFILE]['options'] = self.get_profile_names()
+        self._sync_sequence_options()
+
+    def get_profile_sequences(self):
+        """从方案名解析序列分组（方案名形如【A1-名字-手机号】，前缀字母 = 序列）。
+
+        返回序列显示名列表（如 ['序列A', '序列B']）；无前缀的方案归入「其他」。
+        """
+        profiles = self.load_daily_profiles()
+        seqs = []
+        for name in profiles.keys():
+            m = re.match(r'【?([A-Za-z])', str(name))
+            label = f'序列{m.group(1).upper()}' if m else '其他'
+            if label not in seqs:
+                seqs.append(label)
+        return seqs or ['其他']
+
+    def _sequence_of_profile(self, name):
+        """返回方案名所属的序列显示名。"""
+        m = re.match(r'【?([A-Za-z])', str(name))
+        return f'序列{m.group(1).upper()}' if m else '其他'
+
+    def _sync_sequence_options(self):
+        """更新「方案序列」下拉的 options/sub_configs，以及各序列方案下拉的 options。"""
+        try:
+            seqs = self.get_profile_sequences()
+            if PROFILE_SEQUENCE in self.config_type and isinstance(self.config_type[PROFILE_SEQUENCE], dict):
+                self.config_type[PROFILE_SEQUENCE]['options'] = seqs
+                self.config_type[PROFILE_SEQUENCE]['sub_configs'] = {
+                    seq: [SEQ_PROFILE_KEYS[i]] for i, seq in enumerate(seqs)
+                }
+            # 每个序列的方案下拉 options：只包含该序列的方案
+            profiles = self.load_daily_profiles()
+            for i, seq in enumerate(seqs):
+                if i >= len(SEQ_PROFILE_KEYS):
+                    break
+                key = SEQ_PROFILE_KEYS[i]
+                names = [n for n in profiles.keys() if self._sequence_of_profile(n) == seq]
+                if key in self.config_type and isinstance(self.config_type[key], dict):
+                    self.config_type[key]['options'] = names or ['（该序列暂无方案）']
+        except Exception as e:
+            self.log_error('同步序列选项失败', e)
+
+    def _sequence_key_of_profile(self, name):
+        """返回方案名对应的序列方案配置键（序列X 方案）。"""
+        seq = self._sequence_of_profile(name)
+        try:
+            idx = self.get_profile_sequences().index(seq)
+            return SEQ_PROFILE_KEYS[idx]
+        except (ValueError, IndexError):
+            return None
 
     def _refresh_gui(self):
         """刷新当前任务卡片显示（安全版：只刷新控件值，不重建任务页——重建会导致界面空白）。
@@ -736,6 +805,24 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                         self.log_error('refresh daily profiles ui failed', e)
 
                 QTimer.singleShot(0, _delayed_refresh)
+        elif key in SEQ_PROFILE_KEYS and not self._switching_profile:
+            # 序列方案下拉变化 → 同步激活方案（DAILY_PROFILE），并联动更新其他序列的方案值
+            if value and value != self.config.get(DAILY_PROFILE):
+                self._switching_profile = True
+                try:
+                    self._do_switch_profile(self.config.get(DAILY_PROFILE), value)
+                    self.config[DAILY_PROFILE] = value
+                finally:
+                    self._switching_profile = False
+                from PySide6.QtCore import QTimer
+
+                def _delayed_refresh2():
+                    try:
+                        self._refresh_gui()
+                    except Exception as e:
+                        self.log_error('refresh seq profile ui failed', e)
+
+                QTimer.singleShot(0, _delayed_refresh2)
         return None
 
     def validate_daily_tasks(self):
