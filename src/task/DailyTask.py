@@ -326,10 +326,18 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
     # ==================== 每日任务配置方案 (Profile) ====================
 
     def get_profile_names(self, sequence=None):
-        """返回配置方案名称列表；指定序列时只返回该序列的方案（序列从方案名【X1-】前缀解析）。"""
+        """返回配置方案名称列表。
+
+        指定序列时优先用显式归属（sequences 数据：序列→方案列表）；
+        无归属数据时按方案名前缀（【X1-】字母）过滤兜底。
+        """
         profiles = self.load_daily_profiles()
         names = list(profiles.keys()) or ['默认']
         if sequence:
+            seqs = self.get_sequences_data()
+            if seqs:
+                snames = [n for n in seqs.get(sequence, []) if n in profiles]
+                return snames or ['（该序列暂无方案）']
             names = [n for n in names if self._sequence_of_profile(n) == sequence] or ['（该序列暂无方案）']
         return names
 
@@ -346,8 +354,24 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         return profiles if isinstance(profiles, dict) else {}
 
     def save_daily_profiles(self, profiles):
-        """保存所有方案到 configs/daily_profiles.json。"""
-        write_json_file(PROFILE_FILE, {'profiles': profiles})
+        """保存所有方案到 configs/daily_profiles.json（保留顶层 sequences/active_profile 等字段）。"""
+        data = read_json_file(PROFILE_FILE) or {}
+        data['profiles'] = profiles
+        write_json_file(PROFILE_FILE, data)
+
+    def get_sequences_data(self):
+        """读取账号归属序列数据（sequences: {序列名: [方案名...]}）。"""
+        data = read_json_file(PROFILE_FILE)
+        if not data:
+            return {}
+        seqs = data.get('sequences')
+        return seqs if isinstance(seqs, dict) else {}
+
+    def save_sequences_data(self, sequences):
+        """保存账号归属序列数据到 daily_profiles.json 顶层。"""
+        data = read_json_file(PROFILE_FILE) or {}
+        data['sequences'] = sequences
+        write_json_file(PROFILE_FILE, data)
 
     def collect_profile_config(self):
         """收集当前 config 中属于"每日任务配置方案"的键值（含梦魇巢穴设置）。"""
@@ -580,6 +604,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 'exported_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                 'active_profile': active if active in profiles else '',
                 'profiles': profiles,
+                'sequences': self.get_sequences_data(),
             }
             default_name = f'okww_账号配置_{datetime.now():%Y%m%d_%H%M%S}.json'
             path = self._ask_save_path(default_name)
@@ -615,8 +640,11 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                         self.log_info(f'已备份: {backup}')
             except Exception as e:
                 self.log_error('备份现有配置失败（继续导入）', e)
-            # 写入新方案
+            # 写入新方案（含序列归属）
             self.save_daily_profiles(profiles)
+            seqs = data.get('sequences')
+            if isinstance(seqs, dict):
+                self.save_sequences_data(seqs)
             # 设置激活方案
             active = data.get('active_profile', '')
             if active not in profiles:
@@ -713,18 +741,22 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self._sync_sequence_options()
 
     def get_profile_sequences(self):
-        """从方案名解析序列分组（方案名形如【A1-名字-手机号】，前缀字母 = 序列）。
+        """返回序列列表。
 
-        返回序列显示名列表（如 ['序列A', '序列B']）；无前缀的方案归入「其他」。
+        优先用显式归属数据（sequences 的键）；无归属数据时按方案名前缀解析兜底
+        （方案名形如【A1-名字-手机号】，前缀字母 = 序列）。
         """
+        seqs = self.get_sequences_data()
+        if seqs:
+            return list(seqs.keys())
         profiles = self.load_daily_profiles()
-        seqs = []
+        result = []
         for name in profiles.keys():
             m = re.match(r'【?([A-Za-z])', str(name))
             label = f'序列{m.group(1).upper()}' if m else '其他'
-            if label not in seqs:
-                seqs.append(label)
-        return seqs or ['其他']
+            if label not in result:
+                result.append(label)
+        return result or ['其他']
 
     def _sequence_of_profile(self, name):
         """返回方案名所属的序列显示名。"""
