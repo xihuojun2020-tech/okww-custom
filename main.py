@@ -82,6 +82,18 @@ def _ensure_single_instance():
                             cwd_info = '?'
                         print(f'[okww] 单实例拦截: PID={p.info["pid"]} cwd={cwd_info} '
                               f'cmdline={" ".join(parts)[:120]}')
+                        # 弹窗提示（pythonw 无控制台时用户也能看到原因）
+                        try:
+                            import ctypes
+                            ctypes.windll.user32.MessageBoxW(
+                                0,
+                                'OK-WW 已在运行中（已有实例）。\n请查看任务栏/屏幕上的 OK-WW 窗口，'
+                                '或先关闭它再重新启动。\n（本次启动已自动退出）',
+                                'OK-WW 单实例提示',
+                                0x40,  # MB_ICONINFORMATION
+                            )
+                        except Exception:
+                            pass
                         return False
                     break
             except Exception:

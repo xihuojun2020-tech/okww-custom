@@ -43,12 +43,6 @@ rem ---- 会话日志/截图：归档上一次的散落文件 + 清理过期会话 ----
 "%~dp0runtime\python\python.exe" "%~dp0new_session.py"
 "%~dp0runtime\python\python.exe" "%~dp0clean_session.py"
 
-rem ---- 启动主程序 ----
-"%~dp0.venv\Scripts\python.exe" "%~dp0main.py"
-set "code=%errorlevel%"
-echo.
-if not "%code%"=="0" (
-    echo 程序异常退出（错误码 %code%），如果报错请截图发给我
-)
-pause
+rem ---- 启动主程序（pythonw 无控制台：双击后窗口自动消失，OK-WW 独立窗口显示）----
+start "" "%~dp0.venv\Scripts\pythonw.exe" "%~dp0main.py"
 endlocal
