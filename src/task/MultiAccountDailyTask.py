@@ -37,7 +37,10 @@ scan_account_pattern = re.compile(r'^U[a-zA-Z0-9]+$', re.IGNORECASE)
 phone_in_name_pattern = re.compile(r'(1[3-9]\d{9})')
 
 CURRENT_SEQUENCE = '当前序列'
-SEQ_ACCOUNTS = ['序列 %d 账号' % i for i in range(1, 6)]
+MANAGE_SEQUENCES = '管理序列'
+MAX_SEQUENCES = 10
+SEQ_ACCOUNTS = ['序列 %d 账号' % i for i in range(1, MAX_SEQUENCES + 1)]
+PROFILE_FILE = get_relative_path('configs', 'daily_profiles.json')
 PROGRESS_FILE = get_relative_path('configs', 'multi_account_progress.json')
 
 
@@ -64,24 +67,31 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         self.all_accounts = set()
         self.support_schedule_task = True
         self._profile_cache = {}  # 方案名 → 方案内容（含手机号/别名），用于登录账号识别
-        # 当前执行序列（与「KRLauncher 序列切换」任务的「切换序列」对应）
+        # 当前执行序列（账号归属序列，序列列表来自 daily_profiles 的 sequences，可在下方管理增删）
         self.default_config[CURRENT_SEQUENCE] = '序列1'
-        self.config_description[CURRENT_SEQUENCE] = '当前执行的账号序列（与序列切换中选择的序列对应，按该序列的账号执行）'
+        self.config_description[CURRENT_SEQUENCE] = '当前执行的账号序列（按该序列的账号执行；序列可增删）'
+        seq_names = self.get_sequence_names()
         # 选择哪个序列，就只显示该序列的账号配置（sub_configs 联动）
         self.config_type[CURRENT_SEQUENCE] = {
             'type': 'drop_down',
-            'options': [f'序列{i}' for i in range(1, 6)],
-            'sub_configs': {f'序列{i}': [SEQ_ACCOUNTS[i - 1]] for i in range(1, 6)},
+            'options': seq_names,
+            'sub_configs': {seq: [SEQ_ACCOUNTS[i]] for i, seq in enumerate(seq_names)},
         }
         # 每个序列的账号列表（独立选择、各自记住；账号可跨序列共享，当天已打的账号任何序列都会跳过）
-        for i in range(1, 6):
-            self.default_config[SEQ_ACCOUNTS[i - 1]] = []
-            self.config_description[SEQ_ACCOUNTS[i - 1]] = f'序列{i} 包含的账号（按顺序，选过的不会重复出现；无 = 该位置没有账号）'
-            self.config_type[SEQ_ACCOUNTS[i - 1]] = {
+        for i, seq in enumerate(seq_names):
+            self.default_config[SEQ_ACCOUNTS[i]] = []
+            self.config_description[SEQ_ACCOUNTS[i]] = f'{seq} 包含的账号（按顺序，选过的不会重复出现；无 = 该位置没有账号）'
+            self.config_type[SEQ_ACCOUNTS[i]] = {
                 'type': 'account_sequence',
                 'options': self.get_profile_names(),
                 'last_completed_provider': self.get_profile_last_completed,
             }
+        # 管理序列（增删/重命名账号归属序列）
+        self.default_config[MANAGE_SEQUENCES] = ''
+        self.config_description[MANAGE_SEQUENCES] = '增加/删除/重命名账号序列（账号归属随序列保存）'
+        self.config_type[MANAGE_SEQUENCES] = {
+            'type': 'button', 'text': '管理序列', 'callback': self.manage_sequences,
+        }
 
     def get_profile_last_completed(self, profile_name):
         """返回账号方案的上次完成时间（last_completed 中最新时间，只读展示用）。"""
@@ -100,26 +110,213 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         """当前执行的序列名（仅作账号分类标识，按「当前序列」配置执行）。"""
         return (self.config.get(CURRENT_SEQUENCE) or '序列1').strip()
 
+    def _sync_local_to_sequences(self):
+        """把本任务勾选的序列账号同步到统一归属数据（sequences）。
+
+        多账号任务为归属的编辑入口：用户在此勾选各序列包含的账号，
+        同步后每日任务的「方案序列 → 账号配置」联动即可读取。
+        """
+        try:
+            seqs = self._read_sequences()
+            if not seqs:
+                seqs = {f'序列{i}': [] for i in range(1, 6)}
+            changed = False
+            for i in range(MAX_SEQUENCES):
+                key = f'序列{i + 1}'
+                if key not in seqs:
+                    continue
+                acc = [a for a in (self.config.get(SEQ_ACCOUNTS[i]) or []) if a and a != '无']
+                if acc != seqs[key]:
+                    seqs[key] = acc
+                    changed = True
+            if changed:
+                self._write_sequences(seqs)
+        except Exception as e:
+            self.log_error('同步序列账号失败', e)
+
     def get_sequence_accounts(self, seq_name=None):
-        """指定序列（默认当前序列）的账号列表（不含「无」）。"""
+        """指定序列（默认当前序列）的账号列表（不含「无」）。
+
+        优先读统一归属数据（daily_profiles 的 sequences）；无归属数据时回退自身配置。
+        """
         name = seq_name or self.get_current_sequence()
         idx = self._seq_index(name)
         if idx is None:
             return []
         seq = self.config.get(SEQ_ACCOUNTS[idx]) or []
+        # 统一归属数据优先（多账号任务勾选时同步写入 sequences）
+        try:
+            seqs = self._read_sequences()
+            if seqs and name in seqs:
+                seq = seqs[name]
+        except Exception:
+            pass
         return [a for a in seq if a and a != '无']
 
     def _seq_index(self, seq_name):
-        """序列名 → 配置索引（0-4）；非序列名返回 None。"""
+        """序列名 → 配置索引（0..MAX-1）；非序列名返回 None。"""
         if not seq_name or not seq_name.startswith('序列'):
             return None
         try:
             n = int(re.search(r'(\d+)', seq_name).group(1))
-            if 1 <= n <= 5:
+            if 1 <= n <= MAX_SEQUENCES:
                 return n - 1
         except Exception:
             pass
         return None
+
+    def _read_sequences(self):
+        """读取统一序列归属数据（daily_profiles.json 顶层 sequences）。"""
+        try:
+            import json as _json
+            if not os.path.isfile(PROFILE_FILE):
+                return {}
+            with open(PROFILE_FILE, encoding='utf-8') as f:
+                data = _json.load(f)
+            seqs = data.get('sequences')
+            return seqs if isinstance(seqs, dict) else {}
+        except Exception:
+            return {}
+
+    def _write_sequences(self, sequences):
+        """保存统一序列归属数据。"""
+        try:
+            import json as _json
+            data = {}
+            if os.path.isfile(PROFILE_FILE):
+                with open(PROFILE_FILE, encoding='utf-8') as f:
+                    data = _json.load(f)
+            data['sequences'] = sequences
+            with open(PROFILE_FILE, 'w', encoding='utf-8') as f:
+                _json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            self.log_error('保存序列归属失败', e)
+
+    def get_sequence_names(self):
+        """返回序列名列表（统一归属数据的键；无数据时默认 序列1~序列5）。"""
+        seqs = self._read_sequences()
+        if seqs:
+            return [str(k) for k in seqs.keys()]
+        return [f'序列{i}' for i in range(1, 6)]
+
+    def manage_sequences(self, *args):
+        """管理序列：弹窗增删/重命名账号序列（改动写入统一归属数据并同步自身配置）。"""
+        try:
+            from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit, QMessageBox, QListWidget
+            from ok import og
+
+            seqs = self._read_sequences()
+            if not seqs:
+                seqs = {f'序列{i}': (self.config.get(SEQ_ACCOUNTS[i - 1]) or []) for i in range(1, 6)}
+
+            dlg = QDialog(og.main_window if og.main_window else None)
+            dlg.setWindowTitle('管理序列')
+            dlg.resize(360, 420)
+            lay = QVBoxLayout(dlg)
+            lay.addWidget(QLabel('账号序列列表（账号归属随序列保存，每日任务联动使用）：'))
+            self._seq_list = QListWidget()
+            for k in seqs.keys():
+                self._seq_list.addItem(f'{k}（{len(seqs[k])} 个账号）')
+            lay.addWidget(self._seq_list)
+
+            name_edit = QLineEdit()
+            name_edit.setPlaceholderText('新序列名（如 序列6）')
+            lay.addWidget(name_edit)
+
+            btn_lay = QHBoxLayout()
+            add_btn = QPushButton('增加序列')
+            del_btn = QPushButton('删除选中')
+            rename_btn = QPushButton('重命名')
+            ok_btn = QPushButton('完成')
+            for b in (add_btn, del_btn, rename_btn, ok_btn):
+                btn_lay.addWidget(b)
+            lay.addLayout(btn_lay)
+
+            def _refresh_list():
+                self._seq_list.clear()
+                for k in seqs.keys():
+                    self._seq_list.addItem(f'{k}（{len(seqs[k])} 个账号）')
+
+            def _add():
+                new = name_edit.text().strip() or f'序列{len(seqs) + 1}'
+                if new in seqs:
+                    QMessageBox.information(dlg, '提示', '该序列已存在')
+                    return
+                if len(seqs) >= MAX_SEQUENCES:
+                    QMessageBox.warning(dlg, '提示', f'最多支持 {MAX_SEQUENCES} 个序列')
+                    return
+                seqs[new] = []
+                name_edit.clear()
+                _refresh_list()
+
+            def _del():
+                row = self._seq_list.currentRow()
+                if row < 0:
+                    QMessageBox.information(dlg, '提示', '请先选择要删除的序列')
+                    return
+                key = list(seqs.keys())[row]
+                if len(seqs) <= 1:
+                    QMessageBox.warning(dlg, '提示', '至少保留一个序列')
+                    return
+                del seqs[key]
+                _refresh_list()
+
+            def _rename():
+                row = self._seq_list.currentRow()
+                if row < 0:
+                    QMessageBox.information(dlg, '提示', '请先选择要重命名的序列')
+                    return
+                new = name_edit.text().strip()
+                if not new or new in seqs:
+                    QMessageBox.information(dlg, '提示', '输入不重复的新序列名')
+                    return
+                old = list(seqs.keys())[row]
+                seqs[new] = seqs.pop(old)
+                name_edit.clear()
+                _refresh_list()
+
+            add_btn.clicked.connect(_add)
+            del_btn.clicked.connect(_del)
+            rename_btn.clicked.connect(_rename)
+            ok_btn.clicked.connect(dlg.accept)
+
+            if dlg.exec() == 0:
+                return
+            # 保存统一归属 + 同步自身配置（序列N账号）并刷新序列下拉选项
+            self._write_sequences(seqs)
+            seq_names = list(seqs.keys())
+            for i, k in enumerate(seq_names):
+                if i < MAX_SEQUENCES:
+                    self.config[SEQ_ACCOUNTS[i]] = [a for a in seqs[k] if a and a != '无']
+            self._sync_sequence_ui(seq_names)
+            self.log_info(f'序列已更新：{seq_names}', notify=True)
+        except Exception as e:
+            self.log_error('管理序列失败', e)
+
+    def _sync_sequence_ui(self, seq_names):
+        """管理序列后同步「当前序列」下拉选项（含已存在的序列账号配置显示）。"""
+        try:
+            if CURRENT_SEQUENCE in self.config_type and isinstance(self.config_type[CURRENT_SEQUENCE], dict):
+                self.config_type[CURRENT_SEQUENCE]['options'] = seq_names
+                self.config_type[CURRENT_SEQUENCE]['sub_configs'] = {
+                    seq: [SEQ_ACCOUNTS[i]] for i, seq in enumerate(seq_names)
+                }
+            # 更新「当前序列」下拉控件选项（单控件更新，不重建）
+            from ok import og
+            if og.main_window and hasattr(og.main_window, 'onetime_tab'):
+                for card in getattr(og.main_window.onetime_tab, 'card_widgets', []):
+                    if getattr(card, 'task', None) is not self:
+                        continue
+                    for w in getattr(card, 'config_widgets', []):
+                        if getattr(w, 'key', None) == CURRENT_SEQUENCE and hasattr(w, 'combo_box'):
+                            combo = w.combo_box
+                            combo.blockSignals(True)
+                            combo.clear()
+                            combo.addItems(seq_names)
+                            combo.blockSignals(False)
+                            return
+        except Exception:
+            pass
 
     # ==================== 账号方案 ↔ 登录显示 匹配 ====================
 
@@ -211,6 +408,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         WWOneTimeTask.run(self)
         self.done_set.clear()
         self.all_accounts.clear()
+        # 把本任务勾选的序列账号同步到统一归属数据（多账号任务为归属编辑入口，每日任务联动读取）
+        self._sync_local_to_sequences()
 
         # 临时关闭 DailyTask 的「每日任务完成后自动退登 PC 端」：
         # 多账号任务自己统一管理退登（_switch_to_login），避免重复退登冲突
