@@ -32,7 +32,6 @@ ADDITIONAL_TASKS = 'Additional Tasks to Run After Daily Task'
 
 DAILY_PROFILE = 'Daily Profile'
 PROFILE_SEQUENCE = '方案序列'
-SEQ_PROFILE_KEYS = ['序列%d 方案' % i for i in range(1, 6)]
 MANAGE_PROFILES = 'Manage Daily Profiles'
 EXPORT_PROFILES = 'Export Account Config'
 IMPORT_PROFILES = 'Import Account Config'
@@ -115,7 +114,6 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self.default_config = {
             DAILY_PROFILE: '默认',
             PROFILE_SEQUENCE: '',
-            **{k: '' for k in SEQ_PROFILE_KEYS},
             'Which to Farm': self.support_tasks[0],
             'Which Tacet Suppression to Farm': 1,  # starts with 1
             'Which Forgery Challenge to Farm': 1,  # starts with 1
@@ -166,13 +164,10 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         material_option_list = ['Resonator EXP', 'Weapon EXP', 'Shell Credit']
         self.config_type = {
             DAILY_PROFILE: {'type': 'drop_down', 'options': self.get_profile_names()},
-            # 各序列的方案选择下拉（options 由 _sync_sequence_options 按序列填充）
-            **{k: {'type': 'drop_down', 'options': []} for k in SEQ_PROFILE_KEYS},
-            # 方案序列：先选序列，再在 sub_configs 里选该序列的方案（两级联动，避免翻页）
+            # 方案序列：选序列后「账号配置」下拉随之只显示该序列的方案（两级联动，避免翻页）
             PROFILE_SEQUENCE: {
                 'type': 'drop_down',
                 'options': self.get_profile_sequences(),
-                'sub_configs': {seq: [SEQ_PROFILE_KEYS[i]] for i, seq in enumerate(self.get_profile_sequences())},
             },
             MANAGE_PROFILES: {'type': 'button', 'text': 'Manage Daily Profiles', 'callback': self.manage_daily_profiles},
             # 导出/导入账号配置已移到「设置 → 数据设置」分组
@@ -330,10 +325,13 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     # ==================== 每日任务配置方案 (Profile) ====================
 
-    def get_profile_names(self):
-        """返回所有配置方案的名称列表。"""
+    def get_profile_names(self, sequence=None):
+        """返回配置方案名称列表；指定序列时只返回该序列的方案（序列从方案名【X1-】前缀解析）。"""
         profiles = self.load_daily_profiles()
-        return list(profiles.keys()) or ['默认']
+        names = list(profiles.keys()) or ['默认']
+        if sequence:
+            names = [n for n in names if self._sequence_of_profile(n) == sequence] or ['（该序列暂无方案）']
+        return names
 
     def get_active_profile_name(self):
         """当前激活的配置方案名称。"""
@@ -734,34 +732,35 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         return f'序列{m.group(1).upper()}' if m else '其他'
 
     def _sync_sequence_options(self):
-        """更新「方案序列」下拉的 options/sub_configs，以及各序列方案下拉的 options。"""
+        """更新「方案序列」下拉 options，并按当前选择的序列过滤「账号配置」下拉 options。"""
         try:
-            seqs = self.get_profile_sequences()
             if PROFILE_SEQUENCE in self.config_type and isinstance(self.config_type[PROFILE_SEQUENCE], dict):
-                self.config_type[PROFILE_SEQUENCE]['options'] = seqs
-                self.config_type[PROFILE_SEQUENCE]['sub_configs'] = {
-                    seq: [SEQ_PROFILE_KEYS[i]] for i, seq in enumerate(seqs)
-                }
-            # 每个序列的方案下拉 options：只包含该序列的方案
-            profiles = self.load_daily_profiles()
-            for i, seq in enumerate(seqs):
-                if i >= len(SEQ_PROFILE_KEYS):
-                    break
-                key = SEQ_PROFILE_KEYS[i]
-                names = [n for n in profiles.keys() if self._sequence_of_profile(n) == seq]
-                if key in self.config_type and isinstance(self.config_type[key], dict):
-                    self.config_type[key]['options'] = names or ['（该序列暂无方案）']
+                self.config_type[PROFILE_SEQUENCE]['options'] = self.get_profile_sequences()
+            if DAILY_PROFILE in self.config_type and isinstance(self.config_type[DAILY_PROFILE], dict):
+                seq = self.config.get(PROFILE_SEQUENCE) or ''
+                self.config_type[DAILY_PROFILE]['options'] = self.get_profile_names(seq or None)
         except Exception as e:
             self.log_error('同步序列选项失败', e)
 
-    def _sequence_key_of_profile(self, name):
-        """返回方案名对应的序列方案配置键（序列X 方案）。"""
-        seq = self._sequence_of_profile(name)
+    def _update_dropdown_items(self, key, options):
+        """直接更新任务卡片中指定下拉控件的选项（单控件更新，不重建——避免白屏）。"""
         try:
-            idx = self.get_profile_sequences().index(seq)
-            return SEQ_PROFILE_KEYS[idx]
-        except (ValueError, IndexError):
-            return None
+            from ok import og
+            if not og.main_window or not hasattr(og.main_window, 'onetime_tab'):
+                return
+            for card in getattr(og.main_window.onetime_tab, 'card_widgets', []):
+                if getattr(card, 'task', None) is not self:
+                    continue
+                for w in getattr(card, 'config_widgets', []):
+                    if getattr(w, 'key', None) == key and hasattr(w, 'combo_box'):
+                        combo = w.combo_box
+                        combo.blockSignals(True)
+                        combo.clear()
+                        combo.addItems(options)
+                        combo.blockSignals(False)
+                        return
+        except Exception:
+            pass
 
     def _refresh_gui(self):
         """刷新当前任务卡片显示（安全版：只刷新控件值，不重建任务页——重建会导致界面空白）。
@@ -805,24 +804,13 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                         self.log_error('refresh daily profiles ui failed', e)
 
                 QTimer.singleShot(0, _delayed_refresh)
-        elif key in SEQ_PROFILE_KEYS and not self._switching_profile:
-            # 序列方案下拉变化 → 同步激活方案（DAILY_PROFILE），并联动更新其他序列的方案值
-            if value and value != self.config.get(DAILY_PROFILE):
-                self._switching_profile = True
-                try:
-                    self._do_switch_profile(self.config.get(DAILY_PROFILE), value)
-                    self.config[DAILY_PROFILE] = value
-                finally:
-                    self._switching_profile = False
-                from PySide6.QtCore import QTimer
-
-                def _delayed_refresh2():
-                    try:
-                        self._refresh_gui()
-                    except Exception as e:
-                        self.log_error('refresh seq profile ui failed', e)
-
-                QTimer.singleShot(0, _delayed_refresh2)
+        elif key == PROFILE_SEQUENCE and not self._switching_profile:
+            # 切换序列 → 「账号配置」下拉随之只显示该序列的方案（即时更新单控件，不重建）
+            seq = value or ''
+            names = self.get_profile_names(seq or None)
+            if DAILY_PROFILE in self.config_type and isinstance(self.config_type[DAILY_PROFILE], dict):
+                self.config_type[DAILY_PROFILE]['options'] = names
+            self._update_dropdown_items(DAILY_PROFILE, names)
         return None
 
     def validate_daily_tasks(self):
