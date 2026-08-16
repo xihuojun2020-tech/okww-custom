@@ -50,6 +50,7 @@ def _ensure_single_instance():
     """单实例保护：检测是否已有本应用（同 main.py 绝对路径）实例在运行。
 
     兼容 cmdline 中相对路径（如 `pythonw.exe main.py`）：用进程工作目录转绝对路径再比较。
+    拦截时打印匹配进程信息，便于排查误判。
     """
     try:
         import psutil
@@ -65,17 +66,23 @@ def _ensure_single_instance():
                     part = part.strip().strip('"').replace('/', '\\')
                     if not part.endswith('main.py'):
                         continue
+                    match = False
                     if os.path.isabs(part):
-                        if os.path.normpath(part) == this:
-                            return False
+                        match = os.path.normpath(part) == this
                     else:
-                        # 相对路径：用进程工作目录转绝对
                         try:
                             cwd = psutil.Process(p.info['pid']).cwd()
-                            if os.path.normpath(os.path.join(cwd, part)) == this:
-                                return False
+                            match = os.path.normpath(os.path.join(cwd, part)) == this
                         except Exception:
                             pass
+                    if match:
+                        try:
+                            cwd_info = psutil.Process(p.info['pid']).cwd()
+                        except Exception:
+                            cwd_info = '?'
+                        print(f'[okww] 单实例拦截: PID={p.info["pid"]} cwd={cwd_info} '
+                              f'cmdline={" ".join(parts)[:120]}')
+                        return False
                     break
             except Exception:
                 continue
