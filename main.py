@@ -82,19 +82,31 @@ def _ensure_single_instance():
                             cwd_info = '?'
                         print(f'[okww] 单实例拦截: PID={p.info["pid"]} cwd={cwd_info} '
                               f'cmdline={" ".join(parts)[:120]}')
-                        # 弹窗提示（pythonw 无控制台时用户也能看到原因）
+                        # 三选弹窗：继续使用现有 / 结束旧实例并重启 / 取消
                         try:
                             import ctypes
-                            ctypes.windll.user32.MessageBoxW(
+                            res = ctypes.windll.user32.MessageBoxW(
                                 0,
-                                'OK-WW 已在运行中（已有实例）。\n请查看任务栏/屏幕上的 OK-WW 窗口，'
-                                '或先关闭它再重新启动。\n（本次启动已自动退出）',
-                                'OK-WW 单实例提示',
-                                0x40,  # MB_ICONINFORMATION
+                                'OK-WW 已有实例在运行。\n\n'
+                                '[是] 结束旧实例并重新启动（注意：旧实例正在运行的任务会被中断）\n'
+                                '[否] 继续使用现有实例\n'
+                                '[取消] 放弃本次启动',
+                                'OK-WW 单实例',
+                                0x3 | 0x20,  # MB_YESNOCANCEL | MB_ICONQUESTION
                             )
+                            if res == 6:  # IDYES：结束旧实例（含其子进程）并继续启动
+                                import subprocess
+                                old_pid = p.info['pid']
+                                subprocess.Popen(
+                                    ['taskkill', '/f', '/t', '/pid', str(old_pid)],
+                                    creationflags=0x08000000,
+                                )
+                                time.sleep(1.5)
+                                return True
+                            # IDNO(7)/IDCANCEL(2)：本实例退出
+                            return False
                         except Exception:
-                            pass
-                        return False
+                            return False
                     break
             except Exception:
                 continue
@@ -238,4 +250,25 @@ if __name__ == '__main__':
 
     config = config
     ok = OK(config)
-    ok.start()
+    try:
+        ok.start()
+    except Exception as e:
+        # 启动异常：写日志 + 弹窗（pythonw 无控制台时不再静默崩溃）
+        import traceback
+        tb = traceback.format_exc()
+        try:
+            log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
+            os.makedirs(log_dir, exist_ok=True)
+            with open(os.path.join(log_dir, '启动错误.log'), 'a', encoding='utf-8') as f:
+                from datetime import datetime
+                f.write(f'\n[{datetime.now():%Y-%m-%d %H:%M:%S}] 启动失败:\n{tb}\n')
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(
+                0,
+                f'OK-WW 启动失败：\n{str(e)[:300]}\n\n详细信息见 logs\\启动错误.log',
+                'OK-WW 错误',
+                0x10,  # MB_ICONERROR
+            )
+        except Exception:
+            pass
+        sys.exit(1)
