@@ -1023,7 +1023,10 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             self.get_task_by_class(GardenTask).open_garden_weekly_page()
             return True
         if page == '残像聚落':
-            # 打开首领书 + 点左侧「残像聚落」（与刷取任务 open_boss_book 一致，不能只开首领书）
+            # 与刷取任务一致：先 esc 回主界面 → F2 开首领书 → 点左侧「残像聚落」
+            # （原实现未先开首领书，直接点坐标会导致画面不对/没录到残像聚落）
+            self.send_key('esc', after_sleep=1)
+            self.openF2Book("gray_book_boss")
             self.open_boss_book('canxiang')
             return True
         if page in ('大月卡', '战令'):
