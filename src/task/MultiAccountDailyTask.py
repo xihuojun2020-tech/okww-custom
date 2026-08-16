@@ -599,6 +599,14 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             login_btn = self.find_boxes(texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.8),
                                         match=LOGIN_TEXTS)
             if login_btn:
+                # 点登录前核对当前显示的账号是否为目标账号（防误登其他账号）
+                shown = self._detect_current_account_from_login()
+                if shown and not self._same_account(shown, target):
+                    self.log_error(
+                        f'登录界面当前显示账号 {shown} 与目标 {target} 不一致，'
+                        f'取消点击登录（防误登），请检查账号选择'
+                    )
+                    raise Exception(self.tr('Login aborted: displayed account does not match target'))
                 self.click(login_btn, after_sleep=3)
             else:
                 self.click_relative(0.5, 0.568, hcenter=True, vcenter=True, after_sleep=3)
