@@ -629,18 +629,17 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 )
                 self.sleep(1)
                 current_account = self._detect_current_account_from_login()
-                self.log_info(self.tr('Selected account: {selected}, displayed account: {displayed}').format(
-                    selected=account, displayed=current_account))
-                if self._same_account(account, current_account):
-                    self.log_info(self.tr('Confirmed selected account: {account}').format(account=account))
+                # account 是点击结果（True/None），账号名一律用 target（修复 True.lower 崩溃）
+                self.log_info(f'已选择账号：{target}，当前显示账号：{current_account}')
+                if self._same_account(target, current_account):
+                    self.log_info(f'确认已选择账号：{target}')
                     break
                 if attempt < max_retries:
-                    self.log_info(self.tr('Account display does not match, retrying ({attempt}/{max_retries})').format(
-                        attempt=attempt, max_retries=max_retries))
+                    self.log_info(f'账号显示不匹配，重试（{attempt}/{max_retries}）')
                 else:
-                    self.log_error(self.tr(
-                        'Account selection failed after {max_retries} retries; {account} is still not displayed. Continuing login attempt'
-                    ).format(max_retries=max_retries, account=account))
+                    self.log_error(
+                        f'账号选择在 {max_retries} 次重试后仍失败；{target} 未显示。'
+                    )
                     raise Exception(self.tr('Failed to switch account'))
             self.sleep(4)
             texts = self.ocr()
