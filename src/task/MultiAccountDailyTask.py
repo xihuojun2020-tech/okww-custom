@@ -469,6 +469,13 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             self.run_task_by_class(DailyTask)
             self.ensure_main(time_out=100)
             self._switch_to_login()
+            # 主界面分支：记录并保存断点（防中断丢失，与登录界面分支一致）
+            try:
+                done_acc = self._detect_current_account_from_login() or self.get_active_profile_name()
+                self._mark_done(done_acc)
+                self._save_today_progress()
+            except Exception as e:
+                self.log_error('保存断点失败', e)
         else:
             first_target = self._select_and_login_account()
             if first_target:
@@ -640,6 +647,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     self.log_error(
                         f'账号选择在 {max_retries} 次重试后仍失败；{target} 未显示。'
                     )
+                    self.screenshot('multi')
                     raise Exception(self.tr('Failed to switch account'))
             self.sleep(4)
             texts = self.ocr()
@@ -653,6 +661,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                         f'登录界面当前显示账号 {shown} 与目标 {target} 不一致，'
                         f'取消点击登录（防误登），请检查账号选择'
                     )
+                    self.screenshot('multi')
                     raise Exception(self.tr('Login aborted: displayed account does not match target'))
                 self.click(login_btn, after_sleep=3)
             else:
