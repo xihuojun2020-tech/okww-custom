@@ -240,8 +240,20 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self._migrate_profiles()
         self.description = "登录、领取月卡、刷声骸并领取每日奖励"
         self._switching_profile = False
-        # 启动即同步序列/方案选项（在任务卡片构建前，保证界面默认只显示当前序列的方案）
-        self._sync_sequence_options()
+        # 启动即同步序列/方案选项（config 可能尚未创建，由 after_init 在配置就绪后真正同步）
+        if self.config is not None:
+            self._sync_sequence_options()
+
+    def after_init(self, *args, **kwargs):
+        """配置加载完成后同步序列/方案选项（修正启动期 config 未创建导致的同步失效）。"""
+        try:
+            result = super().after_init(*args, **kwargs)
+            if self.config is not None:
+                self._sync_sequence_options()
+            return result
+        except Exception as e:
+            self.log_error('after_init 同步序列选项失败', e)
+            return None
 
     def run(self):
         self.validate_daily_tasks()
@@ -803,6 +815,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _sync_sequence_options(self):
         """更新「方案序列」下拉 options，并按当前选择的序列过滤「账号配置」下拉 options。"""
+        if self.config is None:
+            return
         try:
             if PROFILE_SEQUENCE in self.config_type and isinstance(self.config_type[PROFILE_SEQUENCE], dict):
                 seqs = self.get_profile_sequences()
@@ -832,10 +846,19 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 for w in getattr(card, 'config_widgets', []):
                     if getattr(w, 'key', None) == key and hasattr(w, 'combo_box'):
                         combo = w.combo_box
+                        # 同步 LabelAndDropDown 的 tr_dict/tr_options（显示文本→原始方案名 映射），
+                        # 否则切换序列后下拉无法还原方案名、写入 None 导致切换失效
+                        try:
+                            if hasattr(w, 'tr_dict') and hasattr(w, 'tr_options'):
+                                w.tr_dict = {og.app.tr(o): o for o in options}
+                                w.tr_options = [og.app.tr(o) for o in options]
+                        except Exception:
+                            pass
+                        display_options = w.tr_options if hasattr(w, 'tr_options') else options
                         try:
                             combo.blockSignals(True)
                             combo.clear()
-                            combo.addItems(options)
+                            combo.addItems(display_options)
                         finally:
                             # 无论成败都恢复信号（防 blockSignals 遗留导致下拉失灵/不触发保存）
                             combo.blockSignals(False)
@@ -843,7 +866,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                         try:
                             cur = self.config.get(DAILY_PROFILE) if key == DAILY_PROFILE else None
                             if cur and cur in options:
-                                combo.setCurrentText(cur)
+                                combo.setCurrentText(og.app.tr(cur))
                             elif options:
                                 combo.setCurrentIndex(0)
                         except Exception:

@@ -46,6 +46,8 @@ class AboutTab(Tab):
             except Exception:
                 pass
             update_log_text.setPlainText(upstream_note + self.tr(
+                'V1.03.69：修复切换序列后配置方案切换失效（下拉 tr_dict 未同步导致写入 None）；启动同步加 config 守卫\n'
+                '\n'
                 'V1.03.68：修复配置方案切换不触发（Daily Profile 为空时 old=None 短路，改为 old!=value 强制加载新方案）\n'
                 '\n'
                 'V1.03.67：导入账号配置不再保存旧方案（防当前污染配置覆盖导入的干净数据）\n'
