@@ -480,9 +480,11 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             first_target = self._select_and_login_account()
             if first_target:
                 self.log_info(f'从登录界面选择下一个未完成账号：{first_target}，开始执行每日任务', notify=True)
-                # 联动：激活方案/当前执行账号 = 目标账号（每日任务用对账号配置，下次从断点处继续）
+                # 联动：当前执行账号 = 目标账号；激活方案仅当目标方案已存在时切换
+                # （防止目标方案不存在时 _do_switch_profile 用当前配置创建污染方案）
                 try:
-                    self.config[DAILY_PROFILE] = first_target
+                    if first_target in self._load_profiles():
+                        self.config[DAILY_PROFILE] = first_target
                     self.config[CURRENT_ACCOUNT] = first_target
                 except Exception:
                     pass
@@ -505,9 +507,11 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         while next_account := self._select_and_login_account():
             self.info_set('Completed', self.done_set)
             self.log_info(f'开始执行账号 {next_account} 的每日任务', notify=True)
-            # 联动：激活方案/当前执行账号 = 目标账号（每日任务用对账号配置，下次从断点处继续）
+            # 联动：当前执行账号 = 目标账号；激活方案仅当目标方案已存在时切换
+            # （防止目标方案不存在时 _do_switch_profile 用当前配置创建污染方案）
             try:
-                self.config[DAILY_PROFILE] = next_account
+                if next_account in self._load_profiles():
+                    self.config[DAILY_PROFILE] = next_account
                 self.config[CURRENT_ACCOUNT] = next_account
             except Exception:
                 pass

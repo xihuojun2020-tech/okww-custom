@@ -113,7 +113,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self.support_tasks = ["Tacet Suppression", "Forgery Challenge", "Simulation Challenge"]
         self.default_config = {
             DAILY_PROFILE: '默认',
-            PROFILE_SEQUENCE: '',
+            PROFILE_SEQUENCE: '序列1',
             'Which to Farm': self.support_tasks[0],
             'Which Tacet Suppression to Farm': 1,  # starts with 1
             'Which Forgery Challenge to Farm': 1,  # starts with 1
@@ -789,9 +789,17 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         """更新「方案序列」下拉 options，并按当前选择的序列过滤「账号配置」下拉 options。"""
         try:
             if PROFILE_SEQUENCE in self.config_type and isinstance(self.config_type[PROFILE_SEQUENCE], dict):
-                self.config_type[PROFILE_SEQUENCE]['options'] = self.get_profile_sequences()
+                seqs = self.get_profile_sequences()
+                self.config_type[PROFILE_SEQUENCE]['options'] = seqs
             if DAILY_PROFILE in self.config_type and isinstance(self.config_type[DAILY_PROFILE], dict):
-                seq = self.config.get(PROFILE_SEQUENCE) or ''
+                seq = (self.config.get(PROFILE_SEQUENCE) or '').strip()
+                if not seq:
+                    seqs = self.get_profile_sequences()
+                    seq = seqs[0] if seqs else ''
+                    try:
+                        self.config[PROFILE_SEQUENCE] = seq
+                    except Exception:
+                        pass
                 self.config_type[DAILY_PROFILE]['options'] = self.get_profile_names(seq or None)
         except Exception as e:
             self.log_error('同步序列选项失败', e)
