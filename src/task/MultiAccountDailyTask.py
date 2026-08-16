@@ -37,6 +37,7 @@ scan_account_pattern = re.compile(r'^U[a-zA-Z0-9]+$', re.IGNORECASE)
 phone_in_name_pattern = re.compile(r'(1[3-9]\d{9})')
 
 CURRENT_SEQUENCE = '当前序列'
+CURRENT_ACCOUNT = '当前执行账号'
 MANAGE_SEQUENCES = '管理序列'
 MAX_SEQUENCES = 10
 SEQ_ACCOUNTS = ['序列 %d 账号' % i for i in range(1, MAX_SEQUENCES + 1)]
@@ -86,6 +87,13 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 'options': self.get_profile_names(),
                 'last_completed_provider': self.get_profile_last_completed,
             }
+        # 当前执行账号：选择后从该账号开始执行（选 A3 → A3..A10 完成后继续 A1..A2；留空 = 从当前登录账号开始）
+        self.default_config[CURRENT_ACCOUNT] = ''
+        self.config_description[CURRENT_ACCOUNT] = '选择从哪个账号开始执行（如选 A3 → A3、A4…A10 完成后继续 A1、A2；留空 = 自动从当前登录账号开始）'
+        self.config_type[CURRENT_ACCOUNT] = {
+            'type': 'drop_down',
+            'options': [''] + self.get_profile_names(),
+        }
         # 管理序列（增删/重命名账号归属序列）
         self.default_config[MANAGE_SEQUENCES] = ''
         self.config_description[MANAGE_SEQUENCES] = '增加/删除/重命名账号序列（账号归属随序列保存）'
@@ -471,11 +479,12 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 self._save_today_progress()
                 self.ensure_main(time_out=100)
                 self._switch_to_login()
+        configured_start = (self.config.get(CURRENT_ACCOUNT) or '').strip()
         detected = self._detect_current_account_from_login()
-        self._mark_done(detected)
         if detected is None:
             detected = self.get_active_profile_name()
-        first_account = detected
+        first_account = configured_start or detected
+        self._mark_done(first_account)
         self.log_info(f'起始账号：{first_account}（全部完成后登录回）', notify=True)
 
         self.info_set('Completed', self.done_set)
@@ -548,8 +557,17 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         return None
 
     def _next_target_account(self):
-        """本轮序列中第一个未完成的账号；全部完成返回 None。"""
-        for acc in self.get_sequence_accounts():
+        """序列中第一个未完成的账号（从「当前执行账号」开始旋转：选 A3 → A3..A10, A1..A2）；全部完成返回 None。"""
+        sequence = self.get_sequence_accounts()
+        if not sequence:
+            return None
+        start = (self.config.get(CURRENT_ACCOUNT) or '').strip()
+        if start:
+            for i, acc in enumerate(sequence):
+                if self._same_account(acc, start):
+                    sequence = sequence[i:] + sequence[:i]
+                    break
+        for acc in sequence:
             if not self._is_done(acc):
                 return acc
         return None
