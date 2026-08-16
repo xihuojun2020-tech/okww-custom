@@ -48,12 +48,12 @@ class MouseResetTask(TriggerTask):
                 if distance > 200 and close_to_center:
                     logger.info(f'move mouse back {self.mouse_pos}')
                     win32api.SetCursorPos(self.mouse_pos)
-                    self.mouse_pos = self.mouse_pos
                     if self.enabled:
                         self.handler.post(self.mouse_reset, 1)
                     return
             self.mouse_pos = current_position
             if self.enabled:
-                return self.handler.post(self.mouse_reset, 0.002)
+                # 20Hz 轮询足够防漂移，避免 500Hz 忙轮询占满 CPU
+                return self.handler.post(self.mouse_reset, 0.05)
         except Exception as e:
             logger.error('mouse_reset exception', e)

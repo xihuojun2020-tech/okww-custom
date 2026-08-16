@@ -661,7 +661,8 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
                          target_height=540, name='boss_lv_text')
         for key, value in self.boss_dict.items():
             s = value.get('name')
-            fps_text = find_boxes_by_name(texts, re.compile(s, re.IGNORECASE))
+            # re.escape：boss 名来自配置，可能含正则元字符，防 re.error
+            fps_text = find_boxes_by_name(texts, re.compile(re.escape(s or ''), re.IGNORECASE))
             if fps_text:
                 self.aim_boss = key
                 # if value.get('set_combat_wait'):

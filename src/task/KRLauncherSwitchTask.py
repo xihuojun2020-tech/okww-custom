@@ -143,8 +143,24 @@ class KRLauncherSwitchTask(WWOneTimeTask, BaseWWTask):
             pass
         return None
 
+    _PS_FORBIDDEN = ("'", "`", ";", "\n", "\r")
+
+    def _ps_arg(self, path, label):
+        """校验路径可安全嵌入 PowerShell 单引号字符串；不合法返回 None（调用方中止）。"""
+        if not isinstance(path, str) or not path:
+            self.log_warning(f'{label} 为空，拒绝拼接 PowerShell 命令')
+            return None
+        if any(ch in path for ch in self._PS_FORBIDDEN):
+            self.log_warning(f'{label} 含 PowerShell 元字符，拒绝执行: {path}')
+            return None
+        return path
+
     def _make_junction(self, link, target):
         """创建目录联接（与 MC_Manager 一致：PowerShell New-Item -ItemType Junction）。"""
+        link = self._ps_arg(link, '联接点路径')
+        target = self._ps_arg(target, '目标路径')
+        if link is None or target is None:
+            return False
         ps = f"New-Item -ItemType Junction -Path '{link}' -Target '{target}' -Force"
         r = subprocess.run(['powershell', '-NoProfile', '-Command', ps],
                            capture_output=True, text=True, timeout=30)
@@ -265,14 +281,18 @@ class KRLauncherSwitchTask(WWOneTimeTask, BaseWWTask):
         只删链接不动目标数据）；cmd rmdir 对带空格路径解析失败，PowerShell
         Remove-Item 对指向非空目录的联接点报"目录不为空"。
         """
+        link_s = self._ps_arg(link, '联接点路径')
+        seq_s = self._ps_arg(seq_dir, '序列目录路径')
+        if link_s is None or seq_s is None:
+            return False
         try:
             subprocess.run(['powershell', '-NoProfile', '-Command',
-                            f"[System.IO.Directory]::Delete('{link}')"],
+                            f"[System.IO.Directory]::Delete('{link_s}')"],
                            capture_output=True, timeout=30)
         except Exception:
             pass
         os.makedirs(seq_dir, exist_ok=True)
-        ps = f"New-Item -ItemType Junction -Path '{link}' -Target '{seq_dir}' -Force"
+        ps = f"New-Item -ItemType Junction -Path '{link_s}' -Target '{seq_s}' -Force"
         r = subprocess.run(['powershell', '-NoProfile', '-Command', ps],
                            capture_output=True, timeout=30)
         return os.path.exists(link) and r.returncode == 0
@@ -669,13 +689,15 @@ class KRLauncherSwitchTask(WWOneTimeTask, BaseWWTask):
         bmi.biBitCount = 32
         bmi.biCompression = 0
         buf = ctypes.create_string_buffer(sw * sh * 4)
-        gdi32.GetDIBits(mdc, hbmp, 0, sh, buf, ctypes.byref(bmi), 0)
-        img = np.frombuffer(buf, np.uint8).reshape(sh, sw, 4)
-        bgr = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-        gdi32.DeleteObject(hbmp)
-        gdi32.DeleteDC(mdc)
-        user32.ReleaseDC(0, hdc)
-        return bgr
+        try:
+            gdi32.GetDIBits(mdc, hbmp, 0, sh, buf, ctypes.byref(bmi), 0)
+            img = np.frombuffer(buf, np.uint8).reshape(sh, sw, 4)
+            return cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+        finally:
+            # 无论成功失败都释放 GDI 句柄，防泄漏
+            gdi32.DeleteObject(hbmp)
+            gdi32.DeleteDC(mdc)
+            user32.ReleaseDC(0, hdc)
 
     def _screen_find_text(self, text, threshold=0.4):
         """全屏 OCR 找文字，返回屏幕像素中心 (x,y)；未找到返回 None。"""

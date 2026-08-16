@@ -9,6 +9,7 @@ import os
 import shutil
 import sys
 import atexit
+import time
 
 
 def _load_pth_paths():
@@ -33,9 +34,13 @@ def _load_pth_paths():
                         if not line or line.startswith('#'):
                             continue
                         if line.startswith('import'):
-                            # 执行 .pth 的 import 行（如 pywin32_bootstrap：注册 DLL 目录）
+                            # 仅执行白名单引导模块的 import 行（如 pywin32_bootstrap：
+                            # 注册 DLL 目录）；其余 import 一律跳过，防止被篡改的
+                            # .pth 在启动时注入任意代码。
+                            _PTH_IMPORT_ALLOWLIST = {'import pywin32_bootstrap', 'import pywin32_postinstall'}
                             try:
-                                exec(line)
+                                if line in _PTH_IMPORT_ALLOWLIST:
+                                    exec(line)
                             except Exception:
                                 pass
                             continue

@@ -31,9 +31,10 @@ class FiveToOneTask(BaseCombatTask):
         self.all_stats = []
         self.black_list = ["主属性生命值", "主属性攻击力", "主属性防御力"]
         for main_stat in self.main_stats:
-            self.all_stats.append(re.compile("主属性" + main_stat))
+            # re.escape：main_stat 来自配置/OCR，可能含正则元字符（如 [ ），防 re.error
+            self.all_stats.append(re.compile("主属性" + re.escape(main_stat)))
         for black in self.black_list:
-            self.all_stats.append(re.compile(black))
+            self.all_stats.append(re.compile(re.escape(black)))
 
         self.add_text_fix(
             {'凝夜自霜': '凝夜白霜', '主属性灭伤害加成': '主属性湮灭伤害加成', "灭伤害加成": "主属性湮灭伤害加成",
@@ -92,7 +93,7 @@ class FiveToOneTask(BaseCombatTask):
             self.click_relative(0.895, 0.55, after_sleep=0.5)  # 滚动
             # self.log_debug('wait click set {}'.format(set_name))
             # self.ocr(box=name_box, threshold=0.1, log=True)
-            self.wait_click_ocr(box=name_box, match=re.compile(set_name), raise_if_not_found=True,
+            self.wait_click_ocr(box=name_box, match=re.compile(re.escape(set_name)), raise_if_not_found=True,
                                 after_sleep=0.2)
             self.wait_feature("merge_echo_check", box=name_box, raise_if_not_found=True)
         self.click_relative(0.895, 0.74, after_sleep=0.5)  # 滚动

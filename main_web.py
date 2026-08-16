@@ -1,3 +1,4 @@
+import os
 import threading
 import webbrowser
 
@@ -23,7 +24,8 @@ if __name__ == "__main__":
     from ok.ui.web import create_web_app
 
     web_config = dict(config)
-    web_config["debug"] = True
+    # 生产默认关闭 debug（避免暴露堆栈/接口文档）；需要调试时用环境变量开启
+    web_config["debug"] = os.environ.get("OKWW_WEB_DEBUG", "").lower() in ("1", "true", "yes")
     web_config["use_gui"] = False
 
     browser_timer = threading.Timer(1.0, open_browser)

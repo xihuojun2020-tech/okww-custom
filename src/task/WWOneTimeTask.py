@@ -82,13 +82,15 @@ class WWOneTimeTask:
         bmi.biBitCount = 32
         bmi.biCompression = 0
         buf = ctypes.create_string_buffer(sw * sh * 4)
-        gdi32.GetDIBits(mdc, hbmp, 0, sh, buf, ctypes.byref(bmi), 0)
-        img = np.frombuffer(buf, np.uint8).reshape(sh, sw, 4)
-        bgr = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-        gdi32.DeleteObject(hbmp)
-        gdi32.DeleteDC(mdc)
-        user32.ReleaseDC(0, hdc)
-        return bgr
+        try:
+            gdi32.GetDIBits(mdc, hbmp, 0, sh, buf, ctypes.byref(bmi), 0)
+            img = np.frombuffer(buf, np.uint8).reshape(sh, sw, 4)
+            return cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+        finally:
+            # 无论成功失败都释放 GDI 句柄，防泄漏
+            gdi32.DeleteObject(hbmp)
+            gdi32.DeleteDC(mdc)
+            user32.ReleaseDC(0, hdc)
 
     def _screen_find_text(self, text, threshold=0.4):
         """全屏 OCR 找文字，返回屏幕像素中心 (x,y)；未找到返回 None。"""

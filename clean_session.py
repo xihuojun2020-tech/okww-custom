@@ -17,7 +17,11 @@ import sys
 import time
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-KEEP_DAYS = float(os.environ.get('OKWW_KEEP_DAYS', '7'))
+try:
+    KEEP_DAYS = float(os.environ.get('OKWW_KEEP_DAYS', '7'))
+except (TypeError, ValueError):
+    # 环境变量非数字时回退默认值，避免 import 即崩
+    KEEP_DAYS = 7.0
 TARGETS = [('logs', 'session-'), ('screenshots', 'session-')]
 
 

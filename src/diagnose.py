@@ -99,7 +99,10 @@ def collect_diagnosis():
     ap(f'  用户目录: {os.environ.get("USERPROFILE", "?")}')
     ap(f'  APPDATA: {os.environ.get("APPDATA", "?")}')
     users = os.listdir(r'C:\Users') if os.path.isdir(r'C:\Users') else []
-    ap(f'  C:\\Users 账户: {users}')
+    # 账户名脱敏（保留首字符 + ***；系统内置目录原样），防止诊断日志泄露账户清单
+    _KNOWN = ('Public', 'All Users', 'Default', 'Default User', 'desktop.ini')
+    _masked_users = [u if u in _KNOWN else (u[:1] + '***') for u in users]
+    ap(f'  C:\\Users 账户数: {len(users)}（名称已脱敏）: {_masked_users}')
     ap(f'')
 
     ap('【2. KRLauncher 登录器数据】')

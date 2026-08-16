@@ -685,7 +685,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             self.logged_in = False
             self.ensure_main(time_out=180)
             self.log_info(self.tr('Login successful'))
-            return current_account
+            # 返回确定的目标账号（OCR 识别的 current_account 可能为 None，
+            # 若返回它会在检测失败时被误判为「全部完成」而跳过剩余账号）
+            return target
         finally:
             if mouse_reset_was_enabled:
                 mouse_reset_task.enable()

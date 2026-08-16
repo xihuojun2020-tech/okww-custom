@@ -794,27 +794,37 @@ class MainWindow(FluentWindow):
         self.show_notification(self.tr("Start Success.") if not paused else self.tr("Pause Success."), tray=False)
 
     def _check_okscript_args(self):
-        """Check sys.argv for .okscript files and import them."""
+        """Check sys.argv for .okscript files and import them.
+
+        安全：启动参数里的 .okscript 可能来自文件关联/被诱导的快捷方式，属于
+        不可信来源。仅接受位于本项目目录内的 .okscript，项目外的一律拒绝导入。
+        """
         import sys
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
         for arg in sys.argv[1:]:
-            if arg.lower().endswith('.okscript') and os.path.exists(arg):
-                logger.info(f'Found .okscript file in args: {arg}')
-                try:
-                    if hasattr(self, 'edit_task_tab'):
-                        self.edit_task_tab._do_import(arg)
+            if not arg.lower().endswith('.okscript') or not os.path.exists(arg):
+                continue
+            abs_arg = os.path.abspath(arg)
+            if not (abs_arg == project_root or abs_arg.startswith(project_root + os.sep)):
+                logger.warning(f'拒绝导入项目目录外的 .okscript: {arg}')
+                continue
+            logger.info(f'Found .okscript file in args: {arg}')
+            try:
+                if hasattr(self, 'edit_task_tab'):
+                    self.edit_task_tab._do_import(arg)
+                else:
+                    from ok.gui.tasks.ScriptPackager import import_script
+                    success, message, import_folder = import_script(arg)
+                    if success:
+                        from ok import og
+                        og.task_manager.load_import_folder(import_folder)
+                        from ok.gui.util.app import show_info_bar
+                        show_info_bar(self.window(), message, title=self.tr('Success'))
                     else:
-                        from ok.gui.tasks.ScriptPackager import import_script
-                        success, message, import_folder = import_script(arg)
-                        if success:
-                            from ok import og
-                            og.task_manager.load_import_folder(import_folder)
-                            from ok.gui.util.app import show_info_bar
-                            show_info_bar(self.window(), message, title=self.tr('Success'))
-                        else:
-                            from ok.gui.util.Alert import alert_error
-                            alert_error(f"Import failed: {message}")
-                except Exception as e:
-                    logger.error(f'Error importing .okscript file: {e}')
+                        from ok.gui.util.Alert import alert_error
+                        alert_error(f"Import failed: {message}")
+            except Exception as e:
+                logger.error(f'Error importing .okscript file: {e}')
 
     def closeEvent(self, event):
         if self.app.exit_event.is_set():

@@ -42,7 +42,11 @@ class MessengerAutomation:
     def send(self, nickname, title, message, images):
         self._last_frame = None
         try:
-            return self._send(nickname, title, message, images)
+            ok = self._send(nickname, title, message, images)
+            # 记录发送内容（截断），便于审计与排查
+            snippet = ((f'{title}\n{message}' if title else message) or '').replace('\n', ' ')[:200]
+            logger.info(f'Messenger sent to {nickname}: {snippet or "(仅图片)"} -> {"ok" if ok else "skipped"}')
+            return ok
         except Exception:
             self._save_error_screenshot()
             raise

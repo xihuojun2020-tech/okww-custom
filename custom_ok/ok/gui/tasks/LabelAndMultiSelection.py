@@ -49,7 +49,11 @@ class LabelAndMultiSelection(ConfigLabelAndWidget):
     def update_value(self):
         self.user_action = False
         for checkbox in self.check_boxes:
-            checkbox.setChecked(self.tr_dict[checkbox.text()] in self.config[self.key])
+            # .get 兜底：翻译映射运行中变化时避免 KeyError
+            option = self.tr_dict.get(checkbox.text())
+            if option is None:
+                continue
+            checkbox.setChecked(option in self.config[self.key])
         self.user_action = True
 
 

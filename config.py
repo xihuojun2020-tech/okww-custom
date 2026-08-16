@@ -13,7 +13,7 @@ from src.task.process_feature import process_feature
 
 # okww 版本号（X.Y.Z）：
 #   小改动 → 第三位 +1；中等改动 → 第二位 +1；大改动 → 第一位 +1
-version = "1.03.69"
+version = "1.03.70"
 
 
 def _find_most_recently_run_pc_exe():
@@ -120,7 +120,11 @@ def _find_pc_exe_near_registered_path(registered_path):
 def calculate_pc_exe_path(running_path):
     if running_path is None:
         return _find_most_recently_run_pc_exe() or _find_pc_exe_from_registry()
-    game_exe_folder = Path(running_path).parents[3]
+    # parents[3] 层级不足时回退到常规候选查找，避免 IndexError 崩溃
+    try:
+        game_exe_folder = Path(running_path).parents[3]
+    except IndexError:
+        return _find_pc_exe_from_registry()
     return str(game_exe_folder / "Wuthering Waves.exe")
 
 

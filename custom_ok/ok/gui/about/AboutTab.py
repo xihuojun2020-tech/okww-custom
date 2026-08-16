@@ -46,6 +46,8 @@ class AboutTab(Tab):
             except Exception:
                 pass
             update_log_text.setPlainText(upstream_note + self.tr(
+                'V1.03.70：深度审查修复（重启 NameError / PowerShell 注入防护 / 验证脚本防数据覆盖 / .okscript 白名单 / 鼠标轮询降频 / 正则转义 / GDI 释放 / 日志脱敏等）；删除一次性工具脚本\n'
+                '\n'
                 'V1.03.69：修复切换序列后配置方案切换失效（下拉 tr_dict 未同步导致写入 None）；启动同步加 config 守卫\n'
                 '\n'
                 'V1.03.68：修复配置方案切换不触发（Daily Profile 为空时 old=None 短路，改为 old!=value 强制加载新方案）\n'

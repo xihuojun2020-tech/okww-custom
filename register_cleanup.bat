@@ -7,6 +7,14 @@ rem  移除：schtasks /delete /tn "OKWW_CleanSessions" /f
 rem ============================================================
 cd /d "%~dp0"
 
+rem ---- 管理员权限检查（schtasks /create 需要管理员）----
+net session >nul 2>&1
+if %errorlevel% neq 0 (
+    echo 需要管理员权限，正在提权启动...
+    powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+    exit /b
+)
+
 set "PYTHON=%~dp0runtime\python\python.exe"
 set "SCRIPT=%~dp0clean_session.py"
 set "KEEP_DAYS=7"
