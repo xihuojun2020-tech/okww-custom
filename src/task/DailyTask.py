@@ -59,7 +59,7 @@ LC_MERGE = 'Last Completed - Merge Echo'
 RECORD_AFTER_DAILY = 'Record After Daily Task'
 RECORD_PAGES = 'Record Pages'
 RECORD_DURATION = 'Record Duration'
-RECORD_PAGE_OPTIONS = ['任务页', '每周乐园', '大月卡', '残像聚落']
+RECORD_PAGE_OPTIONS = ['任务页', '每周乐园', '战令', '残像聚落']
 # 每日任务完成后自动退登 PC 端（取代"完成任务后退出应用"，为下一个账号扫码登录做准备）
 LOGOUT_AFTER_DAILY = 'Logout PC After Daily Task'
 # 只读标签键 → 子任务名（record_last_completed 使用的名称）
@@ -1013,7 +1013,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             # 打开首领书 + 点左侧「残像聚落」（与刷取任务 open_boss_book 一致，不能只开首领书）
             self.open_boss_book('canxiang')
             return True
-        if page == '大月卡':
+        if page in ('大月卡', '战令'):
             # 大月卡：Alt + 左上角战令图标（与每日任务领取战令 claim_battle_pass 一致）
             self.send_key_down('alt')
             self.sleep(0.05)

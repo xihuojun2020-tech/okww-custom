@@ -89,7 +89,7 @@ class MainWindow(FluentWindow):
         if config.get('show_update_copyright'):
             communicate.copyright.connect(self.show_update_copyright)
 
-        self.addSubInterface(self.start_tab, FluentIcon.PLAY, self.tr('Capture'),
+        self.addSubInterface(self.start_tab, FluentIcon.PLAY, self.tr('监控'),
                              position=NavigationItemPosition.SCROLL)
 
         self.grouped_task_tabs = []
