@@ -450,16 +450,33 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         # 记录起始账号（第一轮当前登录的账号；全部完成后登录回它）
         first_account = None
 
-        # 第一轮：跑当前已登录账号的每日任务
-        self.run_task_by_class(DailyTask)
-        self.ensure_main(time_out=100)
-        self._switch_to_login()
+        # 第一轮：若已在游戏主界面（用户已登录好起始账号）则跑当前账号；
+        # 否则（在登录界面）从序列选择下一个未完成账号（登录前核对账号，防误登/防重跑已完成账号）
+        try:
+            in_main = self.is_main(esc=False)
+        except Exception:
+            in_main = False
+        if in_main:
+            self.log_info('检测到已在游戏主界面，先执行当前账号的每日任务', notify=True)
+            self.run_task_by_class(DailyTask)
+            self.ensure_main(time_out=100)
+            self._switch_to_login()
+        else:
+            first_target = self._select_and_login_account()
+            if first_target:
+                self.log_info(f'从登录界面选择下一个未完成账号：{first_target}，开始执行每日任务', notify=True)
+                self.run_task_by_class(DailyTask)
+                self.log_info(f'账号 {first_target} 每日任务完成', notify=True)
+                self._mark_done(first_target)
+                self._save_today_progress()
+                self.ensure_main(time_out=100)
+                self._switch_to_login()
         detected = self._detect_current_account_from_login()
         self._mark_done(detected)
         if detected is None:
             detected = self.get_active_profile_name()
         first_account = detected
-        self.log_info(f'起始账号：{first_account}（先执行该账号的每日任务）', notify=True)
+        self.log_info(f'起始账号：{first_account}（全部完成后登录回）', notify=True)
 
         self.info_set('Completed', self.done_set)
 
