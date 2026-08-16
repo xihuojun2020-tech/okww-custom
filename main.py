@@ -249,11 +249,12 @@ if __name__ == '__main__':
     from ok import OK
 
     config = config
-    ok = OK(config)
+    ok = None
     try:
+        ok = OK(config)
         ok.start()
     except Exception as e:
-        # 启动异常：写日志 + 弹窗（pythonw 无控制台时不再静默崩溃）
+        # 启动异常（含 OK 构造）：写日志 + 弹窗（pythonw 无控制台时不再静默崩溃）
         import traceback
         tb = traceback.format_exc()
         try:
