@@ -43,6 +43,8 @@ rem ---- 会话日志/截图：归档上一次的散落文件 + 清理过期会话 ----
 "%~dp0runtime\python\python.exe" "%~dp0new_session.py"
 "%~dp0runtime\python\python.exe" "%~dp0clean_session.py"
 
-rem ---- 启动主程序（pythonw 无控制台：双击后窗口自动消失，OK-WW 独立窗口显示）----
-start "" "%~dp0.venv\Scripts\pythonw.exe" "%~dp0main.py"
+rem ---- 启动主程序（直接 runtime pythonw + PYTHONPATH 指到 .venv 依赖）----
+rem 避免经 .venv pythonw（pyvenv.cfg 指向 runtime 后启动会重定位导致双进程）
+set "PYTHONPATH=%~dp0.venv\Lib\site-packages"
+start "" "%~dp0runtime\python\pythonw.exe" "%~dp0main.py"
 endlocal
