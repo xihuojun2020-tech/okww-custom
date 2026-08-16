@@ -22,7 +22,7 @@ import re
 
 from ok import Logger
 from ok.util.file import get_relative_path, read_json_file, write_json_file
-from src.task.DailyTask import DailyTask, LOGOUT_AFTER_DAILY as LOGOUT_AFTER_DAILY_KEY
+from src.task.DailyTask import DailyTask, DAILY_PROFILE, LOGOUT_AFTER_DAILY as LOGOUT_AFTER_DAILY_KEY
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.BaseCombatTask import BaseCombatTask
 from src.task.BaseWWTask import LOGIN_TEXTS
@@ -480,6 +480,12 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             first_target = self._select_and_login_account()
             if first_target:
                 self.log_info(f'从登录界面选择下一个未完成账号：{first_target}，开始执行每日任务', notify=True)
+                # 联动：激活方案/当前执行账号 = 目标账号（每日任务用对账号配置，下次从断点处继续）
+                try:
+                    self.config[DAILY_PROFILE] = first_target
+                    self.config[CURRENT_ACCOUNT] = first_target
+                except Exception:
+                    pass
                 self.run_task_by_class(DailyTask)
                 self.log_info(f'账号 {first_target} 每日任务完成', notify=True)
                 self._mark_done(first_target)
@@ -499,6 +505,12 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         while next_account := self._select_and_login_account():
             self.info_set('Completed', self.done_set)
             self.log_info(f'开始执行账号 {next_account} 的每日任务', notify=True)
+            # 联动：激活方案/当前执行账号 = 目标账号（每日任务用对账号配置，下次从断点处继续）
+            try:
+                self.config[DAILY_PROFILE] = next_account
+                self.config[CURRENT_ACCOUNT] = next_account
+            except Exception:
+                pass
             self.run_task_by_class(DailyTask)
             self.log_info(f'账号 {next_account} 每日任务完成', notify=True)
             self._mark_done(next_account)
