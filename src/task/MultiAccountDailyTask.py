@@ -545,6 +545,13 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 self.click(account, after_sleep=2)
                 self.log_info(f'点击账号 {profile_name}')
                 return True
+        # 找不到目标账号：输出列表内容便于排查（记住列表里没有该账号 / 识别失败）
+        visible = [a.name for a in accounts][:15]
+        self.log_error(
+            f'登录界面账号列表中没有找到目标账号 {profile_name}；'
+            f'当前列表可见：{visible}（若目标不在列表，说明该账号未在本设备登录器记住，'
+            f'或已被其他账号挤出记住列表，需要扫码登录）'
+        )
         return False
 
     def _select_and_login_account(self):

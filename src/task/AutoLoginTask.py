@@ -9,7 +9,7 @@ class AutoLoginTask(BaseWWTask, TriggerTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.default_config = {'_enabled': True}
+        self.default_config = {'_enabled': False}
         self.trigger_interval = 5
         self.name = "🔑 Auto Login"
         self.description = "Auto Login After Game Starts"
