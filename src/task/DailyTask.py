@@ -57,6 +57,7 @@ LC_MERGE = 'Last Completed - Merge Echo'
 
 # 每日任务完成后录像（进度留档）：打开指定页面各录一段视频
 RECORD_AFTER_DAILY = 'Record After Daily Task'
+RECORD_SAVE_DIR = '录像保存文件夹'
 RECORD_PAGES = 'Record Pages'
 RECORD_DURATION = 'Record Duration'
 RECORD_PAGE_OPTIONS = ['任务页', '每周乐园', '大月卡', '残像聚落']
@@ -128,6 +129,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             LC_GARDEN: '',
             MERGE_ECHO_ON_SUNDAY: False,
             RECORD_AFTER_DAILY: True,
+            RECORD_SAVE_DIR: '',
             LOGOUT_AFTER_DAILY: True,
             RECORD_PAGES: list(RECORD_PAGE_OPTIONS),
             RECORD_DURATION: 1.5,
@@ -157,6 +159,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             ALIAS_TEXT: '多个用逗号分隔（如 U123456，识别登录界面账号时与手机号掩码同等有效）',
             MERGE_ECHO_ON_SUNDAY: '勾选 = 开启',
             RECORD_AFTER_DAILY: '',
+            RECORD_SAVE_DIR: '留空 = 保存到程序目录 okww监控室；选择后保存到 所选文件夹\\okww监控室',
             LOGOUT_AFTER_DAILY: '',
             RECORD_PAGES: '',
             RECORD_DURATION: '',
@@ -220,7 +223,11 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 'sub_configs': {True: [LC_MERGE], False: []},
             },
             RECORD_AFTER_DAILY: {
-                'sub_configs': {True: [RECORD_PAGES, RECORD_DURATION], False: []},
+                'sub_configs': {True: [RECORD_PAGES, RECORD_DURATION, RECORD_SAVE_DIR], False: []},
+            },
+            RECORD_SAVE_DIR: {
+                'type': 'file_selector',
+                'selector_type': 'folder',
             },
             RECORD_PAGES: {
                 'type': 'multi_selection',
@@ -943,7 +950,12 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         fps = 5
 
         profile_name = self.get_active_profile_name() or '未命名'
-        out_dir = get_relative_path('okww监控室', profile_name)
+        # 录像保存位置：优先使用设置的「录像保存文件夹」；留空则保存到程序目录 okww监控室
+        save_dir = (self.config.get(RECORD_SAVE_DIR) or '').strip()
+        if save_dir:
+            out_dir = os.path.join(save_dir, 'okww监控室', profile_name)
+        else:
+            out_dir = get_relative_path('okww监控室', profile_name)
         try:
             os.makedirs(out_dir, exist_ok=True)
         except OSError as e:
