@@ -226,10 +226,10 @@ def _read_file_try(name):
 
 
 def save_diagnosis():
-    """生成诊断日志文件（存放于「实验性日志」文件夹，每次启动生成新文件），返回文件路径。"""
+    """生成诊断日志文件（存放于 logs/实验性日志，按类别归并；每次启动生成新文件），返回文件路径。"""
     text = collect_diagnosis()
     working = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    log_dir = os.path.join(working, '实验性日志')
+    log_dir = os.path.join(working, 'logs', '实验性日志')
     os.makedirs(log_dir, exist_ok=True)
     fname = os.path.join(log_dir, f'诊断_{datetime.now():%Y%m%d_%H%M%S}.log')
     with open(fname, 'w', encoding='utf-8') as f:

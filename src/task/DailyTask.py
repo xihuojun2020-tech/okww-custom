@@ -672,7 +672,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             self.log_error('导入账号配置失败', e)
 
     def _ask_save_path(self, default_name):
-        """弹出保存对话框；无 GUI 环境时回退到项目 export_accounts/ 目录。"""
+        """弹出保存对话框；默认路径为数据仓库（ok仓库/账号数据），无 GUI 环境时回退项目 export_accounts/。"""
         try:
             from PySide6.QtWidgets import QFileDialog
             from ok import og
@@ -681,7 +681,15 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 parent = og.main_window
             except Exception:
                 pass
-            path, _ = QFileDialog.getSaveFileName(parent, '导出账号配置', default_name, 'JSON (*.json)')
+            initial = default_name
+            try:
+                from src.storage import get_warehouse_sub
+                wh = get_warehouse_sub('账号数据')
+                if wh:
+                    initial = os.path.join(wh, default_name)
+            except Exception:
+                pass
+            path, _ = QFileDialog.getSaveFileName(parent, '导出账号配置', initial, 'JSON (*.json)')
             return path if path else None
         except Exception:
             out_dir = get_relative_path('export_accounts')
