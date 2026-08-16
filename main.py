@@ -290,6 +290,13 @@ if __name__ == '__main__':
     except Exception:
         pass
     atexit.register(_exit_cleanup)
+    # 后台检查原版 okww 是否有更新（不阻塞启动；有更新写入标志，首页显示提醒）
+    try:
+        import threading
+        from src.upstream_check import check_upstream
+        threading.Thread(target=check_upstream, daemon=True).start()
+    except Exception:
+        pass
     from config import config
     from ok import OK
 

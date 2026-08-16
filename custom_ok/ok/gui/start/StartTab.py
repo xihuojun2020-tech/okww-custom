@@ -70,7 +70,16 @@ class StartTab(Tab):
         self.update_log_text = QPlainTextEdit()
         self.update_log_text.setReadOnly(True)
         self.update_log_text.setMaximumHeight(180)
-        self.update_log_text.setPlainText(self.tr(
+        # 原版 okww 更新提醒（有更新时在日志顶部显示）
+        upstream_note = ''
+        try:
+            from src.upstream_check import has_upstream_update
+            has_upd, msg, found_date = has_upstream_update()
+            if has_upd:
+                upstream_note = f'【⚠️ 原版 okww 有更新】\n检测到原版更新（{found_date}）：{msg}\n请及时检查合并原版更新内容\n\n'
+        except Exception:
+            pass
+        self.update_log_text.setPlainText(upstream_note + self.tr(
             'v1.03.15 更新：更新日志加入作者的话\n'
             '\n'
             'v1.03.14 更新：单实例保护 + 关闭窗口时联动结束启动器进程\n'
