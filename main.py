@@ -11,6 +11,47 @@ import sys
 import atexit
 
 
+def _load_pth_paths():
+    """加载 .venv site-packages 的 .pth 声明路径（pywin32 的 win32 等子目录）。
+
+    当用 runtime python + PYTHONPATH 启动（bat 方案）时，PYTHONPATH 只提供
+    site-packages 顶层，.pth 声明的子目录（win32/win32\\lib/Pythonwin 等）不会
+    自动生效——这里手动补齐，否则 import win32api 等会失败。
+    """
+    try:
+        base = os.path.dirname(os.path.abspath(__file__))
+        sp = os.path.join(base, '.venv', 'Lib', 'site-packages')
+        if not os.path.isdir(sp):
+            return
+        for f in os.listdir(sp):
+            if not f.endswith('.pth'):
+                continue
+            try:
+                with open(os.path.join(sp, f), encoding='utf-8', errors='replace') as fh:
+                    for line in fh:
+                        line = line.strip()
+                        if not line or line.startswith('#'):
+                            continue
+                        if line.startswith('import'):
+                            # 执行 .pth 的 import 行（如 pywin32_bootstrap：注册 DLL 目录）
+                            try:
+                                exec(line)
+                            except Exception:
+                                pass
+                            continue
+                        p = os.path.normpath(os.path.join(sp, line))
+                        if os.path.isdir(p) and p not in sys.path:
+                            sys.path.insert(0, p)
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+
+# 必须最先执行（在 import ok/config 之前），确保 pywin32 等路径可用
+_load_pth_paths()
+
+
 def _sync_custom_ok():
     """把 custom_ok 里的定制框架文件同步到 site-packages 的 ok 包（缺才补，每次启动检查）。"""
     try:
