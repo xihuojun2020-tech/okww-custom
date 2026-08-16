@@ -695,19 +695,18 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             self.config_type[DAILY_PROFILE]['options'] = self.get_profile_names()
 
     def _refresh_gui(self):
-        """导入/切换方案后刷新界面：延迟重建任务卡片（避开对话框调用栈导致的界面空白）。"""
+        """刷新当前任务卡片显示（安全版：只刷新控件值，不重建任务页——重建会导致界面空白）。
+
+        注意：导入/新建方案后，新方案名要下次进入任务页/重启后才出现在下拉框中
+        （重建任务页有白屏风险，故不采用）。
+        """
         try:
             from ok import og
             if og.main_window and hasattr(og.main_window, 'onetime_tab'):
-                tab = og.main_window.onetime_tab
-                if hasattr(tab, 'refresh_ui'):
-                    from PySide6.QtCore import QTimer
-                    QTimer.singleShot(200, tab.refresh_ui)
-                else:
-                    for card in getattr(tab, 'card_widgets', []):
-                        if getattr(card, 'task', None) is self:
-                            card.update_config()
-                            break
+                for card in getattr(og.main_window.onetime_tab, 'card_widgets', []):
+                    if getattr(card, 'task', None) is self:
+                        card.update_config()
+                        break
         except Exception as e:
             self.log_error('刷新界面失败', e)
 
