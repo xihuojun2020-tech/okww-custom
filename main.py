@@ -47,19 +47,36 @@ def _sync_custom_ok():
 
 
 def _ensure_single_instance():
-    """单实例保护：检测是否已有本应用（同 main.py 路径）实例在运行。"""
+    """单实例保护：检测是否已有本应用（同 main.py 绝对路径）实例在运行。
+
+    兼容 cmdline 中相对路径（如 `pythonw.exe main.py`）：用进程工作目录转绝对路径再比较。
+    """
     try:
         import psutil
 
         me = os.getpid()
-        this = os.path.abspath(__file__).replace('/', '\\')
+        this = os.path.normpath(os.path.abspath(__file__))
         for p in psutil.process_iter(['pid', 'cmdline']):
             try:
                 if p.info['pid'] == me:
                     continue
-                cmd = ' '.join(p.info['cmdline'] or []).replace('/', '\\')
-                if 'main.py' in cmd and this in cmd:
-                    return False
+                parts = p.info['cmdline'] or []
+                for part in parts:
+                    part = part.strip().strip('"').replace('/', '\\')
+                    if not part.endswith('main.py'):
+                        continue
+                    if os.path.isabs(part):
+                        if os.path.normpath(part) == this:
+                            return False
+                    else:
+                        # 相对路径：用进程工作目录转绝对
+                        try:
+                            cwd = psutil.Process(p.info['pid']).cwd()
+                            if os.path.normpath(os.path.join(cwd, part)) == this:
+                                return False
+                        except Exception:
+                            pass
+                    break
             except Exception:
                 continue
     except Exception:
