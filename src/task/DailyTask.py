@@ -650,6 +650,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             if not isinstance(profiles, dict) or not profiles:
                 self.log_error('导出文件中没有账号方案')
                 return
+            # 防污染：过滤空/null/none 方案键（防止导入时把异常方案写回配置）
+            profiles = {k: v for k, v in profiles.items()
+                        if k and str(k).strip().lower() not in ('null', 'none')}
             # 导入前备份现有配置（每日任务 + 多账号每日任务数据一同备份）
             try:
                 import shutil
