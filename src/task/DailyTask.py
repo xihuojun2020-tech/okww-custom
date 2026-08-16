@@ -943,18 +943,16 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         fps = 5
 
         profile_name = self.get_active_profile_name() or '未命名'
-        # 录像保存位置（全局设置「录像保存文件夹」）：留空则保存到程序目录 okww监控室
-        save_dir = ''
+        # 录像保存位置：优先数据仓库（设置 → 通用设置 → 数据仓库文件夹）→ ok仓库\okww监控室；未设置用程序目录
+        out_dir = None
         try:
-            from ok import og
-            global_config = og.executor.global_config.get_config('录像保存文件夹')
-            save_dir = (global_config or {}).get('录像保存文件夹', '') or ''
+            from src.storage import get_warehouse_sub
+            wh = get_warehouse_sub('okww监控室')
+            if wh:
+                out_dir = os.path.join(wh, profile_name)
         except Exception:
             pass
-        save_dir = (save_dir or '').strip()
-        if save_dir:
-            out_dir = os.path.join(save_dir, 'okww监控室', profile_name)
-        else:
+        if out_dir is None:
             out_dir = get_relative_path('okww监控室', profile_name)
         try:
             os.makedirs(out_dir, exist_ok=True)
