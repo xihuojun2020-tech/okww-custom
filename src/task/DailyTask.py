@@ -829,6 +829,15 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                         finally:
                             # 无论成败都恢复信号（防 blockSignals 遗留导致下拉失灵/不触发保存）
                             combo.blockSignals(False)
+                        # 防空白：当前方案在选项中则显示它，否则显示第一项（避免偶发空白/不显示）
+                        try:
+                            cur = self.config.get(DAILY_PROFILE) if key == DAILY_PROFILE else None
+                            if cur and cur in options:
+                                combo.setCurrentText(cur)
+                            elif options:
+                                combo.setCurrentIndex(0)
+                        except Exception:
+                            pass
                         return
         except Exception:
             pass

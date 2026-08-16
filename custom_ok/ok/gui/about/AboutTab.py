@@ -46,6 +46,8 @@ class AboutTab(Tab):
             except Exception:
                 pass
             update_log_text.setPlainText(upstream_note + self.tr(
+                'V1.03.64：配置方案下拉防空白（当前方案不在选项时显示第一项，修复 B2 偶发不显示）\n'
+                '\n'
                 'V1.03.63：下拉信号恢复防遗留（blockSignals 用 try/finally）+ 切换方案调试日志（排查选A出B）\n'
                 '\n'
                 'V1.03.62：修复启动时配置方案下拉显示全部账号（序列过滤在卡片构建前生效）\n'
