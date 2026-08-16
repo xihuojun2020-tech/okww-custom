@@ -743,8 +743,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
     def get_profile_sequences(self):
         """返回序列列表。
 
-        优先用显式归属数据（sequences 的键）；无归属数据时按方案名前缀解析兜底
-        （方案名形如【A1-名字-手机号】，前缀字母 = 序列）。
+        优先用显式归属数据（sequences 的键，形如 序列1/序列2）；无归属数据时按
+        方案名前缀字母映射兜底（【A1-】→序列1、【B1-】→序列2…）。
         """
         seqs = self.get_sequences_data()
         if seqs:
@@ -752,16 +752,19 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         profiles = self.load_daily_profiles()
         result = []
         for name in profiles.keys():
-            m = re.match(r'【?([A-Za-z])', str(name))
-            label = f'序列{m.group(1).upper()}' if m else '其他'
+            label = self._sequence_of_profile(name)
             if label not in result:
                 result.append(label)
-        return result or ['其他']
+        return result or ['序列1']
 
     def _sequence_of_profile(self, name):
-        """返回方案名所属的序列显示名。"""
+        """返回方案名所属的序列显示名（【A1-…】前缀字母 → 序列N：A=序列1、B=序列2…）。"""
         m = re.match(r'【?([A-Za-z])', str(name))
-        return f'序列{m.group(1).upper()}' if m else '其他'
+        if not m:
+            return '其他'
+        letter = m.group(1).upper()
+        idx = 'ABCDEFGHIJ'.find(letter)
+        return f'序列{idx + 1}' if idx >= 0 else '其他'
 
     def _sync_sequence_options(self):
         """更新「方案序列」下拉 options，并按当前选择的序列过滤「账号配置」下拉 options。"""
