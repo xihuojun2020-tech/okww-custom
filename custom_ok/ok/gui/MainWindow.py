@@ -442,19 +442,28 @@ class MainWindow(FluentWindow):
     def auto_backup_config(self):
         """配置自动备份：每天首次启动时把 configs/ 备份到指定目录。
 
-        备份位置来自全局配置「Config Backup → Config Backup Directory」，
-        留空则默认 <项目>/configs_backup。按天归档：configs_backup/YYYY-MM-DD/。
+        备份位置：数据仓库（通用设置 → 数据仓库文件夹）→ ok仓库/配置备份；
+        或全局配置「Config Backup → Config Backup Directory」；
+        都未设置则默认 <项目>/configs_backup。按天归档：备份目录/YYYY-MM-DD/。
         """
         import shutil
         from datetime import datetime
 
-        # 读取备份目录（全局配置）
+        # 读取备份目录：优先数据仓库（ok仓库/配置备份），其次全局配置，最后默认 configs_backup
         backup_dir = ''
         try:
-            global_config = og.executor.global_config.get_config('Config Backup')
-            backup_dir = (global_config or {}).get('Config Backup Directory', '') or ''
+            from src.storage import get_warehouse_sub
+            wh = get_warehouse_sub('配置备份')
+            if wh:
+                backup_dir = wh
         except Exception:
             pass
+        if not backup_dir:
+            try:
+                global_config = og.executor.global_config.get_config('Config Backup')
+                backup_dir = (global_config or {}).get('Config Backup Directory', '') or ''
+            except Exception:
+                pass
         if not backup_dir.strip():
             backup_dir = os.path.join(os.getcwd(), 'configs_backup')
         backup_dir = backup_dir.strip()
