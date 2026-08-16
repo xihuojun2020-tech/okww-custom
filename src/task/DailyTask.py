@@ -346,7 +346,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         无归属数据时按方案名前缀（【X1-】字母）过滤兜底。
         """
         profiles = self.load_daily_profiles()
-        names = list(profiles.keys()) or ['默认']
+        names = [n for n in (list(profiles.keys()) or ['默认'])
+                if n and str(n).strip().lower() not in ('null', 'none')]
         if sequence:
             seqs = self.get_sequences_data()
             if seqs:
@@ -508,6 +509,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             self._switching_profile = False
 
     def _do_switch_profile(self, old, new):
+        if not new or str(new).strip().lower() in ('null', 'none'):
+            # 空/None/"null" 不做切换（防下拉空白被当方案名，创建 null 方案并污染当前方案）
+            return
         profiles = self.load_daily_profiles()
         if old and old in profiles:
             profiles[old] = self._merge_profile(profiles.get(old), self.collect_profile_config())
@@ -867,6 +871,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         if self.config is None:
             return None
         if key == DAILY_PROFILE and not self._switching_profile:
+            if not value:
+                return None
             old = self.config.get(DAILY_PROFILE)
             if old and old != value:
                 self._switching_profile = True
