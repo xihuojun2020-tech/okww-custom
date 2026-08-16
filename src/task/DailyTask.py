@@ -695,16 +695,20 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             self.config_type[DAILY_PROFILE]['options'] = self.get_profile_names()
 
     def _refresh_gui(self):
-        """切换方案后刷新当前任务卡片的显示。"""
+        """导入/切换方案后刷新界面：重建任务卡片，使下拉选项（新方案）立即生效。"""
         try:
             from ok import og
             if og.main_window and hasattr(og.main_window, 'onetime_tab'):
-                for card in getattr(og.main_window.onetime_tab, 'card_widgets', []):
-                    if getattr(card, 'task', None) is self:
-                        card.update_config()
-                        break
-        except Exception:
-            pass
+                tab = og.main_window.onetime_tab
+                if hasattr(tab, 'refresh_ui'):
+                    tab.refresh_ui()
+                else:
+                    for card in getattr(tab, 'card_widgets', []):
+                        if getattr(card, 'task', None) is self:
+                            card.update_config()
+                            break
+        except Exception as e:
+            self.log_error('刷新界面失败', e)
 
     def validate_config(self, key, value):
         """当 Daily Profile 下拉框变化时，自动保存旧方案并加载新方案。
