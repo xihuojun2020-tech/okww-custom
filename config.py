@@ -13,7 +13,7 @@ from src.task.process_feature import process_feature
 
 # okww 版本号（X.Y.Z）：
 #   小改动 → 第三位 +1；中等改动 → 第二位 +1；大改动 → 第一位 +1
-version = "1.03.44"
+version = "1.03.45"
 
 
 def _find_most_recently_run_pc_exe():
@@ -156,6 +156,15 @@ config_backup_option = ConfigOption('Config Backup', {
     'Config Backup Directory': 'Leave empty to use the default: <project>/configs_backup',
 })
 
+# 监控录像保存位置（全局：所有账号的每日任务录像统一存放）
+record_save_option = ConfigOption('录像保存文件夹', {
+    '录像保存文件夹': '',
+}, description='所有账号的每日任务监控录像统一保存位置', config_description={
+    '录像保存文件夹': '留空 = 保存到程序目录 okww监控室；选择后保存到 所选文件夹\\okww监控室\\账号名',
+}, config_type={
+    '录像保存文件夹': {'type': 'file_selector', 'selector_type': 'folder'},
+})
+
 monthly_card_config_option = ConfigOption('Monthly Card Config', {
     'Check Monthly Card': True,
     'Monthly Card Time': 4
@@ -171,7 +180,7 @@ config = {
     'config_folder': 'configs',
     'blur_area': blur_area,
     'gui_icon': 'icons/icon.png',
-    'global_configs': [key_config_option, char_config_option, monthly_card_config_option, config_backup_option],
+    'global_configs': [key_config_option, char_config_option, monthly_card_config_option, config_backup_option, record_save_option],
     'custom_tabs': [
         # 角色代码 tab 已隐藏（用户要求精简界面）
         # ["src.gui.CharacterCodeTab", "CharacterCodeTab"],
