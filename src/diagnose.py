@@ -70,14 +70,16 @@ def _dir_snapshot(path, max_files=30, max_depth=3):
     return '\n'.join(out) if out else '  (空)'
 
 
-def _read_text(path, limit=500):
-    """读取文本文件（截断 + 脱敏）。"""
+def _read_text(path, limit=500, mask=True):
+    """读取文本文件（截断；mask=False 时保留设备标识原文）。"""
     if not os.path.isfile(path):
         return '  (文件不存在)'
     try:
         with open(path, encoding='utf-8', errors='replace') as f:
             data = f.read(limit)
-        return _mask_all_sensitive(data)
+        if mask:
+            data = _mask_all_sensitive(data)
+        return data.strip() or '  (空)'
     except Exception as e:
         return f'  <error: {e}>'
 
@@ -105,16 +107,37 @@ def collect_diagnosis():
     ap(f'  KRLauncher 路径: {kr}')
     ap(_dir_snapshot(kr, max_files=40, max_depth=3))
     ap(f'')
-    # 关键标记文件内容
+    # 关键标记文件内容（设备标识类原文输出，便于对比；账号类脱敏）
     if os.path.isdir(kr):
         for f in sorted(os.listdir(kr)):
             fp = os.path.join(kr, f)
             if f.endswith('_kurodata') or f.endswith('_tag') or 'cached' in f.lower():
-                ap(f'  [{f}] -> {_read_text(fp, 200)}')
-        # leveldb
+                # 设备标识文件（unique_id/distinctId/accountId/device）保留原文用于对比；含 username 的脱敏
+                if any(k in f.lower() for k in ('unique_id', 'distinctid', 'accountid', 'device')):
+                    ap(f'  [{f}] -> {_read_text(fp, 200, mask=False)}')
+                else:
+                    ap(f'  [{f}] -> {_read_text(fp, 200)}')
+        # leveldb 明细（记住列表本地缓存的存放位置与文件）
+        ldb_found = False
         for root, dirs, files in os.walk(kr):
             if 'leveldb' in os.path.basename(root).lower():
-                ap(f'  leveldb 目录: {root} 文件数={len(files)}')
+                ldb_found = True
+                ap(f'  [leveldb] {root}（{len(files)} 个文件）')
+                for lf in sorted(files)[:20]:
+                    lp = os.path.join(root, lf)
+                    try:
+                        st = os.stat(lp)
+                        mt = datetime.fromtimestamp(st.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                        ap(f'      {lf} | {st.st_size}B | {mt}')
+                    except Exception:
+                        continue
+        if not ldb_found:
+            ap('  [leveldb] 未在 KRLauncher 下找到 leveldb 目录')
+        # WebView user-data 目录（登录器界面缓存，可能含账号记录）
+        for root, dirs, files in os.walk(kr):
+            base = os.path.basename(root).lower()
+            if base in ('webview2', 'ebwebview', 'user data', 'usercache') or 'webview' in base:
+                ap(f'  [WebView 缓存] {root}（{len(files)} 个文件）')
                 break
     ap(f'')
 
