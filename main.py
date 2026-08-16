@@ -97,11 +97,98 @@ def _exit_cleanup():
         pass
 
 
+def _setup_proxy():
+    """联网代理自愈：探测可用代理并写入 repo/.git/config 的 [http] proxy。
+
+    即使直接双击 okww-custom.exe（未经过「启动okww.bat」），okww 启动后也会把代理
+    配置写进 repo 本地 git 配置 → 下次 PyAppify fetch 稳定走代理，不再直连超时。
+    无可用代理时移除代理配置（回退直连）。
+    """
+    try:
+        base = os.path.dirname(os.path.abspath(__file__))  # working 目录
+        git_config = os.path.join(base, '..', 'repo', '.git', 'config')
+        if not os.path.isfile(git_config):
+            return
+        import socket as _socket
+
+        def _port_open(host, port, timeout=0.4):
+            try:
+                with _socket.create_connection((host, port), timeout=timeout):
+                    return True
+            except Exception:
+                return False
+
+        def _find_proxy():
+            candidates = []
+            # 系统代理（注册表）
+            try:
+                import winreg
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                     r'Software\Microsoft\Windows\CurrentVersion\Internet Settings')
+                enable, _ = winreg.QueryValueEx(key, 'ProxyEnable')
+                server, _ = winreg.QueryValueEx(key, 'ProxyServer')
+                winreg.CloseKey(key)
+                if enable and server:
+                    candidates.append(server.strip())
+            except Exception:
+                pass
+            # 常见代理端口
+            for p in (7890, 10809, 1080, 7897):
+                candidates.append(f'127.0.0.1:{p}')
+            seen = set()
+            for c in candidates:
+                if c in seen:
+                    continue
+                seen.add(c)
+                host, _, port = c.rpartition(':')
+                try:
+                    port = int(port)
+                except ValueError:
+                    continue
+                if _port_open(host or '127.0.0.1', port):
+                    return f'{host or "127.0.0.1"}:{port}'
+            return None
+
+        def _set_git_proxy(proxy):
+            with open(git_config, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            kept, in_http = [], False
+            for line in lines:
+                if line.strip().startswith('[http]'):
+                    in_http = True
+                    continue
+                if in_http:
+                    if line.strip().startswith('['):
+                        in_http = False
+                        kept.append(line)
+                    continue
+                kept.append(line)
+            while kept and kept[-1].strip() == '':
+                kept.pop()
+            if proxy:
+                kept.append('\n[http]\n')
+                kept.append(f'\tproxy = http://{proxy}\n')
+            with open(git_config, 'w', encoding='utf-8') as f:
+                f.writelines(kept)
+            return proxy
+
+        proxy = _find_proxy()
+        result = _set_git_proxy(proxy)
+        if result:
+            print(f'[okww] 代理已配置: {result}（git fetch 将走代理）')
+        else:
+            print('[okww] 未发现可用代理，已回退直连')
+    except Exception:
+        pass
+
+
 if __name__ == '__main__':
     _sync_custom_ok()
     if not _ensure_single_instance():
         print('[okww] 检测到已有实例在运行，本实例退出（单实例保护）')
         sys.exit(0)
+    # 联网代理自愈：探测代理并写入 repo git 配置（下次 fetch 走代理）
+    _setup_proxy()
     # 使用端诊断：启动时收集环境/登录器/配置信息输出日志（排查账号登录信息问题）
     try:
         from src.diagnose import save_diagnosis
