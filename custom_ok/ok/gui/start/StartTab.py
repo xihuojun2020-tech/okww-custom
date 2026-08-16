@@ -250,14 +250,20 @@ class StartTab(Tab):
         # 运行日志常驻面板：主界面内实时显示运行日志（不依赖弹窗/游戏画面）
         self.log_panel_text = QPlainTextEdit()
         self.log_panel_text.setReadOnly(True)
-        self.log_panel_text.setMaximumBlockCount(300)
+        self.log_panel_text.setMaximumBlockCount(800)
         self.log_panel_text.setPlaceholderText(self.tr('运行日志将在这里实时显示'))
         log_panel_widget = QWidget()
         log_panel_layout = QVBoxLayout(log_panel_widget)
         log_panel_layout.setContentsMargins(0, 0, 0, 0)
         log_panel_layout.addWidget(self.log_panel_text)
         self.log_panel_widget = log_panel_widget
-        self.add_card(self.tr('运行日志'), log_panel_widget)
+        log_card = self.add_card(self.tr('运行日志'), log_panel_widget)
+        # 常驻：默认展开运行日志卡片（任务开始后即可见详细日志，无需手动展开）
+        try:
+            if hasattr(log_card, 'setExpand'):
+                log_card.setExpand(True)
+        except Exception:
+            pass
         from ok.gui.Communicate import communicate as _comm
         _comm.log.connect(self.add_log_panel)
 

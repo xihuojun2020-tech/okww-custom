@@ -459,13 +459,15 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         if detected is None:
             detected = self.get_active_profile_name()
         first_account = detected
-        self.log_info(f'起始账号: {first_account}')
+        self.log_info(f'起始账号：{first_account}（先执行该账号的每日任务）', notify=True)
 
         self.info_set('Completed', self.done_set)
 
         while next_account := self._select_and_login_account():
             self.info_set('Completed', self.done_set)
+            self.log_info(f'开始执行账号 {next_account} 的每日任务', notify=True)
             self.run_task_by_class(DailyTask)
+            self.log_info(f'账号 {next_account} 每日任务完成', notify=True)
             self._mark_done(next_account)
             self._save_today_progress()
             self.ensure_main(time_out=100)

@@ -242,6 +242,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def run(self):
         self.validate_daily_tasks()
+        self.log_info(f'开始执行每日任务（账号：{self.get_active_profile_name()}）', notify=True)
 
         WWOneTimeTask.run(self)
         self.logged_in = False
@@ -252,6 +253,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         auto_farm = self.config.get(AUTO_FARM_NIGHTMARE_NEST)
         daily_echo = self.config.get('Farm Nightmare Nest for Daily Echo')
 
+        self.log_info('正在领取每日奖励并检查体力进度...')
         used_stamina, daily_reward_ready = self.open_daily()
         need_stamina = not daily_reward_ready and used_stamina < 180
         need_nightmare = auto_farm or (
@@ -272,10 +274,10 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 nightmare_task.ensure_main = lambda *args, **kwargs: None
 
                 if auto_farm:
-                    self.log_debug('Auto Farm all Nightmare Nest')
+                    self.log_info('开始刷梦魇巢穴（打梦魇聚落）', notify=True)
                     self.run_task_by_class(NightmareNestTask)
                 elif daily_echo:
-                    self.log_debug('Farm Nightmare Nest for Daily Echo')
+                    self.log_info('开始刷梦魇巢穴（打梦魇聚落）', notify=True)
                     nightmare_task.run_capture_mode()
                 self.record_last_completed('Nightmare Nest')
             except TaskDisabledException:
@@ -290,6 +292,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
         if need_stamina:
             target = self.config.get('Which to Farm', self.support_tasks[0])
+            self.log_info(f'开始清体力（打 {target}）', notify=True)
             if target == self.support_tasks[0]:
                 self.get_task_by_class(TacetTask).farm_tacet(daily=True, used_stamina=used_stamina,
                                                              config=self.config)
@@ -302,11 +305,14 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             self.sleep(4)
             self.record_last_completed(target)
 
+        self.log_info('正在领取每日任务奖励...')
         self.claim_daily()
 
         self.claim_mail()
         self.sleep(1)
+        self.log_info('正在领取战令奖励...')
         self.claim_battle_pass()
+        self.log_info('正在检查每周乐园...')
         self.run_weekly_tasks()
         if self.config.get(RECORD_AFTER_DAILY, True):
             self.record_progress()
@@ -316,7 +322,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 self._logout_pc_after_daily()
             except Exception as e:
                 self.log_error('自动退登 PC 端失败（不影响每日任务结果）', e)
-        self.log_info('Daily Task Completed', notify=True)
+        self.log_info('每日任务完成', notify=True)
 
     def _logout_pc_after_daily(self):
         """每日任务完成后自动退登 PC 端，准备下一个账号登录（退登流程在 WWOneTimeTask 基类）。"""
@@ -867,24 +873,24 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def check_weekly_garden(self):
         self.info_set('current task', 'check weekly garden')
-        self.log_info('check weekly garden')
+        self.log_info('正在检查每周乐园...')
         # 运行规则：每周日固定检查一次；此外可在所选的一天（周一~周六）检查。
         # 所选日检查到未完成时运行；若运行一半被关闭（未确认完成），下次启动到检查日会再次检查。
         check_day = (self.config.get(GARDEN_CHECK_DAY) or '无').strip()
         today = WEEKDAYS[datetime.now().weekday()]
         if today == WEEKDAYS[6]:
-            self.log_info('today is Sunday, weekly garden mandatory check')
+            self.log_info('今天是周日，每周乐园强制检查')
         elif today != check_day:
-            self.log_info(f'today is {today}, garden check day is {check_day}, skip')
+            self.log_info(f'今天是 {today}，乐园检查日为 {check_day}，跳过')
             return
         try:
             garden_task = self.get_task_by_class(GardenTask)
             garden_task.open_garden_weekly_page()
             if garden_task.is_weekly_garden_completed():
-                self.log_info('weekly garden already completed')
+                self.log_info('每周乐园已完成，跳过')
                 self.record_last_completed('Weekly Garden')
                 return
-            self.log_info('weekly garden not completed, run GardenTask')
+            self.log_info('每周乐园未完成，开始打每周乐园', notify=True)
             self.run_task_by_class(GardenTask)
             self.record_last_completed('Weekly Garden')
         except TaskDisabledException:
