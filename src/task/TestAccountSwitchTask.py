@@ -324,21 +324,40 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
             self.log_info(f'账号切换测试开始（目标: {"自动识别" if auto_mode else target_config}，轮数: {rounds}）', notify=True)
             self.info_set('状态', '检测当前界面...')
 
-            # ============ 自动检测当前界面 ============
-            # 如果在主界面 → 先退登到登录界面
-            # 如果在登录界面 → 直接开始测试
-            try:
-                in_main = self.is_main(esc=False)
-            except Exception:
-                in_main = False
+            # ============ 自动检测当前界面（循环，容忍加载/弹窗等中间态） ============
+            self.log_info('自动检测当前界面...')
+            detected_main = False
+            detected_login = False
+            for detect_try in range(1, 21):  # 最多检测 20 次（约 40s）
+                # 先查登录界面（#32770 对话框或主窗口登录特征）
+                if self._detect_login_dialog():
+                    detected_login = True
+                    self.log_info(f'检测到当前在登录界面（第 {detect_try} 次检测）')
+                    break
+                # 再查主界面
+                try:
+                    if self.is_main(esc=False):
+                        detected_main = True
+                        self.log_info(f'检测到当前在游戏主界面（第 {detect_try} 次检测）')
+                        break
+                except Exception:
+                    pass
+                # 都不是 → 可能在加载/公告/月卡弹窗等，等 2s 再试
+                if detect_try % 5 == 0:
+                    self.log_info(f'界面检测中（第 {detect_try} 次，可能在加载/弹窗中）...')
+                self.sleep(2)
 
-            if in_main:
-                self.log_info('检测到当前在游戏主界面，先退登到登录界面...')
+            if not detected_main and not detected_login:
+                self.log_error('20 次检测后仍未确认当前界面（不在主界面也不在登录界面）')
+                self.screenshot('multi')
+                raise Exception('无法确认当前界面')
+
+            # 如果在主界面 → 先退登到登录界面
+            if detected_main:
+                self.log_info('从游戏主界面退登到登录界面...')
                 self.info_set('状态', '退登中...')
                 self._switch_to_login_simple()
                 self.sleep(2)
-            else:
-                self.log_info('检测到当前在登录界面，直接开始测试')
 
             # ============ 循环测试 ============
             for round_i in range(1, rounds + 1):
