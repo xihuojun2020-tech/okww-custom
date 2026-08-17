@@ -190,6 +190,16 @@ def _ocr_frame(ocr_engine, frame):
 ACCOUNT_PATTERN = re.compile(r'\*\*\*\*')
 SCAN_ACCOUNT_PATTERN = re.compile(r'^U[a-zA-Z0-9]+$', re.IGNORECASE)
 LOGIN_TEXTS = ('登录', '登入', 'Log')
+# 方案简称提取：【A1-溅青-13097291243】 → A1
+_SHORT_NAME_RE = re.compile(r'【([A-Z]\d+)[-.]')
+
+
+def _short_name(profile_name):
+    """从方案全名提取简称（如 A1、B7）。"""
+    if not profile_name:
+        return None
+    m = _SHORT_NAME_RE.search(profile_name)
+    return m.group(1) if m else profile_name
 
 
 def _is_account_text(text):
@@ -343,30 +353,105 @@ def run_test(target=None, rounds=1, diag_only=False, save_screenshots=True):
         print(f"  _account_list_expanded 判定: ✗ 未展开（账号条目 {len(account_entries)} 个）")
 
     # 6) 切换测试
-    if diag_only or not target:
+    profiles = _load_profiles()
+
+    # 识别每个可见账号对应的方案
+    print(f"\n[6/6] 账号匹配分析...")
+    visible_accounts = []
+    for r in account_entries:
+        name = r['text'].strip()
+        matched_profile = None
+        for profile_name, aliases in profiles.items():
+            # 提取方案简称（如 A1、A3、B7）
+            short = _short_name(profile_name)
+            if name in aliases or any(alias in name for alias in aliases if len(alias) >= 4):
+                matched_profile = profile_name
+                break
+            # 直接掩码匹配
+            phone_re = re.compile(r'(1[3-9]\d{9})')
+            m = phone_re.search(profile_name)
+            if m:
+                masked = m.group(1)[:3] + '****' + m.group(1)[-4:]
+                if name == masked:
+                    matched_profile = profile_name
+                    break
+        visible_accounts.append({
+            'ocr_text': name,
+            'profile': matched_profile,
+            'short': _short_name(matched_profile) if matched_profile else None,
+        })
+        profile_tag = f" → {_short_name(matched_profile)}" if matched_profile else " → 未知"
+        print(f"  {name}{profile_tag}")
+
+    # 交互式选择目标
+    if diag_only:
         print(f"\n{'=' * 70}")
-        if diag_only:
-            print("  诊断模式完成（未执行点击操作）")
-        else:
-            print("  登录界面检测完成。用 --target <账号名> 进行切换测试。")
+        print("  诊断模式完成（未执行点击操作）")
         print(f"{'=' * 70}")
         return True
+
+    if not target:
+        # 交互式选择
+        matched = [a for a in visible_accounts if a['profile']]
+        if not matched:
+            print("  ✗ 无法匹配任何已知方案")
+            return False
+        print(f"\n  可切换的账号：")
+        for i, a in enumerate(matched):
+            print(f"    [{i + 1}] {a['ocr_text']}  ({a['short']})")
+        print()
+        try:
+            choice = input("  输入编号选择目标账号（或直接输入方案名如 A1/A3）：").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\n  已取消")
+            return False
+        if choice.isdigit() and 1 <= int(choice) <= len(matched):
+            target = matched[int(choice) - 1]['short']
+        else:
+            target = choice
+        if not target:
+            print("  ✗ 未选择目标")
+            return False
+
+    # 也支持直接输入 A1/A3 等简称
+    target_profile = None
+    target_aliases = []
+    for profile_name, aliases in profiles.items():
+        short = _short_name(profile_name)
+        if short == target or profile_name == target or target in profile_name:
+            target_profile = profile_name
+            target_aliases = _get_aliases(profiles, profile_name)
+            break
+    if not target_profile:
+        # 按别名匹配
+        for profile_name, aliases in profiles.items():
+            if target in aliases:
+                target_profile = profile_name
+                target_aliases = aliases
+                break
+
+    if not target_profile:
+        print(f"  ✗ 未找到方案 '{target}'")
+        print(f"  可用方案: {[_short_name(k) for k in profiles.keys()]}")
+        return False
+
+    target = _short_name(target_profile)
+    print(f"\n  目标: {target}（{target_profile}）")
+    print(f"  别名/身份: {target_aliases}")
+
+    # 检查目标是否在可见列表中
+    visible_match = [a for a in visible_accounts if a['short'] == target]
+    if visible_match:
+        print(f"  ✓ 在当前登录界面中找到 {target}（{visible_match[0]['ocr_text']}）")
+    else:
+        print(f"  ⚠ 当前登录界面中未找到 {target}，尝试切换但可能失败")
+        print(f"  可见账号: {[a['ocr_text'] for a in visible_accounts]}")
 
     if not login_ready:
         print("  ✗ 登录界面未就绪，无法进行切换测试")
         return False
 
-    print(f"\n[6/6] 开始切换测试（目标: {target}，轮数: {rounds}）...")
-
-    # 加载方案以匹配账号名
-    profiles = _load_profiles()
-    target_aliases = _get_aliases(profiles, target)
-    if not target_aliases:
-        print(f"  ✗ 目标账号 {target} 没有配置方案或别名")
-        print(f"  可用方案: {list(profiles.keys())[:20]}")
-        return False
-
-    print(f"  {target} 的别名/身份: {target_aliases}")
+    print(f"\n开始切换测试（目标: {target}，轮数: {rounds}）...")
 
     for round_i in range(1, rounds + 1):
         print(f"\n  ---- 第 {round_i}/{rounds} 轮 ----")
@@ -560,18 +645,34 @@ def _load_profiles():
 
 def _get_aliases(profiles, profile_name):
     """获取指定方案的别名列表（含掩码/U账号/手机号）。"""
-    aliases = profiles.get(profile_name, [])
+    # 支持简称匹配（A1 → 【A1-溅青-13097291243】）
+    actual_name = None
+    for k in profiles:
+        if k == profile_name or _short_name(k) == profile_name or profile_name in k:
+            actual_name = k
+            break
+    if not actual_name:
+        return []
+
+    aliases = list(profiles.get(actual_name, []))
     result = set(aliases)
-    # 从手机号生成掩码
+    # 从方案名提取手机号并生成掩码
     phone_re = re.compile(r'(1[3-9]\d{9})')
+    m = phone_re.search(actual_name)
+    if m:
+        phone = m.group(1)
+        masked = phone[:3] + '****' + phone[-4:]
+        result.add(masked)
+        result.add(phone)
+    # 从别名中的手机号也生成掩码
     for a in aliases:
-        m = phone_re.search(a)
-        if m:
-            phone = m.group(1)
-            masked = phone[:3] + '****' + phone[-4:]
-            result.add(masked)
+        m2 = phone_re.search(a)
+        if m2:
+            phone = m2.group(1)
+            result.add(phone[:3] + '****' + phone[-4:])
             result.add(phone)
-    return list(result)
+    # 空字符串/无意义值过滤
+    return [a for a in result if a and a != '无' and a.strip()]
 
 
 # ========================= 入口 =========================
@@ -579,11 +680,11 @@ def _get_aliases(profiles, profile_name):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="v1.03.74 账号切换功能测试")
     parser.add_argument('--target', '-t', type=str, default=None,
-                        help='目标账号方案名（如 A3）。不指定则仅诊断。')
+                        help='目标账号方案名或简称（如 A1、A3）。不指定则交互选择。')
     parser.add_argument('--rounds', '-n', type=int, default=1,
                         help='测试轮数（默认 1）')
     parser.add_argument('--diag', action='store_true',
-                        help='仅诊断模式：检测登录界面，不做点击操作')
+                        help='仅诊断模式：检测登录界面 + OCR 结果，不做点击操作')
     parser.add_argument('--no-screenshots', action='store_true',
                         help='不保存截图')
     args = parser.parse_args()
