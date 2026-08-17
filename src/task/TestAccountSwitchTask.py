@@ -41,8 +41,8 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
         super().__init__(*args, **kwargs)
         self.name = "🔄 账号切换测试"
         self.description = (
-            "独立测试账号切换功能：检测登录界面 → 展开下拉框 → "
-            "OCR 列出所有账号 → 选择目标 → 点击 → 点登录。"
+            "自动检测当前界面（主界面/登录界面），在主界面时自动退登。"
+            "在登录界面执行：展开下拉框 → OCR 列出所有账号 → 选择目标 → 点击 → 点登录。"
             "不执行每日任务，仅验证切换流程。"
         )
         self.group_name = "🧪 测试功能"
@@ -322,18 +322,42 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
             auto_mode = target_config in ('', '（自动识别）', '无')
 
             self.log_info(f'账号切换测试开始（目标: {"自动识别" if auto_mode else target_config}，轮数: {rounds}）', notify=True)
+            self.info_set('状态', '检测当前界面...')
 
+            # ============ 自动检测当前界面 ============
+            # 如果在主界面 → 先退登到登录界面
+            # 如果在登录界面 → 直接开始测试
+            try:
+                in_main = self.is_main(esc=False)
+            except Exception:
+                in_main = False
+
+            if in_main:
+                self.log_info('检测到当前在游戏主界面，先退登到登录界面...')
+                self.info_set('状态', '退登中...')
+                self._switch_to_login_simple()
+                self.sleep(2)
+            else:
+                self.log_info('检测到当前在登录界面，直接开始测试')
+
+            # ============ 循环测试 ============
             for round_i in range(1, rounds + 1):
                 self.log_info(f'=== 第 {round_i}/{rounds} 轮 ===')
+                self.info_set('当前轮次', f'{round_i}/{rounds}')
+                self.info_set('状态', '检测登录界面...')
 
-                # 1. 检测登录界面
-                self.log_info('检测登录界面...')
+                # 1. 检测登录界面（应已在登录界面）
                 if not self._detect_login_dialog():
-                    self.log_error('未检测到登录界面，请先退登到登录界面')
-                    self.screenshot('multi')
-                    raise Exception('未检测到登录界面')
+                    # 可能在别的界面（公告/月卡弹窗等），尝试等待
+                    self.log_info('未立即检测到登录界面，等待 10s...')
+                    self.sleep(10)
+                    if not self._detect_login_dialog():
+                        self.log_error('等待后仍未检测到登录界面')
+                        self.screenshot('multi')
+                        raise Exception('未检测到登录界面')
 
-                self.log_info(f'登录界面检测成功（{"对话框模式" if getattr(self, "_login_in_dialog", False) else "主窗口模式"}）')
+                self.log_info(f'登录界面就绪（{"对话框模式" if getattr(self, "_login_in_dialog", False) else "主窗口模式"}）')
+                self.info_set('状态', '识别账号...')
 
                 # 2. OCR 识别当前账号
                 accounts = self._get_ocr_accounts()
@@ -353,11 +377,9 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
                         self.log_error('未匹配到任何已知方案，无法自动选择')
                         self.screenshot('multi')
                         raise Exception('未匹配到任何已知方案')
-                    # 自动选择第一个匹配的账号（排除当前账号）
                     box, text, profile_name, target_short = matched_accounts[0]
                     self.log_info(f'自动选择: {target_short}（{text}）')
                 else:
-                    # 按配置查找
                     target_short = target_config
                     target_box = None
                     for box, text, profile_name, short in matched_accounts:
@@ -371,8 +393,8 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
                         self.screenshot('multi')
                         raise Exception(f'目标账号 {target_config} 不在登录界面中')
 
-                self.info_set('当前轮次', f'{round_i}/{rounds}')
                 self.info_set('目标账号', target_short)
+                self.info_set('状态', f'展开下拉框...')
 
                 # 4. 展开下拉框
                 if self._account_list_expanded():
@@ -399,9 +421,10 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
                 expanded_accounts = self._get_ocr_accounts()
                 self.log_info(f'展开后识别到 {len(expanded_accounts)} 个账号')
 
+                self.info_set('状态', f'选择 {target_short}...')
+
                 # 7. 点击目标账号
                 if auto_mode:
-                    # 重新匹配（展开后可能有更多账号）
                     expanded_matched = []
                     for box, text in expanded_accounts:
                         pn, sh = self._match_account_to_profile(text, profiles)
@@ -411,11 +434,9 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
                         self.log_error('展开后仍未找到可匹配账号')
                         self.screenshot('multi')
                         raise Exception('展开后未找到可匹配账号')
-                    # 选择第一个
                     target_box, target_text, profile_name, target_short = expanded_matched[0]
                     self.log_info(f'选择: {target_short}（{target_text}）')
                 else:
-                    # 在展开列表中找目标
                     target_box = None
                     for box, text in expanded_accounts:
                         pn, sh = self._match_account_to_profile(text, profiles)
@@ -443,7 +464,7 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
                     self.click(target_box, after_sleep=2)
 
                 self.sleep(2)
-                self.info_set('状态', '已选号，准备点登录')
+                self.info_set('状态', '点击登录按钮...')
 
                 # 8. 点击登录按钮
                 self.log_info('点击登录按钮...')
@@ -451,15 +472,18 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
 
                 # 9. 等待进入主界面
                 self.log_info('等待进入游戏主界面...')
+                self.info_set('状态', '等待进入游戏...')
                 self.logged_in = False
                 self.ensure_main(time_out=180)
-                self.log_info(f'✓ 已登录 {target_short}')
-                self.info_set('状态', f'已登录 {target_short}')
+                self.log_info(f'✓ 第 {round_i} 轮已登录 {target_short}')
+                self.info_set('状态', f'✓ 已登录 {target_short}')
 
-                # 如果还有下一轮，退登
+                # 如果还有下一轮，退登回登录界面
                 if round_i < rounds:
-                    self.log_info('退登回登录界面...')
+                    self.log_info(f'退登回登录界面（准备第 {round_i + 1} 轮）...')
+                    self.info_set('状态', '退登中...')
                     self._switch_to_login_simple()
+                    self.sleep(2)
 
             self.log_info(f'全部 {rounds} 轮切换测试通过 ✓', notify=True)
             self.info_set('状态', '测试通过 ✓')
