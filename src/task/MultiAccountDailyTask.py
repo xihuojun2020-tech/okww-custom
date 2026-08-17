@@ -71,6 +71,17 @@ def profile_short_name(profile_name):
     return match.group(1).upper() if match else None
 
 
+def _is_login_identity(task, name):
+    """兼容最小化测试替身地判断账号身份；歧义异常继续向上传播。"""
+    value = (name or '').strip()
+    if not value:
+        return False
+    if account_pattern.search(value) or scan_account_pattern.match(value):
+        return True
+    matcher = getattr(task, 'match_profile_from_login', None)
+    return bool(callable(matcher) and matcher(value) is not None)
+
+
 class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def __init__(self, *args, **kwargs):
@@ -398,14 +409,20 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         if m:
             phone = m.group(1)
             ids.append(normalize_account_name(masked_phone(phone)))
-        # 账号别名：合并新配置键与旧 account_aliases，兼容中英文逗号和换行分隔。
+        # 账号别名：兼容新旧字段，贯穿登录就绪、展开、选号和登录前核对。
         aliases = []
-        alias_text = profile.get('备用识别名称内容') if isinstance(profile, dict) else None
-        if alias_text:
-            aliases.extend(a.strip() for a in re.split(r'[,，;；\r\n]+', str(alias_text)) if a.strip())
-        old = profile.get('account_aliases') or []
-        if isinstance(old, list):
-            aliases.extend(old)
+        if isinstance(profile, dict):
+            for key in ('备用识别名称内容', 'Account Name', 'account_name', '账号名称'):
+                value = profile.get(key)
+                if isinstance(value, (list, tuple, set)):
+                    aliases.extend(value)
+                elif value:
+                    aliases.extend(a.strip() for a in re.split(r'[,，;；\r\n]+', str(value)) if a.strip())
+            old = profile.get('account_aliases') or []
+            if isinstance(old, (list, tuple, set)):
+                aliases.extend(old)
+            elif old:
+                aliases.extend(a.strip() for a in re.split(r'[,，;；\r\n]+', str(old)) if a.strip())
         for a in aliases:
             if a:
                 normalized = normalize_account_name(str(a).strip())
@@ -418,10 +435,27 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         if not login_text:
             return None
         wanted = normalize_account_name(str(login_text).strip())
-        for name in self.get_profile_names():
-            if wanted in self._profile_identities(name):
-                return name
+        matches = [
+            name for name in self.get_profile_names()
+            if wanted in self._profile_identities(name)
+        ]
+        if len(matches) > 1:
+            raise ValueError(
+                f'登录身份 {login_text!r} 同时匹配多个账号方案：{", ".join(matches)}；'
+                '为防止误登录已停止，请删除重复备用识别名'
+            )
+        if matches:
+            return matches[0]
         return None
+
+    def _is_login_account_text(self, name):
+        """判断 OCR 文本是否可能是账号身份（含备用识别名）。"""
+        value = (name or '').strip()
+        if not value:
+            return False
+        if account_pattern.search(value) or scan_account_pattern.match(value):
+            return True
+        return _is_login_identity(self, value)
 
     # ==================== 断点持久化（今日已完成账号） ====================
 
@@ -503,68 +537,87 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         if self.done_set:
             self.log_info(f'检测到今日已完成账号（断点恢复）: {sorted(self.done_set)}', notify=True)
 
-        # 记录起始账号（第一轮当前登录的账号；全部完成后登录回它）
+        # 记录真实起始账号（全部完成后登录回它）。主界面启动时必须先退登
+        # 识别真实身份，不能用 CURRENT_ACCOUNT 或序列下一个账号冒充。
         first_account = None
 
-        # 第一轮：若已在游戏主界面（用户已登录好起始账号）则跑当前账号；
-        # 否则（在登录界面）从序列选择下一个未完成账号（登录前核对账号，防误登/防重跑已完成账号）
+        # 第一轮：主界面启动先退登并识别真实账号；登录界面启动则从序列选号。
         try:
             in_main = self.is_main(esc=False)
+        except TaskDisabledException:
+            raise
         except Exception:
             in_main = False
         if in_main:
-            self.log_info('检测到已在游戏主界面，先执行当前账号的每日任务', notify=True)
-            # 联动：每日任务配置/界面跟随「当前执行账号」（序列中第一个未完成账号），
-            # 避免用错账号的配置跑每日任务（如序列是 A 系列却用遗留的 B7 方案）
-            try:
-                target = self._next_target_account()
-                if target:
-                    if target in self._load_profiles():
-                        if self._link_daily_profile(target):
-                            self.log_info(f'主界面分支：每日任务已联动到执行账号 {target}', notify=True)
-                        else:
-                            self.log_warning(f'主界面分支：联动方案 {target} 失败，按当前 Daily Profile 执行')
-                    else:
-                        self.log_warning(f'目标账号 {target} 无配置方案，保持当前 Daily Profile')
-                    self.config[CURRENT_ACCOUNT] = target
-                else:
-                    self.log_warning('序列无未完成账号，主界面分支按当前 Daily Profile 执行')
-            except Exception as e:
-                self.log_error('主界面分支联动失败', e)
-            self.run_task_by_class(DailyTask)
-            self.ensure_main(time_out=100)
             self._switch_to_login()
-            # 主界面分支：记录并保存断点（防中断丢失，与登录界面分支一致）
             try:
-                done_acc = self._detect_current_account_from_login() or self.get_active_profile_name()
-                self._mark_done(done_acc)
-                self._save_today_progress()
+                first_account = self._detect_current_account_from_login()
+            except TaskDisabledException:
+                raise
+            except ValueError:
+                raise
             except Exception as e:
-                self.log_error('保存断点失败', e)
+                self.log_error('无法识别主界面启动时的真实账号', e)
+                first_account = None
+            if not first_account:
+                self.log_error('主界面启动时无法唯一识别真实账号，为防止使用错误方案，停止运行')
+                self.screenshot('multi')
+                raise Exception(self.tr('Cannot identify the current account safely'))
+
+            in_sequence = any(self._same_account(first_account, acc) for acc in sequence)
+            if in_sequence and not self._is_done(first_account):
+                self.log_info(f'主界面启动识别到真实账号 {first_account}，重新登录后执行其每日任务', notify=True)
+                self._select_and_login_specific(first_account)
+                self._require_daily_profile(first_account)
+                self.run_task_by_class(DailyTask)
+                self.log_info(f'账号 {first_account} 每日任务完成', notify=True)
+                self._mark_done(first_account)
+                self._save_today_progress()
+                self.ensure_main(time_out=100)
+                self._switch_to_login()
+            elif not sequence and not self._is_done(first_account):
+                self.log_info(f'未配置账号序列，执行已识别的真实账号 {first_account}', notify=True)
+                self._select_and_login_specific(first_account)
+                self._require_daily_profile(first_account)
+                self.run_task_by_class(DailyTask)
+                self._mark_done(first_account)
+                self._save_today_progress()
+                self.ensure_main(time_out=100)
+                self._switch_to_login()
+            else:
+                self.log_info(
+                    f'真实起始账号 {first_account} 不在当前序列或今日已完成，'
+                    '不运行其每日任务，继续选择序列中的下一个账号'
+                )
+                # 该账号不是本轮序列起点时，清除旧配置值，避免断点配置
+                # 把序列旋转到一个与本次真实启动状态无关的位置。
+                self.config[CURRENT_ACCOUNT] = ''
         else:
             first_target = self._select_and_login_account()
             if first_target:
                 self.log_info(f'从登录界面选择下一个未完成账号：{first_target}，开始执行每日任务', notify=True)
-                # 联动：当前执行账号 = 目标账号；激活方案仅当目标方案已存在时切换
-                # （防止目标方案不存在时 _do_switch_profile 用当前配置创建污染方案）
-                try:
-                    if first_target in self._load_profiles():
-                        self._link_daily_profile(first_target)
-                    self.config[CURRENT_ACCOUNT] = first_target
-                except Exception:
-                    pass
+                self._require_daily_profile(first_target)
                 self.run_task_by_class(DailyTask)
                 self.log_info(f'账号 {first_target} 每日任务完成', notify=True)
                 self._mark_done(first_target)
                 self._save_today_progress()
                 self.ensure_main(time_out=100)
                 self._switch_to_login()
-        configured_start = (self.config.get(CURRENT_ACCOUNT) or '').strip()
-        detected = self._detect_current_account_from_login()
-        if detected is None:
-            detected = self.get_active_profile_name()
-        first_account = configured_start or detected
-        self._mark_done(first_account)
+
+            if first_target:
+                first_account = first_target
+            elif first_account is None:
+                try:
+                    first_account = self._detect_current_account_from_login()
+                except TaskDisabledException:
+                    raise
+                except ValueError:
+                    raise
+                except Exception:
+                    first_account = None
+        if not first_account:
+            self.log_error('无法确定本轮真实起始账号，停止运行以防止错误回登')
+            raise Exception(self.tr('Cannot determine the starting account safely'))
         self.log_info(f'起始账号：{first_account}（全部完成后登录回）', notify=True)
 
         self.info_set('Completed', self.done_set)
@@ -572,14 +625,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         while next_account := self._select_and_login_account():
             self.info_set('Completed', self.done_set)
             self.log_info(f'开始执行账号 {next_account} 的每日任务', notify=True)
-            # 联动：当前执行账号 = 目标账号；激活方案仅当目标方案已存在时切换
-            # （防止目标方案不存在时 _do_switch_profile 用当前配置创建污染方案）
-            try:
-                if next_account in self._load_profiles():
-                    self._link_daily_profile(next_account)
-                self.config[CURRENT_ACCOUNT] = next_account
-            except Exception:
-                pass
+            self._require_daily_profile(next_account)
             self.run_task_by_class(DailyTask)
             self.log_info(f'账号 {next_account} 每日任务完成', notify=True)
             self._mark_done(next_account)
@@ -631,34 +677,58 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             raise
         except Exception:
             pass
-        self.log_info('退登步骤1/4：按 ESC 打开设置页')
-        self.send_key('esc', after_sleep=1.5)
-        self.wait_feature('esc_setting')
-        self.log_info('退登步骤2/4：点击退登入口')
-        self.click_relative(0.04, 0.96, after_sleep=1)
-        self.log_info('退登步骤3/4：点击确认退登')
-        self.click_confirm(timeout=10)
-        self.log_info('退登步骤4/4：等待登录界面（抗闪烁等待）')
-        self._wait_login_screen_stable()
-        self.log_info(self.tr('Back at login screen'))
+        # 游戏菜单和确认框偶发闪烁/点击丢失。确认按钮未命中、等待后仍
+        # 识别到主界面时，重新从 ESC 开始，不能直接空等登录界面超时。
+        last_error = None
+        for attempt in range(1, 4):
+            try:
+                self.log_info(f'退登尝试 {attempt}/3：按 ESC 打开设置页')
+                self.send_key('esc', after_sleep=1.5)
+                if not self.wait_feature('esc_setting', raise_if_not_found=False):
+                    raise Exception('未检测到 ESC 设置页')
+                self.log_info(f'退登尝试 {attempt}/3：点击退登入口')
+                self.click_relative(0.04, 0.96, after_sleep=1)
+                self.log_info(f'退登尝试 {attempt}/3：点击确认退登')
+                confirmed = self.click_confirm(timeout=10)
+                if confirmed is False:
+                    raise Exception('确认退登按钮未点击成功')
+                self.log_info('退登步骤4/4：等待登录界面（抗闪烁等待）')
+                self._wait_login_screen_stable(time_out=30)
+                self.log_info(self.tr('Back at login screen'))
+                return True
+            except TaskDisabledException:
+                raise
+            except Exception as e:
+                last_error = e
+                self.log_warning(f'退登尝试 {attempt}/3 失败：{e}')
+                try:
+                    # 若仍在游戏主界面/ESC菜单，下一次循环重新点击退登入口；
+                    # 不把“仍在终端菜单”误当成登录界面加载中。
+                    if self.is_main(esc=False):
+                        self.log_warning('确认退登后仍在游戏主界面，准备重新执行退登入口')
+                except TaskDisabledException:
+                    raise
+                except Exception:
+                    pass
+                self.sleep(1)
+        self.screenshot('multi')
+        raise Exception(f'退登失败，已重试 3 次：{last_error}')
 
     def _login_screen_feature_count(self, texts):
-        """宽松统计登录界面特征数量：掩码账号 / 登录文本 / U账号（扫码），任一 >0 即视为登录界面出现。"""
+        """宽松统计登录界面特征数量：账号身份（含备用名）/登录文本。"""
         count = 0
         if not texts:
             return 0
         try:
-            count += len(self.find_boxes(texts, account_pattern))
+            count += sum(1 for t in texts if _is_login_identity(self, getattr(t, 'name', '')))
+        except TaskDisabledException:
+            raise
+        except ValueError:
+            raise
         except Exception:
             pass
         try:
             count += len(self.find_boxes(texts, LOGIN_TEXTS))
-        except Exception:
-            pass
-        try:
-            for t in texts:
-                if scan_account_pattern.match(t.name.strip()):
-                    count += 1
         except Exception:
             pass
         return count
@@ -682,10 +752,19 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         while time.monotonic() < deadline:
             try:
                 hwnd = getattr(self, 'hwnd', None)
+                # 主窗口仍可见时先做同窗口 OCR；不可见时先查同进程登录
+                # 对话框，确认不存在后才 bring_to_front，减少闪烁抢前台。
+                dlg_texts = None
+                if hwnd is None or not hwnd.visible:
+                    dlg_texts = self._ocr_login_dialog()
+                    if dlg_texts and self._login_screen_feature_count(dlg_texts) > 0:
+                        self._login_in_dialog = True
+                        self.log_info(f'已通过登录对话框窗口识别到登录界面（OCR {len(dlg_texts)} 文本）')
+                        break
                 if hwnd is not None and hwnd.exists and not hwnd.visible:
                     try:
                         hwnd.bring_to_front()
-                        self.log_warning('游戏窗口不可见，已尝试恢复前台')
+                        self.log_warning('未发现登录对话框且游戏窗口不可见，已尝试恢复前台')
                     except TaskDisabledException:
                         raise
                     except Exception:
@@ -696,6 +775,12 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 if self._login_screen_feature_count(texts) > 0:
                     self._login_in_dialog = False
                     break
+                if dlg_texts is None:
+                    dlg_texts = self._ocr_login_dialog()
+                if dlg_texts and self._login_screen_feature_count(dlg_texts) > 0:
+                    self._login_in_dialog = True
+                    self.log_info(f'已通过登录对话框窗口识别到登录界面（OCR {len(dlg_texts)} 文本）')
+                    break
                 # 启动器兜底：退过头回到启动器（KURO GAMES 启动器界面，无登录特征）
                 if texts and self._is_launcher_texts(texts):
                     self.log_error('检测到启动器界面（退过头到启动器），请手动重新进入游戏后再试')
@@ -704,12 +789,6 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     except Exception:
                         pass
                     raise Exception(self.tr('Logged out to launcher, please re-enter the game'))
-                # 主窗口无特征：回退捕获 #32770 登录对话框窗口
-                dlg_texts = self._ocr_login_dialog()
-                if dlg_texts and self._login_screen_feature_count(dlg_texts) > 0:
-                    self._login_in_dialog = True
-                    self.log_info(f'已通过登录对话框窗口识别到登录界面（OCR {len(dlg_texts)} 文本）')
-                    break
                 now = time.monotonic()
                 if now - last_log >= 30:
                     last_log = now
@@ -735,6 +814,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 self.log_error(f'登录界面等待超时: 窗口={win_state}, OCR文本数={len(texts) if texts else 0}, 最近文本: {snippet}')
             except TaskDisabledException:
                 raise
+            except ValueError:
+                raise
             except Exception:
                 pass
             raise Exception(self.tr('Timed out waiting for the login screen'))
@@ -759,19 +840,18 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         """
         import win32gui
         import win32process
-        try:
-            import psutil
-        except Exception:
-            return 0, None
         found = []
-        main_exe = None
+        main_pid = None
         try:
             hwnd_main = getattr(self, 'hwnd', None)
             if hwnd_main is not None and getattr(hwnd_main, 'hwnd', 0):
-                main_exe = psutil.Process(
-                    win32process.GetWindowThreadProcessId(hwnd_main.hwnd)[1]).name().lower()
+                main_pid = win32process.GetWindowThreadProcessId(hwnd_main.hwnd)[1]
         except Exception:
             pass
+        # 无法锁定游戏主窗口 PID 时禁止系统级跨窗口点击，避免误操作
+        # 其他 #32770 对话框；主窗口内嵌登录仍可走原路径。
+        if not main_pid:
+            return 0, None
 
         def cb(hwnd, _):
             try:
@@ -779,11 +859,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     return True
                 if win32gui.GetClassName(hwnd) != '#32770':
                     return True
-                if main_exe:
-                    exe = psutil.Process(
-                        win32process.GetWindowThreadProcessId(hwnd)[1]).name().lower()
-                    if exe != main_exe:
-                        return True
+                pid = win32process.GetWindowThreadProcessId(hwnd)[1]
+                if pid != main_pid:
+                    return True
                 rect = win32gui.GetWindowRect(hwnd)
                 w, h = rect[2] - rect[0], rect[3] - rect[1]
                 if w <= 0 or h <= 0:
@@ -854,6 +932,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             return None
         try:
             return self.ocr(frame=frame)
+        except TaskDisabledException:
+            raise
         except Exception:
             return None
 
@@ -864,18 +944,15 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         """
         import win32gui
         import win32process
-        try:
-            import psutil
-        except Exception:
-            return 0, None
-        main_exe = None
+        main_pid = None
         try:
             hwnd_main = getattr(self, 'hwnd', None)
             if hwnd_main is not None and getattr(hwnd_main, 'hwnd', 0):
-                main_exe = psutil.Process(
-                    win32process.GetWindowThreadProcessId(hwnd_main.hwnd)[1]).name().lower()
+                main_pid = win32process.GetWindowThreadProcessId(hwnd_main.hwnd)[1]
         except Exception:
             pass
+        if not main_pid:
+            return 0, None
         best = None
 
         def cb(hwnd, _):
@@ -885,11 +962,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     return True
                 if win32gui.GetClassName(hwnd) != class_name:
                     return True
-                if main_exe:
-                    exe = psutil.Process(
-                        win32process.GetWindowThreadProcessId(hwnd)[1]).name().lower()
-                    if exe != main_exe:
-                        return True
+                pid = win32process.GetWindowThreadProcessId(hwnd)[1]
+                if pid != main_pid:
+                    return True
                 rect = win32gui.GetWindowRect(hwnd)
                 if rect[2] - rect[0] <= 0 or rect[3] - rect[1] <= 0:
                     return True
@@ -1086,9 +1161,11 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 mapped_profile = self.match_profile_from_login(name)
             except TaskDisabledException:
                 raise
+            except ValueError:
+                raise
             except Exception:
                 mapped_profile = None
-            if account_pattern.search(name) or scan_account_pattern.match(name) or mapped_profile:
+            if _is_login_identity(self, name) or mapped_profile:
                 candidates.append(box)
             if mapped_profile == profile_name and matched is None:
                 matched = (box, name)
@@ -1159,6 +1236,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             self.sleep(0.2)
         except TaskDisabledException:
             raise
+        except ValueError:
+            raise
         except Exception:
             return False
         frame, origin = self._dialog_capture()
@@ -1174,6 +1253,10 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             sx, sy = self._box_center_screen(box, origin)
             self.log_info(f'点击登录按钮（屏幕 {sx},{sy}）')
             return self._screen_click(sx, sy, after_sleep=3)
+        except TaskDisabledException:
+            raise
+        except ValueError:
+            raise
         except Exception:
             return False
 
@@ -1189,26 +1272,25 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     dlg_texts = self.ocr(frame=frame)
                     for t in dlg_texts or []:
                         name = (t.name or '').strip()
-                        if account_pattern.search(name) or scan_account_pattern.match(name):
+                        if _is_login_identity(self, name):
                             profile = self.match_profile_from_login(name)
                             if profile:
                                 self.log_info(f'对话框识别当前账号: {name} -> {profile}')
                                 return profile
                     if dlg_texts:
                         self.log_info(f'对话框未匹配到方案，账号文本: {[t.name for t in dlg_texts][:8]}')
+                except TaskDisabledException:
+                    raise
+                except ValueError:
+                    raise
                 except Exception:
                     pass
             return None
-        texts = self.ocr(match=account_pattern)
-        candidates = [t.name for t in texts] if texts else []
-        # 也识别 U 开头账号（扫码登录）
-        try:
-            all_texts = self.ocr()
-            for t in all_texts:
-                if scan_account_pattern.match(t.name.strip()):
-                    candidates.append(t.name.strip())
-        except Exception:
-            pass
+        texts = self.ocr()
+        candidates = [
+            t.name.strip() for t in (texts or [])
+            if _is_login_identity(self, t.name)
+        ]
         for c in candidates:
             profile = self.match_profile_from_login(c)
             if profile:
@@ -1264,9 +1346,24 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             except Exception:
                 pass
             return True
+        except TaskDisabledException:
+            raise
         except Exception as e:
             self.log_error(f'联动每日任务方案失败: {profile_name}', e)
             return False
+
+    def _require_daily_profile(self, profile_name):
+        """在执行每日任务前强制联动到已验证的账号方案。
+
+        不允许在方案缺失或切换失败时沿用上一个账号的 DailyTask
+        配置，否则即使登录账号正确，也可能按错误方案执行。
+        """
+        if not profile_name or profile_name not in self._load_profiles():
+            raise Exception(f'账号方案不存在，已停止每日任务: {profile_name or "未识别"}')
+        if not self._link_daily_profile(profile_name):
+            raise Exception(f'无法联动每日任务方案，已停止执行: {profile_name}')
+        self.config[CURRENT_ACCOUNT] = profile_name
+        return True
 
     def _click_account_in_list(self, profile_name, interaction_mode='postmessage', require_expanded=False):
         """在登录界面账号列表中点击指定的方案账号，返回是否点击成功。
@@ -1409,6 +1506,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 mapped_profile = self.match_profile_from_login(name)
                 matched = mapped_profile == profile_name
             except TaskDisabledException:
+                raise
+            except ValueError:
                 raise
             except Exception:
                 mapped_profile = None
@@ -1660,25 +1759,50 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         raise Exception(self.tr('Login aborted: displayed account does not match target'))
 
     def _click_login_for_target(self, target):
-        """确认当前账号后点击登录按钮，点击失败时抛出异常。"""
-        self._confirm_target_before_login(target)
-        if getattr(self, '_login_in_dialog', False):
-            if not self._dialog_click_login():
-                self.log_error('对话框模式下点击登录按钮失败')
-                self.screenshot('multi')
-                raise Exception(self.tr('Failed to click login button'))
-            return
+        """确认当前账号后点击登录按钮，并确认登录界面开始转换。"""
+        last_error = None
+        for attempt in range(1, 4):
+            try:
+                self._confirm_target_before_login(target)
+                if getattr(self, '_login_in_dialog', False):
+                    clicked = self._dialog_click_login()
+                else:
+                    texts = self.ocr()
+                    login_btn = self.find_boxes(
+                        texts,
+                        boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.8),
+                        match=LOGIN_TEXTS,
+                    )
+                    if login_btn:
+                        clicked = self.click(login_btn, after_sleep=3)
+                    else:
+                        clicked = self.click_relative(
+                            0.5, 0.568, hcenter=True, vcenter=True, after_sleep=3,
+                        )
+                if clicked is False:
+                    raise Exception('登录按钮点击未成功')
 
-        texts = self.ocr()
-        login_btn = self.find_boxes(
-            texts,
-            boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.8),
-            match=LOGIN_TEXTS,
-        )
-        if login_btn:
-            self.click(login_btn, after_sleep=3)
-        else:
-            self.click_relative(0.5, 0.568, hcenter=True, vcenter=True, after_sleep=3)
+                # 主窗口和独立对话框都必须确认登录控件稳定消失；
+                # 不能在按钮未命中时直接进入 180 秒空等。
+                started = self.wait_until(
+                    lambda: self.do_find_account_drop_down() is None,
+                    time_out=5,
+                    settle_time=1,
+                    raise_if_not_found=False,
+                )
+                if not started:
+                    raise Exception('点击登录后登录界面状态未发生变化')
+                return True
+            except TaskDisabledException:
+                raise
+            except Exception as e:
+                last_error = e
+                self.log_warning(f'登录按钮点击第 {attempt}/3 次失败：{e}')
+                if attempt < 3:
+                    self.sleep(1)
+        self.log_error(f'登录按钮连续 3 次未成功：{last_error}')
+        self.screenshot('multi')
+        raise Exception(self.tr('Failed to click login button'))
 
     def _visible_login_profiles(self):
         """按登录列表显示顺序返回能映射到本地方案的账号名。"""
@@ -1690,6 +1814,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 if frame is not None:
                     try:
                         texts = self.ocr(frame=frame)
+                    except TaskDisabledException:
+                        raise
                     except Exception:
                         texts = None
             if not texts:
@@ -1700,7 +1826,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         profiles = []
         for box in texts or []:
             name = (box.name or '').strip()
-            if not name or not (account_pattern.search(name) or scan_account_pattern.match(name)):
+            if not name or not _is_login_identity(self, name):
                 continue
             profile = self.match_profile_from_login(name)
             if profile and profile not in profiles:
@@ -1770,10 +1896,18 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         try:
             self._select_and_login_specific(first_account)
             self.log_info(f'已登录回起始账号: {first_account}', notify=True)
+            self._notify_user(
+                '多账号每日任务完成',
+                f'序列本轮全部完成，已登录回 {first_account}。可退出游戏进程切换下一个序列。',
+            )
+        except TaskDisabledException:
+            raise
         except Exception as e:
             self.log_error('登录回起始账号失败，请手动登录', e)
-        self._notify_user('多账号每日任务完成',
-                          f'序列本轮全部完成，已登录回 {first_account}。可退出游戏进程切换下一个序列。')
+            self._notify_user(
+                '多账号每日任务完成（需手动处理）',
+                f'序列本轮已完成，但登录回起始账号 {first_account} 失败，请手动登录。',
+            )
 
     def _select_and_login_specific(self, profile_name):
         """在登录界面选择并登录指定账号（不执行每日任务）。"""
@@ -1828,7 +1962,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         count = 0
         for t in texts or []:
             name = (t.name or '').strip()
-            if name and (account_pattern.search(name) or scan_account_pattern.match(name)):
+            if name and _is_login_identity(self, name):
                 count += 1
         return count
 
@@ -1846,6 +1980,10 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     h = rect[3] - rect[1]
                     if w >= 200 and h >= 100:
                         return True
+            except TaskDisabledException:
+                raise
+            except ValueError:
+                raise
             except Exception:
                 pass
             dlg_texts = self._ocr_login_dialog()
@@ -1863,10 +2001,12 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         命中对话框帧时置 self._login_in_dialog = True，后续账号操作改用对话框帧。
         """
         def judge(texts, in_dialog):
-            account_boxes = self.find_boxes(texts, account_pattern)
+            structural = list(self.find_boxes(texts, account_pattern))
             login_boxes = self.find_boxes(texts, LOGIN_TEXTS)
-            u_boxes = [t for t in (texts or []) if scan_account_pattern.match((t.name or '').strip())]
-            entries = list(account_boxes) + u_boxes
+            entries = structural + [
+                t for t in (texts or [])
+                if t not in structural and _is_login_identity(self, (t.name or '').strip())
+            ]
             if not login_boxes or len(entries) < 1:
                 return None
             self._login_in_dialog = in_dialog
@@ -1876,7 +2016,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         if hit is not None:
             return hit
         # 主窗口无特征 → #32770 登录对话框帧
-        dlg_texts = self._ocr_login_dialog()
+        ocr_dialog = getattr(self, '_ocr_login_dialog', None)
+        dlg_texts = ocr_dialog() if callable(ocr_dialog) else None
         if dlg_texts:
             hit = judge(dlg_texts, True)
             if hit is not None:

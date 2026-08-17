@@ -1060,11 +1060,11 @@ class BaseWWTask(BaseTask):
                 return True
 
     def click_confirm(self, timeout=1):
-        self.wait_click_feature(
+        return self.wait_click_feature(
             ['confirm_btn_hcenter_vcenter', 'confirm_btn_highlight_hcenter_vcenter'],
             relative_x=-1, raise_if_not_found=False,
             threshold=0.6,
-            time_out=1)
+            time_out=timeout)
 
     def click_skip_dialog_confirm(self):
         skip_dialog_confirm = self.find_one(

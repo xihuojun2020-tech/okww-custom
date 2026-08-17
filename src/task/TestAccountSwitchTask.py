@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""🧪 账号切换测试任务（v1.04.03）。
+"""🧪 账号切换测试任务（v1.05.00）。
 
 独立测试多账号登录界面的账号切换功能（不跑完整每日任务）。
 直接复用 MultiAccountDailyTask 的切换方法，确保测试路径与正式流程一致。
@@ -10,6 +10,7 @@
 import re
 
 from qfluentwidgets import FluentIcon as Icon
+from ok import TaskDisabledException
 
 from src.task.BaseWWTask import BaseWWTask
 from src.task.WWOneTimeTask import WWOneTimeTask
@@ -148,6 +149,8 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
                         detected_main = True
                         self.log_info(f'检测到游戏主界面（第 {detect_try} 次检测）')
                         break
+                except TaskDisabledException:
+                    raise
                 except Exception:
                     pass
                 if detect_try % 5 == 0:

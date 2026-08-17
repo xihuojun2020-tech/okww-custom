@@ -85,10 +85,17 @@ class TestScheduleSupport(unittest.TestCase):
         ]
 
         call_names = [node.func.attr for node in sorted(calls, key=lambda call: call.lineno)]
-        first_daily_index = call_names.index("run_task_by_class")
-        switch_index = call_names.index("_switch_to_login")
-
-        self.assertIn("ensure_main", call_names[first_daily_index + 1:switch_index])
+        daily_indexes = [
+            index for index, name in enumerate(call_names)
+            if name == "run_task_by_class"
+        ]
+        self.assertTrue(daily_indexes)
+        for daily_index in daily_indexes:
+            following = call_names[daily_index + 1:]
+            self.assertIn("ensure_main", following)
+            ensure_index = daily_index + 1 + following.index("ensure_main")
+            after_ensure = call_names[ensure_index + 1:]
+            self.assertIn("_switch_to_login", after_ensure)
 
     def test_multi_account_switches_to_login_after_each_account_daily(self):
         run_node = _class_function("src/task/MultiAccountDailyTask.py", "MultiAccountDailyTask", "_run_inner")

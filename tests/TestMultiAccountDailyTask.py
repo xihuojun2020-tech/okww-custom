@@ -4,6 +4,7 @@ from unittest.mock import patch
 from ok import TaskDisabledException
 from src.task.BaseWWTask import LOGIN_TEXTS
 from src.task.MultiAccountDailyTask import (
+    CURRENT_ACCOUNT,
     MultiAccountDailyTask,
     account_pattern,
     normalize_account_name,
@@ -153,6 +154,250 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         self.assertEqual(
             MultiAccountDailyTask.match_profile_from_login(task, '180****0004'),
             '【A4-测试-18000000004】',
+        )
+
+    def test_login_identity_supports_legacy_account_name_and_rejects_ambiguity(self):
+        profiles = {
+            '【A1-测试-13000000001】': {'Account Name': 'LEGACY-A1'},
+            '【A3-测试-15300000003】': {'备用识别名称内容': 'SHARED-ID'},
+            '【A4-测试-18000000004】': {'account_aliases': ['SHARED-ID']},
+        }
+
+        class FakeTask:
+            def _load_profiles(self):
+                return profiles
+
+            get_profile_names = MultiAccountDailyTask.get_profile_names
+            _profile_identities = MultiAccountDailyTask._profile_identities
+
+        task = FakeTask()
+        self.assertEqual(
+            MultiAccountDailyTask.match_profile_from_login(task, 'LEGACY-A1'),
+            '【A1-测试-13000000001】',
+        )
+        with self.assertRaisesRegex(ValueError, '多个账号方案'):
+            MultiAccountDailyTask.match_profile_from_login(task, 'SHARED-ID')
+
+    def test_logout_retries_when_confirm_button_was_not_delivered(self):
+        class FakeTask:
+            _switch_to_login = MultiAccountDailyTask._switch_to_login
+
+            def __init__(self):
+                self.confirm_calls = 0
+                self.logs = []
+
+            def do_find_account_drop_down(self):
+                return None
+
+            def send_key(self, *_args, **_kwargs):
+                pass
+
+            def wait_feature(self, *_args, **_kwargs):
+                return True
+
+            def click_relative(self, *_args, **_kwargs):
+                pass
+
+            def click_confirm(self, **_kwargs):
+                self.confirm_calls += 1
+                return self.confirm_calls >= 2
+
+            def _wait_login_screen_stable(self, **_kwargs):
+                return True
+
+            def is_main(self, **_kwargs):
+                return True
+
+            def sleep(self, _seconds):
+                pass
+
+            def screenshot(self, *_args):
+                pass
+
+            def log_info(self, message, **_kwargs):
+                self.logs.append(str(message))
+
+            def log_warning(self, message, **_kwargs):
+                self.logs.append(str(message))
+
+            def tr(self, message):
+                return message
+
+        task = FakeTask()
+        self.assertTrue(task._switch_to_login())
+        self.assertEqual(task.confirm_calls, 2)
+        self.assertTrue(any('确认退登按钮未点击成功' in message for message in task.logs))
+
+    def test_login_back_failure_does_not_send_success_notification(self):
+        class FakeTask:
+            _login_back_to = MultiAccountDailyTask._login_back_to
+
+            def __init__(self):
+                self.notifications = []
+
+            def _select_and_login_specific(self, _profile):
+                raise RuntimeError('login failed')
+
+            def _notify_user(self, title, message):
+                self.notifications.append((title, message))
+
+            def log_info(self, *_args, **_kwargs):
+                pass
+
+            def log_error(self, *_args, **_kwargs):
+                pass
+
+        task = FakeTask()
+        task._login_back_to('profile-a1')
+        self.assertEqual(len(task.notifications), 1)
+        self.assertIn('需手动处理', task.notifications[0][0])
+        self.assertNotIn('已登录回 profile-a1', task.notifications[0][1])
+
+    def test_daily_task_requires_verified_profile_link(self):
+        class FakeTask:
+            _require_daily_profile = MultiAccountDailyTask._require_daily_profile
+
+            def __init__(self, profiles, linked):
+                self.profiles = profiles
+                self.linked = linked
+                self.config = {}
+
+            def _load_profiles(self):
+                return self.profiles
+
+            def _link_daily_profile(self, _profile):
+                return self.linked
+
+        with self.assertRaisesRegex(Exception, '方案不存在'):
+            FakeTask({}, True)._require_daily_profile('A1')
+
+        failed = FakeTask({'A1': {}}, False)
+        with self.assertRaisesRegex(Exception, '无法联动'):
+            failed._require_daily_profile('A1')
+        self.assertNotIn(CURRENT_ACCOUNT, failed.config)
+
+        linked = FakeTask({'A1': {}}, True)
+        self.assertTrue(linked._require_daily_profile('A1'))
+        self.assertEqual(linked.config[CURRENT_ACCOUNT], 'A1')
+
+    def test_dialog_login_click_retries_when_ui_does_not_transition(self):
+        class FakeTask:
+            _click_login_for_target = MultiAccountDailyTask._click_login_for_target
+
+            def __init__(self):
+                self._login_in_dialog = True
+                self.clicks = 0
+                self.transition_checks = 0
+
+            def _confirm_target_before_login(self, _target):
+                return True
+
+            def _dialog_click_login(self):
+                self.clicks += 1
+                return True
+
+            def wait_until(self, _condition, **_kwargs):
+                self.transition_checks += 1
+                return self.transition_checks >= 2
+
+            def sleep(self, _seconds):
+                pass
+
+            def log_warning(self, *_args, **_kwargs):
+                pass
+
+            def log_error(self, *_args, **_kwargs):
+                pass
+
+            def screenshot(self, *_args):
+                pass
+
+            def tr(self, message):
+                return message
+
+        task = FakeTask()
+        self.assertTrue(task._click_login_for_target('A3'))
+        self.assertEqual(task.clicks, 2)
+        self.assertEqual(task.transition_checks, 2)
+
+    def test_main_start_identifies_actual_account_before_daily_task(self):
+        class FakeTask:
+            _run_inner = MultiAccountDailyTask._run_inner
+
+            def __init__(self):
+                self.done_set = set()
+                self.config = {}
+                self.events = []
+                self.targets = [None]
+
+            def get_sequence_accounts(self):
+                return ['A1', 'A3', 'A4']
+
+            def _load_today_progress(self):
+                return []
+
+            def is_main(self, **_kwargs):
+                return True
+
+            def _switch_to_login(self):
+                self.events.append('logout')
+
+            def _detect_current_account_from_login(self):
+                self.events.append('detect')
+                return 'A4'
+
+            def _same_account(self, left, right):
+                return left == right
+
+            def _is_done(self, account):
+                return account in self.done_set
+
+            def _select_and_login_specific(self, account):
+                self.events.append(f'login:{account}')
+
+            def _require_daily_profile(self, account):
+                self.events.append(f'profile:{account}')
+                self.config[CURRENT_ACCOUNT] = account
+
+            def run_task_by_class(self, _task):
+                self.events.append('daily')
+
+            def _mark_done(self, account):
+                self.done_set.add(account)
+
+            def _save_today_progress(self):
+                self.events.append('save')
+
+            def ensure_main(self, **_kwargs):
+                self.events.append('ensure_main')
+
+            def _select_and_login_account(self):
+                return self.targets.pop(0)
+
+            def _login_back_to(self, account):
+                self.events.append(f'return:{account}')
+
+            def info_set(self, *_args, **_kwargs):
+                pass
+
+            def log_info(self, *_args, **_kwargs):
+                pass
+
+            def log_error(self, *_args, **_kwargs):
+                pass
+
+            def screenshot(self, *_args):
+                pass
+
+            def tr(self, message):
+                return message
+
+        task = FakeTask()
+        task._run_inner()
+        self.assertEqual(
+            task.events,
+            ['logout', 'detect', 'login:A4', 'profile:A4', 'daily',
+             'save', 'ensure_main', 'logout', 'return:A4'],
         )
 
     def test_continuous_sequence_uses_formal_login_flow_and_logs_out_between_accounts(self):
