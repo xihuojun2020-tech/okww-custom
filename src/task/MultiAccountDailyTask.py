@@ -620,7 +620,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
           阶段1 宽松探测：容忍暗屏/闪烁，持续等待登录界面任意特征出现
             - 窗口不可见 → 尝试 bring_to_front 恢复前台
             - OCR 为空 → 视为正常过渡，不限次失败（限频打日志）
-          阶段2 严格确认：特征出现后，用现有严格条件（恰好 1 掩码 + 登录文本）确认下拉框
+            - 检测到启动器界面（KURO GAMES 公告/修复）→ 判为退过头，明确报错
+            - 主窗口 OCR 无特征时，回退捕获 #32770 登录对话框窗口再 OCR
+          阶段2 严格确认：特征出现后，确认账号下拉框（掩码或 U 账号）
         失败时输出诊断日志（窗口可见性 / OCR 文本数 / 最近文本）并截图。
         """
         self.log_info(f'等待登录界面（宽松探测，超时 {time_out}s，容忍闪烁/暗屏）')
@@ -640,15 +642,29 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 texts = self.ocr()
                 if self._login_screen_feature_count(texts) > 0:
                     break
+                # 启动器兜底：退过头回到启动器（KURO GAMES 启动器界面，无登录特征）
+                if texts and self._is_launcher_texts(texts):
+                    self.log_error('检测到启动器界面（退过头到启动器），请手动重新进入游戏后再试')
+                    try:
+                        self.screenshot('multi')
+                    except Exception:
+                        pass
+                    raise Exception(self.tr('Logged out to launcher, please re-enter the game'))
+                # 主窗口无特征：回退捕获 #32770 登录对话框窗口
+                dlg_texts = self._ocr_login_dialog()
+                if dlg_texts and self._login_screen_feature_count(dlg_texts) > 0:
+                    self.log_info(f'已通过登录对话框窗口识别到登录界面（OCR {len(dlg_texts)} 文本）')
+                    break
                 now = time.monotonic()
                 if now - last_log >= 30:
                     last_log = now
                     win_state = 'visible' if (hwnd is not None and hwnd.visible) else 'invisible'
                     self.log_info(f'登录界面暂不可见（闪烁/加载中）: 窗口={win_state}, OCR文本数={len(texts) if texts else 0}')
-            except Exception:
-                pass
+            except Exception as e:
+                if 'launcher' in str(e).lower() or '启动器' in str(e):
+                    raise
             self.sleep(1)
-        # 阶段2：严格确认（沿用现有条件）
+        # 阶段2：严格确认（掩码或 U 账号 + 登录特征）
         box = self.wait_until(self.do_find_account_drop_down, time_out=settle + 5,
                               settle_time=settle, raise_if_not_found=False)
         if box is None:
@@ -663,6 +679,112 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 pass
             raise Exception(self.tr('Timed out waiting for the login screen'))
         return box
+
+    @staticmethod
+    def _is_launcher_texts(texts):
+        """启动器界面特征：含 KURO GAMES 且无登录特征（登录文本/U账号）。"""
+        joined = ' '.join((t.name or '') for t in texts) if texts else ''
+        if 'kuro' not in joined.lower() or not joined:
+            return False
+        if any((t.name or '') in ('登录', '登入', 'Log') for t in texts):
+            return False
+        if any(scan_account_pattern.match((t.name or '').strip()) for t in texts):
+            return False
+        return True
+
+    def _find_login_dialog(self):
+        """找可见的 #32770 登录对话框，返回 (hwnd, (left, top, right, bottom)) 或 (0, None)。
+
+        排除占满全屏的隐藏背景对话框（如全黑 1920x1080 的那个），取面积最小/居中的 #32770。
+        """
+        import win32gui
+        import win32process
+        try:
+            import psutil
+        except Exception:
+            return 0, None
+        found = []
+        main_exe = None
+        try:
+            hwnd_main = getattr(self, 'hwnd', None)
+            if hwnd_main is not None and getattr(hwnd_main, 'hwnd', 0):
+                main_exe = psutil.Process(
+                    win32process.GetWindowThreadProcessId(hwnd_main.hwnd)[1]).name().lower()
+        except Exception:
+            pass
+
+        def cb(hwnd, _):
+            try:
+                if not win32gui.IsWindowVisible(hwnd):
+                    return True
+                if win32gui.GetClassName(hwnd) != '#32770':
+                    return True
+                if main_exe:
+                    exe = psutil.Process(
+                        win32process.GetWindowThreadProcessId(hwnd)[1]).name().lower()
+                    if exe != main_exe:
+                        return True
+                rect = win32gui.GetWindowRect(hwnd)
+                w, h = rect[2] - rect[0], rect[3] - rect[1]
+                if w <= 0 or h <= 0:
+                    return True
+                found.append((hwnd, rect, w * h))
+            except Exception:
+                pass
+            return True
+        win32gui.EnumWindows(cb, None)
+        if not found:
+            return 0, None
+        # 取面积最小且非全屏的 #32770（登录对话框通常居中且小于屏幕）
+        found = [f for f in found if f[2] > 0]
+        found.sort(key=lambda f: f[2])
+        best = found[0]
+        return best[0], best[1]
+
+    def _capture_hwnd_client(self, hwnd):
+        """BitBlt 捕获指定窗口客户端区域，返回 (bgr_frame, 客户区屏幕原点 (ox,oy)) 或 (None, None)。"""
+        import win32gui
+        import win32ui
+        import win32con
+        try:
+            import numpy as np
+            import cv2
+        except Exception:
+            return None, None
+        try:
+            left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+            w, h = right - left, bottom - top
+            if w <= 0 or h <= 0:
+                return None, None
+            hwnd_dc = win32gui.GetWindowDC(hwnd)
+            mfc_dc = win32ui.CreateDCFromHandle(hwnd_dc)
+            save_dc = mfc_dc.CreateCompatibleDC()
+            bmp = win32ui.CreateBitmap()
+            bmp.CreateCompatibleBitmap(mfc_dc, w, h)
+            save_dc.SelectObject(bmp)
+            save_dc.BitBlt((0, 0), (w, h), mfc_dc, (0, 0), win32con.SRCCOPY)
+            bits = bmp.GetBitmapBits(True)
+            save_dc.DeleteDC()
+            mfc_dc.DeleteDC()
+            win32gui.ReleaseDC(hwnd, hwnd_dc)
+            frame = np.frombuffer(bits, np.uint8).reshape(h, w, 4)
+            return cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR), (left, top)
+        except Exception:
+            return None, None
+
+    def _ocr_login_dialog(self):
+        """回退方案：捕获 #32770 登录对话框并 OCR，返回文本列表；失败返回 None。"""
+        hwnd, rect = self._find_login_dialog()
+        if not hwnd:
+            return None
+        frame, _origin = self._capture_hwnd_client(hwnd)
+        if frame is None:
+            return None
+        try:
+            texts = self.ocr(frame=frame)
+            return texts
+        except Exception:
+            return None
 
     def _detect_current_account_from_login(self):
         """识别登录界面当前显示的账号，返回方案名（掩码或扫码 U 账号均可识别）。"""
@@ -702,13 +824,27 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         return None
 
     def _click_account_in_list(self, profile_name):
-        """在登录界面账号列表中点击指定的方案账号，返回是否点击成功。"""
+        """在登录界面账号列表中点击指定的方案账号，返回是否点击成功。
+
+        v1.03.72：先匹配掩码账号（180****1088），无则匹配 U 扫码账号（U550500484A）。
+        """
         accounts = self.ocr(match=account_pattern)
         for account in accounts:
             if self.match_profile_from_login(account.name) == profile_name:
                 self.click(account, after_sleep=2)
                 self.log_info(f'点击账号 {profile_name}')
                 return True
+        # U 账号兜底（扫码登录界面账号显示为 U 开头）
+        try:
+            all_texts = self.ocr()
+            for t in all_texts or []:
+                name = (t.name or '').strip()
+                if scan_account_pattern.match(name) and self.match_profile_from_login(name) == profile_name:
+                    self.click(t, after_sleep=2)
+                    self.log_info(f'点击账号 {profile_name}（U账号 {name}）')
+                    return True
+        except Exception:
+            pass
         # 找不到目标账号：输出列表内容便于排查（记住列表里没有该账号 / 识别失败）
         visible = [a.name for a in accounts][:15]
         self.log_error(
@@ -840,11 +976,21 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         return self.wait_until(self.do_find_account_drop_down, time_out=60, settle_time=2, raise_if_not_found=True)
 
     def do_find_account_drop_down(self) -> object | None:
+        """登录界面账号下拉框检测（v1.03.72：支持 U 扫码账号）。
+
+        命中条件：登录特征（登录/Log/登入）存在，且
+          - 恰好 1 个掩码账号（`180****1088`），或
+          - 存在 U 开头扫码账号（`U550500484A`）。
+        返回掩码框（或登录文本框）作为“登录界面已就绪”标记。
+        """
         texts = self.ocr()
         account_boxes = self.find_boxes(texts, account_pattern)
         login_boxes = self.find_boxes(texts, LOGIN_TEXTS)
         if len(account_boxes) == 1 and login_boxes:
             return account_boxes[0]
+        u_hit = bool(texts) and any(scan_account_pattern.match(t.name.strip()) for t in texts)
+        if u_hit and login_boxes:
+            return login_boxes[0]
         return None
 
 

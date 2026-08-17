@@ -46,6 +46,8 @@ class AboutTab(Tab):
             except Exception:
                 pass
             update_log_text.setPlainText(upstream_note + self.tr(
+                'V1.03.72：修复登录界面捕获（登录账号下拉框在独立 #32770 窗口，捕获目标优先 top_hwnd）；登录识别支持 U 扫码账号；退过头到启动器检测\n'
+                '\n'
                 'V1.03.71：多账号每日任务抗闪烁加固（登录界面等待容忍暗屏/窗口闪烁、窗口恢复、分阶段确认）；主界面分支每日任务配置联动当前执行账号\n'
                 '\n'
                 'V1.03.70：深度审查修复（重启 NameError / PowerShell 注入防护 / 验证脚本防数据覆盖 / .okscript 白名单 / 鼠标轮询降频 / 正则转义 / GDI 释放 / 日志脱敏等）；删除一次性工具脚本\n'
