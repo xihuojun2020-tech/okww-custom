@@ -641,6 +641,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     continue
                 texts = self.ocr()
                 if self._login_screen_feature_count(texts) > 0:
+                    self._login_in_dialog = False
                     break
                 # 启动器兜底：退过头回到启动器（KURO GAMES 启动器界面，无登录特征）
                 if texts and self._is_launcher_texts(texts):
@@ -653,6 +654,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 # 主窗口无特征：回退捕获 #32770 登录对话框窗口
                 dlg_texts = self._ocr_login_dialog()
                 if dlg_texts and self._login_screen_feature_count(dlg_texts) > 0:
+                    self._login_in_dialog = True
                     self.log_info(f'已通过登录对话框窗口识别到登录界面（OCR {len(dlg_texts)} 文本）')
                     break
                 now = time.monotonic()
@@ -772,22 +774,181 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         except Exception:
             return None, None
 
+    def _dialog_capture(self):
+        """捕获 #32770 登录对话框客户端区域，返回 (bgr_frame, 屏幕原点 (ox,oy)) 或 (None, None)。
+
+        登录账号下拉框位于独立 #32770 对话框（非游戏主窗口），主窗口捕获/OCR 永远看不到它，
+        因此登录界面的一切识别与操作都基于本方法捕获的对话框帧。
+        """
+        hwnd, _rect = self._find_login_dialog()
+        if not hwnd:
+            return None, None
+        return self._capture_hwnd_client(hwnd)
+
     def _ocr_login_dialog(self):
         """回退方案：捕获 #32770 登录对话框并 OCR，返回文本列表；失败返回 None。"""
-        hwnd, rect = self._find_login_dialog()
-        if not hwnd:
-            return None
-        frame, _origin = self._capture_hwnd_client(hwnd)
+        frame, _origin = self._dialog_capture()
         if frame is None:
             return None
         try:
-            texts = self.ocr(frame=frame)
-            return texts
+            return self.ocr(frame=frame)
         except Exception:
             return None
 
+    def _find_control_hwnd(self, class_name):
+        """找指定窗口类（ComboBox/ComboLBox/Button 等）的可见控件，返回 (hwnd, 屏幕rect) 或 (0, None)。
+
+        用于登录对话框内控件的屏幕坐标定位（ComboBox=账号下拉框，ComboLBox=展开的账号列表）。
+        """
+        import win32gui
+        import win32process
+        try:
+            import psutil
+        except Exception:
+            return 0, None
+        main_exe = None
+        try:
+            hwnd_main = getattr(self, 'hwnd', None)
+            if hwnd_main is not None and getattr(hwnd_main, 'hwnd', 0):
+                main_exe = psutil.Process(
+                    win32process.GetWindowThreadProcessId(hwnd_main.hwnd)[1]).name().lower()
+        except Exception:
+            pass
+        best = None
+
+        def cb(hwnd, _):
+            nonlocal best
+            try:
+                if not win32gui.IsWindowVisible(hwnd):
+                    return True
+                if win32gui.GetClassName(hwnd) != class_name:
+                    return True
+                if main_exe:
+                    exe = psutil.Process(
+                        win32process.GetWindowThreadProcessId(hwnd)[1]).name().lower()
+                    if exe != main_exe:
+                        return True
+                rect = win32gui.GetWindowRect(hwnd)
+                if rect[2] - rect[0] <= 0 or rect[3] - rect[1] <= 0:
+                    return True
+                best = (hwnd, rect)
+            except Exception:
+                pass
+            return True
+        win32gui.EnumWindows(cb, None)
+        return (best[0], best[1]) if best else (0, None)
+
+    def _screen_click(self, x, y, after_sleep=0.5):
+        """用系统级鼠标事件在屏幕坐标 (x, y) 处点击（绕过主窗口坐标系，作用于 #32770 对话框）。"""
+        import win32api
+        import win32con
+        import time as _t
+        try:
+            win32api.SetCursorPos((int(x), int(y)))
+            _t.sleep(0.1)
+            win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+            _t.sleep(0.05)
+            win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+            if after_sleep:
+                self.sleep(after_sleep)
+            return True
+        except Exception:
+            return False
+
+    def _box_center_screen(self, box, origin):
+        """把对话框帧 OCR 得到的 Box 中心换算为屏幕坐标。"""
+        cx = box.x + box.width / 2.0
+        cy = box.y + box.height / 2.0
+        return int(origin[0] + cx), int(origin[1] + cy)
+
+    def _dialog_open_account_list(self):
+        """点击 #32770 登录对话框的账号下拉框（ComboBox）展开账号列表，返回是否成功。"""
+        hwnd, rect = self._find_control_hwnd('ComboBox')
+        if not hwnd:
+            self.log_warning('未找到登录对话框的账号下拉框（ComboBox）')
+            return False
+        cx = (rect[0] + rect[2]) // 2
+        cy = (rect[1] + rect[3]) // 2
+        self.log_info(f'点击账号下拉框 ComboBox @({cx},{cy})')
+        return self._screen_click(cx, cy, after_sleep=2)
+
+    def _dialog_find_and_click_account(self, profile_name):
+        """在 #32770 登录对话框/展开的账号列表（ComboLBox）中找到目标账号并点击。
+
+        返回 (是否点击成功, 找到的账号文本或 None)。账号可能是掩码（180****1088）或 U 扫码（U550500484A）。
+        """
+        # 1) 展开的账号列表（ComboLBox）优先
+        hwnd, rect = self._find_control_hwnd('ComboLBox')
+        if hwnd:
+            frame, origin = self._capture_hwnd_client(hwnd)
+            if frame is not None:
+                try:
+                    texts = self.ocr(frame=frame)
+                    for t in texts or []:
+                        name = (t.name or '').strip()
+                        if self.match_profile_from_login(name) == profile_name:
+                            sx, sy = self._box_center_screen(t, origin)
+                            self.log_info(f'点击账号 {profile_name}（列表，屏幕 {sx},{sy}）')
+                            if self._screen_click(sx, sy, after_sleep=2):
+                                return True, name
+                except Exception:
+                    pass
+        # 2) 对话框主体里找（当前显示的账号 / 列表内嵌）
+        frame, origin = self._dialog_capture()
+        if frame is not None:
+            try:
+                texts = self.ocr(frame=frame)
+                for t in texts or []:
+                    name = (t.name or '').strip()
+                    if self.match_profile_from_login(name) == profile_name:
+                        sx, sy = self._box_center_screen(t, origin)
+                        self.log_info(f'点击账号 {profile_name}（对话框，屏幕 {sx},{sy}）')
+                        if self._screen_click(sx, sy, after_sleep=2):
+                            return True, name
+            except Exception:
+                pass
+        return False, None
+
+    def _dialog_click_login(self):
+        """在 #32770 登录对话框里点击「登录」按钮，返回是否成功。"""
+        frame, origin = self._dialog_capture()
+        if frame is None:
+            return False
+        try:
+            texts = self.ocr(frame=frame)
+            login_boxes = self.find_boxes(texts, LOGIN_TEXTS)
+            if not login_boxes:
+                self.log_warning('登录对话框里未找到「登录」按钮')
+                return False
+            box = login_boxes[0]
+            sx, sy = self._box_center_screen(box, origin)
+            self.log_info(f'点击登录按钮（屏幕 {sx},{sy}）')
+            return self._screen_click(sx, sy, after_sleep=3)
+        except Exception:
+            return False
+
     def _detect_current_account_from_login(self):
-        """识别登录界面当前显示的账号，返回方案名（掩码或扫码 U 账号均可识别）。"""
+        """识别登录界面当前显示的账号，返回方案名（掩码或扫码 U 账号均可识别）。
+
+        v1.03.73：主窗口内嵌登录走原路径；#32770 对话框登录走对话框帧。
+        """
+        if getattr(self, '_login_in_dialog', False):
+            frame, origin = self._dialog_capture()
+            if frame is not None:
+                try:
+                    dlg_texts = self.ocr(frame=frame)
+                    for t in dlg_texts or []:
+                        name = (t.name or '').strip()
+                        if account_pattern.search(name) or scan_account_pattern.match(name):
+                            profile = self.match_profile_from_login(name)
+                            if profile:
+                                self.log_info(f'对话框识别当前账号: {name} -> {profile}')
+                                return profile
+                    if dlg_texts:
+                        self.log_info(f'对话框未匹配到方案，账号文本: {[t.name for t in dlg_texts][:8]}')
+                except Exception:
+                    pass
+            return None
         texts = self.ocr(match=account_pattern)
         candidates = [t.name for t in texts] if texts else []
         # 也识别 U 开头账号（扫码登录）
@@ -826,8 +987,17 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
     def _click_account_in_list(self, profile_name):
         """在登录界面账号列表中点击指定的方案账号，返回是否点击成功。
 
-        v1.03.72：先匹配掩码账号（180****1088），无则匹配 U 扫码账号（U550500484A）。
+        v1.03.73：主窗口内嵌登录走原路径；#32770 对话框登录走对话框帧 + 屏幕坐标路径；
+        账号匹配支持掩码（180****1088）与 U 扫码账号（U550500484A）。
         """
+        if getattr(self, '_login_in_dialog', False):
+            ok, name = self._dialog_find_and_click_account(profile_name)
+            if ok:
+                suffix = (' (U账号 %s)' % name) if name and name.startswith('U') else ''
+                self.log_info('点击账号 %s（对话框）%s' % (profile_name, suffix))
+                return True
+            self.log_error(f'登录对话框中没有找到目标账号 {profile_name}')
+            return False
         accounts = self.ocr(match=account_pattern)
         for account in accounts:
             if self.match_profile_from_login(account.name) == profile_name:
@@ -870,7 +1040,13 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 self.sleep(1)
                 drop_down = self.find_account_drop_down()
                 if drop_down:
-                    self.click(drop_down, after_sleep=2)
+                    if getattr(self, '_login_in_dialog', False):
+                        # 对话框变体：点击 ComboBox 展开账号列表
+                        if not self._dialog_open_account_list():
+                            self.log_error('对话框模式下打开账号下拉框失败')
+                            continue
+                    else:
+                        self.click(drop_down, after_sleep=2)
                 if self.do_find_account_drop_down():
                     self.log_error('click drop down no effect')
                     self.screenshot('multi')
@@ -895,22 +1071,36 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     self.screenshot('multi')
                     raise Exception(self.tr('Failed to switch account'))
             self.sleep(4)
-            texts = self.ocr()
-            login_btn = self.find_boxes(texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.8),
-                                        match=LOGIN_TEXTS)
-            if login_btn:
-                # 点登录前核对当前显示的账号是否为目标账号（防误登其他账号）
+            if getattr(self, '_login_in_dialog', False):
+                # 对话框变体：点登录前核对账号，再点击「登录」按钮（对话框帧 + 屏幕坐标）
                 shown = self._detect_current_account_from_login()
                 if shown and not self._same_account(shown, target):
                     self.log_error(
-                        f'登录界面当前显示账号 {shown} 与目标 {target} 不一致，'
-                        f'取消点击登录（防误登），请检查账号选择'
+                        f'登录对话框当前显示账号 {shown} 与目标 {target} 不一致，取消登录（防误登）'
                     )
                     self.screenshot('multi')
                     raise Exception(self.tr('Login aborted: displayed account does not match target'))
-                self.click(login_btn, after_sleep=3)
+                if not self._dialog_click_login():
+                    self.log_error('对话框模式下点击登录按钮失败')
+                    self.screenshot('multi')
+                    raise Exception(self.tr('Failed to click login button'))
             else:
-                self.click_relative(0.5, 0.568, hcenter=True, vcenter=True, after_sleep=3)
+                texts = self.ocr()
+                login_btn = self.find_boxes(texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.8),
+                                            match=LOGIN_TEXTS)
+                if login_btn:
+                    # 点登录前核对当前显示的账号是否为目标账号（防误登其他账号）
+                    shown = self._detect_current_account_from_login()
+                    if shown and not self._same_account(shown, target):
+                        self.log_error(
+                            f'登录界面当前显示账号 {shown} 与目标 {target} 不一致，'
+                            f'取消点击登录（防误登），请检查账号选择'
+                        )
+                        self.screenshot('multi')
+                        raise Exception(self.tr('Login aborted: displayed account does not match target'))
+                    self.click(login_btn, after_sleep=3)
+                else:
+                    self.click_relative(0.5, 0.568, hcenter=True, vcenter=True, after_sleep=3)
             self.logged_in = False
             self.ensure_main(time_out=180)
             self.log_info(self.tr('Login successful'))
@@ -944,18 +1134,27 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         try:
             drop_down = self.find_account_drop_down()
             if drop_down:
-                self.click(drop_down, after_sleep=2)
+                if getattr(self, '_login_in_dialog', False):
+                    self._dialog_open_account_list()
+                else:
+                    self.click(drop_down, after_sleep=2)
             deadline_account = None
             self.wait_until(lambda: self._click_specific_account(profile_name),
                             time_out=10, raise_if_not_found=True)
             self.sleep(4)
-            texts = self.ocr()
-            login_btn = self.find_boxes(texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.8),
-                                        match=LOGIN_TEXTS)
-            if login_btn:
-                self.click(login_btn, after_sleep=3)
+            if getattr(self, '_login_in_dialog', False):
+                if not self._dialog_click_login():
+                    self.log_error('对话框模式下点击登录按钮失败')
+                    self.screenshot('multi')
+                    raise Exception(self.tr('Failed to click login button'))
             else:
-                self.click_relative(0.5, 0.568, hcenter=True, vcenter=True, after_sleep=3)
+                texts = self.ocr()
+                login_btn = self.find_boxes(texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.8),
+                                            match=LOGIN_TEXTS)
+                if login_btn:
+                    self.click(login_btn, after_sleep=3)
+                else:
+                    self.click_relative(0.5, 0.568, hcenter=True, vcenter=True, after_sleep=3)
             self.logged_in = False
             self.ensure_main(time_out=180)
             self.log_info(f'已登录: {profile_name}')
@@ -964,7 +1163,13 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 mouse_reset_task.enable()
 
     def _click_specific_account(self, profile_name):
-        """在账号列表中点击指定的方案账号，返回是否点击成功。"""
+        """在账号列表中点击指定的方案账号，返回是否点击成功。
+
+        v1.03.73：对话框模式走对话框帧 + 屏幕坐标。
+        """
+        if getattr(self, '_login_in_dialog', False):
+            ok, _name = self._dialog_find_and_click_account(profile_name)
+            return ok
         accounts = self.ocr(match=account_pattern)
         for account in accounts:
             if self.match_profile_from_login(account.name) == profile_name:
@@ -976,21 +1181,30 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         return self.wait_until(self.do_find_account_drop_down, time_out=60, settle_time=2, raise_if_not_found=True)
 
     def do_find_account_drop_down(self) -> object | None:
-        """登录界面账号下拉框检测（v1.03.72：支持 U 扫码账号）。
+        """登录界面账号下拉框检测（v1.03.73：支持 U 账号 + #32770 对话框帧）。
 
         命中条件：登录特征（登录/Log/登入）存在，且
           - 恰好 1 个掩码账号（`180****1088`），或
           - 存在 U 开头扫码账号（`U550500484A`）。
-        返回掩码框（或登录文本框）作为“登录界面已就绪”标记。
+        先查主窗口帧（登录界面内嵌变体），无则查 #32770 登录对话框帧（独立窗口变体），
+        命中对话框帧时置 self._login_in_dialog = True，后续账号操作改用对话框帧。
         """
         texts = self.ocr()
         account_boxes = self.find_boxes(texts, account_pattern)
         login_boxes = self.find_boxes(texts, LOGIN_TEXTS)
-        if len(account_boxes) == 1 and login_boxes:
-            return account_boxes[0]
         u_hit = bool(texts) and any(scan_account_pattern.match(t.name.strip()) for t in texts)
-        if u_hit and login_boxes:
-            return login_boxes[0]
+        if (len(account_boxes) == 1 and login_boxes) or (u_hit and login_boxes):
+            self._login_in_dialog = False
+            return account_boxes[0] if account_boxes else login_boxes[0]
+        # 主窗口无特征 → #32770 登录对话框帧
+        dlg_texts = self._ocr_login_dialog()
+        if dlg_texts:
+            d_account_boxes = self.find_boxes(dlg_texts, account_pattern)
+            d_login_boxes = self.find_boxes(dlg_texts, LOGIN_TEXTS)
+            d_u_hit = any(scan_account_pattern.match((t.name or '').strip()) for t in dlg_texts)
+            if (len(d_account_boxes) == 1 and d_login_boxes) or (d_u_hit and d_login_boxes):
+                self._login_in_dialog = True
+                return d_account_boxes[0] if d_account_boxes else d_login_boxes[0]
         return None
 
 

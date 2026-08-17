@@ -140,16 +140,15 @@ class WindowsGraphicsCaptureMethod(BaseWindowsCaptureMethod):
         return self.hwnd_window is not None and self.hwnd_window.exists and self.frame_pool is not None
 
     def get_capture_hwnd(self):
-        # 定制（v1.03.72）：优先捕获 top_hwnd（登录对话框 #32770 等顶层窗口），
-        # 无则回退主窗口。与 PostMessageInteraction.hwnd 的目标选择保持一致，
-        # 否则登录界面的账号下拉框（独立顶层窗口）永远不在捕获画面里。
-        hwnd_window = self.hwnd_window
-        for candidate in (getattr(hwnd_window, 'top_hwnd', 0), getattr(hwnd_window, 'hwnd', 0)):
-            try:
-                if candidate and win32gui.IsWindow(candidate) and win32gui.IsWindowVisible(candidate):
-                    return candidate
-            except Exception:
-                continue
+        # v1.03.73：恢复只捕获主窗口。WGC 无法捕获 #32770 对话框（CreateForWindow
+        # 报 0x80070057），登录对话框的识别与操作改由任务层用 BitBlt 单独捕获
+        # （见 MultiAccountDailyTask 的 _dialog_capture 系列）。
+        hwnd = getattr(self.hwnd_window, 'hwnd', 0)
+        try:
+            if hwnd and win32gui.IsWindow(hwnd):
+                return hwnd
+        except Exception:
+            pass
         return 0
 
     def start_or_stop(self, capture_cursor=False):
