@@ -226,7 +226,12 @@ class TestMultiAccountDailyTask(unittest.TestCase):
     def test_account_mismatch_reselects_target_instead_of_stopping(self):
         class FakeTask:
             def __init__(self):
-                self.detected = iter(["profile-a", "profile-c"])
+                # 第一次看到旧账号；第二次点击后目标账号连续出现两帧。
+                self.detected_batches = iter([
+                    ["profile-a"],
+                    ["profile-c", "profile-c"],
+                ])
+                self.current_batch = iter(())
                 self.click_count = 0
 
             def sleep(self, _seconds):
@@ -240,12 +245,23 @@ class TestMultiAccountDailyTask(unittest.TestCase):
                 return target == "profile-c"
 
             def wait_until(self, callback, **_kwargs):
+                # 生产逻辑的稳定检测需要连续采样；点击列表本身仍只采样一次。
+                if _kwargs.get('time_out') == 8:
+                    self.current_batch = iter(next(self.detected_batches))
+                    for _ in range(3):
+                        try:
+                            if result := callback():
+                                return result
+                        except StopIteration:
+                            return None
+                    return None
                 return callback()
 
             def _detect_current_account_from_login(self):
-                return next(self.detected)
+                return next(self.current_batch)
 
             _same_account = MultiAccountDailyTask._same_account
+            _wait_for_account_selection_stable = MultiAccountDailyTask._wait_for_account_selection_stable
 
             def log_info(self, *_args, **_kwargs):
                 pass
@@ -270,6 +286,142 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         )
         self.assertTrue(selected)
         self.assertEqual(task.click_count, 2)
+
+    def test_selection_waits_through_login_ui_flicker_before_confirming(self):
+        class FakeTask:
+            def __init__(self):
+                self.expanded = iter([True, True, False, False, False])
+                self.detected = iter(["profile-a", None, "profile-a", "profile-c", "profile-c"])
+                self.click_count = 0
+                self.wait_calls = []
+                self.info_logs = []
+
+            def sleep(self, _seconds):
+                pass
+
+            def _open_account_list(self):
+                return True
+
+            def _click_account_in_list(self, target):
+                self.click_count += 1
+                return target == "profile-c"
+
+            def _account_list_expanded(self):
+                return next(self.expanded)
+
+            def wait_until(self, callback, **kwargs):
+                self.wait_calls.append(kwargs)
+                for _ in range(8):
+                    try:
+                        result = callback()
+                    except StopIteration:
+                        return None
+                    if result:
+                        return result
+                return None
+
+            def _detect_current_account_from_login(self):
+                return next(self.detected)
+
+            _same_account = MultiAccountDailyTask._same_account
+            _wait_for_account_selection_stable = MultiAccountDailyTask._wait_for_account_selection_stable
+
+            def log_info(self, *_args, **_kwargs):
+                self.info_logs.append(str(_args[0]) if _args else '')
+
+            def log_warning(self, *_args, **_kwargs):
+                pass
+
+            def log_error(self, *_args, **_kwargs):
+                pass
+
+            def screenshot(self, *_args, **_kwargs):
+                pass
+
+            def tr(self, message):
+                return message
+
+        task = FakeTask()
+        selected = MultiAccountDailyTask._select_account_with_retry(
+            task,
+            "profile-c",
+            max_retries=3,
+        )
+
+        self.assertTrue(selected)
+        self.assertEqual(task.click_count, 1)
+        self.assertTrue(any(call.get('time_out') == 8 for call in task.wait_calls))
+        self.assertEqual(
+            sum('列表已收起' in message for message in task.info_logs),
+            1,
+        )
+
+    def test_selection_reselects_only_after_stable_wrong_account_timeout(self):
+        class FakeTask:
+            def __init__(self):
+                self.detected = iter([
+                    "profile-a", "profile-a", "profile-a",
+                    "profile-c", "profile-c",
+                ])
+                self.click_count = 0
+                self.info_logs = []
+
+            def sleep(self, _seconds):
+                pass
+
+            def _open_account_list(self):
+                return True
+
+            def _click_account_in_list(self, target):
+                self.click_count += 1
+                return target == "profile-c"
+
+            def _account_list_expanded(self):
+                return False
+
+            def wait_until(self, callback, **kwargs):
+                if kwargs.get('time_out') == 8:
+                    # 第一次选择持续显示错误账号，第二次选择目标连续两帧。
+                    for _ in range(3 if self.click_count == 1 else 2):
+                        if result := callback():
+                            return result
+                    return None
+                return callback()
+
+            def _detect_current_account_from_login(self):
+                return next(self.detected)
+
+            _same_account = MultiAccountDailyTask._same_account
+            _wait_for_account_selection_stable = MultiAccountDailyTask._wait_for_account_selection_stable
+
+            def log_info(self, *_args, **_kwargs):
+                self.info_logs.append(str(_args[0]) if _args else '')
+
+            def log_warning(self, *_args, **_kwargs):
+                pass
+
+            def log_error(self, *_args, **_kwargs):
+                pass
+
+            def screenshot(self, *_args, **_kwargs):
+                pass
+
+            def tr(self, message):
+                return message
+
+        task = FakeTask()
+        selected = MultiAccountDailyTask._select_account_with_retry(
+            task,
+            "profile-c",
+            max_retries=3,
+        )
+
+        self.assertTrue(selected)
+        self.assertEqual(task.click_count, 2)
+        self.assertEqual(
+            sum('仍在闪烁或切换' in message for message in task.info_logs),
+            1,
+        )
 
     def test_login_precheck_reselects_when_displayed_account_changed(self):
         class FakeTask:

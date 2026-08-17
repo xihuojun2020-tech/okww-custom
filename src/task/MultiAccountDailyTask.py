@@ -1131,6 +1131,78 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             return False
         return True
 
+    def _wait_for_account_selection_stable(self, target, time_out=8, consecutive=2):
+        """等待点击账号后的登录界面稳定显示目标账号。
+
+        游戏登录器在点击列表项后可能短暂保留下拉列表、返回空 OCR 帧，或先
+        显示旧账号再切换到新账号。此处把这些状态视为过渡态，要求下拉列表已
+        收起且目标账号连续识别 ``consecutive`` 次后才确认，避免把闪烁帧误判
+        为账号选择失败并立即重复点击。
+
+        返回 ``(是否稳定确认, 最后识别到的方案名)``，超时后由调用方决定是否
+        重新展开列表；不在此方法中执行第二次点击，保证正式任务和测试路径共享
+        同一套重试边界。
+        """
+        state = {
+            'matches': 0,
+            'last_current': None,
+            'last_expanded': None,
+        }
+
+        def observe():
+            try:
+                expanded = bool(self._account_list_expanded())
+            except Exception:
+                # 某些登录器闪烁帧无法判断列表控件，继续用账号 OCR 做宽松探测。
+                expanded = False
+
+            previous_expanded = state['last_expanded']
+            expanded_changed = previous_expanded is not expanded
+            if expanded:
+                state['matches'] = 0
+                if expanded_changed:
+                    self.log_info('账号选择后列表仍展开，等待界面收起并稳定')
+                state['last_expanded'] = True
+                return False
+
+            state['last_expanded'] = False
+            current = self._detect_current_account_from_login()
+            previous = state['last_current']
+            state['last_current'] = current
+            current_changed = not self._same_account(previous, current)
+            if current_changed:
+                self.log_info(
+                    f'账号选择稳定检测：当前识别为 {current or "未识别"}，'
+                    f'目标为 {target}'
+                )
+            if expanded_changed and previous_expanded is True:
+                self.log_info('账号列表已收起，继续等待账号识别稳定')
+
+            if self._same_account(target, current):
+                state['matches'] += 1
+                if state['matches'] >= consecutive:
+                    return True
+            else:
+                if current_changed:
+                    self.log_info('账号选择界面仍在闪烁或切换，继续等待稳定')
+                state['matches'] = 0
+            return False
+
+        stable = self.wait_until(
+            observe,
+            time_out=time_out,
+            settle_time=0,
+            raise_if_not_found=False,
+        )
+        if stable:
+            self.log_info(f'账号选择已稳定确认：{target}（连续 {consecutive} 次）')
+        else:
+            self.log_warning(
+                f'账号选择稳定检测超时：目标 {target}，最后识别 '
+                f'{state["last_current"] or "未识别"}，准备重新选择'
+            )
+        return bool(stable), state['last_current']
+
     def _select_account_with_retry(self, target, max_retries=5):
         """重复展开、选择并核对目标账号，确认成功后返回 True。
 
@@ -1153,10 +1225,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 self.log_warning(f'第 {attempt}/{max_retries} 次未能点击目标账号 {target}，准备重试')
                 continue
 
-            self.sleep(1)
-            last_current = self._detect_current_account_from_login()
+            stable, last_current = self._wait_for_account_selection_stable(target)
             self.log_info(f'已选择账号：{target}，当前显示账号：{last_current}')
-            if self._same_account(target, last_current):
+            if stable:
                 self.log_info(f'确认已选择账号：{target}')
                 return True
 
