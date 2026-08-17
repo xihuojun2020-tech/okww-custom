@@ -21,7 +21,7 @@ import os
 import re
 import time
 
-from ok import Logger
+from ok import Logger, TaskDisabledException
 from ok.util.file import get_relative_path, read_json_file, write_json_file
 from src.task.DailyTask import DailyTask, DAILY_PROFILE, LOGOUT_AFTER_DAILY as LOGOUT_AFTER_DAILY_KEY
 from src.task.WWOneTimeTask import WWOneTimeTask
@@ -627,6 +627,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             if self.do_find_account_drop_down() is not None:
                 self.log_info('已在登录界面，跳过退登流程')
                 return
+        except TaskDisabledException:
+            raise
         except Exception:
             pass
         self.log_info('退登步骤1/4：按 ESC 打开设置页')
@@ -684,6 +686,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     try:
                         hwnd.bring_to_front()
                         self.log_warning('游戏窗口不可见，已尝试恢复前台')
+                    except TaskDisabledException:
+                        raise
                     except Exception:
                         pass
                     self.sleep(1)
@@ -711,6 +715,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     last_log = now
                     win_state = 'visible' if (hwnd is not None and hwnd.visible) else 'invisible'
                     self.log_info(f'登录界面暂不可见（闪烁/加载中）: 窗口={win_state}, OCR文本数={len(texts) if texts else 0}')
+            except TaskDisabledException:
+                # 停止任务必须立即终止等待；不能被闪烁容错逻辑吞掉后继续 OCR。
+                raise
             except Exception as e:
                 if 'launcher' in str(e).lower() or '启动器' in str(e):
                     raise
@@ -726,6 +733,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 win_state = 'visible' if (hwnd is not None and hwnd.visible) else 'invisible'
                 snippet = ' | '.join(t.name[:20] for t in texts[:5]) if texts else ''
                 self.log_error(f'登录界面等待超时: 窗口={win_state}, OCR文本数={len(texts) if texts else 0}, 最近文本: {snippet}')
+            except TaskDisabledException:
+                raise
             except Exception:
                 pass
             raise Exception(self.tr('Timed out waiting for the login screen'))
@@ -803,11 +812,15 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         except Exception:
             return None, None
         try:
-            left, top, right, bottom = win32gui.GetWindowRect(hwnd)
-            w, h = right - left, bottom - top
+            # ComboLBox 是独立弹出窗口，窗口边框可能位于列表客户区之外。
+            # 使用客户区 DC + ClientToScreen，确保 OCR 框换算到屏幕时不依赖
+            # 向上/向下展开方向或固定行号。
+            client_rect = win32gui.GetClientRect(hwnd)
+            w, h = client_rect[2] - client_rect[0], client_rect[3] - client_rect[1]
             if w <= 0 or h <= 0:
                 return None, None
-            hwnd_dc = win32gui.GetWindowDC(hwnd)
+            origin = win32gui.ClientToScreen(hwnd, (0, 0))
+            hwnd_dc = win32gui.GetDC(hwnd)
             mfc_dc = win32ui.CreateDCFromHandle(hwnd_dc)
             save_dc = mfc_dc.CreateCompatibleDC()
             bmp = win32ui.CreateBitmap()
@@ -819,7 +832,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             mfc_dc.DeleteDC()
             win32gui.ReleaseDC(hwnd, hwnd_dc)
             frame = np.frombuffer(bits, np.uint8).reshape(h, w, 4)
-            return cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR), (left, top)
+            return cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR), origin
         except Exception:
             return None, None
 
@@ -889,6 +902,17 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _screen_click(self, x, y, after_sleep=0.5):
         """用系统级鼠标事件在屏幕坐标 (x, y) 处点击（绕过主窗口坐标系，作用于 #32770 对话框）。"""
+        executor = getattr(self, 'executor', None)
+        check_enabled = getattr(executor, 'check_enabled', None)
+        if callable(check_enabled):
+            try:
+                result = check_enabled()
+            except TaskDisabledException:
+                raise
+            except Exception:
+                return False
+            if result is False:
+                return False
         import win32api
         import win32con
         import time as _t
@@ -901,6 +925,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             if after_sleep:
                 self.sleep(after_sleep)
             return True
+        except TaskDisabledException:
+            raise
         except Exception:
             return False
 
@@ -953,9 +979,13 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 refresh()
                 self.log_info('账号点击未确认：已刷新 HwndWindow 句柄快照')
                 return True
+        except TaskDisabledException:
+            raise
         except Exception as e:
             try:
                 self.log_warning(f'刷新 HwndWindow 句柄快照失败（继续尝试）：{e}')
+            except TaskDisabledException:
+                raise
             except Exception:
                 pass
         return False
@@ -967,6 +997,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             bring_to_front = getattr(hwnd_window, 'bring_to_front', None)
             if callable(bring_to_front):
                 return bool(bring_to_front())
+        except TaskDisabledException:
+            raise
         except Exception as e:
             try:
                 self.log_warning(f'账号点击兜底置前失败（继续尝试）：{e}')
@@ -990,6 +1022,20 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _dialog_open_account_list(self):
         """点击 #32770 登录对话框的账号下拉框（ComboBox）展开账号列表，返回是否成功。"""
+        bring_to_front = getattr(self, '_bring_account_window_to_front', None)
+        if not callable(bring_to_front):
+            self.log_warning('打开账号列表取消：无法确认登录窗口已置前')
+            return False
+        try:
+            if not bring_to_front():
+                self.log_warning('打开账号列表取消：无法确认登录窗口已置前')
+                return False
+            self.sleep(0.2)
+        except TaskDisabledException:
+            raise
+        except Exception:
+            self.log_warning('打开账号列表取消：窗口置前失败')
+            return False
         hwnd, rect = self._find_control_hwnd('ComboBox')
         if not hwnd:
             self.log_warning('未找到登录对话框的账号下拉框（ComboBox）')
@@ -999,30 +1045,86 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         self.log_info(f'点击账号下拉框 ComboBox @({cx},{cy})')
         return self._screen_click(cx, cy, after_sleep=2)
 
+    def _find_and_click_account_in_combo_list(self, profile_name):
+        """从当前可见 ComboLBox 客户区 OCR 并点击目标账号。
+
+        ComboLBox 是账号列表本身，不包含灰色 selector 当前账号栏，因此它
+        是主窗口和 #32770 对话框两种登录形态的权威候选区域。返回
+        ``(clicked, matched_name, attempted)``；``attempted`` 表示已找到目标
+        并尝试了系统点击，调用方不能再降级为 PostMessage。
+        """
+        try:
+            hwnd, _rect = self._find_control_hwnd('ComboLBox')
+        except TaskDisabledException:
+            raise
+        except Exception:
+            return False, None, False
+        if not hwnd:
+            return False, None, False
+        try:
+            frame, origin = self._capture_hwnd_client(hwnd)
+        except TaskDisabledException:
+            raise
+        except Exception:
+            return False, None, False
+        if frame is None or not origin:
+            return False, None, False
+        try:
+            texts = self.ocr(frame=frame)
+        except TaskDisabledException:
+            raise
+        except Exception:
+            return False, None, False
+
+        candidates = []
+        matched = None
+        for box in texts or []:
+            name = (getattr(box, 'name', '') or '').strip()
+            if not name:
+                continue
+            try:
+                mapped_profile = self.match_profile_from_login(name)
+            except TaskDisabledException:
+                raise
+            except Exception:
+                mapped_profile = None
+            if account_pattern.search(name) or scan_account_pattern.match(name) or mapped_profile:
+                candidates.append(box)
+            if mapped_profile == profile_name and matched is None:
+                matched = (box, name)
+        if matched is None:
+            return False, None, False
+
+        box, name = matched
+        try:
+            center_y = box.y + box.height / 2.0
+            last_y = max((item.y + item.height / 2.0 for item in candidates), default=center_y)
+            self.log_info(
+                f'ComboLBox 目标诊断：目标={profile_name}，OCR={name}，'
+                f'列表末项={abs(center_y - last_y) < 1.0}'
+            )
+        except Exception:
+            pass
+        sx, sy = self._box_center_screen(box, origin)
+        diagnose = getattr(self, '_log_account_click_delivery', None)
+        if callable(diagnose):
+            diagnose('系统屏幕（ComboLBox）', box, (sx, sy), hwnd)
+        self._last_account_click_mode = 'screen_combobox'
+        if self._screen_click(sx, sy, after_sleep=2):
+            self.log_info(f'已发送账号点击（方式=系统屏幕，ComboLBox，屏幕 {sx},{sy}）')
+            return True, name, True
+        self._last_account_click_mode = 'screen_combobox_failed'
+        return False, name, True
+
     def _dialog_find_and_click_account(self, profile_name):
         """在 #32770 登录对话框/展开的账号列表（ComboLBox）中找到目标账号并点击。
 
         返回 (是否点击成功, 找到的账号文本或 None)。账号可能是掩码（180****1088）或 U 扫码（U550500484A）。
         """
         # 1) 展开的账号列表（ComboLBox）优先
-        hwnd, rect = self._find_control_hwnd('ComboLBox')
-        if hwnd:
-            frame, origin = self._capture_hwnd_client(hwnd)
-            if frame is not None:
-                try:
-                    texts = self.ocr(frame=frame)
-                    for t in texts or []:
-                        name = (t.name or '').strip()
-                        if self.match_profile_from_login(name) == profile_name:
-                            sx, sy = self._box_center_screen(t, origin)
-                            diagnose = getattr(self, '_log_account_click_delivery', None)
-                            if callable(diagnose):
-                                diagnose('系统屏幕点击', t, (sx, sy), hwnd)
-                            if self._screen_click(sx, sy, after_sleep=2):
-                                self.log_info(f'已发送账号点击（方式=系统屏幕，列表，屏幕 {sx},{sy}）')
-                                return True, name
-                except Exception:
-                    pass
+        ok, name, attempted = self._find_and_click_account_in_combo_list(profile_name)
+        if attempted:
+            return ok, name
         # 2) 对话框主体里找（当前显示的账号 / 列表内嵌）
         frame, origin = self._dialog_capture()
         if frame is not None:
@@ -1035,15 +1137,30 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                         diagnose = getattr(self, '_log_account_click_delivery', None)
                         if callable(diagnose):
                             diagnose('系统屏幕点击', t, (sx, sy))
+                        self._last_account_click_mode = 'screen_dialog'
                         if self._screen_click(sx, sy, after_sleep=2):
                             self.log_info(f'已发送账号点击（方式=系统屏幕，对话框，屏幕 {sx},{sy}）')
                             return True, name
+                        self._last_account_click_mode = 'screen_dialog_failed'
+            except TaskDisabledException:
+                raise
             except Exception:
                 pass
         return False, None
 
     def _dialog_click_login(self):
         """在 #32770 登录对话框里点击「登录」按钮，返回是否成功。"""
+        bring_to_front = getattr(self, '_bring_account_window_to_front', None)
+        if not callable(bring_to_front):
+            return False
+        try:
+            if not bring_to_front():
+                return False
+            self.sleep(0.2)
+        except TaskDisabledException:
+            raise
+        except Exception:
+            return False
         frame, origin = self._dialog_capture()
         if frame is None:
             return False
@@ -1161,28 +1278,87 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         ``_wait_for_account_selection_stable`` 单独确认。``interaction_mode=screen``
         只供最后一次兜底使用，并且要求调用方先确认列表仍展开。
         """
+        self._last_account_click_mode = None
         if require_expanded:
             try:
                 if not self._account_list_expanded():
                     self.log_warning('账号点击兜底取消：列表未保持展开')
                     return False
+            except TaskDisabledException:
+                raise
             except Exception:
                 self.log_warning('账号点击兜底取消：无法确认列表展开状态')
                 return False
-        if interaction_mode == 'screen' and not getattr(self, '_login_in_dialog', False):
+        if not getattr(self, '_login_in_dialog', False):
+            # 屏幕点击是主路径：只有窗口仍可置前、列表仍展开且 OCR 框能
+            # 换算为当前屏幕坐标时才使用它。任何一项不满足都回退到
+            # PostMessage，绝不使用缓存坐标或固定行号盲点。
+            screen_click_requested = interaction_mode == 'screen'
+            combo_helper = getattr(self, '_find_and_click_account_in_combo_list', None)
+            screen_click_available = (
+                callable(getattr(self, '_main_box_center_screen', None))
+                or callable(combo_helper)
+            )
             bring_to_front = getattr(self, '_bring_account_window_to_front', None)
-            if not callable(bring_to_front) or not bring_to_front():
-                self.log_warning('账号点击兜底取消：无法确认游戏窗口已置前')
-                return False
-            self.sleep(0.2)
-            if require_expanded:
-                try:
-                    if not self._account_list_expanded():
-                        self.log_warning('账号点击兜底取消：窗口置前后列表已收起')
-                        return False
-                except Exception:
-                    self.log_warning('账号点击兜底取消：窗口置前后无法确认列表状态')
+            expanded_check = getattr(self, '_account_list_expanded', None)
+            entry_count = getattr(self, '_account_entry_count', None)
+            if screen_click_requested or screen_click_available:
+                if screen_click_available and not callable(bring_to_front):
+                    screen_click_available = False
+                if screen_click_requested and not callable(bring_to_front):
+                    self.log_warning('账号点击兜底取消：无法确认游戏窗口已置前')
                     return False
+                # 旧的注入/测试任务没有 _account_entry_count，只能先用
+                # _account_list_expanded 做保守检查；生产路径稍后直接用同一
+                # 帧 OCR 的条目数确认，避免目标框与另一帧错位。
+                legacy_expanded_check = callable(expanded_check) and not callable(entry_count)
+                if screen_click_available and legacy_expanded_check:
+                    try:
+                        if not expanded_check():
+                            self.log_warning('账号点击屏幕主路径取消：列表未保持展开')
+                            screen_click_available = False
+                    except TaskDisabledException:
+                        raise
+                    except Exception:
+                        screen_click_available = False
+                if callable(bring_to_front):
+                    # 列表已确认收起时不会进入屏幕主路径，也不应为了后备
+                    # PostMessage 无意义地抢前台。
+                    if not screen_click_available and not screen_click_requested:
+                        bring_to_front = None
+                    try:
+                        if callable(bring_to_front) and not bring_to_front():
+                            if screen_click_requested:
+                                self.log_warning('账号点击兜底取消：无法确认游戏窗口已置前')
+                                return False
+                            screen_click_available = False
+                        elif callable(bring_to_front):
+                            self.sleep(0.2)
+                    except TaskDisabledException:
+                        raise
+                    except Exception:
+                        if screen_click_requested:
+                            self.log_warning('账号点击兜底取消：窗口置前失败')
+                            return False
+                        screen_click_available = False
+                if screen_click_requested and not screen_click_available:
+                    return False
+        else:
+            # 对话框 ComboLBox 也必须在可确认的前台窗口上执行真实鼠标点击。
+            bring_to_front = getattr(self, '_bring_account_window_to_front', None)
+            if not callable(bring_to_front):
+                self.log_warning('账号点击取消：无法确认登录窗口已置前')
+                return False
+            try:
+                if not bring_to_front():
+                    self.log_warning('账号点击取消：无法确认登录窗口已置前')
+                    return False
+                self.sleep(0.2)
+            except TaskDisabledException:
+                raise
+            except Exception:
+                self.log_warning('账号点击取消：窗口置前失败')
+                return False
         if getattr(self, '_login_in_dialog', False):
             ok, name = self._dialog_find_and_click_account(profile_name)
             if ok:
@@ -1192,13 +1368,38 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             self.log_error(f'登录对话框中没有找到目标账号 {profile_name}')
             return False
 
+        if screen_click_available and callable(combo_helper):
+            combo_ok, combo_name, combo_attempted = combo_helper(profile_name)
+            if combo_attempted:
+                return bool(combo_ok)
+
         # 主登录界面只取一帧 OCR，同时覆盖掩码手机号、U 扫码账号和备用识别名。
         # 两次 OCR 可能跨越登录器刷新，导致目标框与实际点击帧不一致。
         try:
             texts = self.ocr()
+        except TaskDisabledException:
+            raise
         except Exception as e:
             self.log_warning(f'读取登录账号列表 OCR 失败：{e}')
             texts = []
+        if screen_click_available:
+            if callable(entry_count):
+                try:
+                    if entry_count(texts) < 2:
+                        self.log_warning('账号点击屏幕主路径取消：当前 OCR 帧未确认列表展开')
+                        screen_click_available = False
+                except TaskDisabledException:
+                    raise
+                except Exception:
+                    screen_click_available = False
+            elif callable(expanded_check):
+                try:
+                    if not expanded_check():
+                        screen_click_available = False
+                except TaskDisabledException:
+                    raise
+                except Exception:
+                    screen_click_available = False
         accounts = []
         for account in texts or []:
             name = (getattr(account, 'name', '') or '').strip()
@@ -1207,6 +1408,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             try:
                 mapped_profile = self.match_profile_from_login(name)
                 matched = mapped_profile == profile_name
+            except TaskDisabledException:
+                raise
             except Exception:
                 mapped_profile = None
                 matched = False
@@ -1215,22 +1418,31 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 accounts.append(account)
             if matched:
                 screen_point = None
-                if interaction_mode == 'screen':
+                if screen_click_available:
                     screen_point = self._main_box_center_screen(account)
                     if screen_point is None:
-                        self.log_warning('账号点击兜底取消：无法从目标 OCR 框安全换算屏幕坐标')
-                        return False
-                    diagnose = getattr(self, '_log_account_click_delivery', None)
-                    if callable(diagnose):
-                        diagnose('系统屏幕点击', account, screen_point)
-                    sent = self._screen_click(*screen_point, after_sleep=2)
-                    if sent:
-                        self.log_info(f'已发送账号点击（方式=系统屏幕，目标={profile_name}，OCR={name}）')
-                    return bool(sent)
+                        if interaction_mode == 'screen':
+                            self.log_warning('账号点击兜底取消：无法从目标 OCR 框安全换算屏幕坐标')
+                            return False
+                    else:
+                        diagnose = getattr(self, '_log_account_click_delivery', None)
+                        if callable(diagnose):
+                            diagnose('系统屏幕点击', account, screen_point)
+                        sent = self._screen_click(*screen_point, after_sleep=2)
+                        self._last_account_click_mode = 'screen_main' if sent else 'screen_main_failed'
+                        if sent:
+                            self.log_info(f'已发送账号点击（方式=系统屏幕，目标={profile_name}，OCR={name}）')
+                        return bool(sent)
+                if interaction_mode == 'screen':
+                    self.log_warning('账号点击兜底取消：无法从目标 OCR 框安全换算屏幕坐标')
+                    return False
 
                 try:
+                    self._last_account_click_mode = 'postmessage'
                     result = self.click(account, after_sleep=2)
                     sent = result is not False
+                except TaskDisabledException:
+                    raise
                 except Exception as e:
                     self.log_warning(f'发送账号点击失败（方式=PostMessage）：{e}')
                     sent = False
@@ -1295,6 +1507,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         def observe():
             try:
                 expanded = bool(self._account_list_expanded())
+            except TaskDisabledException:
+                raise
             except Exception:
                 # 某些登录器闪烁帧无法判断列表控件，继续用账号 OCR 做宽松探测。
                 expanded = False
@@ -1386,19 +1600,23 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 time_out=10,
                 raise_if_not_found=False,
             )
+            actual_mode = getattr(self, '_last_account_click_mode', None) or interaction_mode
             if not clicked:
                 self.log_warning(
-                    f'第 {attempt}/{max_retries} 次未能投递目标账号点击（方式={interaction_mode}），准备重试'
+                    f'第 {attempt}/{max_retries} 次未能投递目标账号点击（方式={actual_mode}），准备重试'
                 )
                 continue
 
             stable, last_current = self._wait_for_account_selection_stable(target)
-            self.log_info(f'账号点击投递后确认：目标 {target}，当前显示账号：{last_current}')
+            self.log_info(
+                f'账号点击投递后确认：目标 {target}，方式={actual_mode}，'
+                f'当前显示账号：{last_current}'
+            )
             if stable:
                 self.log_info(f'确认已选择账号：{target}')
                 return True
 
-            if interaction_mode == 'postmessage':
+            if actual_mode == 'postmessage':
                 unconfirmed_postmessage_deliveries += 1
 
             self.log_warning(
@@ -1428,6 +1646,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             if attempt < max_retries:
                 try:
                     self._select_account_with_retry(target, max_retries=2)
+                except TaskDisabledException:
+                    raise
                 except Exception as e:
                     self.log_warning(f'重新选择目标账号失败，将继续重试: {e}')
                 self.sleep(1)

@@ -1,5 +1,7 @@
 import unittest
+from unittest.mock import patch
 
+from ok import TaskDisabledException
 from src.task.BaseWWTask import LOGIN_TEXTS
 from src.task.MultiAccountDailyTask import (
     MultiAccountDailyTask,
@@ -262,6 +264,436 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         self.assertTrue(selected)
         self.assertEqual(task.ocr_calls, 1)
         self.assertEqual(task.clicked, ['153****9621'])
+
+    def test_click_account_list_prefers_safe_system_click_over_postmessage(self):
+        class FakeTask:
+            _main_box_center_screen = lambda self, box: (410, 520)
+
+            def __init__(self):
+                self._login_in_dialog = False
+                self.screen_clicks = []
+                self.post_clicks = []
+
+            def ocr(self):
+                return [AccountBox('153****9621', x=90, y=130)]
+
+            def match_profile_from_login(self, name):
+                return 'profile-a3' if name == '153****9621' else None
+
+            def _screen_click(self, x, y, after_sleep=0):
+                self.screen_clicks.append((x, y))
+                return True
+
+            def _account_list_expanded(self):
+                return True
+
+            def _bring_account_window_to_front(self):
+                return True
+
+            def sleep(self, _seconds):
+                pass
+
+            def click(self, account, after_sleep=0):
+                self.post_clicks.append(account.name)
+                return True
+
+            def log_info(self, *args, **kwargs):
+                pass
+
+            def log_warning(self, *args, **kwargs):
+                pass
+
+            def log_error(self, *args, **kwargs):
+                pass
+
+        task = FakeTask()
+        self.assertTrue(MultiAccountDailyTask._click_account_in_list(task, 'profile-a3'))
+        self.assertEqual(task.screen_clicks, [(410, 520)])
+        self.assertEqual(task.post_clicks, [])
+
+    def test_click_account_list_falls_back_to_postmessage_without_safe_screen_point(self):
+        class FakeTask:
+            _main_box_center_screen = lambda self, box: None
+
+            def __init__(self):
+                self._login_in_dialog = False
+                self.screen_clicks = []
+                self.post_clicks = []
+
+            def ocr(self):
+                return [AccountBox('153****9621')]
+
+            def match_profile_from_login(self, name):
+                return 'profile-a3' if name == '153****9621' else None
+
+            def _screen_click(self, x, y, after_sleep=0):
+                self.screen_clicks.append((x, y))
+                return True
+
+            def click(self, account, after_sleep=0):
+                self.post_clicks.append(account.name)
+                return True
+
+            def log_info(self, *args, **kwargs):
+                pass
+
+            def log_warning(self, *args, **kwargs):
+                pass
+
+            def log_error(self, *args, **kwargs):
+                pass
+
+        task = FakeTask()
+        self.assertTrue(MultiAccountDailyTask._click_account_in_list(task, 'profile-a3'))
+        self.assertEqual(task.screen_clicks, [])
+        self.assertEqual(task.post_clicks, ['153****9621'])
+
+    def test_main_mode_prefers_combo_list_client_target_over_selector_duplicate(self):
+        class FakeTask:
+            _click_account_in_list = MultiAccountDailyTask._click_account_in_list
+            _find_and_click_account_in_combo_list = MultiAccountDailyTask._find_and_click_account_in_combo_list
+            _box_center_screen = MultiAccountDailyTask._box_center_screen
+
+            def __init__(self):
+                self._login_in_dialog = False
+                self.screen_clicks = []
+                self.post_clicks = []
+                self.main_ocr_calls = 0
+
+            def _find_control_hwnd(self, class_name):
+                return (88, (300, 400, 600, 580)) if class_name == 'ComboLBox' else (0, None)
+
+            def _capture_hwnd_client(self, hwnd):
+                return object(), (300, 400)
+
+            def ocr(self, frame=None):
+                if frame is None:
+                    self.main_ocr_calls += 1
+                    return [AccountBox('U570994311A', x=10, y=10)]
+                return [
+                    AccountBox('U570994311A', x=20, y=10),
+                    AccountBox('153****9621', x=20, y=130),
+                ]
+
+            def match_profile_from_login(self, name):
+                return {
+                    'U570994311A': 'profile-current',
+                    '153****9621': 'profile-a3',
+                }.get(name)
+
+            def _account_list_expanded(self):
+                return True
+
+            def _bring_account_window_to_front(self):
+                return True
+
+            def _screen_click(self, x, y, after_sleep=0):
+                self.screen_clicks.append((x, y))
+                return True
+
+            def click(self, account, after_sleep=0):
+                self.post_clicks.append(account.name)
+                return True
+
+            def sleep(self, _seconds):
+                pass
+
+            def log_info(self, *args, **kwargs):
+                pass
+
+            def log_warning(self, *args, **kwargs):
+                pass
+
+            def log_error(self, *args, **kwargs):
+                pass
+
+        task = FakeTask()
+        self.assertTrue(task._click_account_in_list('profile-a3'))
+        self.assertEqual(task.screen_clicks, [(370, 540)])
+        self.assertEqual(task.post_clicks, [])
+        self.assertEqual(task.main_ocr_calls, 0)
+        self.assertEqual(task._last_account_click_mode, 'screen_combobox')
+
+    def test_main_mode_falls_back_to_main_frame_when_combo_list_unavailable(self):
+        class FakeTask:
+            _click_account_in_list = MultiAccountDailyTask._click_account_in_list
+            _main_box_center_screen = lambda self, box: (410, 520)
+
+            def __init__(self):
+                self._login_in_dialog = False
+                self.screen_clicks = []
+                self.post_clicks = []
+
+            def _find_control_hwnd(self, class_name):
+                return 0, None
+
+            def ocr(self, frame=None):
+                return [AccountBox('153****9621')]
+
+            def match_profile_from_login(self, name):
+                return 'profile-a3' if name == '153****9621' else None
+
+            def _account_list_expanded(self):
+                return True
+
+            def _bring_account_window_to_front(self):
+                return True
+
+            def _screen_click(self, x, y, after_sleep=0):
+                self.screen_clicks.append((x, y))
+                return True
+
+            def click(self, account, after_sleep=0):
+                self.post_clicks.append(account.name)
+                return True
+
+            def sleep(self, _seconds):
+                pass
+
+            def log_info(self, *args, **kwargs):
+                pass
+
+            def log_warning(self, *args, **kwargs):
+                pass
+
+            def log_error(self, *args, **kwargs):
+                pass
+
+        task = FakeTask()
+        self.assertTrue(task._click_account_in_list('profile-a3'))
+        self.assertEqual(task.screen_clicks, [(410, 520)])
+        self.assertEqual(task.post_clicks, [])
+        self.assertEqual(task._last_account_click_mode, 'screen_main')
+
+    def test_combo_screen_click_failure_is_not_recorded_as_postmessage(self):
+        class FakeTask:
+            _click_account_in_list = MultiAccountDailyTask._click_account_in_list
+            _find_and_click_account_in_combo_list = MultiAccountDailyTask._find_and_click_account_in_combo_list
+            _box_center_screen = MultiAccountDailyTask._box_center_screen
+
+            def __init__(self):
+                self._login_in_dialog = False
+                self.screen_clicks = []
+                self.post_clicks = []
+
+            def _find_control_hwnd(self, class_name):
+                return (88, (300, 400, 600, 580)) if class_name == 'ComboLBox' else (0, None)
+
+            def _capture_hwnd_client(self, hwnd):
+                return object(), (300, 400)
+
+            def ocr(self, frame=None):
+                return [AccountBox('153****9621', x=20, y=130)]
+
+            def match_profile_from_login(self, name):
+                return 'profile-a3' if name == '153****9621' else None
+
+            def _account_list_expanded(self):
+                return True
+
+            def _bring_account_window_to_front(self):
+                return True
+
+            def _screen_click(self, x, y, after_sleep=0):
+                self.screen_clicks.append((x, y))
+                return False
+
+            def click(self, account, after_sleep=0):
+                self.post_clicks.append(account.name)
+                return True
+
+            def sleep(self, _seconds):
+                pass
+
+            def log_info(self, *args, **kwargs):
+                pass
+
+            def log_warning(self, *args, **kwargs):
+                pass
+
+            def log_error(self, *args, **kwargs):
+                pass
+
+        task = FakeTask()
+        self.assertFalse(task._click_account_in_list('profile-a3'))
+        self.assertEqual(task.screen_clicks, [(370, 540)])
+        self.assertEqual(task.post_clicks, [])
+        self.assertEqual(task._last_account_click_mode, 'screen_combobox_failed')
+
+    def test_missing_foreground_confirmation_never_system_clicks(self):
+        class FakeTask:
+            _click_account_in_list = MultiAccountDailyTask._click_account_in_list
+            _main_box_center_screen = lambda self, box: (410, 520)
+
+            def __init__(self):
+                self._login_in_dialog = False
+                self.screen_clicks = []
+                self.post_clicks = []
+
+            def ocr(self, frame=None):
+                return [AccountBox('153****9621')]
+
+            def match_profile_from_login(self, name):
+                return 'profile-a3' if name == '153****9621' else None
+
+            def _screen_click(self, x, y, after_sleep=0):
+                self.screen_clicks.append((x, y))
+                return True
+
+            def click(self, account, after_sleep=0):
+                self.post_clicks.append(account.name)
+                return True
+
+            def log_info(self, *args, **kwargs):
+                pass
+
+            def log_warning(self, *args, **kwargs):
+                pass
+
+            def log_error(self, *args, **kwargs):
+                pass
+
+        task = FakeTask()
+        self.assertTrue(task._click_account_in_list('profile-a3'))
+        self.assertEqual(task.screen_clicks, [])
+        self.assertEqual(task.post_clicks, ['153****9621'])
+
+    def test_screen_click_checks_executor_before_cursor_move(self):
+        class FakeExecutor:
+            def __init__(self):
+                self.check_calls = 0
+
+            def check_enabled(self):
+                self.check_calls += 1
+                raise TaskDisabledException()
+
+        class FakeTask:
+            _screen_click = MultiAccountDailyTask._screen_click
+
+            def __init__(self):
+                self.executor = FakeExecutor()
+
+            def sleep(self, _seconds):
+                pass
+
+        task = FakeTask()
+        with patch('win32api.SetCursorPos') as set_cursor:
+            with self.assertRaises(TaskDisabledException):
+                task._screen_click(10, 20)
+        self.assertEqual(task.executor.check_calls, 1)
+        set_cursor.assert_not_called()
+
+    def test_dialog_combo_list_uses_client_origin_and_target_bottom_after_duplicate_current(self):
+        class FakeTask:
+            _dialog_find_and_click_account = MultiAccountDailyTask._dialog_find_and_click_account
+            _find_and_click_account_in_combo_list = MultiAccountDailyTask._find_and_click_account_in_combo_list
+            _box_center_screen = MultiAccountDailyTask._box_center_screen
+
+            def __init__(self, origin):
+                self._login_in_dialog = True
+                self.origin = origin
+                self.screen_clicks = []
+                self.post_clicks = []
+
+            def _find_control_hwnd(self, class_name):
+                if class_name == 'ComboLBox':
+                    return 77, (self.origin[0], self.origin[1], self.origin[0] + 300, self.origin[1] + 180)
+                return 0, None
+
+            def _capture_hwnd_client(self, hwnd):
+                if hwnd != 77:
+                    raise AssertionError(f'expected ComboLBox hwnd 77, got {hwnd}')
+                return object(), self.origin
+
+            def _dialog_capture(self):
+                return None, None
+
+            def ocr(self, frame=None):
+                return [
+                    # selector 当前账号会在 ComboLBox 第一项重复出现；目标仍是列表底部。
+                    AccountBox('U570994311A', x=20, y=10),
+                    AccountBox('180****1088', x=20, y=50),
+                    AccountBox('153****9621', x=20, y=130),
+                ]
+
+            def match_profile_from_login(self, name):
+                return {
+                    'U570994311A': 'profile-current',
+                    '180****1088': 'profile-current',
+                    '153****9621': 'profile-a3',
+                }.get(name)
+
+            def _screen_click(self, x, y, after_sleep=0):
+                self.screen_clicks.append((x, y))
+                return True
+
+            def click(self, account, after_sleep=0):
+                self.post_clicks.append(account.name)
+                return True
+
+            def log_info(self, *args, **kwargs):
+                pass
+
+            def log_warning(self, *args, **kwargs):
+                pass
+
+            def log_error(self, *args, **kwargs):
+                pass
+
+        for origin in ((100, 200), (100, 20)):
+            with self.subTest(origin=origin):
+                task = FakeTask(origin)
+                ok, name = task._dialog_find_and_click_account('profile-a3')
+                self.assertTrue(ok)
+                self.assertEqual(name, '153****9621')
+                self.assertEqual(task.screen_clicks, [(170, origin[1] + 140)])
+                self.assertEqual(task.post_clicks, [])
+
+    def test_wait_login_screen_stable_propagates_task_disabled_without_more_interaction(self):
+        class FakeWindow:
+            exists = True
+            visible = True
+
+            def __init__(self):
+                self.front_count = 0
+
+            def bring_to_front(self):
+                self.front_count += 1
+
+        class FakeTask:
+            _wait_login_screen_stable = MultiAccountDailyTask._wait_login_screen_stable
+
+            def __init__(self):
+                self.hwnd = FakeWindow()
+                self.ocr_calls = 0
+                self.dialog_ocr_calls = 0
+
+            def log_info(self, *args, **kwargs):
+                pass
+
+            def log_warning(self, *args, **kwargs):
+                pass
+
+            def log_error(self, *args, **kwargs):
+                pass
+
+            def ocr(self):
+                self.ocr_calls += 1
+                raise TaskDisabledException()
+
+            def _ocr_login_dialog(self):
+                self.dialog_ocr_calls += 1
+                return []
+
+            def sleep(self, _seconds):
+                pass
+
+        task = FakeTask()
+        with self.assertRaises(TaskDisabledException):
+            task._wait_login_screen_stable(time_out=1)
+        self.assertEqual(task.ocr_calls, 1)
+        self.assertEqual(task.dialog_ocr_calls, 0)
+        self.assertEqual(task.hwnd.front_count, 0)
 
     def test_selection_refreshes_then_uses_verified_screen_fallback(self):
         class FakeHwndWindow:
