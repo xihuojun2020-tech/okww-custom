@@ -2,10 +2,12 @@
 """🧪 账号切换测试任务（v1.03.74）。
 
 独立测试多账号登录界面的账号切换功能（不跑完整每日任务）。
-步骤：检测登录界面 → 展开下拉框 → OCR 列出所有账号 → 选择/自动选择目标 → 点击 → 点登录。
+直接复用 MultiAccountDailyTask 的切换方法，确保测试路径与正式流程一致。
+
+步骤：自动检测界面 → 在主界面则退登 → find_account_drop_down →
+      展开下拉框 → _click_account_in_list → 核对账号 → 点登录 → 进游戏。
 """
 import re
-import time
 
 from qfluentwidgets import FluentIcon as Icon
 
@@ -16,15 +18,11 @@ from src.task.MouseResetTask import MouseResetTask
 
 logger = Logger.get_logger(__name__)
 
-# 账号模式（与 MultiAccountDailyTask 保持一致）
-ACCOUNT_PATTERN = re.compile(r'\*\*\*\*')
-SCAN_ACCOUNT_PATTERN = re.compile(r'^U[a-zA-Z0-9]+$', re.IGNORECASE)
 PHONE_IN_NAME_RE = re.compile(r'(1[3-9]\d{9})')
 SHORT_NAME_RE = re.compile(r'【([A-Z]\d+)[-.]')
 
 
 def _short_name(profile_name):
-    """从方案全名提取简称（如 A1、B7）。"""
     if not profile_name:
         return None
     m = SHORT_NAME_RE.search(profile_name)
@@ -32,18 +30,17 @@ def _short_name(profile_name):
 
 
 class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
-    """独立测试账号切换功能（不跑完整每日任务）。
+    """独立测试账号切换功能。
 
-    在登录界面执行：检测 → 展开列表 → 列出账号 → 选择目标 → 点击 → 点登录。
+    直接调用 MultiAccountDailyTask 的切换方法，测试路径与正式流程一致。
     """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = "🔄 账号切换测试"
         self.description = (
-            "自动检测当前界面（主界面/登录界面），在主界面时自动退登。"
-            "在登录界面执行：展开下拉框 → OCR 列出所有账号 → 选择目标 → 点击 → 点登录。"
-            "不执行每日任务，仅验证切换流程。"
+            "自动检测界面（主界面自动退登），复用多账号任务的切换流程测试账号切换。"
+            "不执行每日任务，仅验证 登录识别→下拉框→选号→登录 全链路。"
         )
         self.group_name = "🧪 测试功能"
         self.group_icon = Icon.DEVELOPER_TOOLS
@@ -64,12 +61,11 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
             },
         }
         self.config_description = {
-            '目标账号': '选择要切换到的账号方案。留空或「自动识别」= 列出登录界面所有账号后选择第一个可用',
-            '测试轮数': '切换测试重复轮数（每轮：切换→进游戏→退登→下一轮）',
+            '目标账号': '选择要切换到的账号方案。留空或「自动识别」= 选登录界面中第一个可用账号',
+            '测试轮数': '切换测试重复轮数（每轮：选号→登录→进游戏→退登→下一轮）',
         }
 
     def _get_profile_names(self):
-        """读取 daily_profiles.json 的方案名列表。"""
         try:
             from ok.util.file import get_relative_path, read_json_file
             profiles = read_json_file(get_relative_path('configs', 'daily_profiles.json'))
@@ -81,235 +77,14 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
             pass
         return []
 
-    def _load_profiles(self):
-        """读取 daily_profiles.json 返回 {方案名: [别名列表]}。"""
-        profiles = {}
-        try:
-            from ok.util.file import get_relative_path, read_json_file
-            data = read_json_file(get_relative_path('configs', 'daily_profiles.json'))
-            if not isinstance(data, dict):
-                return profiles
-            raw = data.get('profiles', data)
-            for name, content in raw.items():
-                if not isinstance(content, dict) or name == 'sequences':
-                    continue
-                aliases = []
-                # 手机号（从方案名提取）
-                m = PHONE_IN_NAME_RE.search(name)
-                if m:
-                    phone = m.group(1)
-                    aliases.append(phone[:3] + '****' + phone[-4:])
-                    aliases.append(phone)
-                # 备用识别名称
-                alias_text = content.get('备用识别名称内容', '') or ''
-                if alias_text:
-                    for a in alias_text.split(','):
-                        a = a.strip()
-                        if a:
-                            aliases.append(a)
-                profiles[name] = aliases
-        except Exception as e:
-            self.log_error('读取方案失败', e)
-        return profiles
-
-    def _get_aliases_for(self, profiles, profile_name):
-        """获取指定方案的所有可识别别名（含掩码/U 账号/手机号）。"""
-        actual_name = None
-        for k in profiles:
-            if k == profile_name or _short_name(k) == profile_name or profile_name in k:
-                actual_name = k
-                break
-        if not actual_name:
-            return []
-        result = set(profiles.get(actual_name, []))
-        # 从方案名提取手机号生成掩码
-        m = PHONE_IN_NAME_RE.search(actual_name)
-        if m:
-            phone = m.group(1)
-            result.add(phone[:3] + '****' + phone[-4:])
-            result.add(phone)
-        return [a for a in result if a and a != '无' and a.strip()]
-
-    def _is_account_text(self, text):
-        if not text:
-            return False
-        return bool(ACCOUNT_PATTERN.search(text) or SCAN_ACCOUNT_PATTERN.match(text))
-
-    def _is_login_text(self, text):
-        return (text or '').strip() in ('登录', '登入', 'Log')
-
-    def _count_account_entries(self, texts):
-        count = 0
-        for t in texts or []:
-            name = (t.name or '').strip()
-            if name and self._is_account_text(name):
-                count += 1
-        return count
-
-    def _account_list_expanded(self):
-        """账号下拉列表是否已展开（账号条目 ≥2）。"""
-        if getattr(self, '_login_in_dialog', False):
-            try:
-                hwnd, rect = self._find_control_hwnd('ComboLBox')
-                if hwnd:
-                    w = rect[2] - rect[0]
-                    h = rect[3] - rect[1]
-                    if w >= 200 and h >= 100:
-                        return True
-            except Exception:
-                pass
-            dlg_texts = self._ocr_login_dialog()
-            return bool(dlg_texts) and self._count_account_entries(dlg_texts) >= 2
-        texts = self.ocr()
-        return bool(texts) and self._count_account_entries(texts) >= 2
-
-    def _detect_login_dialog(self):
-        """检测登录对话框是否存在（#32770）。"""
-        hwnd, _rect = self._find_login_dialog()
-        if hwnd:
-            self._login_in_dialog = True
-            return True
-        # 回退：主窗口有登录特征
-        texts = self.ocr()
-        login_boxes = self.find_boxes(texts, self._login_text_pattern())
-        account_count = self._count_account_entries(texts)
-        if login_boxes and account_count >= 1:
-            self._login_in_dialog = False
-            return True
-        return False
-
-    def _login_text_pattern(self):
-        """返回 LOGIN_TEXTS 的匹配模式（兼容 BaseWWTask 的 LOGIN_TEXTS 定义）。"""
-        from src.task.BaseWWTask import LOGIN_TEXTS
-        return LOGIN_TEXTS
-
-    def _find_login_dialog(self):
-        """找 #32770 登录对话框（复用 MultiAccountDailyTask 的逻辑）。"""
+    def _get_multi_account_task(self):
+        """获取 MultiAccountDailyTask 实例（复用其方法）。"""
         from src.task.MultiAccountDailyTask import MultiAccountDailyTask
-        return MultiAccountDailyTask._find_login_dialog(self)
-
-    def _find_control_hwnd(self, class_name):
-        """找控件（复用 MultiAccountDailyTask 的逻辑）。"""
-        from src.task.MultiAccountDailyTask import MultiAccountDailyTask
-        return MultiAccountDailyTask._find_control_hwnd(self, class_name)
-
-    def _ocr_login_dialog(self):
-        """OCR 登录对话框帧。"""
-        hwnd, _rect = self._find_login_dialog()
-        if not hwnd:
-            return None
-        frame, _origin = self._capture_hwnd_client(hwnd)
-        if frame is None:
-            return None
-        try:
-            return self.ocr(frame=frame)
-        except Exception:
-            return None
-
-    def _capture_hwnd_client(self, hwnd):
-        """BitBlt 捕获窗口帧（复用 MultiAccountDailyTask 的逻辑）。"""
-        from src.task.MultiAccountDailyTask import MultiAccountDailyTask
-        return MultiAccountDailyTask._capture_hwnd_client(self, hwnd)
-
-    def _open_account_list(self):
-        """点击 ComboBox 展开账号列表。"""
-        hwnd, rect = self._find_control_hwnd('ComboBox')
-        if not hwnd:
-            self.log_warning('未找到账号下拉框（ComboBox）')
-            return False
-        cx = (rect[0] + rect[2]) // 2
-        cy = (rect[1] + rect[3]) // 2
-        self.log_info(f'点击账号下拉框 ({cx}, {cy})')
-        self._screen_click(cx, cy, after_sleep=2)
-        return True
-
-    def _screen_click(self, x, y, after_sleep=0.5):
-        """系统级鼠标点击屏幕坐标。"""
-        import win32api
-        import win32con
-        try:
-            win32api.SetCursorPos((int(x), int(y)))
-            time.sleep(0.1)
-            win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-            time.sleep(0.05)
-            win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-            if after_sleep:
-                self.sleep(after_sleep)
-            return True
-        except Exception:
-            return False
-
-    def _box_center_screen(self, box, origin):
-        """把 OCR Box 中心换算为屏幕坐标。"""
-        cx = box.x + box.width / 2.0
-        cy = box.y + box.height / 2.0
-        return int(origin[0] + cx), int(origin[1] + cy)
-
-    def _get_ocr_accounts(self):
-        """获取当前登录界面的所有账号条目（对话框帧优先）。"""
-        if getattr(self, '_login_in_dialog', False):
-            dlg_texts = self._ocr_login_dialog()
-            if dlg_texts:
-                return [(t, (t.name or '').strip()) for t in dlg_texts if self._is_account_text((t.name or '').strip())]
-        texts = self.ocr()
-        return [(t, (t.name or '').strip()) for t in (texts or []) if self._is_account_text((t.name or '').strip())]
-
-    def _match_account_to_profile(self, text, profiles):
-        """把 OCR 账号文本匹配到方案名。"""
-        for profile_name, aliases in profiles.items():
-            short = _short_name(profile_name)
-            # 直接别名匹配
-            if text in aliases:
-                return profile_name, short
-            # 掩码/手机号匹配
-            m = PHONE_IN_NAME_RE.search(profile_name)
-            if m:
-                phone = m.group(1)
-                masked = phone[:3] + '****' + phone[-4:]
-                if text == masked or text == phone:
-                    return profile_name, short
-            # U 账号匹配
-            for alias in aliases:
-                if len(alias) >= 4 and alias in text:
-                    return profile_name, short
-        return None, None
-
-    def _click_login_button(self):
-        """点击登录按钮。"""
-        if getattr(self, '_login_in_dialog', False):
-            frame, origin = self._dialog_capture()
-            if frame is not None:
-                try:
-                    texts = self.ocr(frame=frame)
-                    login_boxes = self.find_boxes(texts, self._login_text_pattern())
-                    if login_boxes:
-                        box = login_boxes[0]
-                        sx, sy = self._box_center_screen(box, origin)
-                        self.log_info(f'点击登录按钮（对话框，屏幕 {sx},{sy}）')
-                        return self._screen_click(sx, sy, after_sleep=3)
-                except Exception:
-                    pass
-        # 主窗口兜底
-        texts = self.ocr()
-        login_boxes = self.find_boxes(texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.8),
-                                       match=self._login_text_pattern())
-        if login_boxes:
-            self.click(login_boxes, after_sleep=3)
-            return True
-        self.click_relative(0.5, 0.568, hcenter=True, vcenter=True, after_sleep=3)
-        return True
-
-    def _dialog_capture(self):
-        """捕获 #32770 登录对话框帧。"""
-        hwnd, _rect = self._find_login_dialog()
-        if not hwnd:
-            return None, None
-        return self._capture_hwnd_client(hwnd)
+        return self.executor.get_task_by_class(MultiAccountDailyTask)
 
     def run(self):
         WWOneTimeTask.run(self)
 
-        # 关闭鼠标复位（避免干扰屏幕点击）
         mouse_reset_task = self.executor.get_task_by_class(MouseResetTask)
         mouse_reset_was_enabled = mouse_reset_task.enabled if mouse_reset_task else False
         if mouse_reset_was_enabled:
@@ -318,190 +93,143 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
         try:
             target_config = (self.config.get('目标账号') or '').strip()
             rounds = int(self.config.get('测试轮数') or '1')
-            profiles = self._load_profiles()
             auto_mode = target_config in ('', '（自动识别）', '无')
 
             self.log_info(f'账号切换测试开始（目标: {"自动识别" if auto_mode else target_config}，轮数: {rounds}）', notify=True)
             self.info_set('状态', '检测当前界面...')
 
-            # ============ 自动检测当前界面（循环，容忍加载/弹窗等中间态） ============
+            mat = self._get_multi_account_task()
+            if mat is None:
+                self.log_error('未找到 MultiAccountDailyTask 实例')
+                raise Exception('MultiAccountDailyTask 未注册')
+
+            # ============ 自动检测当前界面 ============
             self.log_info('自动检测当前界面...')
             detected_main = False
             detected_login = False
-            for detect_try in range(1, 21):  # 最多检测 20 次（约 40s）
-                # 先查登录界面（#32770 对话框或主窗口登录特征）
-                if self._detect_login_dialog():
+            for detect_try in range(1, 21):
+                # 先查登录界面
+                if mat.do_find_account_drop_down() is not None:
                     detected_login = True
-                    self.log_info(f'检测到当前在登录界面（第 {detect_try} 次检测）')
+                    self.log_info(f'检测到登录界面（第 {detect_try} 次检测）')
                     break
                 # 再查主界面
                 try:
                     if self.is_main(esc=False):
                         detected_main = True
-                        self.log_info(f'检测到当前在游戏主界面（第 {detect_try} 次检测）')
+                        self.log_info(f'检测到游戏主界面（第 {detect_try} 次检测）')
                         break
                 except Exception:
                     pass
-                # 都不是 → 可能在加载/公告/月卡弹窗等，等 2s 再试
                 if detect_try % 5 == 0:
                     self.log_info(f'界面检测中（第 {detect_try} 次，可能在加载/弹窗中）...')
                 self.sleep(2)
 
             if not detected_main and not detected_login:
-                self.log_error('20 次检测后仍未确认当前界面（不在主界面也不在登录界面）')
+                self.log_error('20 次检测后仍未确认当前界面')
                 self.screenshot('multi')
                 raise Exception('无法确认当前界面')
 
-            # 如果在主界面 → 先退登到登录界面
             if detected_main:
-                self.log_info('从游戏主界面退登到登录界面...')
+                self.log_info('从主界面退登到登录界面...')
                 self.info_set('状态', '退登中...')
-                self._switch_to_login_simple()
+                mat._switch_to_login()
                 self.sleep(2)
 
             # ============ 循环测试 ============
             for round_i in range(1, rounds + 1):
                 self.log_info(f'=== 第 {round_i}/{rounds} 轮 ===')
                 self.info_set('当前轮次', f'{round_i}/{rounds}')
-                self.info_set('状态', '检测登录界面...')
 
-                # 1. 检测登录界面（应已在登录界面）
-                if not self._detect_login_dialog():
-                    # 可能在别的界面（公告/月卡弹窗等），尝试等待
-                    self.log_info('未立即检测到登录界面，等待 10s...')
-                    self.sleep(10)
-                    if not self._detect_login_dialog():
-                        self.log_error('等待后仍未检测到登录界面')
-                        self.screenshot('multi')
-                        raise Exception('未检测到登录界面')
-
-                self.log_info(f'登录界面就绪（{"对话框模式" if getattr(self, "_login_in_dialog", False) else "主窗口模式"}）')
-                self.info_set('状态', '识别账号...')
-
-                # 2. OCR 识别当前账号
-                accounts = self._get_ocr_accounts()
-                self.log_info(f'当前识别到 {len(accounts)} 个账号：')
-                matched_accounts = []
-                for box, text in accounts:
-                    profile_name, short = self._match_account_to_profile(text, profiles)
-                    if profile_name:
-                        self.log_info(f'  {text} → {short}（{profile_name}）')
-                        matched_accounts.append((box, text, profile_name, short))
-                    else:
-                        self.log_info(f'  {text} → 未知方案')
-
-                # 3. 确定目标
                 if auto_mode:
-                    if not matched_accounts:
-                        self.log_error('未匹配到任何已知方案，无法自动选择')
+                    # 自动模式：直接用 MultiAccountDailyTask 的完整切换流程
+                    self.log_info('自动模式：复用 MultiAccountDailyTask._select_and_login_account')
+                    self.info_set('状态', '等待登录界面 → 选号 → 登录...')
+                    target = mat._select_and_login_account()
+                    if target is None:
+                        self.log_error('自动选择失败（_select_and_login_account 返回 None）')
                         self.screenshot('multi')
-                        raise Exception('未匹配到任何已知方案')
-                    box, text, profile_name, target_short = matched_accounts[0]
-                    self.log_info(f'自动选择: {target_short}（{text}）')
+                        raise Exception('自动选择失败')
+                    self.log_info(f'✓ 第 {round_i} 轮已登录 {target}')
+                    self.info_set('状态', f'✓ 已登录 {target}')
                 else:
-                    target_short = target_config
-                    target_box = None
-                    for box, text, profile_name, short in matched_accounts:
-                        if short == target_short or profile_name == target_config:
-                            target_box = box
-                            target_short = short
-                            break
-                    if target_box is None:
-                        self.log_error(f'目标 {target_config} 未在当前登录界面中找到')
-                        self.log_info(f'可见账号: {[text for _, text in accounts]}')
-                        self.screenshot('multi')
-                        raise Exception(f'目标账号 {target_config} 不在登录界面中')
+                    # 指定目标模式
+                    self.log_info(f'指定目标: {target_config}')
+                    self.info_set('状态', f'等待登录界面 → 选 {target_config} → 登录...')
 
-                self.info_set('目标账号', target_short)
-                self.info_set('状态', f'展开下拉框...')
+                    # 等待登录界面就绪
+                    self.log_info('等待登录界面就绪...')
+                    drop_down = mat.find_account_drop_down()
+                    self.log_info(f'登录界面就绪（{"对话框" if getattr(mat, "_login_in_dialog", False) else "主窗口"}）')
 
-                # 4. 展开下拉框
-                if self._account_list_expanded():
-                    self.log_info('列表已展开，跳过点击下拉框')
-                else:
-                    self.log_info('点击下拉框展开账号列表...')
-                    if not self._open_account_list():
-                        self.log_error('点击下拉框失败')
-                        self.screenshot('multi')
-                        raise Exception('点击下拉框失败')
-
-                # 5. 等待列表展开
-                self.log_info('等待列表展开...')
-                expanded = self.wait_until(self._account_list_expanded, time_out=10,
-                                           settle_time=1, raise_if_not_found=False)
-                if not expanded:
-                    self.log_error('点击下拉框无效果（列表未展开）')
-                    self.screenshot('multi')
-                    raise Exception('click drop down no effect')
-
-                self.log_info('列表已展开 ✓')
-
-                # 6. 重新获取展开后的账号列表
-                expanded_accounts = self._get_ocr_accounts()
-                self.log_info(f'展开后识别到 {len(expanded_accounts)} 个账号')
-
-                self.info_set('状态', f'选择 {target_short}...')
-
-                # 7. 点击目标账号
-                if auto_mode:
-                    expanded_matched = []
-                    for box, text in expanded_accounts:
-                        pn, sh = self._match_account_to_profile(text, profiles)
-                        if pn:
-                            expanded_matched.append((box, text, pn, sh))
-                    if not expanded_matched:
-                        self.log_error('展开后仍未找到可匹配账号')
-                        self.screenshot('multi')
-                        raise Exception('展开后未找到可匹配账号')
-                    target_box, target_text, profile_name, target_short = expanded_matched[0]
-                    self.log_info(f'选择: {target_short}（{target_text}）')
-                else:
-                    target_box = None
-                    for box, text in expanded_accounts:
-                        pn, sh = self._match_account_to_profile(text, profiles)
-                        if sh == target_short or pn == target_config:
-                            target_box = box
-                            break
-                    if target_box is None:
-                        self.log_error(f'展开列表中未找到 {target_short}')
-                        self.screenshot('multi')
-                        raise Exception(f'展开列表中未找到 {target_short}')
-
-                # 点击目标账号
-                if getattr(self, '_login_in_dialog', False):
-                    frame, origin = self._dialog_capture()
-                    if frame is not None:
-                        sx, sy = self._box_center_screen(target_box, origin)
-                        self.log_info(f'点击 {target_short}（屏幕 {sx},{sy}）')
-                        self._screen_click(sx, sy, after_sleep=2)
+                    # 展开下拉框
+                    if mat._account_list_expanded():
+                        self.log_info('列表已展开，跳过点击下拉框')
+                    elif getattr(mat, '_login_in_dialog', False):
+                        self.log_info('点击 ComboBox 展开账号列表...')
+                        mat._dialog_open_account_list()
                     else:
-                        self.log_error('对话框帧捕获失败')
-                        self.screenshot('multi')
-                        raise Exception('对话框帧捕获失败')
-                else:
-                    self.log_info(f'点击 {target_short}')
-                    self.click(target_box, after_sleep=2)
+                        self.log_info('点击下拉框...')
+                        mat.click(drop_down, after_sleep=2)
 
-                self.sleep(2)
-                self.info_set('状态', '点击登录按钮...')
+                    # 等待展开
+                    expanded = self.wait_until(mat._account_list_expanded, time_out=10,
+                                               settle_time=1, raise_if_not_found=False)
+                    if expanded:
+                        self.log_info('列表已展开 ✓')
+                    else:
+                        self.log_warning('列表未展开，尝试继续...')
 
-                # 8. 点击登录按钮
-                self.log_info('点击登录按钮...')
-                self._click_login_button()
+                    # 等待选中目标账号
+                    self.info_set('状态', f'选择 {target_config}...')
+                    account = self.wait_until(
+                        lambda: mat._click_account_in_list(target_config),
+                        time_out=10, raise_if_not_found=True
+                    )
+                    self.log_info(f'已点击 {target_config}')
 
-                # 9. 等待进入主界面
-                self.log_info('等待进入游戏主界面...')
-                self.info_set('状态', '等待进入游戏...')
-                self.logged_in = False
-                self.ensure_main(time_out=180)
-                self.log_info(f'✓ 第 {round_i} 轮已登录 {target_short}')
-                self.info_set('状态', f'✓ 已登录 {target_short}')
+                    # 核对
+                    self.sleep(1)
+                    current = mat._detect_current_account_from_login()
+                    self.log_info(f'核对：目标={target_config}，当前显示={current}')
 
-                # 如果还有下一轮，退登回登录界面
+                    # 点登录
+                    self.info_set('状态', '点击登录...')
+                    self.sleep(3)
+                    if getattr(mat, '_login_in_dialog', False):
+                        shown = mat._detect_current_account_from_login()
+                        if shown and not mat._same_account(shown, target_config):
+                            self.log_error(f'防误登：显示 {shown} ≠ 目标 {target_config}')
+                            self.screenshot('multi')
+                            raise Exception('防误登：账号不一致')
+                        mat._dialog_click_login()
+                    else:
+                        texts = self.ocr()
+                        login_btn = self.find_boxes(texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.8),
+                                                    match=self._login_text_pattern())
+                        if login_btn:
+                            shown = mat._detect_current_account_from_login()
+                            if shown and not mat._same_account(shown, target_config):
+                                self.log_error(f'防误登：显示 {shown} ≠ 目标 {target_config}')
+                                self.screenshot('multi')
+                                raise Exception('防误登：账号不一致')
+                            self.click(login_btn, after_sleep=3)
+                        else:
+                            self.click_relative(0.5, 0.568, hcenter=True, vcenter=True, after_sleep=3)
+
+                    # 等待进游戏
+                    self.log_info('等待进入游戏...')
+                    self.info_set('状态', '等待进入游戏...')
+                    self.logged_in = False
+                    self.ensure_main(time_out=180)
+                    self.log_info(f'✓ 第 {round_i} 轮已登录 {target_config}')
+                    self.info_set('状态', f'✓ 已登录 {target_config}')
+
+                # 下一轮：退登
                 if round_i < rounds:
-                    self.log_info(f'退登回登录界面（准备第 {round_i + 1} 轮）...')
+                    self.log_info('退登回登录界面...')
                     self.info_set('状态', '退登中...')
-                    self._switch_to_login_simple()
+                    mat._switch_to_login()
                     self.sleep(2)
 
             self.log_info(f'全部 {rounds} 轮切换测试通过 ✓', notify=True)
@@ -511,16 +239,6 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
             if mouse_reset_was_enabled:
                 mouse_reset_task.enable()
 
-    def _switch_to_login_simple(self):
-        """简化版退登（复用 MultiAccountDailyTask 的逻辑）。"""
-        from src.task.MultiAccountDailyTask import MultiAccountDailyTask
-        try:
-            MultiAccountDailyTask._switch_to_login(self)
-        except Exception as e:
-            self.log_error('退登失败', e)
-            # 兜底：按 ESC 后点退登
-            self.send_key('esc', after_sleep=1.5)
-            self.sleep(2)
-            self.click_relative(0.04, 0.96, after_sleep=1)
-            self.click_confirm(timeout=10)
-            self.sleep(5)
+    def _login_text_pattern(self):
+        from src.task.BaseWWTask import LOGIN_TEXTS
+        return LOGIN_TEXTS
