@@ -19,6 +19,7 @@
 
 import os
 import re
+import time
 
 from ok import Logger
 from ok.util.file import get_relative_path, read_json_file, write_json_file
@@ -466,6 +467,21 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             in_main = False
         if in_main:
             self.log_info('检测到已在游戏主界面，先执行当前账号的每日任务', notify=True)
+            # 联动：每日任务配置/界面跟随「当前执行账号」（序列中第一个未完成账号），
+            # 避免用错账号的配置跑每日任务（如序列是 A 系列却用遗留的 B7 方案）
+            try:
+                target = self._next_target_account()
+                if target:
+                    if target in self._load_profiles():
+                        self.config[DAILY_PROFILE] = target
+                        self.log_info(f'主界面分支：每日任务已联动到执行账号 {target}', notify=True)
+                    else:
+                        self.log_warning(f'目标账号 {target} 无配置方案，保持当前 Daily Profile')
+                    self.config[CURRENT_ACCOUNT] = target
+                else:
+                    self.log_warning('序列无未完成账号，主界面分支按当前 Daily Profile 执行')
+            except Exception as e:
+                self.log_error('主界面分支联动失败', e)
             self.run_task_by_class(DailyTask)
             self.ensure_main(time_out=100)
             self._switch_to_login()
@@ -564,12 +580,89 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 return
         except Exception:
             pass
+        self.log_info('退登步骤1/4：按 ESC 打开设置页')
         self.send_key('esc', after_sleep=1.5)
         self.wait_feature('esc_setting')
+        self.log_info('退登步骤2/4：点击退登入口')
         self.click_relative(0.04, 0.96, after_sleep=1)
+        self.log_info('退登步骤3/4：点击确认退登')
         self.click_confirm(timeout=10)
-        self.find_account_drop_down()
+        self.log_info('退登步骤4/4：等待登录界面（抗闪烁等待）')
+        self._wait_login_screen_stable()
         self.log_info(self.tr('Back at login screen'))
+
+    def _login_screen_feature_count(self, texts):
+        """宽松统计登录界面特征数量：掩码账号 / 登录文本 / U账号（扫码），任一 >0 即视为登录界面出现。"""
+        count = 0
+        if not texts:
+            return 0
+        try:
+            count += len(self.find_boxes(texts, account_pattern))
+        except Exception:
+            pass
+        try:
+            count += len(self.find_boxes(texts, LOGIN_TEXTS))
+        except Exception:
+            pass
+        try:
+            for t in texts:
+                if scan_account_pattern.match(t.name.strip()):
+                    count += 1
+        except Exception:
+            pass
+        return count
+
+    def _wait_login_screen_stable(self, time_out=120, settle=2):
+        """抗闪烁等待登录界面稳定。
+
+        游戏退登后登录界面有概率闪烁/短暂暗屏（窗口不可见、OCR 无文本），
+        直接 60s 一刀切等待会把瞬时的暗屏当成永久失败。本方法分两阶段：
+          阶段1 宽松探测：容忍暗屏/闪烁，持续等待登录界面任意特征出现
+            - 窗口不可见 → 尝试 bring_to_front 恢复前台
+            - OCR 为空 → 视为正常过渡，不限次失败（限频打日志）
+          阶段2 严格确认：特征出现后，用现有严格条件（恰好 1 掩码 + 登录文本）确认下拉框
+        失败时输出诊断日志（窗口可见性 / OCR 文本数 / 最近文本）并截图。
+        """
+        self.log_info(f'等待登录界面（宽松探测，超时 {time_out}s，容忍闪烁/暗屏）')
+        deadline = time.monotonic() + time_out
+        last_log = 0.0
+        while time.monotonic() < deadline:
+            try:
+                hwnd = getattr(self, 'hwnd', None)
+                if hwnd is not None and hwnd.exists and not hwnd.visible:
+                    try:
+                        hwnd.bring_to_front()
+                        self.log_warning('游戏窗口不可见，已尝试恢复前台')
+                    except Exception:
+                        pass
+                    self.sleep(1)
+                    continue
+                texts = self.ocr()
+                if self._login_screen_feature_count(texts) > 0:
+                    break
+                now = time.monotonic()
+                if now - last_log >= 30:
+                    last_log = now
+                    win_state = 'visible' if (hwnd is not None and hwnd.visible) else 'invisible'
+                    self.log_info(f'登录界面暂不可见（闪烁/加载中）: 窗口={win_state}, OCR文本数={len(texts) if texts else 0}')
+            except Exception:
+                pass
+            self.sleep(1)
+        # 阶段2：严格确认（沿用现有条件）
+        box = self.wait_until(self.do_find_account_drop_down, time_out=settle + 5,
+                              settle_time=settle, raise_if_not_found=False)
+        if box is None:
+            try:
+                self.screenshot('multi')
+                texts = self.ocr()
+                hwnd = getattr(self, 'hwnd', None)
+                win_state = 'visible' if (hwnd is not None and hwnd.visible) else 'invisible'
+                snippet = ' | '.join(t.name[:20] for t in texts[:5]) if texts else ''
+                self.log_error(f'登录界面等待超时: 窗口={win_state}, OCR文本数={len(texts) if texts else 0}, 最近文本: {snippet}')
+            except Exception:
+                pass
+            raise Exception(self.tr('Timed out waiting for the login screen'))
+        return box
 
     def _detect_current_account_from_login(self):
         """识别登录界面当前显示的账号，返回方案名（掩码或扫码 U 账号均可识别）。"""
