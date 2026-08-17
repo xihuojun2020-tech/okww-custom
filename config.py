@@ -296,6 +296,8 @@ config = {
         # ["src.task.ChangeEchoTask", "ChangeEchoTask"],
         ["src.task.GardenTask", "GardenTask"],
         ["src.task.EventTask", "EventTask"],
+        # 测试功能（🧪 测试功能 tab）
+        ["src.task.TestAccountSwitchTask", "TestAccountSwitchTask"],
         # 序列切换任务已废弃（2026-08-15 封存，见 E:\AI work\废弃代码\【鸣潮多账号切换的序列切换设想】）
         # ["src.task.KRLauncherSwitchTask", "KRLauncherSwitchTask"],
         # ["src.task.DiagnosisTask", "DiagnosisTask"],
