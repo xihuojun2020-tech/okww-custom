@@ -46,6 +46,8 @@ class AboutTab(Tab):
             except Exception:
                 pass
             update_log_text.setPlainText(upstream_note + self.tr(
+                'V1.03.74：修复「点击下拉框无效果」误判（列表已展开仍报 no effect 卡死；展开态与收起态分开判定，点击后等待列表展开再选账号）；多账号↔每日任务方案真正联动（此前只改了本任务自身配置，DailyTask 执行/界面仍用旧方案，现调用 switch_profile 同步 DailyTask 配置并刷新界面）\n'
+                '\n'
                 'V1.03.73：登录界面完整对话框支持（#32770 帧识别+选账号+点登录，屏幕坐标点击；撤销 WGC 捕获对话框导致的失败）；U 扫码账号支持\n'
                 '\n'
                 'V1.03.72：修复登录界面捕获（登录账号下拉框在独立 #32770 窗口，捕获目标优先 top_hwnd）；登录识别支持 U 扫码账号；退过头到启动器检测\n'

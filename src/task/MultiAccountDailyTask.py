@@ -473,8 +473,10 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 target = self._next_target_account()
                 if target:
                     if target in self._load_profiles():
-                        self.config[DAILY_PROFILE] = target
-                        self.log_info(f'主界面分支：每日任务已联动到执行账号 {target}', notify=True)
+                        if self._link_daily_profile(target):
+                            self.log_info(f'主界面分支：每日任务已联动到执行账号 {target}', notify=True)
+                        else:
+                            self.log_warning(f'主界面分支：联动方案 {target} 失败，按当前 Daily Profile 执行')
                     else:
                         self.log_warning(f'目标账号 {target} 无配置方案，保持当前 Daily Profile')
                     self.config[CURRENT_ACCOUNT] = target
@@ -500,7 +502,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 # （防止目标方案不存在时 _do_switch_profile 用当前配置创建污染方案）
                 try:
                     if first_target in self._load_profiles():
-                        self.config[DAILY_PROFILE] = first_target
+                        self._link_daily_profile(first_target)
                     self.config[CURRENT_ACCOUNT] = first_target
                 except Exception:
                     pass
@@ -527,7 +529,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             # （防止目标方案不存在时 _do_switch_profile 用当前配置创建污染方案）
             try:
                 if next_account in self._load_profiles():
-                    self.config[DAILY_PROFILE] = next_account
+                    self._link_daily_profile(next_account)
                 self.config[CURRENT_ACCOUNT] = next_account
             except Exception:
                 pass
@@ -984,6 +986,40 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 return acc
         return None
 
+    def _link_daily_profile(self, profile_name):
+        """联动：把每日任务（DailyTask）的激活方案切换到 profile_name（并同步本任务自身配置）。
+
+        多账号任务与每日任务是两个独立 Config（各自 configs/*.json），直接改
+        self.config[DAILY_PROFILE] 不会影响 DailyTask 实例（执行/界面仍用旧方案）。
+        正确做法：调用 DailyTask.switch_profile()（保存旧方案 → 加载新方案配置 → 写 DAILY_PROFILE），
+        再刷新每日任务卡片显示。返回是否成功。
+        """
+        if not profile_name:
+            return False
+        try:
+            daily_task = self.get_task_by_class(DailyTask)
+            if daily_task is None:
+                self.log_warning(f'未找到 DailyTask 实例，无法联动方案 {profile_name}')
+                return False
+            if daily_task.config.get(DAILY_PROFILE) == profile_name:
+                self.log_info(f'每日任务方案已是 {profile_name}')
+            else:
+                daily_task.switch_profile(profile_name)
+                self.log_info(f'每日任务方案已联动到 {profile_name}', notify=True)
+            try:
+                self.config[DAILY_PROFILE] = profile_name
+            except Exception:
+                pass
+            try:
+                if hasattr(daily_task, '_refresh_gui'):
+                    daily_task._refresh_gui()
+            except Exception:
+                pass
+            return True
+        except Exception as e:
+            self.log_error(f'联动每日任务方案失败: {profile_name}', e)
+            return False
+
     def _click_account_in_list(self, profile_name):
         """在登录界面账号列表中点击指定的方案账号，返回是否点击成功。
 
@@ -1040,14 +1076,21 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 self.sleep(1)
                 drop_down = self.find_account_drop_down()
                 if drop_down:
-                    if getattr(self, '_login_in_dialog', False):
+                    if self._account_list_expanded():
+                        # 列表已展开（上次尝试遗留）：不再点 ComboBox（会切换成收起）
+                        self.log_info('账号列表已展开，跳过再次点击下拉框')
+                    elif getattr(self, '_login_in_dialog', False):
                         # 对话框变体：点击 ComboBox 展开账号列表
                         if not self._dialog_open_account_list():
                             self.log_error('对话框模式下打开账号下拉框失败')
                             continue
                     else:
                         self.click(drop_down, after_sleep=2)
-                if self.do_find_account_drop_down():
+                # 点击后等待列表展开（收起→展开）。不能用 do_find_account_drop_down 判断：
+                # 列表展开后账号条目 ≥2，旧逻辑仍会命中并误报「click drop down no effect」。
+                expanded = self.wait_until(self._account_list_expanded, time_out=10,
+                                           settle_time=1, raise_if_not_found=False)
+                if not expanded:
                     self.log_error('click drop down no effect')
                     self.screenshot('multi')
                     continue
@@ -1134,10 +1177,19 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         try:
             drop_down = self.find_account_drop_down()
             if drop_down:
-                if getattr(self, '_login_in_dialog', False):
+                if self._account_list_expanded():
+                    self.log_info('账号列表已展开，跳过再次点击下拉框')
+                elif getattr(self, '_login_in_dialog', False):
                     self._dialog_open_account_list()
                 else:
                     self.click(drop_down, after_sleep=2)
+            # 等待列表展开（防「点击无效果」误判：展开后账号条目 ≥2）
+            expanded = self.wait_until(self._account_list_expanded, time_out=10,
+                                       settle_time=1, raise_if_not_found=False)
+            if not expanded:
+                self.log_error('click drop down no effect（登录回起始账号）')
+                self.screenshot('multi')
+                raise Exception(self.tr('Failed to open account list'))
             deadline_account = None
             self.wait_until(lambda: self._click_specific_account(profile_name),
                             time_out=10, raise_if_not_found=True)
@@ -1180,31 +1232,68 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
     def find_account_drop_down(self):
         return self.wait_until(self.do_find_account_drop_down, time_out=60, settle_time=2, raise_if_not_found=True)
 
-    def do_find_account_drop_down(self) -> object | None:
-        """登录界面账号下拉框检测（v1.03.73：支持 U 账号 + #32770 对话框帧）。
+    def _account_entry_count(self, texts):
+        """OCR 文本中账号条目（掩码 180****1088 或 U 扫码账号）的框数量。
 
-        命中条件：登录特征（登录/Log/登入）存在，且
-          - 恰好 1 个掩码账号（`180****1088`），或
-          - 存在 U 开头扫码账号（`U550500484A`）。
+        同一账号文本出现在不同位置（收起态 ComboBox + 展开列表）各算一个，
+        用于区分「收起态（1 个）」与「列表已展开（≥2 个）」。
+        """
+        count = 0
+        for t in texts or []:
+            name = (t.name or '').strip()
+            if name and (account_pattern.search(name) or scan_account_pattern.match(name)):
+                count += 1
+        return count
+
+    def _account_list_expanded(self):
+        """账号下拉列表是否已展开（账号条目 ≥2）。
+
+        对话框模式：优先检测可见且尺寸正常的 ComboLBox 控件；回退统计对话框帧 OCR 账号条目。
+        主窗口模式：统计主窗口 OCR 账号条目。
+        """
+        if getattr(self, '_login_in_dialog', False):
+            try:
+                hwnd, rect = self._find_control_hwnd('ComboLBox')
+                if hwnd:
+                    w = rect[2] - rect[0]
+                    h = rect[3] - rect[1]
+                    if w >= 200 and h >= 100:
+                        return True
+            except Exception:
+                pass
+            dlg_texts = self._ocr_login_dialog()
+            return bool(dlg_texts) and self._account_entry_count(dlg_texts) >= 2
+        texts = self.ocr()
+        return bool(texts) and self._account_entry_count(texts) >= 2
+
+    def do_find_account_drop_down(self) -> object | None:
+        """登录界面账号下拉框检测（v1.03.74：收起/展开状态都视为登录就绪）。
+
+        命中条件：登录特征（登录/Log/登入）存在 且 至少 1 个账号条目（掩码或 U 扫码账号）。
+        下拉列表展开态（账号条目 ≥2）同样命中——调用方用 _account_list_expanded() 区分
+        展开态，避免把「列表已展开」误判为「点击下拉框无效果」。
         先查主窗口帧（登录界面内嵌变体），无则查 #32770 登录对话框帧（独立窗口变体），
         命中对话框帧时置 self._login_in_dialog = True，后续账号操作改用对话框帧。
         """
-        texts = self.ocr()
-        account_boxes = self.find_boxes(texts, account_pattern)
-        login_boxes = self.find_boxes(texts, LOGIN_TEXTS)
-        u_hit = bool(texts) and any(scan_account_pattern.match(t.name.strip()) for t in texts)
-        if (len(account_boxes) == 1 and login_boxes) or (u_hit and login_boxes):
-            self._login_in_dialog = False
-            return account_boxes[0] if account_boxes else login_boxes[0]
+        def judge(texts, in_dialog):
+            account_boxes = self.find_boxes(texts, account_pattern)
+            login_boxes = self.find_boxes(texts, LOGIN_TEXTS)
+            u_boxes = [t for t in (texts or []) if scan_account_pattern.match((t.name or '').strip())]
+            entries = list(account_boxes) + u_boxes
+            if not login_boxes or len(entries) < 1:
+                return None
+            self._login_in_dialog = in_dialog
+            return entries[0]
+
+        hit = judge(self.ocr(), False)
+        if hit is not None:
+            return hit
         # 主窗口无特征 → #32770 登录对话框帧
         dlg_texts = self._ocr_login_dialog()
         if dlg_texts:
-            d_account_boxes = self.find_boxes(dlg_texts, account_pattern)
-            d_login_boxes = self.find_boxes(dlg_texts, LOGIN_TEXTS)
-            d_u_hit = any(scan_account_pattern.match((t.name or '').strip()) for t in dlg_texts)
-            if (len(d_account_boxes) == 1 and d_login_boxes) or (d_u_hit and d_login_boxes):
-                self._login_in_dialog = True
-                return d_account_boxes[0] if d_account_boxes else d_login_boxes[0]
+            hit = judge(dlg_texts, True)
+            if hit is not None:
+                return hit
         return None
 
 
