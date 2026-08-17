@@ -22,6 +22,7 @@ from src.char.YangYangSp import YangYangSp
 from src.task.BaseCombatTask import BaseCombatTask, NotInCombatException
 from src.task.AutoCombatTask import AutoCombatTask
 from src.task.FarmEchoTask import FarmEchoTask
+from tests.fixture_support import require_fixture
 
 config['debug'] = True
 
@@ -1889,6 +1890,7 @@ class TestChar(TaskTestCase):
         self.assertTrue(liberation_available)
 
     def test_switch_cd(self):
+        require_fixture(self, 'ok_templates/char_iuno.png')
         self.task.do_reset_to_false()
         self.set_image('tests/images/combat_has_cd.png')
         self.task.load_chars()

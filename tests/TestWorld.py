@@ -3,6 +3,7 @@ from config import config
 from ok.test.TaskTestCase import TaskTestCase
 from src.task.DailyTask import DailyTask
 from src.task.FiveToOneTask import FiveToOneTask
+from tests.fixture_support import require_fixture
 
 config['debug'] = True
 
@@ -20,6 +21,7 @@ class TestWorld(TaskTestCase):
         self.assertIsNotNone(in_world)
 
     def test_monthly_card(self):
+        require_fixture(self, 'ok_templates/monthly_card.png')
         self.set_image('ok_templates/monthly_card.png')
         self.assertTrue(bool(self.task.find_monthly_card()))
 

@@ -5,6 +5,7 @@ from src.task.MultiAccountDailyTask import (
     MultiAccountDailyTask,
     account_pattern,
     normalize_account_name,
+    profile_short_name,
 )
 
 
@@ -86,17 +87,115 @@ class TestMultiAccountDailyTask(unittest.TestCase):
             normalize_account_name("bb****02@example.con"),
         )
 
-    def test_click_account_list_selects_visible_third_account_after_first_two_are_done(self):
+    def test_profile_short_name_is_exact_and_distinguishes_a1_from_a10(self):
+        self.assertEqual(profile_short_name('【A1-测试-13000000001】'), 'A1')
+        self.assertEqual(profile_short_name('【A10-测试-13000000010】'), 'A10')
+        self.assertIsNone(profile_short_name('测试-A1-13000000001'))
+
+    def test_resolve_profile_short_names_preserves_a1_a3_a4_order(self):
+        profiles = [
+            '【A4-测试-13000000004】',
+            '【A10-测试-13000000010】',
+            '【A1-测试-13000000001】',
+            '【A3-测试-13000000003】',
+        ]
+
+        class FakeTask:
+            def get_profile_names(self):
+                return profiles
+
+        resolved = MultiAccountDailyTask.resolve_profile_short_names(
+            FakeTask(),
+            ['A1', 'A3', 'A4'],
+        )
+        self.assertEqual(resolved, [profiles[2], profiles[3], profiles[0]])
+
+    def test_login_identity_maps_alias_and_masked_phones_for_continuous_accounts(self):
+        profiles = {
+            '【A1-测试-13000000001】': {
+                '备用识别名称内容': 'U123ABC，alias@example.com',
+                'account_aliases': ['ULEGACY123'],
+            },
+            '【A3-测试-15300000003】': {},
+            '【A4-测试-18000000004】': {},
+        }
+
+        class FakeTask:
+            def _load_profiles(self):
+                return profiles
+
+            get_profile_names = MultiAccountDailyTask.get_profile_names
+            _profile_identities = MultiAccountDailyTask._profile_identities
+
+        task = FakeTask()
+        self.assertEqual(
+            MultiAccountDailyTask.match_profile_from_login(task, 'U123ABC'),
+            '【A1-测试-13000000001】',
+        )
+        self.assertEqual(
+            MultiAccountDailyTask.match_profile_from_login(task, 'alias@example.com'),
+            '【A1-测试-13000000001】',
+        )
+        self.assertEqual(
+            MultiAccountDailyTask.match_profile_from_login(task, 'ULEGACY123'),
+            '【A1-测试-13000000001】',
+        )
+        self.assertEqual(
+            MultiAccountDailyTask.match_profile_from_login(task, '153****0003'),
+            '【A3-测试-15300000003】',
+        )
+        self.assertEqual(
+            MultiAccountDailyTask.match_profile_from_login(task, '180****0004'),
+            '【A4-测试-18000000004】',
+        )
+
+    def test_continuous_sequence_uses_formal_login_flow_and_logs_out_between_accounts(self):
         class FakeTask:
             def __init__(self):
-                self.done_set = {
-                    normalize_account_name("aa****01@example.com"),
-                    normalize_account_name("bb****02@example.com"),
-                }
-                self.all_accounts = set()
-                self.clicked = []
+                self.events = []
 
-            _is_done = MultiAccountDailyTask._is_done
+            def _select_and_login_specific(self, target):
+                self.events.append(('login', target))
+                return target
+
+            def _switch_to_login(self):
+                self.events.append(('logout', None))
+
+            def sleep(self, _seconds):
+                pass
+
+            def log_info(self, *_args, **_kwargs):
+                pass
+
+        task = FakeTask()
+        progress = []
+        result = MultiAccountDailyTask._select_and_login_sequence(
+            task,
+            ['profile-a1', 'profile-a3', 'profile-a4'],
+            progress_callback=lambda index, total, target: progress.append((index, total, target)),
+        )
+        self.assertEqual(result, ['profile-a1', 'profile-a3', 'profile-a4'])
+        self.assertEqual(
+            task.events,
+            [
+                ('login', 'profile-a1'),
+                ('logout', None),
+                ('login', 'profile-a3'),
+                ('logout', None),
+                ('login', 'profile-a4'),
+            ],
+        )
+        self.assertEqual(progress, [
+            (1, 3, 'profile-a1'),
+            (2, 3, 'profile-a3'),
+            (3, 3, 'profile-a4'),
+        ])
+
+    def test_click_account_list_selects_requested_visible_account(self):
+        class FakeTask:
+            def __init__(self):
+                self._login_in_dialog = False
+                self.clicked = []
 
             def ocr(self, match=None):
                 return [
@@ -106,8 +205,10 @@ class TestMultiAccountDailyTask(unittest.TestCase):
                     AccountBox("cc****03@example.com.hk"),
                 ]
 
-            def info_set(self, *args):
-                pass
+            def match_profile_from_login(self, name):
+                if name == "cc****03@example.com.hk":
+                    return "profile-c"
+                return None
 
             def click(self, account, after_sleep=0):
                 self.clicked.append(account.name)
@@ -115,36 +216,141 @@ class TestMultiAccountDailyTask(unittest.TestCase):
             def log_info(self, *args):
                 pass
 
+        task = FakeTask()
+
+        selected = MultiAccountDailyTask._click_account_in_list(task, "profile-c")
+
+        self.assertTrue(selected)
+        self.assertEqual(task.clicked, ["cc****03@example.com.hk"])
+
+    def test_account_mismatch_reselects_target_instead_of_stopping(self):
+        class FakeTask:
+            def __init__(self):
+                self.detected = iter(["profile-a", "profile-c"])
+                self.click_count = 0
+
+            def sleep(self, _seconds):
+                pass
+
+            def _open_account_list(self):
+                return True
+
+            def _click_account_in_list(self, target):
+                self.click_count += 1
+                return target == "profile-c"
+
+            def wait_until(self, callback, **_kwargs):
+                return callback()
+
+            def _detect_current_account_from_login(self):
+                return next(self.detected)
+
+            _same_account = MultiAccountDailyTask._same_account
+
+            def log_info(self, *_args, **_kwargs):
+                pass
+
+            def log_warning(self, *_args, **_kwargs):
+                pass
+
+            def log_error(self, *_args, **_kwargs):
+                pass
+
+            def screenshot(self, *_args, **_kwargs):
+                pass
+
             def tr(self, message):
                 return message
 
         task = FakeTask()
+        selected = MultiAccountDailyTask._select_account_with_retry(
+            task,
+            "profile-c",
+            max_retries=3,
+        )
+        self.assertTrue(selected)
+        self.assertEqual(task.click_count, 2)
 
-        selected = MultiAccountDailyTask._click_account_in_list(task)
+    def test_login_precheck_reselects_when_displayed_account_changed(self):
+        class FakeTask:
+            def __init__(self):
+                self.detected = iter(["profile-a", "profile-c"])
+                self.reselect_count = 0
 
-        self.assertEqual(selected, "cc****03@example.com.hk")
-        self.assertEqual(task.clicked, ["cc****03@example.com.hk"])
+            def _detect_current_account_from_login(self):
+                return next(self.detected)
+
+            _same_account = MultiAccountDailyTask._same_account
+
+            def _select_account_with_retry(self, target, max_retries):
+                self.reselect_count += 1
+                return target == "profile-c" and max_retries == 2
+
+            def sleep(self, _seconds):
+                pass
+
+            def log_warning(self, *_args, **_kwargs):
+                pass
+
+            def log_error(self, *_args, **_kwargs):
+                pass
+
+            def screenshot(self, *_args, **_kwargs):
+                pass
+
+            def tr(self, message):
+                return message
+
+        task = FakeTask()
+        confirmed = MultiAccountDailyTask._confirm_target_before_login(
+            task,
+            "profile-c",
+            max_retries=3,
+        )
+        self.assertTrue(confirmed)
+        self.assertEqual(task.reselect_count, 1)
+
+    def test_visible_login_profiles_preserves_list_order_and_removes_duplicates(self):
+        class FakeTask:
+            _login_in_dialog = False
+
+            def ocr(self):
+                return [
+                    AccountBox("153****0003"),
+                    AccountBox("U123ABC"),
+                    AccountBox("153****0003"),
+                    AccountBox("登录"),
+                ]
+
+            def match_profile_from_login(self, name):
+                return {
+                    "153****0003": "profile-a",
+                    "U123ABC": "profile-b",
+                }.get(name)
+
+        profiles = MultiAccountDailyTask._visible_login_profiles(FakeTask())
+        self.assertEqual(profiles, ["profile-a", "profile-b"])
 
     # ============ v1.03.74：下拉框收起/展开状态判定 ============
 
     def test_dropdown_ready_collapsed_single_mask_account(self):
-        task = _fake_login_task(main_texts=['180****1088', '登录'])
+        task = _fake_login_task(main_texts=['180****0004', '登录'])
         box = MultiAccountDailyTask.do_find_account_drop_down(task)
         self.assertIsNotNone(box)
         self.assertFalse(task._login_in_dialog)
 
     def test_dropdown_ready_expanded_multiple_accounts(self):
         # 列表已展开：账号条目 ≥2（掩码 + U 账号），仍视为登录就绪（返回下拉框）
-        task = _fake_login_task(main_texts=['153****9621', 'U550500484A', '180****1088', '登入'])
+        task = _fake_login_task(main_texts=['153****0003', 'U123ABC', '180****0004', '登入'])
         self.assertIsNotNone(MultiAccountDailyTask.do_find_account_drop_down(task))
 
     def test_dropdown_not_ready_without_login_text(self):
-        task = _fake_login_task(main_texts=['180****1088'])
+        task = _fake_login_task(main_texts=['180****0004'])
         self.assertIsNone(MultiAccountDailyTask.do_find_account_drop_down(task))
 
     def test_dropdown_dialog_fallback_sets_login_in_dialog(self):
         # 主窗口无特征 → 回退 #32770 登录对话框帧（U 扫码账号 + 登录文本）
-        task = _fake_login_task(main_texts=[], dialog_texts=['U550500484A', '登录'])
+        task = _fake_login_task(main_texts=[], dialog_texts=['U123ABC', '登录'])
         box = MultiAccountDailyTask.do_find_account_drop_down(task)
         self.assertIsNotNone(box)
         self.assertTrue(task._login_in_dialog)
@@ -155,11 +361,11 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         self.assertIsNone(MultiAccountDailyTask.do_find_account_drop_down(task))
 
     def test_account_list_expanded_true_with_two_entries(self):
-        task = _fake_login_task(main_texts=['153****9621', 'U550500484A', '登入'])
+        task = _fake_login_task(main_texts=['153****0003', 'U123ABC', '登入'])
         self.assertTrue(MultiAccountDailyTask._account_list_expanded(task))
 
     def test_account_list_expanded_false_with_single_entry(self):
-        task = _fake_login_task(main_texts=['153****9621', '登入'])
+        task = _fake_login_task(main_texts=['153****0003', '登入'])
         self.assertFalse(MultiAccountDailyTask._account_list_expanded(task))
 
 

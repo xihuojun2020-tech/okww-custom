@@ -2,6 +2,7 @@ import unittest
 from config import config
 from ok.test.TaskTestCase import TaskTestCase
 from src.task.AutoCombatTask import AutoCombatTask
+from tests.fixture_support import require_fixture
 
 config['debug'] = True
 
@@ -41,6 +42,7 @@ class TestForte(TaskTestCase):
         self.assertIsNotNone(forte)
 
     def test_forte3(self):
+        require_fixture(self, 'ok_templates/3.png')
         self.task.do_reset_to_false()
         self.set_image('ok_templates/3.png')
         self.task.load_chars()

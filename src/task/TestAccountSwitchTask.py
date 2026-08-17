@@ -1,33 +1,24 @@
 # -*- coding: utf-8 -*-
-"""🧪 账号切换测试任务（v1.03.74）。
+"""🧪 账号切换测试任务（v1.04.0）。
 
 独立测试多账号登录界面的账号切换功能（不跑完整每日任务）。
 直接复用 MultiAccountDailyTask 的切换方法，确保测试路径与正式流程一致。
 
-步骤：自动检测界面 → 在主界面则退登 → find_account_drop_down →
-      展开下拉框 → _click_account_in_list → 核对账号 → 点登录 → 进游戏。
+步骤：自动检测界面 → 在主界面则退登 → 调用 MultiAccountDailyTask 的完整
+      指定账号/首个可用账号登录流程，或连续模拟 A1→A3→A4 的切换链路。
 """
 import re
 
 from qfluentwidgets import FluentIcon as Icon
 
-from ok import Logger
 from src.task.BaseWWTask import BaseWWTask
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.MouseResetTask import MouseResetTask
 
-logger = Logger.get_logger(__name__)
 
-PHONE_IN_NAME_RE = re.compile(r'(1[3-9]\d{9})')
-SHORT_NAME_RE = re.compile(r'【([A-Z]\d+)[-.]')
-
-
-def _short_name(profile_name):
-    if not profile_name:
-        return None
-    m = SHORT_NAME_RE.search(profile_name)
-    return m.group(1) if m else profile_name
-
+SINGLE_MODE = '单账号切换'
+CONTINUOUS_MODE = '连续序列切换'
+DEFAULT_CONTINUOUS_ORDER = 'A1,A3,A4'
 
 class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
     """独立测试账号切换功能。
@@ -47,13 +38,26 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
 
         profile_names = self._get_profile_names()
         self.default_config = {
-            '目标账号': '',
+            '测试模式': SINGLE_MODE,
+            '目标账号': '（自动识别）',
+            '连续账号顺序': DEFAULT_CONTINUOUS_ORDER,
             '测试轮数': '1',
         }
         self.config_type = {
+            '测试模式': {
+                'type': 'drop_down',
+                'options': [SINGLE_MODE, CONTINUOUS_MODE],
+                'sub_configs': {
+                    SINGLE_MODE: ['目标账号'],
+                    CONTINUOUS_MODE: ['连续账号顺序'],
+                },
+            },
             '目标账号': {
                 'type': 'drop_down',
                 'options': ['（自动识别）'] + profile_names,
+            },
+            '连续账号顺序': {
+                'type': 'line_edit',
             },
             '测试轮数': {
                 'type': 'drop_down',
@@ -61,9 +65,16 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
             },
         }
         self.config_description = {
+            '测试模式': '单账号测试，或按顺序连续模拟账号完成每日任务后的切换部分',
             '目标账号': '选择要切换到的账号方案。留空或「自动识别」= 选登录界面中第一个可用账号',
-            '测试轮数': '切换测试重复轮数（每轮：选号→登录→进游戏→退登→下一轮）',
+            '连续账号顺序': '用逗号分隔账号短名；默认 A1,A3,A4，按此顺序精确解析并切换',
+            '测试轮数': '单账号登录次数，或完整连续序列的重复轮数',
         }
+
+    @staticmethod
+    def _parse_continuous_order(order_text):
+        """解析 A1,A3,A4 / 中文逗号 / 空白分隔的连续账号短名。"""
+        return [value.upper() for value in re.split(r'[,，\s]+', order_text or '') if value]
 
     def _get_profile_names(self):
         try:
@@ -91,17 +102,35 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
             mouse_reset_task.disable()
 
         try:
+            test_mode = (self.config.get('测试模式') or SINGLE_MODE).strip()
             target_config = (self.config.get('目标账号') or '').strip()
             rounds = int(self.config.get('测试轮数') or '1')
             auto_mode = target_config in ('', '（自动识别）', '无')
-
-            self.log_info(f'账号切换测试开始（目标: {"自动识别" if auto_mode else target_config}，轮数: {rounds}）', notify=True)
-            self.info_set('状态', '检测当前界面...')
 
             mat = self._get_multi_account_task()
             if mat is None:
                 self.log_error('未找到 MultiAccountDailyTask 实例')
                 raise Exception('MultiAccountDailyTask 未注册')
+
+            continuous_mode = test_mode == CONTINUOUS_MODE
+            sequence_targets = []
+            if continuous_mode:
+                short_names = self._parse_continuous_order(
+                    self.config.get('连续账号顺序') or DEFAULT_CONTINUOUS_ORDER
+                )
+                sequence_targets = mat.resolve_profile_short_names(short_names)
+                self.log_info(
+                    f'账号切换测试开始（连续顺序: {" → ".join(short_names)}，'
+                    f'完整序列轮数: {rounds}）',
+                    notify=True,
+                )
+            else:
+                self.log_info(
+                    f'账号切换测试开始（目标: {"自动识别" if auto_mode else target_config}，'
+                    f'轮数: {rounds}）',
+                    notify=True,
+                )
+            self.info_set('状态', '检测当前界面...')
 
             # ============ 自动检测当前界面 ============
             self.log_info('自动检测当前界面...')
@@ -141,89 +170,31 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
                 self.log_info(f'=== 第 {round_i}/{rounds} 轮 ===')
                 self.info_set('当前轮次', f'{round_i}/{rounds}')
 
-                if auto_mode:
-                    # 自动模式：直接用 MultiAccountDailyTask 的完整切换流程
-                    self.log_info('自动模式：复用 MultiAccountDailyTask._select_and_login_account')
+                if continuous_mode:
+                    self.log_info('连续模式：仅模拟每日任务完成后的账号切换，不运行每日任务、不写完成进度')
+
+                    def update_progress(index, total, target):
+                        self.info_set('状态', f'连续切换 {index}/{total} → {target}')
+
+                    logged_targets = mat._select_and_login_sequence(
+                        sequence_targets,
+                        progress_callback=update_progress,
+                    )
+                    target = logged_targets[-1]
+                    self.log_info(f'✓ 第 {round_i} 轮连续序列切换完成')
+                elif auto_mode:
+                    # 自动模式不依赖多账号序列/完成状态，直接取登录列表第一个可用方案
+                    self.log_info('自动模式：选择登录列表中的第一个可用账号')
                     self.info_set('状态', '等待登录界面 → 选号 → 登录...')
-                    target = mat._select_and_login_account()
-                    if target is None:
-                        self.log_error('自动选择失败（_select_and_login_account 返回 None）')
-                        self.screenshot('multi')
-                        raise Exception('自动选择失败')
-                    self.log_info(f'✓ 第 {round_i} 轮已登录 {target}')
-                    self.info_set('状态', f'✓ 已登录 {target}')
+                    target = mat._select_and_login_first_available()
                 else:
-                    # 指定目标模式
                     self.log_info(f'指定目标: {target_config}')
                     self.info_set('状态', f'等待登录界面 → 选 {target_config} → 登录...')
+                    target = mat._select_and_login_specific(target_config)
 
-                    # 等待登录界面就绪
-                    self.log_info('等待登录界面就绪...')
-                    drop_down = mat.find_account_drop_down()
-                    self.log_info(f'登录界面就绪（{"对话框" if getattr(mat, "_login_in_dialog", False) else "主窗口"}）')
-
-                    # 展开下拉框
-                    if mat._account_list_expanded():
-                        self.log_info('列表已展开，跳过点击下拉框')
-                    elif getattr(mat, '_login_in_dialog', False):
-                        self.log_info('点击 ComboBox 展开账号列表...')
-                        mat._dialog_open_account_list()
-                    else:
-                        self.log_info('点击下拉框...')
-                        mat.click(drop_down, after_sleep=2)
-
-                    # 等待展开
-                    expanded = self.wait_until(mat._account_list_expanded, time_out=10,
-                                               settle_time=1, raise_if_not_found=False)
-                    if expanded:
-                        self.log_info('列表已展开 ✓')
-                    else:
-                        self.log_warning('列表未展开，尝试继续...')
-
-                    # 等待选中目标账号
-                    self.info_set('状态', f'选择 {target_config}...')
-                    account = self.wait_until(
-                        lambda: mat._click_account_in_list(target_config),
-                        time_out=10, raise_if_not_found=True
-                    )
-                    self.log_info(f'已点击 {target_config}')
-
-                    # 核对
-                    self.sleep(1)
-                    current = mat._detect_current_account_from_login()
-                    self.log_info(f'核对：目标={target_config}，当前显示={current}')
-
-                    # 点登录
-                    self.info_set('状态', '点击登录...')
-                    self.sleep(3)
-                    if getattr(mat, '_login_in_dialog', False):
-                        shown = mat._detect_current_account_from_login()
-                        if shown and not mat._same_account(shown, target_config):
-                            self.log_error(f'防误登：显示 {shown} ≠ 目标 {target_config}')
-                            self.screenshot('multi')
-                            raise Exception('防误登：账号不一致')
-                        mat._dialog_click_login()
-                    else:
-                        texts = self.ocr()
-                        login_btn = self.find_boxes(texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.8),
-                                                    match=self._login_text_pattern())
-                        if login_btn:
-                            shown = mat._detect_current_account_from_login()
-                            if shown and not mat._same_account(shown, target_config):
-                                self.log_error(f'防误登：显示 {shown} ≠ 目标 {target_config}')
-                                self.screenshot('multi')
-                                raise Exception('防误登：账号不一致')
-                            self.click(login_btn, after_sleep=3)
-                        else:
-                            self.click_relative(0.5, 0.568, hcenter=True, vcenter=True, after_sleep=3)
-
-                    # 等待进游戏
-                    self.log_info('等待进入游戏...')
-                    self.info_set('状态', '等待进入游戏...')
-                    self.logged_in = False
-                    self.ensure_main(time_out=180)
-                    self.log_info(f'✓ 第 {round_i} 轮已登录 {target_config}')
-                    self.info_set('状态', f'✓ 已登录 {target_config}')
+                if not continuous_mode:
+                    self.log_info(f'✓ 第 {round_i} 轮已登录 {target}')
+                self.info_set('状态', f'✓ 第 {round_i} 轮结束，当前已登录 {target}')
 
                 # 下一轮：退登
                 if round_i < rounds:
@@ -238,7 +209,3 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
         finally:
             if mouse_reset_was_enabled:
                 mouse_reset_task.enable()
-
-    def _login_text_pattern(self):
-        from src.task.BaseWWTask import LOGIN_TEXTS
-        return LOGIN_TEXTS

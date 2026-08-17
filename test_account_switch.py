@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""单独测试账号切换功能（v1.03.74 验证脚本）。
+"""单独测试账号切换功能（v1.04.0 验证脚本）。
 
 用法：
-    # 基本用法：在登录界面测试账号下拉框检测 + 列表展开检测
+    # 基本用法：展开账号列表，交互选择目标并完成切换验证
     python test_account_switch.py
 
     # 指定目标账号，完整测试切换（选号 + 点登录）
@@ -77,6 +77,10 @@ def _capture_hwnd(hwnd):
     w, h = right - left, bottom - top
     if w <= 0 or h <= 0:
         return None, None
+    dc = None
+    mfc = None
+    sdc = None
+    bmp = None
     try:
         dc = win32gui.GetWindowDC(hwnd)
         mfc = win32ui.CreateDCFromHandle(dc)
@@ -86,14 +90,23 @@ def _capture_hwnd(hwnd):
         sdc.SelectObject(bmp)
         sdc.BitBlt((0, 0), (w, h), mfc, (0, 0), win32con.SRCCOPY)
         bits = bmp.GetBitmapBits(True)
-        sdc.DeleteDC()
-        mfc.DeleteDC()
-        win32gui.ReleaseDC(hwnd, dc)
         frame = np.frombuffer(bits, np.uint8).reshape(h, w, 4)
         import cv2
         return cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR), (left, top)
     except Exception:
         return None, None
+    finally:
+        try:
+            if sdc is not None:
+                sdc.DeleteDC()
+            if mfc is not None:
+                mfc.DeleteDC()
+            if bmp is not None:
+                win32gui.DeleteObject(bmp.GetHandle())
+            if dc is not None:
+                win32gui.ReleaseDC(hwnd, dc)
+        except Exception:
+            pass
 
 
 def _find_dialog_hwnd(main_hwnd, game_hwnds):
@@ -246,21 +259,105 @@ def _box_center_screen(box_points, origin):
     return int(origin[0] + cx), int(origin[1] + cy)
 
 
+def _account_matches_alias(account_text, aliases):
+    """账号 OCR 文本是否属于目标方案。"""
+    name = (account_text or '').strip()
+    return name in aliases or any(alias in name for alias in aliases if len(alias) >= 4)
+
+
+def _capture_account_list(dlg_hwnd, ocr_engine):
+    """捕获展开的 ComboLBox；不存在时回退到登录对话框。"""
+    _main_hwnd, game_hwnds = _find_game_hwnd()
+    list_hwnd, _list_rect = _find_control_hwnd('ComboLBox', game_hwnds)
+    source_is_list = bool(list_hwnd)
+    frame, origin = _capture_hwnd(list_hwnd if list_hwnd else dlg_hwnd)
+    ocr_results = _ocr_frame(ocr_engine, frame) if frame is not None else []
+    return frame, origin, ocr_results, game_hwnds, source_is_list
+
+
+def _wait_for_account_list(dlg_hwnd, ocr_engine, timeout=10):
+    """等待独立 ComboLBox 或内嵌账号列表出现。"""
+    deadline = time.monotonic() + timeout
+    last = (None, None, [], [], False)
+    while time.monotonic() < deadline:
+        last = _capture_account_list(dlg_hwnd, ocr_engine)
+        frame, origin, ocr_results, game_hwnds, source_is_list = last
+        entry_count = _count_account_entries(ocr_results)
+        if (source_is_list and entry_count >= 1) or entry_count >= 2:
+            return frame, origin, ocr_results, game_hwnds
+        time.sleep(1)
+    return None
+
+
+def _selected_target_from_dialog(dlg_hwnd, ocr_engine, target_aliases):
+    """核对下拉框收起后当前显示的账号是否为目标。"""
+    frame, origin = _capture_hwnd(dlg_hwnd)
+    if frame is None:
+        return False, [], frame, origin
+    ocr_results = _ocr_frame(ocr_engine, frame)
+    displayed = [r['text'].strip() for r in ocr_results if _is_account_text(r['text'])]
+    matched = any(_account_matches_alias(name, target_aliases) for name in displayed)
+    return matched, displayed, frame, origin
+
+
+def _wait_for_login_completion(timeout=180, stable_seconds=5):
+    """等待登录对话框持续消失且游戏主窗口可见，避免点击后立即假报成功。"""
+    deadline = time.monotonic() + timeout
+    stable_since = None
+    while time.monotonic() < deadline:
+        main_hwnd, game_hwnds = _find_game_hwnd()
+        dlg_hwnd, _dlg_rect = _find_dialog_hwnd(main_hwnd, game_hwnds)
+        main_visible = any(
+            w['hwnd'] == main_hwnd and w['visible']
+            and w['rect'][2] > w['rect'][0] and w['rect'][3] > w['rect'][1]
+            for w in game_hwnds
+        )
+        if main_hwnd and main_visible and not dlg_hwnd:
+            if stable_since is None:
+                stable_since = time.monotonic()
+            elif time.monotonic() - stable_since >= stable_seconds:
+                return True
+        else:
+            stable_since = None
+        time.sleep(1)
+    return False
+
+
+def _wait_for_login_dialog(timeout=120):
+    """等待登录对话框重新出现并返回最新窗口句柄。"""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        main_hwnd, game_hwnds = _find_game_hwnd()
+        if main_hwnd:
+            dlg_hwnd, dlg_rect = _find_dialog_hwnd(main_hwnd, game_hwnds)
+            if dlg_hwnd:
+                combo_hwnd, combo_rect = _find_control_hwnd('ComboBox', game_hwnds)
+                return main_hwnd, game_hwnds, dlg_hwnd, dlg_rect, combo_hwnd, combo_rect
+        time.sleep(1)
+    return None
+
+
 def run_test(target=None, rounds=1, diag_only=False, save_screenshots=True):
     """执行账号切换测试。
 
     Args:
-        target: 目标账号方案名（如 'A3'）。None = 仅诊断，不做切换。
+        target: 目标账号方案名（如 'A3'）。None = 交互选择。
         rounds: 测试轮数（每次从登录界面开始，切换到 target 并登录）。
         diag_only: True = 仅诊断（检测登录界面 + 打印 OCR），不做点击。
         save_screenshots: 是否保存诊断截图到 test_out/ 目录。
     """
+    if rounds < 1:
+        print("  ✗ 测试轮数必须大于等于 1")
+        return False
+
     print("=" * 70)
-    print("  账号切换功能测试（v1.03.74）")
+    print("  账号切换功能测试（v1.04.0）")
     if target:
         print(f"  目标账号: {target}  |  轮数: {rounds}")
-    else:
+    elif diag_only:
         print("  模式: 诊断（仅检测登录界面，不做点击操作）")
+    else:
+        print("  模式: 交互选择目标账号")
     print("=" * 70)
 
     # 1) 找游戏进程
@@ -351,6 +448,23 @@ def run_test(target=None, rounds=1, diag_only=False, save_screenshots=True):
         print(f"  _account_list_expanded 判定: ✓ 已展开（账号条目 {len(entry_texts)} 个: {entry_texts}）")
     else:
         print(f"  _account_list_expanded 判定: ✗ 未展开（账号条目 {len(account_entries)} 个）")
+
+    # 交互模式先展开独立 ComboLBox，列出所有实际可见账号
+    if not diag_only and not target and not expanded:
+        if not combo_hwnd or not combo_rect:
+            print("  ✗ 未找到 ComboBox，无法展开账号列表")
+            return False
+        cx = (combo_rect[0] + combo_rect[2]) // 2
+        cy = (combo_rect[1] + combo_rect[3]) // 2
+        print(f"  交互模式：展开账号列表 ({cx}, {cy})...")
+        _screen_click(cx, cy)
+        list_state = _wait_for_account_list(dlg_hwnd, ocr_engine, timeout=10)
+        if list_state is None:
+            print("  ✗ 10s 内未检测到展开的账号列表")
+            return False
+        frame, origin, ocr_results, game_hwnds = list_state
+        account_entries = [r for r in ocr_results if _is_account_text(r['text'])]
+        expanded = True
 
     # 6) 切换测试
     profiles = _load_profiles()
@@ -455,29 +569,25 @@ def run_test(target=None, rounds=1, diag_only=False, save_screenshots=True):
 
     for round_i in range(1, rounds + 1):
         print(f"\n  ---- 第 {round_i}/{rounds} 轮 ----")
-        success = _do_switch(target, target_aliases, frame, origin, ocr_results,
-                             dlg_hwnd, combo_hwnd, game_hwnds, ocr_engine,
-                             save_screenshots)
+        success = _do_switch(
+            target,
+            target_aliases,
+            dlg_hwnd,
+            ocr_engine,
+            save_screenshots,
+        )
         if success:
             print(f"  ✓ 第 {round_i} 轮切换成功")
-            time.sleep(4)
             # 切换成功后游戏会进入主界面，需要再退登到登录界面（如果还有下一轮）
             if round_i < rounds:
                 print(f"  退登回登录界面...")
                 _go_back_to_login()
-                time.sleep(3)
-                # 重新捕获对话框
-                frame, origin = _capture_hwnd(dlg_hwnd)
-                if frame is None:
-                    # 可能需要重新找对话框
-                    main_hwnd, game_hwnds = _find_game_hwnd()
-                    dlg_hwnd, dlg_rect = _find_dialog_hwnd(main_hwnd, game_hwnds)
-                    if dlg_hwnd:
-                        frame, origin = _capture_hwnd(dlg_hwnd)
-                if frame is None:
-                    print("  ✗ 重新捕获对话框失败")
+                refreshed = _wait_for_login_dialog(timeout=120)
+                if refreshed is None:
+                    print("  ✗ 120s 内未重新检测到登录对话框")
                     return False
-                ocr_results = _ocr_frame(ocr_engine, frame)
+                (main_hwnd, game_hwnds, dlg_hwnd, dlg_rect,
+                 combo_hwnd, combo_rect) = refreshed
         else:
             print(f"  ✗ 第 {round_i} 轮切换失败")
             return False
@@ -488,108 +598,94 @@ def run_test(target=None, rounds=1, diag_only=False, save_screenshots=True):
     return True
 
 
-def _do_switch(target, target_aliases, frame, origin, ocr_results,
-               dlg_hwnd, combo_hwnd, game_hwnds, ocr_engine,
-               save_screenshots):
-    """执行一次账号切换：展开列表 → 找目标账号 → 点击 → 点登录。"""
+def _do_switch(target, target_aliases, dlg_hwnd, ocr_engine,
+               save_screenshots, max_select_retries=3):
+    """执行一次账号切换，并在不一致时重新选择目标账号。"""
     import cv2
 
-    # Step 1: 确认当前列表未展开（收起态）
-    expanded = _count_account_entries(ocr_results) >= 2
-    if expanded:
-        print("  [Step1] 列表已展开，跳过点下拉框")
-    else:
-        # Step 2: 点击 ComboBox 展开列表
-        if not combo_hwnd:
-            print("  [Step2] ✗ ComboBox 未找到")
-            return False
-        combo_rect = None
-        for w in game_hwnds:
-            if w['hwnd'] == combo_hwnd:
-                combo_rect = w['rect']
-                break
-        if not combo_rect:
-            print("  [Step2] ✗ ComboBox rect 未找到")
-            return False
-        cx = (combo_rect[0] + combo_rect[2]) // 2
-        cy = (combo_rect[1] + combo_rect[3]) // 2
-        print(f"  [Step2] 点击 ComboBox ({cx}, {cy})...")
-        _screen_click(cx, cy)
-        time.sleep(2)
+    for attempt in range(1, max_select_retries + 1):
+        print(f"  [Step1-4] 第 {attempt}/{max_select_retries} 次选择 {target}...")
+        _main_hwnd, game_hwnds = _find_game_hwnd()
+        list_hwnd, _list_rect = _find_control_hwnd('ComboLBox', game_hwnds)
+        if not list_hwnd:
+            combo_hwnd, combo_rect = _find_control_hwnd('ComboBox', game_hwnds)
+            if not combo_hwnd or not combo_rect:
+                print("  [Step2] 未找到 ComboBox，准备重试")
+                time.sleep(1)
+                continue
+            cx = (combo_rect[0] + combo_rect[2]) // 2
+            cy = (combo_rect[1] + combo_rect[3]) // 2
+            print(f"  [Step2] 点击 ComboBox ({cx}, {cy})...")
+            _screen_click(cx, cy)
 
-    # Step 3: 等待列表展开（检测 _account_list_expanded）
-    print("  [Step3] 等待列表展开...")
-    for wait_i in range(10):
-        frame, origin = _capture_hwnd(dlg_hwnd)
-        if frame is None:
-            time.sleep(1)
+        print("  [Step3] 等待独立 ComboLBox 展开...")
+        list_state = _wait_for_account_list(dlg_hwnd, ocr_engine, timeout=10)
+        if list_state is None:
+            print("  [Step3] 10s 内未检测到账号列表，准备重试")
             continue
-        ocr_results = _ocr_frame(ocr_engine, frame)
+        frame, origin, ocr_results, _game_hwnds = list_state
         entry_count = _count_account_entries(ocr_results)
-        if entry_count >= 2:
-            print(f"  [Step3] ✓ 列表已展开（账号条目: {entry_count}）")
-            if save_screenshots:
-                out_dir = os.path.join(_project_root, "test_out")
-                ts = time.strftime("%H%M%S")
-                cv2.imwrite(os.path.join(out_dir, f"{ts}_expanded.png"), frame)
-            break
-        time.sleep(1)
-    else:
-        print("  [Step3] ✗ 10s 内列表未展开（click drop down no effect）")
-        if save_screenshots and frame is not None:
+        print(f"  [Step3] ✓ 列表已展开（账号条目: {entry_count}）")
+        if save_screenshots:
             out_dir = os.path.join(_project_root, "test_out")
+            os.makedirs(out_dir, exist_ok=True)
             ts = time.strftime("%H%M%S")
-            cv2.imwrite(os.path.join(out_dir, f"{ts}_not_expanded.png"), frame)
-        return False
+            cv2.imwrite(os.path.join(out_dir, f"{ts}_expanded.png"), frame)
 
-    # Step 4: 在列表中找目标账号并点击
-    print(f"  [Step4] 在列表中查找 {target}（别名: {target_aliases}）...")
-    clicked = False
-    for r in ocr_results:
-        name = r['text'].strip()
-        if name in target_aliases or any(alias in name for alias in target_aliases if len(alias) >= 4):
-            sx, sy = _box_center_screen(r['box'], origin)
-            print(f"  [Step4] 找到 {name}，点击屏幕 ({sx}, {sy})...")
-            _screen_click(sx, sy)
-            time.sleep(1.5)
-            clicked = True
+        print(f"  [Step4] 在列表中查找 {target}（别名: {target_aliases}）...")
+        target_box = next(
+            (r for r in ocr_results if _account_matches_alias(r['text'], target_aliases)),
+            None,
+        )
+        if target_box is None:
+            visible = [r['text'] for r in ocr_results if _is_account_text(r['text'])]
+            print(f"  [Step4] 未找到 {target}；可见账号: {visible}，准备重试")
+            continue
+
+        sx, sy = _box_center_screen(target_box['box'], origin)
+        print(f"  [Step4] 找到 {target_box['text']}，点击屏幕 ({sx}, {sy})...")
+        _screen_click(sx, sy)
+        time.sleep(1.5)
+
+        matched, displayed, _frame, _origin = _selected_target_from_dialog(
+            dlg_hwnd,
+            ocr_engine,
+            target_aliases,
+        )
+        if matched:
+            print(f"  [Step4] ✓ 已核对目标账号，当前显示: {displayed}")
             break
-
-    if not clicked:
-        print(f"  [Step4] ✗ 列表中未找到 {target}")
-        print(f"  可见账号: {[r['text'] for r in ocr_results if _is_account_text(r['text'])]}")
+        print(
+            f"  [Step4] 当前显示 {displayed or ['未识别']} 与目标 {target} 不一致，"
+            "重新展开并选择"
+        )
+    else:
+        print(f"  [Step4] ✗ {max_select_retries} 次重试后仍无法确认 {target}，为防误登录已停止")
         return False
 
     # Step 5: 点击「登录」按钮
     print("  [Step5] 查找登录按钮...")
-    # 重新捕获（选号后列表可能收起）
     time.sleep(1)
     frame, origin = _capture_hwnd(dlg_hwnd)
-    if frame is not None:
-        ocr_results = _ocr_frame(ocr_engine, frame)
-        login_box = None
-        for r in ocr_results:
-            if _is_login_text(r['text']):
-                login_box = r
-                break
-        if login_box:
-            sx, sy = _box_center_screen(login_box['box'], origin)
-            print(f"  [Step5] 点击登录按钮 ({sx}, {sy})...")
-            _screen_click(sx, sy)
-            time.sleep(3)
-            print("  [Step5] ✓ 已点击登录按钮")
-            return True
-        else:
-            # 兜底：点击对话框中央偏下
-            cx = (dlg_rect[0] + dlg_rect[2]) // 2
-            cy = (dlg_rect[1] + dlg_rect[3] * 2) // 3
-            print(f"  [Step5] 未找到登录文本，点击对话框下方 ({cx}, {cy})...")
-            _screen_click(cx, cy)
-            time.sleep(3)
-            return True
-    else:
+    if frame is None:
         print("  [Step5] ✗ 重新捕获对话框失败")
         return False
+    ocr_results = _ocr_frame(ocr_engine, frame)
+    login_box = next((r for r in ocr_results if _is_login_text(r['text'])), None)
+    if login_box is None:
+        print("  [Step5] ✗ 未找到登录按钮，为防止误点已停止")
+        return False
+
+    sx, sy = _box_center_screen(login_box['box'], origin)
+    print(f"  [Step5] 点击登录按钮 ({sx}, {sy})...")
+    _screen_click(sx, sy)
+
+    print("  [Step6] 等待登录界面持续消失并确认游戏主窗口可见...")
+    if not _wait_for_login_completion(timeout=180, stable_seconds=5):
+        print("  [Step6] ✗ 180s 内未确认登录完成")
+        return False
+    print("  [Step6] ✓ 已确认离开登录界面")
+    return True
 
 
 def _go_back_to_login():
@@ -619,28 +715,46 @@ def _go_back_to_login():
     time.sleep(3)
 
 
+def _parse_profiles(data):
+    """从新旧 daily_profiles.json 结构解析方案名和识别别名。"""
+    profiles = {}
+    if not isinstance(data, dict):
+        return profiles
+    source = data.get('profiles', data)
+    if not isinstance(source, dict):
+        return profiles
+    for name, content in source.items():
+        if source is data and name in ('sequences', 'active_profile'):
+            continue
+        if not isinstance(content, dict):
+            continue
+        aliases = []
+        phone = content.get('Account Name', '') or ''
+        alias_text = content.get('备用识别名称内容', '') or ''
+        old_aliases = content.get('account_aliases') or []
+        if phone:
+            aliases.append(str(phone).strip())
+        if isinstance(alias_text, str):
+            aliases.extend([
+                a.strip() for a in re.split(r'[,，;；\r\n]+', alias_text) if a.strip()
+            ])
+        if isinstance(old_aliases, list):
+            aliases.extend([str(a).strip() for a in old_aliases if str(a).strip()])
+        profiles[name] = list(dict.fromkeys(aliases))
+    return profiles
+
+
 def _load_profiles():
     """读取 daily_profiles.json 中的方案名和别名。"""
     profile_path = os.path.join(_project_root, 'configs', 'daily_profiles.json')
-    profiles = {}
     try:
         import json
         with open(profile_path, encoding='utf-8') as f:
             data = json.load(f)
-        if isinstance(data, dict):
-            for name, content in data.items():
-                if isinstance(content, dict):
-                    aliases = []
-                    phone = content.get('Account Name', '') or ''
-                    alias_text = content.get('备用识别名称内容', '') or ''
-                    if phone:
-                        aliases.append(phone.strip())
-                    if alias_text:
-                        aliases.extend([a.strip() for a in alias_text.split(',') if a.strip()])
-                    profiles[name] = aliases
+        return _parse_profiles(data)
     except Exception as e:
         print(f"[WARN] 读取方案失败: {e}")
-    return profiles
+        return {}
 
 
 def _get_aliases(profiles, profile_name):
@@ -678,7 +792,7 @@ def _get_aliases(profiles, profile_name):
 # ========================= 入口 =========================
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="v1.03.74 账号切换功能测试")
+    parser = argparse.ArgumentParser(description="v1.04.0 账号切换功能测试")
     parser.add_argument('--target', '-t', type=str, default=None,
                         help='目标账号方案名或简称（如 A1、A3）。不指定则交互选择。')
     parser.add_argument('--rounds', '-n', type=int, default=1,

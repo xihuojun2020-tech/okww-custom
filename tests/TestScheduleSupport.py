@@ -73,7 +73,7 @@ class TestScheduleSupport(unittest.TestCase):
         self.assertTrue(ensure_main_calls)
 
     def test_multi_account_returns_to_main_before_switching_to_login(self):
-        run_node = _class_function("src/task/MultiAccountDailyTask.py", "MultiAccountDailyTask", "run")
+        run_node = _class_function("src/task/MultiAccountDailyTask.py", "MultiAccountDailyTask", "_run_inner")
 
         calls = [
             node for node in ast.walk(run_node)
@@ -91,7 +91,7 @@ class TestScheduleSupport(unittest.TestCase):
         self.assertIn("ensure_main", call_names[first_daily_index + 1:switch_index])
 
     def test_multi_account_switches_to_login_after_each_account_daily(self):
-        run_node = _class_function("src/task/MultiAccountDailyTask.py", "MultiAccountDailyTask", "run")
+        run_node = _class_function("src/task/MultiAccountDailyTask.py", "MultiAccountDailyTask", "_run_inner")
         while_node = next(node for node in ast.walk(run_node) if isinstance(node, ast.While))
 
         calls = [

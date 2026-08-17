@@ -122,6 +122,7 @@ class TestNightmareNestTask(unittest.TestCase):
 
     def test_find_nest_skips_cached_unreachable_row(self):
         task = NightmareNestTask.__new__(NightmareNestTask)
+        task.config = {}
         task.count_re = re.compile(r"(\d{1,2})/(\d{1,2})")
         task.queues = [lambda: None]
         task._unreachable_nests = {'<lambda>:36:10'}

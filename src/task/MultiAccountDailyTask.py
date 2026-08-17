@@ -36,6 +36,11 @@ account_pattern = re.compile(r'\*\*\*\*')
 scan_account_pattern = re.compile(r'^U[a-zA-Z0-9]+$', re.IGNORECASE)
 # 方案名中的 11 位手机号
 phone_in_name_pattern = re.compile(r'(1[3-9]\d{9})')
+# 方案短名只匹配开头的完整编号（A1、A3、A10 等），避免 A1 误命中 A10。
+profile_short_name_pattern = re.compile(
+    r'^\s*【?\s*([a-zA-Z]\d+)(?=[\s\-_.:：】]|$)',
+    re.IGNORECASE,
+)
 
 CURRENT_SEQUENCE = '当前序列'
 CURRENT_ACCOUNT = '当前执行账号'
@@ -56,6 +61,14 @@ def normalize_account_name(account):
 def masked_phone(phone):
     """手机号掩码形式：前3 + **** + 后4。"""
     return phone[:3] + '****' + phone[-4:]
+
+
+def profile_short_name(profile_name):
+    """从完整方案名提取精确短名（如 A1/A10）；无法提取时返回 None。"""
+    if not profile_name:
+        return None
+    match = profile_short_name_pattern.search(str(profile_name))
+    return match.group(1).upper() if match else None
 
 
 class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
@@ -344,6 +357,38 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         """返回全部方案名。"""
         return list(self._load_profiles().keys())
 
+    def resolve_profile_short_names(self, short_names):
+        """按输入顺序把 A1/A3 等精确短名解析为完整方案名。
+
+        短名必须唯一且全部存在。这里不使用前缀/包含匹配，防止 A1 误选 A10。
+        """
+        requested = []
+        for value in short_names or []:
+            short = str(value).strip().upper()
+            if short:
+                requested.append(short)
+        if not requested:
+            raise ValueError('连续账号顺序不能为空')
+
+        by_short_name = {}
+        duplicate_short_names = set()
+        for profile_name in self.get_profile_names():
+            short = profile_short_name(profile_name)
+            if not short:
+                continue
+            if short in by_short_name:
+                duplicate_short_names.add(short)
+            else:
+                by_short_name[short] = profile_name
+
+        duplicates = [short for short in requested if short in duplicate_short_names]
+        if duplicates:
+            raise ValueError(f'账号短名存在重复方案: {", ".join(dict.fromkeys(duplicates))}')
+        missing = [short for short in requested if short not in by_short_name]
+        if missing:
+            raise ValueError(f'找不到账号方案: {", ".join(missing)}')
+        return [by_short_name[short] for short in requested]
+
     def _profile_identities(self, profile_name):
         """返回方案的识别标识列表：手机号掩码 + 账号别名（归一化）。"""
         profiles = self._load_profiles()
@@ -353,17 +398,19 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         if m:
             phone = m.group(1)
             ids.append(normalize_account_name(masked_phone(phone)))
-        # 账号别名：优先新配置键「备用识别名称内容」（逗号分隔），兼容旧 account_aliases 字段
+        # 账号别名：合并新配置键与旧 account_aliases，兼容中英文逗号和换行分隔。
         aliases = []
         alias_text = profile.get('备用识别名称内容') if isinstance(profile, dict) else None
         if alias_text:
-            aliases = [a.strip() for a in str(alias_text).split(',') if a and a.strip()]
-        if not aliases:
-            old = profile.get('account_aliases') or []
-            aliases = list(old) if isinstance(old, list) else []
+            aliases.extend(a.strip() for a in re.split(r'[,，;；\r\n]+', str(alias_text)) if a.strip())
+        old = profile.get('account_aliases') or []
+        if isinstance(old, list):
+            aliases.extend(old)
         for a in aliases:
             if a:
-                ids.append(normalize_account_name(str(a).strip()))
+                normalized = normalize_account_name(str(a).strip())
+                if normalized and normalized not in ids:
+                    ids.append(normalized)
         return ids
 
     def match_profile_from_login(self, login_text):
@@ -1060,95 +1107,194 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         )
         return False
 
-    def _select_and_login_account(self):
-        """从本轮序列取第一个未完成账号，在登录界面选择并登录；全部完成返回 None。"""
-        target = self._next_target_account()
-        if target is None:
-            return None
-        current_account = None
+    def _open_account_list(self):
+        """确保登录账号列表处于展开状态，失败时返回 False。"""
+        drop_down = self.find_account_drop_down()
+        if self._account_list_expanded():
+            self.log_info('账号列表已展开，跳过再次点击下拉框')
+        elif getattr(self, '_login_in_dialog', False):
+            if not self._dialog_open_account_list():
+                self.log_warning('对话框模式下打开账号下拉框失败')
+                return False
+        else:
+            self.click(drop_down, after_sleep=2)
+
+        expanded = self.wait_until(
+            self._account_list_expanded,
+            time_out=10,
+            settle_time=1,
+            raise_if_not_found=False,
+        )
+        if not expanded:
+            self.log_warning('账号列表未能展开')
+            self.screenshot('multi')
+            return False
+        return True
+
+    def _select_account_with_retry(self, target, max_retries=5):
+        """重复展开、选择并核对目标账号，确认成功后返回 True。
+
+        OCR 显示账号与目标不一致时不会立即终止，而是重新展开列表并再次选择；
+        达到重试上限仍无法确认时才安全停止，避免误登录其他账号。
+        """
+        last_current = None
+        for attempt in range(1, max_retries + 1):
+            self.sleep(1)
+            if not self._open_account_list():
+                self.log_warning(f'第 {attempt}/{max_retries} 次打开账号列表失败，准备重试')
+                continue
+
+            clicked = self.wait_until(
+                lambda: self._click_account_in_list(target),
+                time_out=10,
+                raise_if_not_found=False,
+            )
+            if not clicked:
+                self.log_warning(f'第 {attempt}/{max_retries} 次未能点击目标账号 {target}，准备重试')
+                continue
+
+            self.sleep(1)
+            last_current = self._detect_current_account_from_login()
+            self.log_info(f'已选择账号：{target}，当前显示账号：{last_current}')
+            if self._same_account(target, last_current):
+                self.log_info(f'确认已选择账号：{target}')
+                return True
+
+            self.log_warning(
+                f'账号选择不一致（目标 {target}，当前 {last_current or "未识别"}），'
+                f'重新选择（{attempt}/{max_retries}）'
+            )
+
+        self.log_error(
+            f'账号选择在 {max_retries} 次重试后仍失败；'
+            f'目标 {target}，最后识别 {last_current or "未识别"}。为防止误登录已停止。'
+        )
+        self.screenshot('multi')
+        raise Exception(self.tr('Failed to switch account'))
+
+    def _confirm_target_before_login(self, target, max_retries=3):
+        """点登录前再次核对目标；不一致时重新选择，而不是立即停止。"""
+        last_shown = None
+        for attempt in range(1, max_retries + 1):
+            last_shown = self._detect_current_account_from_login()
+            if self._same_account(last_shown, target):
+                return True
+
+            self.log_warning(
+                f'登录前账号不一致（目标 {target}，当前 {last_shown or "未识别"}），'
+                f'重新选择目标账号（{attempt}/{max_retries}）'
+            )
+            if attempt < max_retries:
+                try:
+                    self._select_account_with_retry(target, max_retries=2)
+                except Exception as e:
+                    self.log_warning(f'重新选择目标账号失败，将继续重试: {e}')
+                self.sleep(1)
+
+        self.log_error(
+            f'登录前经过 {max_retries} 次重试仍无法确认目标账号；'
+            f'目标 {target}，当前 {last_shown or "未识别"}。为防止误登录已停止。'
+        )
+        self.screenshot('multi')
+        raise Exception(self.tr('Login aborted: displayed account does not match target'))
+
+    def _click_login_for_target(self, target):
+        """确认当前账号后点击登录按钮，点击失败时抛出异常。"""
+        self._confirm_target_before_login(target)
+        if getattr(self, '_login_in_dialog', False):
+            if not self._dialog_click_login():
+                self.log_error('对话框模式下点击登录按钮失败')
+                self.screenshot('multi')
+                raise Exception(self.tr('Failed to click login button'))
+            return
+
+        texts = self.ocr()
+        login_btn = self.find_boxes(
+            texts,
+            boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.8),
+            match=LOGIN_TEXTS,
+        )
+        if login_btn:
+            self.click(login_btn, after_sleep=3)
+        else:
+            self.click_relative(0.5, 0.568, hcenter=True, vcenter=True, after_sleep=3)
+
+    def _visible_login_profiles(self):
+        """按登录列表显示顺序返回能映射到本地方案的账号名。"""
+        texts = None
+        if getattr(self, '_login_in_dialog', False):
+            hwnd, _rect = self._find_control_hwnd('ComboLBox')
+            if hwnd:
+                frame, _origin = self._capture_hwnd_client(hwnd)
+                if frame is not None:
+                    try:
+                        texts = self.ocr(frame=frame)
+                    except Exception:
+                        texts = None
+            if not texts:
+                texts = self._ocr_login_dialog()
+        else:
+            texts = self.ocr()
+
+        profiles = []
+        for box in texts or []:
+            name = (box.name or '').strip()
+            if not name or not (account_pattern.search(name) or scan_account_pattern.match(name)):
+                continue
+            profile = self.match_profile_from_login(name)
+            if profile and profile not in profiles:
+                profiles.append(profile)
+        return profiles
+
+    def _select_and_login_first_available(self):
+        """选择登录列表中第一个能映射到本地方案的账号并登录。"""
         mouse_reset_task = self.executor.get_task_by_class(MouseResetTask)
         mouse_reset_was_enabled = mouse_reset_task.enabled if mouse_reset_task else False
         if mouse_reset_was_enabled:
             mouse_reset_task.disable()
         try:
-            max_retries = 5
-            for attempt in range(1, max_retries + 1):
-                self.sleep(1)
-                drop_down = self.find_account_drop_down()
-                if drop_down:
-                    if self._account_list_expanded():
-                        # 列表已展开（上次尝试遗留）：不再点 ComboBox（会切换成收起）
-                        self.log_info('账号列表已展开，跳过再次点击下拉框')
-                    elif getattr(self, '_login_in_dialog', False):
-                        # 对话框变体：点击 ComboBox 展开账号列表
-                        if not self._dialog_open_account_list():
-                            self.log_error('对话框模式下打开账号下拉框失败')
-                            continue
-                    else:
-                        self.click(drop_down, after_sleep=2)
-                # 点击后等待列表展开（收起→展开）。不能用 do_find_account_drop_down 判断：
-                # 列表展开后账号条目 ≥2，旧逻辑仍会命中并误报「click drop down no effect」。
-                expanded = self.wait_until(self._account_list_expanded, time_out=10,
-                                           settle_time=1, raise_if_not_found=False)
-                if not expanded:
-                    self.log_error('click drop down no effect')
-                    self.screenshot('multi')
-                    continue
-                account = self.wait_until(
-                    lambda: self._click_account_in_list(target),
-                    time_out=10, raise_if_not_found=True
-                )
-                self.sleep(1)
-                current_account = self._detect_current_account_from_login()
-                # account 是点击结果（True/None），账号名一律用 target（修复 True.lower 崩溃）
-                self.log_info(f'已选择账号：{target}，当前显示账号：{current_account}')
-                if self._same_account(target, current_account):
-                    self.log_info(f'确认已选择账号：{target}')
-                    break
-                if attempt < max_retries:
-                    self.log_info(f'账号显示不匹配，重试（{attempt}/{max_retries}）')
-                else:
-                    self.log_error(
-                        f'账号选择在 {max_retries} 次重试后仍失败；{target} 未显示。'
-                    )
-                    self.screenshot('multi')
-                    raise Exception(self.tr('Failed to switch account'))
+            if not self._open_account_list():
+                raise Exception(self.tr('Failed to open account list'))
+            profiles = self.wait_until(
+                self._visible_login_profiles,
+                time_out=10,
+                settle_time=1,
+                raise_if_not_found=False,
+            )
+            if not profiles:
+                self.log_error('登录列表中没有能映射到本地方案的账号')
+                self.screenshot('multi')
+                raise Exception('没有可用的已配置账号')
+            target = profiles[0]
+            self.log_info(f'自动识别登录列表中的第一个可用账号: {target}')
+            self._select_account_with_retry(target)
             self.sleep(4)
-            if getattr(self, '_login_in_dialog', False):
-                # 对话框变体：点登录前核对账号，再点击「登录」按钮（对话框帧 + 屏幕坐标）
-                shown = self._detect_current_account_from_login()
-                if shown and not self._same_account(shown, target):
-                    self.log_error(
-                        f'登录对话框当前显示账号 {shown} 与目标 {target} 不一致，取消登录（防误登）'
-                    )
-                    self.screenshot('multi')
-                    raise Exception(self.tr('Login aborted: displayed account does not match target'))
-                if not self._dialog_click_login():
-                    self.log_error('对话框模式下点击登录按钮失败')
-                    self.screenshot('multi')
-                    raise Exception(self.tr('Failed to click login button'))
-            else:
-                texts = self.ocr()
-                login_btn = self.find_boxes(texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.8),
-                                            match=LOGIN_TEXTS)
-                if login_btn:
-                    # 点登录前核对当前显示的账号是否为目标账号（防误登其他账号）
-                    shown = self._detect_current_account_from_login()
-                    if shown and not self._same_account(shown, target):
-                        self.log_error(
-                            f'登录界面当前显示账号 {shown} 与目标 {target} 不一致，'
-                            f'取消点击登录（防误登），请检查账号选择'
-                        )
-                        self.screenshot('multi')
-                        raise Exception(self.tr('Login aborted: displayed account does not match target'))
-                    self.click(login_btn, after_sleep=3)
-                else:
-                    self.click_relative(0.5, 0.568, hcenter=True, vcenter=True, after_sleep=3)
+            self._click_login_for_target(target)
             self.logged_in = False
             self.ensure_main(time_out=180)
             self.log_info(self.tr('Login successful'))
-            # 返回确定的目标账号（OCR 识别的 current_account 可能为 None，
-            # 若返回它会在检测失败时被误判为「全部完成」而跳过剩余账号）
+            return target
+        finally:
+            if mouse_reset_was_enabled:
+                mouse_reset_task.enable()
+
+    def _select_and_login_account(self):
+        """从本轮序列取第一个未完成账号，在登录界面选择并登录；全部完成返回 None。"""
+        target = self._next_target_account()
+        if target is None:
+            return None
+        mouse_reset_task = self.executor.get_task_by_class(MouseResetTask)
+        mouse_reset_was_enabled = mouse_reset_task.enabled if mouse_reset_task else False
+        if mouse_reset_was_enabled:
+            mouse_reset_task.disable()
+        try:
+            self._select_account_with_retry(target)
+            self.sleep(4)
+            self._click_login_for_target(target)
+            self.logged_in = False
+            self.ensure_main(time_out=180)
+            self.log_info(self.tr('Login successful'))
+            # 返回确定的目标账号，避免 OCR 临时识别失败被误判为「全部完成」。
             return target
         finally:
             if mouse_reset_was_enabled:
@@ -1175,59 +1321,39 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         if mouse_reset_was_enabled:
             mouse_reset_task.disable()
         try:
-            drop_down = self.find_account_drop_down()
-            if drop_down:
-                if self._account_list_expanded():
-                    self.log_info('账号列表已展开，跳过再次点击下拉框')
-                elif getattr(self, '_login_in_dialog', False):
-                    self._dialog_open_account_list()
-                else:
-                    self.click(drop_down, after_sleep=2)
-            # 等待列表展开（防「点击无效果」误判：展开后账号条目 ≥2）
-            expanded = self.wait_until(self._account_list_expanded, time_out=10,
-                                       settle_time=1, raise_if_not_found=False)
-            if not expanded:
-                self.log_error('click drop down no effect（登录回起始账号）')
-                self.screenshot('multi')
-                raise Exception(self.tr('Failed to open account list'))
-            deadline_account = None
-            self.wait_until(lambda: self._click_specific_account(profile_name),
-                            time_out=10, raise_if_not_found=True)
+            self._select_account_with_retry(profile_name)
             self.sleep(4)
-            if getattr(self, '_login_in_dialog', False):
-                if not self._dialog_click_login():
-                    self.log_error('对话框模式下点击登录按钮失败')
-                    self.screenshot('multi')
-                    raise Exception(self.tr('Failed to click login button'))
-            else:
-                texts = self.ocr()
-                login_btn = self.find_boxes(texts, boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.8),
-                                            match=LOGIN_TEXTS)
-                if login_btn:
-                    self.click(login_btn, after_sleep=3)
-                else:
-                    self.click_relative(0.5, 0.568, hcenter=True, vcenter=True, after_sleep=3)
+            self._click_login_for_target(profile_name)
             self.logged_in = False
             self.ensure_main(time_out=180)
             self.log_info(f'已登录: {profile_name}')
+            return profile_name
         finally:
             if mouse_reset_was_enabled:
                 mouse_reset_task.enable()
 
-    def _click_specific_account(self, profile_name):
-        """在账号列表中点击指定的方案账号，返回是否点击成功。
+    def _select_and_login_sequence(self, profile_names, progress_callback=None):
+        """连续登录一组账号，只模拟每个账号每日任务完成后的切换部分。
 
-        v1.03.73：对话框模式走对话框帧 + 屏幕坐标。
+        调用方应从登录界面开始。本方法不执行每日任务、不写完成进度；每次登录都
+        复用正式的指定账号流程，并只在相邻账号之间退登。
         """
-        if getattr(self, '_login_in_dialog', False):
-            ok, _name = self._dialog_find_and_click_account(profile_name)
-            return ok
-        accounts = self.ocr(match=account_pattern)
-        for account in accounts:
-            if self.match_profile_from_login(account.name) == profile_name:
-                self.click(account, after_sleep=2)
-                return True
-        return False
+        targets = list(profile_names or [])
+        if not targets:
+            raise ValueError('连续切换账号列表不能为空')
+
+        logged_profiles = []
+        total = len(targets)
+        for index, target in enumerate(targets, start=1):
+            if progress_callback:
+                progress_callback(index, total, target)
+            self.log_info(f'连续切换 {index}/{total}：准备登录 {target}')
+            logged_profiles.append(self._select_and_login_specific(target))
+            if index < total:
+                self.log_info(f'模拟 {target} 每日任务已完成，仅执行退登并切换下一个账号')
+                self._switch_to_login()
+                self.sleep(2)
+        return logged_profiles
 
     def find_account_drop_down(self):
         return self.wait_until(self.do_find_account_drop_down, time_out=60, settle_time=2, raise_if_not_found=True)

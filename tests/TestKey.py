@@ -2,6 +2,7 @@ import unittest
 from config import config
 from ok.test.TaskTestCase import TaskTestCase
 from src.task.AutoCombatTask import AutoCombatTask
+from tests.fixture_support import require_fixture
 
 config['debug'] = True
 
@@ -35,6 +36,7 @@ class TestKey(TaskTestCase):
         self.assertEqual(self.task.key_config['Tool Key'], 'a')
 
     def test_load_hotkey_skips_set_key_when_short_action_bar_visible(self):
+        require_fixture(self, 'ok_templates/25.png')
         self.task.do_reset_to_false()
         self.task.key_config['Echo Key'] = 'a'
         self.task.key_config['Liberation Key'] = 'a'
