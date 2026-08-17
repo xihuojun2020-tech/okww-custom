@@ -51,7 +51,7 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
         profile_names = self._get_profile_names()
         self.default_config = {
             '目标账号': '',
-            '测试轮数': 1,
+            '测试轮数': '1',
         }
         self.config_type = {
             '目标账号': {
@@ -60,7 +60,7 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
             },
             '测试轮数': {
                 'type': 'drop_down',
-                'options': [1, 2, 3, 5, 10],
+                'options': ['1', '2', '3', '5', '10'],
             },
         }
         self.config_description = {
@@ -317,7 +317,7 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
 
         try:
             target_config = (self.config.get('目标账号') or '').strip()
-            rounds = int(self.config.get('测试轮数') or 1)
+            rounds = int(self.config.get('测试轮数') or '1')
             profiles = self._load_profiles()
             auto_mode = target_config in ('', '（自动识别）', '无')
 
