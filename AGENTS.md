@@ -11,11 +11,12 @@
 ## Versioning and GitHub publishing
 
 - Every change that modifies code must update the version in `config.py` in the same release.
+- Version text uses fixed-width `X.YY.ZZ` (for example `1.04.02`).
 - Small fixes increment the third component.
-- Medium changes increment the second component and reset the third component to zero.
-- Major changes increment the first component and reset both later components to zero; do this only when the user explicitly requests a major version change.
+- Medium changes increment the second component and reset the third component to `00`.
+- Major changes increment the first component and reset both later components to `00`; do this only when the user explicitly requests a major version change.
 - Keep product-facing version text and release notes synchronized with `config.py`.
-- After a verified version change, commit it, create the matching annotated `vX.Y.Z` tag, and push both the branch and tag to GitHub unless the user explicitly asks to keep the change local.
+- After a verified version change, commit it, create the matching annotated `vX.YY.ZZ` tag, and push both the branch and tag to GitHub unless the user explicitly asks to keep the change local.
 
 ## Account-switch testing
 

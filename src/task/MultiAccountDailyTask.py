@@ -910,6 +910,84 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         cy = box.y + box.height / 2.0
         return int(origin[0] + cx), int(origin[1] + cy)
 
+    def _log_account_click_delivery(self, mode, box, screen_point=None, hwnd=None):
+        """记录账号点击投递诊断；诊断失败不能影响实际点击。"""
+        try:
+            interaction = getattr(getattr(self, 'executor', None), 'interaction', None)
+            if hwnd is None and screen_point is not None and mode.startswith('系统屏幕'):
+                try:
+                    import win32gui
+                    hwnd = win32gui.WindowFromPoint((int(screen_point[0]), int(screen_point[1])))
+                except Exception:
+                    hwnd = None
+            if hwnd is None and interaction is not None:
+                # PostMessageInteraction resolves the real child target during
+                # click(); prefer that post-dispatch target over a stale one.
+                hwnd = getattr(interaction, '_dynamic_target_hwnd', None) or getattr(interaction, 'hwnd', None)
+            if hwnd is None:
+                hwnd_window = getattr(self, 'hwnd', None)
+                hwnd = getattr(hwnd_window, 'top_hwnd', None) or getattr(hwnd_window, 'hwnd', None)
+            class_name = '?'
+            if hwnd:
+                try:
+                    import win32gui
+                    class_name = win32gui.GetClassName(hwnd)
+                except Exception:
+                    class_name = '?'
+            point = f'({box.x + box.width / 2:.1f},{box.y + box.height / 2:.1f})'
+            if screen_point is not None:
+                point += f' screen=({screen_point[0]},{screen_point[1]})'
+            self.log_info(
+                f'账号点击投递诊断：方式={mode}，目标HWND={hwnd or "?"}，'
+                f'类={class_name}，坐标={point}'
+            )
+        except Exception:
+            pass
+
+    def _refresh_hwnd_window_snapshot(self):
+        """刷新 HwndWindow 的句柄/子窗口快照，失败时仅记录诊断。"""
+        try:
+            hwnd_window = getattr(self, 'hwnd', None)
+            refresh = getattr(hwnd_window, 'do_update_window_size', None)
+            if callable(refresh):
+                refresh()
+                self.log_info('账号点击未确认：已刷新 HwndWindow 句柄快照')
+                return True
+        except Exception as e:
+            try:
+                self.log_warning(f'刷新 HwndWindow 句柄快照失败（继续尝试）：{e}')
+            except Exception:
+                pass
+        return False
+
+    def _bring_account_window_to_front(self):
+        """兜底屏幕点击前尝试将游戏窗口置前。"""
+        try:
+            hwnd_window = getattr(self, 'hwnd', None)
+            bring_to_front = getattr(hwnd_window, 'bring_to_front', None)
+            if callable(bring_to_front):
+                return bool(bring_to_front())
+        except Exception as e:
+            try:
+                self.log_warning(f'账号点击兜底置前失败（继续尝试）：{e}')
+            except Exception:
+                pass
+        return False
+
+    def _main_box_center_screen(self, box):
+        """把主窗口 OCR 框转换为屏幕坐标；无法安全换算时返回 None。"""
+        try:
+            hwnd_window = getattr(self, 'hwnd', None)
+            get_origin = getattr(hwnd_window, 'get_capture_origin', None)
+            if not callable(get_origin):
+                return None
+            origin = get_origin()
+            if not origin:
+                return None
+            return self._box_center_screen(box, origin)
+        except Exception:
+            return None
+
     def _dialog_open_account_list(self):
         """点击 #32770 登录对话框的账号下拉框（ComboBox）展开账号列表，返回是否成功。"""
         hwnd, rect = self._find_control_hwnd('ComboBox')
@@ -937,8 +1015,11 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                         name = (t.name or '').strip()
                         if self.match_profile_from_login(name) == profile_name:
                             sx, sy = self._box_center_screen(t, origin)
-                            self.log_info(f'点击账号 {profile_name}（列表，屏幕 {sx},{sy}）')
+                            diagnose = getattr(self, '_log_account_click_delivery', None)
+                            if callable(diagnose):
+                                diagnose('系统屏幕点击', t, (sx, sy), hwnd)
                             if self._screen_click(sx, sy, after_sleep=2):
+                                self.log_info(f'已发送账号点击（方式=系统屏幕，列表，屏幕 {sx},{sy}）')
                                 return True, name
                 except Exception:
                     pass
@@ -951,8 +1032,11 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     name = (t.name or '').strip()
                     if self.match_profile_from_login(name) == profile_name:
                         sx, sy = self._box_center_screen(t, origin)
-                        self.log_info(f'点击账号 {profile_name}（对话框，屏幕 {sx},{sy}）')
+                        diagnose = getattr(self, '_log_account_click_delivery', None)
+                        if callable(diagnose):
+                            diagnose('系统屏幕点击', t, (sx, sy))
                         if self._screen_click(sx, sy, after_sleep=2):
+                            self.log_info(f'已发送账号点击（方式=系统屏幕，对话框，屏幕 {sx},{sy}）')
                             return True, name
             except Exception:
                 pass
@@ -1067,37 +1151,96 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             self.log_error(f'联动每日任务方案失败: {profile_name}', e)
             return False
 
-    def _click_account_in_list(self, profile_name):
+    def _click_account_in_list(self, profile_name, interaction_mode='postmessage', require_expanded=False):
         """在登录界面账号列表中点击指定的方案账号，返回是否点击成功。
 
         v1.03.73：主窗口内嵌登录走原路径；#32770 对话框登录走对话框帧 + 屏幕坐标路径；
         账号匹配支持掩码（180****1088）与 U 扫码账号（U550500484A）。
+
+        ``True`` 仅表示点击事件已投递，不表示登录器已经接受选择；后者由
+        ``_wait_for_account_selection_stable`` 单独确认。``interaction_mode=screen``
+        只供最后一次兜底使用，并且要求调用方先确认列表仍展开。
         """
+        if require_expanded:
+            try:
+                if not self._account_list_expanded():
+                    self.log_warning('账号点击兜底取消：列表未保持展开')
+                    return False
+            except Exception:
+                self.log_warning('账号点击兜底取消：无法确认列表展开状态')
+                return False
+        if interaction_mode == 'screen' and not getattr(self, '_login_in_dialog', False):
+            bring_to_front = getattr(self, '_bring_account_window_to_front', None)
+            if not callable(bring_to_front) or not bring_to_front():
+                self.log_warning('账号点击兜底取消：无法确认游戏窗口已置前')
+                return False
+            self.sleep(0.2)
+            if require_expanded:
+                try:
+                    if not self._account_list_expanded():
+                        self.log_warning('账号点击兜底取消：窗口置前后列表已收起')
+                        return False
+                except Exception:
+                    self.log_warning('账号点击兜底取消：窗口置前后无法确认列表状态')
+                    return False
         if getattr(self, '_login_in_dialog', False):
             ok, name = self._dialog_find_and_click_account(profile_name)
             if ok:
                 suffix = (' (U账号 %s)' % name) if name and name.startswith('U') else ''
-                self.log_info('点击账号 %s（对话框）%s' % (profile_name, suffix))
+                self.log_info('已发送账号点击（方式=系统屏幕，对话框）%s' % suffix)
                 return True
             self.log_error(f'登录对话框中没有找到目标账号 {profile_name}')
             return False
-        accounts = self.ocr(match=account_pattern)
-        for account in accounts:
-            if self.match_profile_from_login(account.name) == profile_name:
-                self.click(account, after_sleep=2)
-                self.log_info(f'点击账号 {profile_name}')
-                return True
-        # U 账号兜底（扫码登录界面账号显示为 U 开头）
+
+        # 主登录界面只取一帧 OCR，同时覆盖掩码手机号、U 扫码账号和备用识别名。
+        # 两次 OCR 可能跨越登录器刷新，导致目标框与实际点击帧不一致。
         try:
-            all_texts = self.ocr()
-            for t in all_texts or []:
-                name = (t.name or '').strip()
-                if scan_account_pattern.match(name) and self.match_profile_from_login(name) == profile_name:
-                    self.click(t, after_sleep=2)
-                    self.log_info(f'点击账号 {profile_name}（U账号 {name}）')
-                    return True
-        except Exception:
-            pass
+            texts = self.ocr()
+        except Exception as e:
+            self.log_warning(f'读取登录账号列表 OCR 失败：{e}')
+            texts = []
+        accounts = []
+        for account in texts or []:
+            name = (getattr(account, 'name', '') or '').strip()
+            if not name:
+                continue
+            try:
+                mapped_profile = self.match_profile_from_login(name)
+                matched = mapped_profile == profile_name
+            except Exception:
+                mapped_profile = None
+                matched = False
+            is_account_text = bool(account_pattern.search(name) or scan_account_pattern.match(name))
+            if is_account_text or mapped_profile:
+                accounts.append(account)
+            if matched:
+                screen_point = None
+                if interaction_mode == 'screen':
+                    screen_point = self._main_box_center_screen(account)
+                    if screen_point is None:
+                        self.log_warning('账号点击兜底取消：无法从目标 OCR 框安全换算屏幕坐标')
+                        return False
+                    diagnose = getattr(self, '_log_account_click_delivery', None)
+                    if callable(diagnose):
+                        diagnose('系统屏幕点击', account, screen_point)
+                    sent = self._screen_click(*screen_point, after_sleep=2)
+                    if sent:
+                        self.log_info(f'已发送账号点击（方式=系统屏幕，目标={profile_name}，OCR={name}）')
+                    return bool(sent)
+
+                try:
+                    result = self.click(account, after_sleep=2)
+                    sent = result is not False
+                except Exception as e:
+                    self.log_warning(f'发送账号点击失败（方式=PostMessage）：{e}')
+                    sent = False
+                diagnose = getattr(self, '_log_account_click_delivery', None)
+                if callable(diagnose):
+                    diagnose('PostMessage（投递后）', account)
+                if sent:
+                    self.log_info(f'已发送账号点击（方式=PostMessage，目标={profile_name}，OCR={name}）')
+                return sent
+
         # 找不到目标账号：输出列表内容便于排查（记住列表里没有该账号 / 识别失败）
         visible = [a.name for a in accounts][:15]
         self.log_error(
@@ -1210,26 +1353,53 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         达到重试上限仍无法确认时才安全停止，避免误登录其他账号。
         """
         last_current = None
+        unconfirmed_postmessage_deliveries = 0
         for attempt in range(1, max_retries + 1):
             self.sleep(1)
+            if unconfirmed_postmessage_deliveries == 1:
+                # 第一次 PostMessage 投递未获稳定确认后，下一次展开列表前刷新
+                # HwndWindow 的主/子窗口快照，避免继续向已替换的句柄投递。
+                refresh = getattr(self, '_refresh_hwnd_window_snapshot', None)
+                if callable(refresh):
+                    refresh()
             if not self._open_account_list():
                 self.log_warning(f'第 {attempt}/{max_retries} 次打开账号列表失败，准备重试')
                 continue
 
+            interaction_mode = 'postmessage'
+            require_expanded = False
+            if unconfirmed_postmessage_deliveries >= 2:
+                # 前两次投递均未确认：只在列表仍展开且本帧 OCR 找到目标框时，
+                # 置前窗口并使用系统屏幕点击；不会凭坐标盲点或跳过账号核对。
+                interaction_mode = 'screen'
+                require_expanded = True
+            if interaction_mode == 'postmessage':
+                click_callback = lambda: self._click_account_in_list(target)
+            else:
+                click_callback = lambda: self._click_account_in_list(
+                    target,
+                    interaction_mode=interaction_mode,
+                    require_expanded=require_expanded,
+                )
             clicked = self.wait_until(
-                lambda: self._click_account_in_list(target),
+                click_callback,
                 time_out=10,
                 raise_if_not_found=False,
             )
             if not clicked:
-                self.log_warning(f'第 {attempt}/{max_retries} 次未能点击目标账号 {target}，准备重试')
+                self.log_warning(
+                    f'第 {attempt}/{max_retries} 次未能投递目标账号点击（方式={interaction_mode}），准备重试'
+                )
                 continue
 
             stable, last_current = self._wait_for_account_selection_stable(target)
-            self.log_info(f'已选择账号：{target}，当前显示账号：{last_current}')
+            self.log_info(f'账号点击投递后确认：目标 {target}，当前显示账号：{last_current}')
             if stable:
                 self.log_info(f'确认已选择账号：{target}')
                 return True
+
+            if interaction_mode == 'postmessage':
+                unconfirmed_postmessage_deliveries += 1
 
             self.log_warning(
                 f'账号选择不一致（目标 {target}，当前 {last_current or "未识别"}），'

@@ -10,8 +10,12 @@ from src.task.MultiAccountDailyTask import (
 
 
 class AccountBox:
-    def __init__(self, name):
+    def __init__(self, name, x=10, y=20, width=100, height=20):
         self.name = name
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
 
 
 def _fake_login_task(main_texts=None, dialog_texts=None):
@@ -222,6 +226,194 @@ class TestMultiAccountDailyTask(unittest.TestCase):
 
         self.assertTrue(selected)
         self.assertEqual(task.clicked, ["cc****03@example.com.hk"])
+
+    def test_click_account_list_uses_one_ocr_snapshot_for_mask_and_scan_alias(self):
+        class FakeTask:
+            def __init__(self):
+                self._login_in_dialog = False
+                self.ocr_calls = 0
+                self.clicked = []
+
+            def ocr(self):
+                self.ocr_calls += 1
+                return [AccountBox('U570994311A'), AccountBox('153****9621')]
+
+            def match_profile_from_login(self, name):
+                return {
+                    'U570994311A': 'profile-a1',
+                    '153****9621': 'profile-a3',
+                }.get(name)
+
+            def click(self, account, after_sleep=0):
+                self.clicked.append(account.name)
+
+            def log_info(self, *args, **kwargs):
+                pass
+
+            def log_warning(self, *args, **kwargs):
+                pass
+
+            def log_error(self, *args, **kwargs):
+                pass
+
+        task = FakeTask()
+        selected = MultiAccountDailyTask._click_account_in_list(task, 'profile-a3')
+
+        self.assertTrue(selected)
+        self.assertEqual(task.ocr_calls, 1)
+        self.assertEqual(task.clicked, ['153****9621'])
+
+    def test_selection_refreshes_then_uses_verified_screen_fallback(self):
+        class FakeHwndWindow:
+            top_hwnd = 101
+            hwnd = 101
+
+            def __init__(self):
+                self.refresh_count = 0
+                self.front_count = 0
+
+            def do_update_window_size(self):
+                self.refresh_count += 1
+
+            def bring_to_front(self):
+                self.front_count += 1
+                return True
+
+            def get_capture_origin(self):
+                return (100, 200)
+
+        class FakeTask:
+            _click_account_in_list = MultiAccountDailyTask._click_account_in_list
+            _wait_for_account_selection_stable = MultiAccountDailyTask._wait_for_account_selection_stable
+            _same_account = MultiAccountDailyTask._same_account
+            _refresh_hwnd_window_snapshot = MultiAccountDailyTask._refresh_hwnd_window_snapshot
+            _bring_account_window_to_front = MultiAccountDailyTask._bring_account_window_to_front
+            _main_box_center_screen = MultiAccountDailyTask._main_box_center_screen
+            _box_center_screen = MultiAccountDailyTask._box_center_screen
+            _log_account_click_delivery = MultiAccountDailyTask._log_account_click_delivery
+
+            def __init__(self):
+                self._login_in_dialog = False
+                self.hwnd = FakeHwndWindow()
+                self.phase = 'first'
+                self.open_count = 0
+                self.post_clicks = 0
+                self.screen_clicks = []
+                self.logs = []
+
+            def sleep(self, _seconds):
+                pass
+
+            def _open_account_list(self):
+                self.open_count += 1
+                if self.open_count == 1:
+                    return False
+                if self.post_clicks >= 2:
+                    self.phase = 'fallback_list'
+                return True
+
+            def _account_list_expanded(self):
+                return self.phase == 'fallback_list'
+
+            def ocr(self):
+                return [
+                    AccountBox('U570994311A'),
+                    AccountBox('153****9621'),
+                ]
+
+            def match_profile_from_login(self, name):
+                return {
+                    'U570994311A': 'profile-a1',
+                    '153****9621': 'profile-a3',
+                }.get(name)
+
+            def click(self, _account, after_sleep=0):
+                self.post_clicks += 1
+                self.phase = 'post'
+
+            def _screen_click(self, x, y, after_sleep=0):
+                self.screen_clicks.append((x, y))
+                self.phase = 'fallback_clicked'
+                return True
+
+            def wait_until(self, callback, **kwargs):
+                if kwargs.get('time_out') == 10:
+                    return callback()
+                if kwargs.get('time_out') == 8:
+                    for _ in range(2):
+                        if callback():
+                            return True
+                    return None
+                return callback()
+
+            def _detect_current_account_from_login(self):
+                return 'profile-a3' if self.phase == 'fallback_clicked' else 'profile-a1'
+
+            def log_info(self, message, **kwargs):
+                self.logs.append(str(message))
+
+            def log_warning(self, message, **kwargs):
+                self.logs.append(str(message))
+
+            def log_error(self, message, **kwargs):
+                self.logs.append(str(message))
+
+            def screenshot(self, *args, **kwargs):
+                pass
+
+            def tr(self, message):
+                return message
+
+        task = FakeTask()
+        self.assertTrue(
+            MultiAccountDailyTask._select_account_with_retry(
+                task, 'profile-a3', max_retries=4,
+            )
+        )
+        self.assertEqual(task.open_count, 4)
+        self.assertEqual(task.post_clicks, 2)
+        self.assertEqual(len(task.screen_clicks), 1)
+        self.assertEqual(task.hwnd.refresh_count, 1)
+        self.assertEqual(task.hwnd.front_count, 1)
+        self.assertTrue(any('方式=PostMessage' in message for message in task.logs))
+        self.assertTrue(any('方式=系统屏幕' in message for message in task.logs))
+
+    def test_screen_fallback_cancels_when_game_cannot_be_brought_to_front(self):
+        class FakeTask:
+            _login_in_dialog = False
+
+            def __init__(self):
+                self.ocr_calls = 0
+                self.screen_clicks = []
+
+            def _account_list_expanded(self):
+                return True
+
+            def _bring_account_window_to_front(self):
+                return False
+
+            def ocr(self):
+                self.ocr_calls += 1
+                return [AccountBox('153****9621')]
+
+            def _screen_click(self, x, y, after_sleep=0):
+                self.screen_clicks.append((x, y))
+                return True
+
+            def log_warning(self, *args, **kwargs):
+                pass
+
+        task = FakeTask()
+        sent = MultiAccountDailyTask._click_account_in_list(
+            task,
+            'profile-a3',
+            interaction_mode='screen',
+            require_expanded=True,
+        )
+
+        self.assertFalse(sent)
+        self.assertEqual(task.ocr_calls, 0)
+        self.assertEqual(task.screen_clicks, [])
 
     def test_account_mismatch_reselects_target_instead_of_stopping(self):
         class FakeTask:

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""单独测试账号切换功能（v1.04.1 验证脚本）。
+"""单独测试账号切换功能（v1.04.02 验证脚本）。
 
 用法：
     # 基本用法：展开账号列表，交互选择目标并完成切换验证
@@ -351,7 +351,7 @@ def run_test(target=None, rounds=1, diag_only=False, save_screenshots=True):
         return False
 
     print("=" * 70)
-    print("  账号切换功能测试（v1.04.1）")
+    print("  账号切换功能测试（v1.04.02）")
     if target:
         print(f"  目标账号: {target}  |  轮数: {rounds}")
     elif diag_only:
@@ -792,7 +792,7 @@ def _get_aliases(profiles, profile_name):
 # ========================= 入口 =========================
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="v1.04.1 账号切换功能测试")
+    parser = argparse.ArgumentParser(description="v1.04.02 账号切换功能测试")
     parser.add_argument('--target', '-t', type=str, default=None,
                         help='目标账号方案名或简称（如 A1、A3）。不指定则交互选择。')
     parser.add_argument('--rounds', '-n', type=int, default=1,
