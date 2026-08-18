@@ -2,7 +2,7 @@
 
 > 面向：运行端（okww 使用端机器）上的 AI 助手
 > 文档版本：2026-08-18 v3（开发端提供）
-> 目标版本：okww-custom（当前应已更新到 **v1.06.01**）
+> 目标版本：okww-custom（当前应已更新到 **v1.07.00**）
 
 ---
 
@@ -223,20 +223,23 @@ print(f"输出目录: {OUT}")
 
 ---
 
-## 7. 账号总配置完整性（v1.06.01）
+## 7. 账号总配置完整性（v1.07.00）
 
 账号稳定意图现在由 `configs/account_master_config.json` 提供。主程序对该文件只读，
-不会自动创建、迁移、修复或把当前界面配置写回总配置；AI、编辑器或其他外部工具仍可正常写入该文件；旧的
-`configs/daily_profiles.json` 仅作为兼容工作副本。请先备份整个 `configs` 文件夹。
+不会静默创建、迁移、修复或把当前界面配置写回总配置；AI、编辑器或其他外部工具仍可正常写入该文件；旧的
+`configs/daily_profiles.json` 仅作为兼容工作副本。唯一例外是：旧版本升级后总配置不存在、工作配置及运行状态均合法且身份无歧义时，用户查看迁移说明并亲自确认，可执行一次“将当前账号配置锚定为总配置”。请先备份整个 `configs` 文件夹。
+
+完整字段、安全边界、首次锚定事务、外部编辑、验证、备份和恢复规则见
+[`账号总配置运行端AI详细说明.md`](账号总配置运行端AI详细说明.md)。运行端 AI 在处理总配置前必须完整阅读该文档。
 
 首次升级或想新增账号时：
 
-1. 复制 `config_templates/account_master_config.template.json` 到临时位置，根据现有账号手工生成候选文件；每个账号使用新的 UUID `profile_id`，序列只引用 UUID。每个 `task_config` 必须完整包含当前 DailyTask 受保护键（刷取目标、材料、梦魇/残象、每周乐园、融合和备用识别名称）；`RECORD_*` 与 `Logout PC After Daily Task` 是全局/运行字段，不放入账号配置。首次迁移时，`display_name`/`account_aliases`/备用识别名称必须覆盖旧方案的短名（如 A1、A10）、完整手机号对应的掩码手机号和 U 名；否则旧工作副本会保持差异并阻断启动。
-2. 只读验证候选文件：源码环境使用 `.venv\Scripts\python.exe scripts\validate_account_master_config.py <候选文件.json>`；部署目录使用 `runtime\python\python.exe scripts\validate_account_master_config.py <候选文件.json>`。验证命令只输出错误/指纹，不会写文件。
-3. 用户确认无误后，在主程序外把候选文件人工放入 `configs\account_master_config.json`，重新启动。
-4. 若工作副本存在差异，点击“已知晓并查看差异”后，使用“使用总配置覆盖全部账号配置”一次性接受当前总配置指纹并恢复所有账号配置。该动作保留运行状态完成记录、进度和全局字段；“已知晓”本身不会解锁任何自动任务，关闭对话框或选择“退出并保持安全模式”会继续保持安全模式。
+1. 旧版本首次升级且总配置不存在：核对弹窗说明，点击“已知晓并查看迁移说明”后，由用户决定是否点击“将当前账号配置锚定为总配置”。合法已有 UUID 会复用，缺失 UUID 会生成并持久化；任务值、序列顺序、完成记录和进度保留。关闭或拒绝后保持安全模式，不写文件。
+2. 若总配置已经存在或要新增账号：复制 `config_templates/account_master_config.template.json` 作为结构参考，在主程序外编辑候选文件。已有账号必须保留原 UUID，只有新增账号生成新 UUID；序列只引用 UUID。每个 `task_config` 必须完整包含当前 DailyTask 受保护键；`RECORD_*` 与 `Logout PC After Daily Task` 不放入账号配置。
+3. 只读验证候选文件：源码环境使用 `.venv\Scripts\python.exe scripts\validate_account_master_config.py <候选文件.json>`；部署目录使用 `runtime\python\python.exe scripts\validate_account_master_config.py <候选文件.json>`。验证命令只输出错误/指纹，不会写文件。
+4. 验证无误后，在主程序外替换 `configs\account_master_config.json`，重新启动。若工作副本存在差异，点击“已知晓并查看差异”后，使用“使用总配置覆盖全部账号配置”一次性接受当前总配置指纹并恢复所有账号配置。该动作保留运行状态完成记录、进度和全局字段。
 
 完整性事件证据保存在 `config_integrity_incidents\`，重复差异会复用同一待处理目录。
 不要删除事件、旧工作副本或运行状态；恢复前服务会自动备份工作副本。完成时间、游标和断点只写入 `account_runtime_state.json`，不会覆盖账号方案。
 
-运行端 AI 严禁：删除旧配置、把工作副本设为总配置、未经用户明确操作自动点击“使用总配置覆盖全部账号配置”、在差异未解决时绕过门禁继续任务，或输出密码、PAT、鉴权 URL 等敏感令牌。需要把当前工作配置作为新标准时，退出程序后由用户在文件夹中手工编辑总配置，再重新验证。
+运行端 AI 严禁：删除旧配置、未经用户明确操作自动点击首次锚定/总配置覆盖/运行状态重建、在差异未解决时绕过门禁继续任务，或输出密码、PAT、鉴权 URL 等敏感令牌。总配置已存在后，需要把当前工作配置作为新标准时，必须退出程序并在程序外编辑总配置，再重新验证；首次锚定入口不能再次使用。

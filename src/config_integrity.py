@@ -74,6 +74,24 @@ _TASK_KEY_TYPES = {
     "备用识别名称内容": str,
 }
 
+# Missing protected values in an old working copy are filled only during the
+# explicitly confirmed first-anchor transaction.  Existing values are copied
+# byte-for-byte through deepcopy and are never coerced into a different type.
+_BOOTSTRAP_TASK_DEFAULTS = {
+    "Which to Farm": "Tacet Suppression",
+    "Which Tacet Suppression to Farm": 1,
+    "Which Forgery Challenge to Farm": 1,
+    "Material Selection": "Shell Credit",
+    "Farm Nightmare Nest for Daily Echo": False,
+    "Nightmare Which to Farm": [],
+    "Tacet Discord Nests to Farm": [],
+    "Auto Farm all Nightmare Nest": False,
+    "Weekly Garden Check Day": "无",
+    "Merge Echo on Sunday": False,
+    "备用识别名称": "无",
+    "备用识别名称内容": "",
+}
+
 _UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
 )
@@ -475,10 +493,9 @@ def assert_master_read_only(path: os.PathLike | str) -> None:
         raise ConfigWriteBlocked(f"account master configuration is read-only: {path}")
 
 
-def atomic_write_json(path: os.PathLike | str, data: Any, *, indent: int = 2) -> None:
-    """Write JSON through flush/fsync/replace, refusing the master path."""
+def _atomic_write_json_unchecked(path: os.PathLike | str, data: Any, *, indent: int = 2) -> None:
+    """Internal atomic JSON writer; callers must enforce the target policy."""
     target = Path(path)
-    assert_master_read_only(target)
     target.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(data, ensure_ascii=False, indent=indent) + "\n"
     fd, temp_name = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=str(target.parent))
@@ -506,6 +523,13 @@ def atomic_write_json(path: os.PathLike | str, data: Any, *, indent: int = 2) ->
             pass
 
 
+def atomic_write_json(path: os.PathLike | str, data: Any, *, indent: int = 2) -> None:
+    """Write JSON through flush/fsync/replace, refusing the master path."""
+    target = Path(path)
+    assert_master_read_only(target)
+    _atomic_write_json_unchecked(target, data, indent=indent)
+
+
 def _atomic_replace_bytes(path: Path, payload: bytes) -> None:
     """Atomically replace a file from a previously backed-up byte snapshot."""
     assert_master_read_only(path)
@@ -529,6 +553,7 @@ class IntegrityResult:
     ok: bool
     master_valid: bool
     working_valid: bool
+    master_missing: bool = False
     master_changed: bool = False
     errors: list[str] = field(default_factory=list)
     differences: list[dict[str, Any]] = field(default_factory=list)
@@ -598,6 +623,13 @@ class ConfigIntegrityService:
             value, _ = _read_json(self.paths.runtime)
             if not isinstance(value, dict):
                 raise ConfigIntegrityError('runtime state must be a JSON object')
+            completed = value.get("completed_at", {})
+            if not isinstance(completed, Mapping):
+                raise ConfigIntegrityError("runtime state completed_at must be an object")
+            if any(not isinstance(item, Mapping) for item in completed.values()):
+                raise ConfigIntegrityError("runtime state contains an invalid account completion record")
+            if not isinstance(value.get("progress", {}), Mapping):
+                raise ConfigIntegrityError("runtime state progress must be an object")
             return value
         except (ConfigIntegrityError, OSError) as exc:
             self._runtime_error = str(exc)
@@ -609,7 +641,8 @@ class ConfigIntegrityService:
             master_data = working_data = None
             master_norm = working_norm = None
             master_valid = working_valid = False
-            if not self.paths.master.is_file():
+            master_missing = not self.paths.master.is_file()
+            if master_missing:
                 errors.append(f"missing master configuration: {self.paths.master}")
             else:
                 try:
@@ -634,7 +667,14 @@ class ConfigIntegrityService:
                 except (ConfigIntegrityError, OSError) as exc:
                     errors.append(str(exc))
             master_fp = fingerprint(master_norm) if master_norm is not None else ""
-            working_fp = fingerprint(working_norm) if working_norm is not None else ""
+            # Without a master there is no protected projection yet.  Keep a
+            # raw canonical fingerprint of a valid legacy copy so the review
+            # controller can detect an external edit between explanation and
+            # explicit first-anchor confirmation.
+            working_fp = (
+                fingerprint(working_norm) if working_norm is not None else
+                fingerprint(_canonical(working_data)) if working_valid and working_data is not None else ""
+            )
             runtime = self._runtime()
             if self._runtime_error:
                 errors.append(f"runtime state invalid: {self._runtime_error}")
@@ -643,6 +683,7 @@ class ConfigIntegrityService:
             differences = diff_normalized(master_norm, working_norm) if master_norm is not None and working_norm is not None else []
             ok = master_valid and working_valid and not errors and not differences and not master_changed
             result = IntegrityResult(ok=ok, master_valid=master_valid, working_valid=working_valid,
+                                     master_missing=master_missing,
                                      master_changed=master_changed, errors=errors, differences=differences,
                                      master_fingerprint=master_fp, working_fingerprint=working_fp,
                                      accepted_fingerprint=accepted,
@@ -689,6 +730,315 @@ class ConfigIntegrityService:
         return self.check()
 
     confirm_master_change = accept_master_change
+
+    @staticmethod
+    def _bootstrap_master_candidate(working: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Build schema v1 master data and a working copy with stable IDs.
+
+        This helper does not write files.  It preserves legacy sequence order,
+        reuses valid existing UUIDs, and copies every existing task_config key
+        (or every legacy top-level task field) while excluding completion and
+        profile metadata from the protected task namespace.
+        """
+        working_errors = validate_working(working)
+        if working_errors:
+            raise ConfigIntegrityError("; ".join(working_errors))
+        old_profiles = _working_profiles(working)
+        entries = [
+            (str(key), profile) for key, profile in old_profiles.items()
+            if key not in ("sequences", "active_profile", "schema_version", "extensions", "timezone", "config_id")
+            and isinstance(profile, Mapping)
+        ]
+        if not entries:
+            raise ConfigIntegrityError("working configuration has no account profiles to anchor")
+
+        updated = copy.deepcopy(dict(working))
+        updated_profiles = updated.get("profiles") if "profiles" in updated else updated
+        if not isinstance(updated_profiles, dict):
+            raise ConfigIntegrityError("working profiles must be an object")
+
+        profiles: dict[str, Any] = {}
+        legacy_keys: dict[str, str] = {}
+        seen_ids: set[str] = set()
+        excluded_flat_fields = {
+            "profile_id", "display_name", "account_aliases", "task_config", "schedule", "extensions",
+            "last_completed",
+        }
+        for key, profile in entries:
+            existing_id = profile.get("profile_id")
+            if existing_id is not None:
+                if not isinstance(existing_id, str) or not _UUID_RE.match(existing_id):
+                    raise ConfigIntegrityError(f"working profile {key!r} has an invalid profile_id")
+                profile_id = existing_id
+            else:
+                profile_id = str(uuid.uuid4())
+            if profile_id in seen_ids:
+                raise ConfigIntegrityError(f"multiple working profiles reuse profile_id {profile_id}")
+            seen_ids.add(profile_id)
+
+            display_name = profile.get("display_name", key)
+            if not isinstance(display_name, str) or not display_name.strip():
+                raise ConfigIntegrityError(f"working profile {key!r} has an invalid display_name")
+            display_name = display_name.strip()
+
+            aliases = profile.get("account_aliases", [])
+            if not isinstance(aliases, list) or not all(isinstance(alias, str) and alias.strip() for alias in aliases):
+                raise ConfigIntegrityError(f"working profile {key!r} has invalid account_aliases")
+            aliases = copy.deepcopy(aliases)
+            # A legacy profile key is itself a login identity.  When a partly
+            # migrated copy already has a different display_name, retain the
+            # old key as an alias instead of silently losing matching data.
+            known_aliases = {_alias_key(display_name), *(_alias_key(alias) for alias in aliases)}
+            if key != profile_id and _alias_key(key) not in known_aliases:
+                aliases.append(key)
+
+            nested_task_config = profile.get("task_config")
+            if nested_task_config is not None and not isinstance(nested_task_config, Mapping):
+                raise ConfigIntegrityError(f"working profile {key!r} task_config must be an object")
+            if isinstance(nested_task_config, Mapping):
+                task_config = copy.deepcopy(dict(nested_task_config))
+                # Prefer the nested value, but retain a legacy flat protected
+                # value when a partly migrated nested object omitted it.
+                for task_key in PROTECTED_TASK_KEYS:
+                    if task_key not in task_config and task_key in profile:
+                        task_config[task_key] = copy.deepcopy(profile[task_key])
+            else:
+                task_config = {
+                    str(field_name): copy.deepcopy(value)
+                    for field_name, value in profile.items()
+                    if field_name not in excluded_flat_fields
+                }
+            for task_key, default in _BOOTSTRAP_TASK_DEFAULTS.items():
+                task_config.setdefault(task_key, copy.deepcopy(default))
+
+            # Persist only missing values needed to make the working copy match
+            # the newly anchored master.  Existing protected values are never
+            # overwritten or coerced.
+            updated_profile = updated_profiles.get(key)
+            if not isinstance(updated_profile, dict):
+                raise ConfigIntegrityError(f"working profile {key!r} cannot receive bootstrap metadata")
+            if isinstance(nested_task_config, Mapping):
+                updated_task_config = updated_profile.setdefault("task_config", {})
+                for task_key, value in task_config.items():
+                    if task_key not in updated_task_config:
+                        updated_task_config[task_key] = copy.deepcopy(value)
+            else:
+                for task_key, value in task_config.items():
+                    if task_key not in updated_profile:
+                        updated_profile[task_key] = copy.deepcopy(value)
+            if updated_profile.get("account_aliases") != aliases:
+                updated_profile["account_aliases"] = copy.deepcopy(aliases)
+
+            schedule = profile.get("schedule", {})
+            extensions = profile.get("extensions", {})
+            if not isinstance(schedule, Mapping):
+                raise ConfigIntegrityError(f"working profile {key!r} schedule must be an object")
+            if not isinstance(extensions, Mapping):
+                raise ConfigIntegrityError(f"working profile {key!r} extensions must be an object")
+
+            profiles[profile_id] = {
+                "display_name": display_name,
+                "account_aliases": copy.deepcopy(aliases),
+                "task_config": task_config,
+                "schedule": copy.deepcopy(dict(schedule)),
+                "extensions": copy.deepcopy(dict(extensions)),
+            }
+            legacy_keys[key] = profile_id
+            updated_profile["profile_id"] = profile_id
+
+        master_stub = {"profiles": profiles}
+        identity_index = _master_identity_index(master_stub)
+        for key, profile_id in legacy_keys.items():
+            for candidate in _identity_candidates(key):
+                identity_index.setdefault(candidate, set()).add(profile_id)
+
+        raw_sequences = working.get("sequences", {})
+        if raw_sequences is None:
+            raw_sequences = {}
+        if not isinstance(raw_sequences, Mapping):
+            raise ConfigIntegrityError("working sequences must be an object")
+        sequences: dict[str, list[str]] = {}
+        for sequence_name, members in raw_sequences.items():
+            if not isinstance(sequence_name, str) or not sequence_name.strip():
+                raise ConfigIntegrityError("working sequence names must be non-empty strings")
+            if not isinstance(members, list):
+                raise ConfigIntegrityError(f"working sequence {sequence_name!r} must be a list")
+            resolved_members: list[str] = []
+            for member in members:
+                if not isinstance(member, str) or not member.strip():
+                    raise ConfigIntegrityError(
+                        f"working sequence {sequence_name!r} contains an invalid account reference"
+                    )
+                if member in profiles:
+                    matches = {member}
+                elif member in legacy_keys:
+                    matches = {legacy_keys[member]}
+                else:
+                    matches: set[str] = set()
+                    for candidate in _identity_candidates(member):
+                        matches.update(identity_index.get(candidate, set()))
+                if not matches:
+                    raise ConfigIntegrityError(
+                        f"working sequence {sequence_name!r} references unknown account {member!r}"
+                    )
+                if len(matches) > 1:
+                    raise ConfigIntegrityError(
+                        f"working sequence {sequence_name!r} account {member!r} is ambiguous"
+                    )
+                resolved_members.append(next(iter(matches)))
+            sequences[sequence_name] = resolved_members
+
+        root_extensions = working.get("extensions", {})
+        if not isinstance(root_extensions, Mapping):
+            raise ConfigIntegrityError("working extensions must be an object")
+        config_id = working.get("config_id")
+        if not isinstance(config_id, str) or not config_id.strip():
+            config_id = f"legacy-bootstrap-{uuid.uuid4()}"
+        timezone_name = working.get("timezone")
+        if not isinstance(timezone_name, str) or not timezone_name.strip():
+            timezone_name = "Asia/Shanghai"
+        candidate = {
+            "schema_version": SCHEMA_VERSION,
+            "config_id": config_id.strip(),
+            "timezone": timezone_name.strip(),
+            "profiles": profiles,
+            "sequences": sequences,
+            "extensions": copy.deepcopy(dict(root_extensions)),
+        }
+        errors = validate_master(candidate)
+        if errors:
+            raise ConfigIntegrityError("; ".join(errors))
+        working_norm = normalize_working(updated, candidate)
+        differences = diff_normalized(normalize_master(candidate), working_norm)
+        if differences:
+            fields = ", ".join(str(item.get("field")) for item in differences)
+            raise ConfigIntegrityError(f"working configuration cannot be anchored without data loss: {fields}")
+        return candidate, updated
+
+    def bootstrap_master_from_working(self, *, confirm: bool = False) -> IntegrityResult:
+        """Explicitly anchor a valid legacy working copy as the first master.
+
+        The normal master write guard remains unchanged.  This is the sole
+        in-process exception, requires a user-confirmed call, and rolls master,
+        working and runtime files back to their exact original bytes if the
+        post-write integrity check is not safe.
+        """
+        if not confirm:
+            raise ConfigIntegrityBlocked("explicit confirmation is required to anchor the legacy configuration")
+        with self._lock:
+            fresh = self.check()
+            if not fresh.master_missing or self.paths.master.exists():
+                raise ConfigIntegrityBlocked("first anchoring is available only when the master configuration is missing")
+            if not fresh.working_valid or not self.paths.working.is_file():
+                raise ConfigIntegrityBlocked("a valid working configuration is required for first anchoring")
+            runtime = self._runtime()
+            if self._runtime_error:
+                raise ConfigIntegrityBlocked(
+                    f"runtime state is corrupt; repair it before first anchoring: {self._runtime_error}"
+                )
+            runtime_error = self._bootstrap_runtime_error(runtime)
+            if runtime_error:
+                raise ConfigIntegrityBlocked(runtime_error)
+
+            working_data, working_before = _read_json(self.paths.working)
+            try:
+                master_candidate, working_candidate = self._bootstrap_master_candidate(working_data)
+            except ConfigIntegrityError as exc:
+                raise ConfigIntegrityBlocked(str(exc)) from exc
+            runtime_before = self.paths.runtime.read_bytes() if self.paths.runtime.exists() else None
+            event_dir = fresh.event_dir or self.record_incident(fresh, None, working_data)
+            backup_dir = event_dir / "before_bootstrap"
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            (backup_dir / self.paths.working.name).write_bytes(working_before)
+            if runtime_before is not None:
+                (backup_dir / self.paths.runtime.name).write_bytes(runtime_before)
+            atomic_write_json(event_dir / "bootstrap_candidate.json", master_candidate)
+
+            try:
+                # Deliberate, narrowly scoped exception to the normal master
+                # read-only writer.  External editors remain free to replace
+                # this file later; application code cannot call the public
+                # writer for it.
+                _atomic_write_json_unchecked(self.paths.master, master_candidate)
+                if working_candidate != working_data:
+                    atomic_write_json(self.paths.working, working_candidate)
+
+                # Old releases stored completion timestamps inside each
+                # profile.  Keep those bytes in the compatibility copy and
+                # also import them under the stable UUID used by new code.
+                completions = runtime.setdefault("completed_at", {})
+                for profile in _working_profiles(working_candidate).values():
+                    if not isinstance(profile, Mapping):
+                        continue
+                    profile_id = profile.get("profile_id")
+                    legacy_completed = profile.get("last_completed")
+                    if not isinstance(profile_id, str) or not isinstance(legacy_completed, Mapping):
+                        continue
+                    target = completions.setdefault(profile_id, {})
+                    for task_name, completed_at in legacy_completed.items():
+                        target.setdefault(str(task_name), copy.deepcopy(completed_at))
+                runtime["accepted_master_fingerprint"] = fingerprint(normalize_master(master_candidate))
+                runtime["last_integrity_event"] = str(event_dir)
+                atomic_write_json(self.paths.runtime, runtime)
+                checked = self.check(record_incident=False, resolve_incidents=False)
+                if not checked.ok:
+                    raise ConfigIntegrityBlocked(
+                        "account configuration is still inconsistent after first anchoring"
+                    )
+                self._resolve_incident(event_dir, "RESOLVED_BY_LEGACY_BOOTSTRAP")
+                return checked
+            except Exception:
+                try:
+                    self.paths.master.unlink()
+                except FileNotFoundError:
+                    pass
+                _atomic_replace_bytes(self.paths.working, working_before)
+                if self.paths.working.read_bytes() != working_before:
+                    raise ConfigIntegrityBlocked("working copy rollback verification failed")
+                if runtime_before is not None:
+                    _atomic_replace_bytes(self.paths.runtime, runtime_before)
+                    if self.paths.runtime.read_bytes() != runtime_before:
+                        raise ConfigIntegrityBlocked("runtime rollback verification failed")
+                else:
+                    try:
+                        self.paths.runtime.unlink()
+                    except FileNotFoundError:
+                        pass
+                if self.paths.master.exists():
+                    raise ConfigIntegrityBlocked("master rollback verification failed")
+                raise
+
+    @staticmethod
+    def _bootstrap_runtime_error(runtime: Mapping[str, Any]) -> str:
+        """Validate runtime containers touched or relied on by migration."""
+        completed = runtime.get("completed_at", {})
+        if not isinstance(completed, Mapping):
+            return "runtime state completed_at must be an object before first anchoring"
+        if any(not isinstance(value, Mapping) for value in completed.values()):
+            return "runtime state contains an invalid account completion record"
+        if not isinstance(runtime.get("progress", {}), Mapping):
+            return "runtime state progress must be an object before first anchoring"
+        return ""
+
+    def bootstrap_preflight_error(self, result: IntegrityResult | None = None) -> str:
+        """Return a read-only explanation when first anchoring is unavailable."""
+        result = result or self._last_result or self.check(record_incident=False)
+        if not result.master_missing or self.paths.master.exists():
+            return "总配置已存在，不能执行旧版本首次锚定"
+        if not result.working_valid or not self.paths.working.is_file():
+            return "当前用户配置缺失或格式无效，不能锚定"
+        runtime = self._runtime()
+        if self._runtime_error:
+            return f"运行状态无效，不能锚定：{self._runtime_error}"
+        runtime_error = self._bootstrap_runtime_error(runtime)
+        if runtime_error:
+            return runtime_error
+        try:
+            working_data, _ = _read_json(self.paths.working)
+            self._bootstrap_master_candidate(working_data)
+        except (ConfigIntegrityError, OSError) as exc:
+            return str(exc)
+        return ""
 
     def apply_master_to_working(self, *, result: IntegrityResult | None = None) -> IntegrityResult:
         """Accept the current master and replace protected working data in one flow.

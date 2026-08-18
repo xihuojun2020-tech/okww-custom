@@ -13,6 +13,7 @@ from src.config_integrity import (
     TaskStartGuard,
     atomic_write_json,
     assert_master_read_only,
+    diff_normalized,
     fingerprint,
     normalize_master,
     normalize_working,
@@ -102,6 +103,17 @@ def working():
     }
 
 
+def legacy_working_without_ids():
+    data = working()
+    for profile in data["profiles"].values():
+        profile.pop("profile_id", None)
+        profile.pop("display_name", None)
+        profile.pop("account_aliases", None)
+        profile.pop("schedule", None)
+        profile.pop("extensions", None)
+    return data
+
+
 class TestConfigIntegrity(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -184,6 +196,241 @@ class TestConfigIntegrity(unittest.TestCase):
         result = controller.confirm_master_change()
         self.assertTrue(result.ok)
         self.assertTrue(controller.can_run)
+
+    def test_legacy_bootstrap_requires_confirmation_and_creates_trusted_master(self):
+        self.service.paths.master.unlink()
+        legacy = legacy_working_without_ids()
+        legacy["ui_only_global"] = {"keep": True}
+        legacy["profiles"]["A1"]["last_completed"] = {"Daily Task": "legacy-completion"}
+        self.service.paths.working.write_text(
+            json.dumps(legacy, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        result = self.service.check()
+        self.assertTrue(result.master_missing)
+        self.assertFalse(result.ok)
+        with self.assertRaisesRegex(ConfigIntegrityBlocked, "confirmation"):
+            self.service.bootstrap_master_from_working(confirm=False)
+
+        bootstrapped = self.service.bootstrap_master_from_working(confirm=True)
+        self.assertTrue(bootstrapped.ok)
+        generated = json.loads(self.service.paths.master.read_text(encoding="utf-8"))
+        updated = json.loads(self.service.paths.working.read_text(encoding="utf-8"))
+        self.assertEqual(generated["schema_version"], 1)
+        self.assertEqual(generated["timezone"], "Asia/Shanghai")
+        self.assertEqual(len(generated["profiles"]), 2)
+        profile_ids = set(generated["profiles"])
+        self.assertEqual(
+            {profile["profile_id"] for profile in updated["profiles"].values()}, profile_ids
+        )
+        self.assertEqual(updated["ui_only_global"], {"keep": True})
+        self.assertEqual(
+            updated["profiles"]["A1"]["last_completed"], {"Daily Task": "legacy-completion"}
+        )
+        self.assertEqual(
+            generated["profiles"][updated["profiles"]["A1"]["profile_id"]]["task_config"]["Which to Farm"],
+            legacy["profiles"]["A1"]["Which to Farm"],
+        )
+        self.assertFalse(diff_normalized(normalize_master(generated), normalize_working(updated, generated)))
+        runtime = json.loads(self.service.paths.runtime.read_text(encoding="utf-8"))
+        self.assertEqual(runtime["accepted_master_fingerprint"], fingerprint(normalize_master(generated)))
+        a1_id = updated["profiles"]["A1"]["profile_id"]
+        self.assertEqual(runtime["completed_at"][a1_id]["Daily Task"], "legacy-completion")
+        markers = sorted(path.name for path in result.event_dir.glob("RESOLVED_*"))
+        self.assertEqual(markers, ["RESOLVED_BY_LEGACY_BOOTSTRAP"])
+
+    def test_legacy_bootstrap_preserves_runtime_progress_and_completion(self):
+        self.service.paths.master.unlink()
+        self.service.paths.working.write_text(
+            json.dumps(legacy_working_without_ids(), ensure_ascii=False), encoding="utf-8"
+        )
+        runtime = {
+            "completed_at": {"legacy-A1": {"Daily Task": "2026-08-18 05:00:00"}},
+            "progress": {"multi_account_daily": {"cursor": 3}},
+            "future_runtime_field": {"keep": True},
+        }
+        self.service.paths.runtime.write_text(json.dumps(runtime), encoding="utf-8")
+        self.assertTrue(self.service.bootstrap_master_from_working(confirm=True).ok)
+        after = json.loads(self.service.paths.runtime.read_text(encoding="utf-8"))
+        self.assertEqual(after["completed_at"], runtime["completed_at"])
+        self.assertEqual(after["progress"], runtime["progress"])
+        self.assertEqual(after["future_runtime_field"], runtime["future_runtime_field"])
+        self.assertTrue(after["accepted_master_fingerprint"])
+
+    def test_legacy_bootstrap_reuses_existing_ids_preserves_sequence_order_and_fills_defaults(self):
+        self.service.paths.master.unlink()
+        legacy = legacy_working_without_ids()
+        legacy["profiles"]["A1"]["profile_id"] = PROFILE_A
+        legacy["profiles"]["A3"]["profile_id"] = PROFILE_B
+        legacy["profiles"]["A1"].pop("Merge Echo on Sunday")
+        legacy["profiles"]["A3"].pop("备用识别名称内容")
+        legacy["sequences"] = {"序列一": ["A3", "A1"]}
+        self.service.paths.working.write_text(json.dumps(legacy), encoding="utf-8")
+
+        self.assertTrue(self.service.bootstrap_master_from_working(confirm=True).ok)
+        generated = json.loads(self.service.paths.master.read_text(encoding="utf-8"))
+        updated = json.loads(self.service.paths.working.read_text(encoding="utf-8"))
+        self.assertEqual(set(generated["profiles"]), {PROFILE_A, PROFILE_B})
+        self.assertEqual(generated["sequences"]["序列一"], [PROFILE_B, PROFILE_A])
+        self.assertFalse(generated["profiles"][PROFILE_A]["task_config"]["Merge Echo on Sunday"])
+        self.assertEqual(generated["profiles"][PROFILE_B]["task_config"]["备用识别名称内容"], "")
+        self.assertFalse(updated["profiles"]["A1"]["Merge Echo on Sunday"])
+        self.assertEqual(updated["profiles"]["A3"]["备用识别名称内容"], "")
+
+    def test_legacy_bootstrap_preserves_profile_key_as_login_alias(self):
+        self.service.paths.master.unlink()
+        legacy = legacy_working_without_ids()
+        profile = legacy["profiles"].pop("A1")
+        profile["display_name"] = "主账号"
+        profile["account_aliases"] = ["U-A1"]
+        legacy["profiles"]["A1:15300000001"] = profile
+        legacy["sequences"] = {"序列一": ["A1:15300000001", "A3"]}
+        self.service.paths.working.write_text(json.dumps(legacy), encoding="utf-8")
+
+        self.assertTrue(self.service.bootstrap_master_from_working(confirm=True).ok)
+        generated = json.loads(self.service.paths.master.read_text(encoding="utf-8"))
+        updated = json.loads(self.service.paths.working.read_text(encoding="utf-8"))
+        profile_id = updated["profiles"]["A1:15300000001"]["profile_id"]
+        self.assertEqual(
+            generated["profiles"][profile_id]["account_aliases"],
+            ["U-A1", "A1:15300000001"],
+        )
+        self.assertEqual(generated["sequences"]["序列一"][0], profile_id)
+
+    def test_legacy_bootstrap_blocks_missing_invalid_empty_and_ambiguous_working(self):
+        self.service.paths.master.unlink()
+
+        self.service.paths.working.unlink()
+        with self.assertRaisesRegex(ConfigIntegrityBlocked, "working"):
+            self.service.bootstrap_master_from_working(confirm=True)
+
+        self.service.paths.working.write_text("{broken", encoding="utf-8")
+        with self.assertRaisesRegex(ConfigIntegrityBlocked, "working"):
+            self.service.bootstrap_master_from_working(confirm=True)
+
+        self.service.paths.working.write_text(json.dumps({"profiles": {}}), encoding="utf-8")
+        with self.assertRaisesRegex(ConfigIntegrityBlocked, "no account profiles"):
+            self.service.bootstrap_master_from_working(confirm=True)
+
+        ambiguous = legacy_working_without_ids()
+        ambiguous["profiles"]["A1"]["account_aliases"] = ["same-login"]
+        ambiguous["profiles"]["A3"]["account_aliases"] = ["same-login"]
+        self.service.paths.working.write_text(json.dumps(ambiguous), encoding="utf-8")
+        with self.assertRaisesRegex(ConfigIntegrityBlocked, "ambiguous"):
+            self.service.bootstrap_master_from_working(confirm=True)
+        self.assertFalse(self.service.paths.master.exists())
+        controller = ConfigIntegrityDialogController(self.service)
+        controller.acknowledge()
+        self.assertFalse(controller.can_bootstrap_master)
+        self.assertIn("ambiguous", controller.bootstrap_error)
+
+    def test_legacy_bootstrap_blocks_corrupt_runtime_without_touching_files(self):
+        self.service.paths.master.unlink()
+        self.service.paths.working.write_text(
+            json.dumps(legacy_working_without_ids(), ensure_ascii=False), encoding="utf-8"
+        )
+        self.service.paths.runtime.write_text("{broken", encoding="utf-8")
+        working_before = self.service.paths.working.read_bytes()
+        runtime_before = self.service.paths.runtime.read_bytes()
+        with self.assertRaisesRegex(ConfigIntegrityBlocked, "runtime state is corrupt"):
+            self.service.bootstrap_master_from_working(confirm=True)
+        self.assertFalse(self.service.paths.master.exists())
+        self.assertEqual(self.service.paths.working.read_bytes(), working_before)
+        self.assertEqual(self.service.paths.runtime.read_bytes(), runtime_before)
+
+        self.service.paths.runtime.write_text(json.dumps({"completed_at": []}), encoding="utf-8")
+        with self.assertRaisesRegex(ConfigIntegrityBlocked, "completed_at"):
+            self.service.bootstrap_master_from_working(confirm=True)
+        controller = ConfigIntegrityDialogController(self.service)
+        controller.acknowledge()
+        self.assertFalse(controller.can_bootstrap_master)
+        self.assertTrue(controller.can_rebuild_runtime)
+        self.assertIn("completed_at", controller.bootstrap_error)
+
+    def test_legacy_bootstrap_rolls_back_master_working_and_runtime_bytes(self):
+        self.service.paths.master.unlink()
+        self.service.paths.working.write_text(
+            json.dumps(legacy_working_without_ids(), ensure_ascii=False, indent=4), encoding="utf-8"
+        )
+        self.service.paths.runtime.write_text(
+            json.dumps({"progress": {"cursor": 7}}, indent=4), encoding="utf-8"
+        )
+        initial = self.service.check()
+        working_before = self.service.paths.working.read_bytes()
+        runtime_before = self.service.paths.runtime.read_bytes()
+        failed = IntegrityResult(
+            ok=False, master_valid=True, working_valid=True,
+            master_fingerprint="failed", working_fingerprint="failed",
+        )
+        with patch.object(self.service, "check", side_effect=[initial, failed]):
+            with self.assertRaisesRegex(ConfigIntegrityBlocked, "still inconsistent"):
+                self.service.bootstrap_master_from_working(confirm=True)
+        self.assertFalse(self.service.paths.master.exists())
+        self.assertEqual(self.service.paths.working.read_bytes(), working_before)
+        self.assertEqual(self.service.paths.runtime.read_bytes(), runtime_before)
+
+    def test_bootstrapped_master_remains_read_only_after_migration(self):
+        self.service.paths.master.unlink()
+        self.service.paths.working.write_text(
+            json.dumps(legacy_working_without_ids(), ensure_ascii=False), encoding="utf-8"
+        )
+        self.assertTrue(self.service.bootstrap_master_from_working(confirm=True).ok)
+        with self.assertRaises(ConfigWriteBlocked):
+            atomic_write_json(self.service.paths.master, master())
+        with self.assertRaises(ConfigWriteBlocked):
+            assert_master_read_only(self.service.paths.master)
+
+    def test_dialog_uses_distinct_bootstrap_branch_and_rechecks_external_master(self):
+        self.service.paths.master.unlink()
+        self.service.paths.working.write_text(
+            json.dumps(legacy_working_without_ids(), ensure_ascii=False), encoding="utf-8"
+        )
+        controller = ConfigIntegrityDialogController(self.service)
+        self.assertTrue(controller.result.master_missing)
+        self.assertFalse(controller.can_bootstrap_master)
+        self.assertFalse(controller.can_apply_master)
+        self.assertIn("锚定", controller.primary_action_label)
+        controller.acknowledge()
+        self.assertTrue(controller.can_bootstrap_master)
+        self.assertFalse(controller.can_apply_master)
+
+        self.service.paths.master.write_text(json.dumps(master()), encoding="utf-8")
+        controller.recheck()
+        self.assertFalse(controller.result.master_missing)
+        self.assertFalse(controller.can_bootstrap_master)
+        self.assertIn("覆盖", controller.primary_action_label)
+        self.assertFalse(controller.can_apply_master)
+        controller.acknowledge()
+        self.assertTrue(controller.can_apply_master)
+
+    def test_dialog_requires_new_acknowledgement_after_legacy_working_changes(self):
+        self.service.paths.master.unlink()
+        legacy = legacy_working_without_ids()
+        self.service.paths.working.write_text(json.dumps(legacy), encoding="utf-8")
+        controller = ConfigIntegrityDialogController(self.service)
+
+        legacy["profiles"]["A1"]["Which to Farm"] = "Forgery Challenge"
+        self.service.paths.working.write_text(json.dumps(legacy), encoding="utf-8")
+        controller.acknowledge()
+        self.assertFalse(controller.state.acknowledged)
+        self.assertFalse(controller.can_bootstrap_master)
+        controller.acknowledge()
+        self.assertTrue(controller.can_bootstrap_master)
+
+        legacy["profiles"]["A3"]["Which to Farm"] = "Simulation Challenge"
+        self.service.paths.working.write_text(json.dumps(legacy), encoding="utf-8")
+        with self.assertRaisesRegex(ConfigIntegrityBlocked, "changed after review"):
+            controller.bootstrap_master()
+        self.assertFalse(controller.state.acknowledged)
+        self.assertFalse(self.service.paths.master.exists())
+
+    def test_dialog_close_or_manual_choice_keeps_missing_master_in_safe_mode(self):
+        self.service.paths.master.unlink()
+        controller = ConfigIntegrityDialogController(self.service)
+        controller.acknowledge()
+        self.assertTrue(controller.can_bootstrap_master)
+        controller.choose_manual_review()
+        self.assertTrue(controller.blocked)
+        self.assertFalse(self.service.paths.master.exists())
 
     def test_controller_primary_action_applies_first_deployment_master_and_removes_pollution(self):
         dirty = working()
@@ -303,7 +550,9 @@ class TestConfigIntegrity(unittest.TestCase):
         self.service.paths.master.write_text("{broken", encoding="utf-8")
         result = controller.recheck()
         self.assertFalse(result.master_valid)
+        self.assertFalse(result.master_missing)
         self.assertFalse(controller.can_apply_master)
+        self.assertFalse(controller.can_bootstrap_master)
 
     def test_corrupt_runtime_disables_primary_and_allows_explicit_rebuild(self):
         self.assertTrue(self.service.apply_master_to_working().ok)
