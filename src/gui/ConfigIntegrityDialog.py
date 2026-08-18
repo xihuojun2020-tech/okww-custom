@@ -26,16 +26,16 @@ class IntegrityDialogState:
 class ConfigIntegrityDialogController:
     """State machine backing the review dialog.
 
-    ``acknowledge`` only permits viewing details.  ``can_run`` remains false
-    until a fresh check is fully equal and the accepted master fingerprint is
-    present; there is deliberately no ignore/continue transition.
+    ``acknowledge`` only permits viewing details.  The primary action then
+    applies the valid master to the complete working copy; there is no separate
+    fingerprint-confirmation step and no ignore/continue transition.
     """
 
     def __init__(self, service: ConfigIntegrityService, *, on_exit: Optional[Callable[[], None]] = None):
         self.service = service
         self.state = IntegrityDialogState()
         self.on_exit = on_exit
-        self.result: IntegrityResult = service.last_result or service.check()
+        self.result: IntegrityResult = service.check()
 
     @property
     def can_run(self) -> bool:
@@ -50,18 +50,39 @@ class ConfigIntegrityDialogController:
         return not any(str(error).startswith('runtime state invalid:') for error in self.result.errors)
 
     @property
+    def can_apply_master(self) -> bool:
+        """Whether the acknowledged primary action may repair all accounts."""
+        return bool(
+            self.state.acknowledged and not self.state.manual_review and not self.state.closed and
+            self.result.master_valid and self.runtime_available and bool(self.result.master)
+        )
+
+    @property
+    def can_rebuild_runtime(self) -> bool:
+        return bool(self.state.acknowledged and not self.state.closed and not self.runtime_available)
+
+    @property
     def event_dir(self) -> Optional[Path]:
         return self.result.event_dir
 
     def acknowledge(self) -> IntegrityResult:
         self.state.acknowledged = True
-        self.result = self.service.last_result or self.service.check()
+        self.result = self.service.check()
         return self.result
 
     def confirm_master_change(self) -> IntegrityResult:
         if not self.state.acknowledged:
             raise ConfigIntegrityBlocked("view the differences before confirming a master change")
         self.result = self.service.accept_master_change(result=self.result)
+        self.state.master_change_confirmed = True
+        return self.result
+
+    def apply_master(self) -> IntegrityResult:
+        if not self.state.acknowledged:
+            raise ConfigIntegrityBlocked("view the differences before applying the master configuration")
+        if not self.can_apply_master:
+            raise ConfigIntegrityBlocked("the master configuration is invalid or runtime state is unavailable")
+        self.result = self.service.apply_master_to_working(result=self.result)
         self.state.master_change_confirmed = True
         return self.result
 
@@ -121,18 +142,15 @@ try:  # Qt is optional for validator/CLI tests.
             self.diff_list = QListWidget()
             layout.addWidget(self.diff_list)
             self.view_button = QPushButton("已知晓并查看差异")
-            self.confirm_button = QPushButton("确认这是我的总配置修改")
-            self.restore_button = QPushButton("按照总配置恢复工作配置（推荐）")
+            self.apply_button = QPushButton("使用总配置覆盖全部账号配置")
             self.runtime_button = QPushButton("确认重建损坏的运行状态（可能重复执行）")
             self.manual_button = QPushButton("退出并保持安全模式")
             self.recheck_button = QPushButton("重新检查")
-            for button in (self.view_button, self.confirm_button, self.restore_button,
-                self.manual_button, self.recheck_button):
+            for button in (self.view_button, self.apply_button, self.manual_button, self.recheck_button):
                 layout.addWidget(button)
             layout.addWidget(self.runtime_button)
             self.view_button.clicked.connect(self._acknowledge)
-            self.confirm_button.clicked.connect(self._confirm)
-            self.restore_button.clicked.connect(self._restore)
+            self.apply_button.clicked.connect(self._apply)
             self.manual_button.clicked.connect(self._manual)
             self.recheck_button.clicked.connect(self._recheck)
             self.runtime_button.clicked.connect(self._rebuild_runtime)
@@ -140,37 +158,24 @@ try:  # Qt is optional for validator/CLI tests.
 
         def _render(self):
             result = self.controller.result
-            self.message.setText(self.controller.service.describe(result))
             self.diff_list.clear()
             for diff in result.differences:
                 profile = diff.get("profile_id") or "全局"
                 self.diff_list.addItem(f"{profile} / {diff.get('field')} ({diff.get('kind')})")
-            self.confirm_button.setEnabled(self.controller.state.acknowledged and result.master_changed)
-            self.restore_button.setEnabled(
-                self.controller.state.acknowledged and result.master_valid and
-                self.controller.runtime_available and bool(result.accepted_fingerprint) and
-                not result.master_changed and not result.ok
-            )
-            self.runtime_button.setEnabled(
-                self.controller.state.acknowledged and not self.controller.runtime_available
-            )
+            message = self.controller.service.describe(result)
+            if not result.master_valid:
+                message = f"总配置路径：{self.controller.service.master_path}\n{message}"
+            self.message.setText(message)
+            self.apply_button.setEnabled(self.controller.can_apply_master)
+            self.runtime_button.setEnabled(self.controller.can_rebuild_runtime)
 
         def _acknowledge(self):
             self.controller.acknowledge()
             self._render()
 
-        def _confirm(self):
+        def _apply(self):
             try:
-                self.controller.confirm_master_change()
-            except ConfigIntegrityBlocked as exc:
-                self.message.setText(str(exc))
-            self._render()
-            if self.controller.can_run:
-                self.accept()
-
-        def _restore(self):
-            try:
-                self.controller.restore_from_master()
+                self.controller.apply_master()
             except (ConfigIntegrityBlocked, OSError, ValueError) as exc:
                 self.message.setText(str(exc))
             self._render()

@@ -603,7 +603,7 @@ class ConfigIntegrityService:
             self._runtime_error = str(exc)
             return {}
 
-    def check(self, *, record_incident: bool = True) -> IntegrityResult:
+    def check(self, *, record_incident: bool = True, resolve_incidents: bool = True) -> IntegrityResult:
         with self._lock:
             errors: list[str] = []
             master_data = working_data = None
@@ -657,7 +657,8 @@ class ConfigIntegrityService:
             self._last_result = result
             if ok:
                 self._snapshot = copy.deepcopy(master_norm)
-                self._resolve_matching_incidents(master_fp, working_fp)
+                if resolve_incidents:
+                    self._resolve_matching_incidents(master_fp, working_fp)
             return result
 
     def require_safe(self) -> dict[str, Any]:
@@ -688,6 +689,83 @@ class ConfigIntegrityService:
         return self.check()
 
     confirm_master_change = accept_master_change
+
+    def apply_master_to_working(self, *, result: IntegrityResult | None = None) -> IntegrityResult:
+        """Accept the current master and replace protected working data in one flow.
+
+        The check is deliberately fresh and runs under the service lock so an
+        external edit between opening the dialog and pressing the primary
+        action cannot be silently applied.  Working bytes and runtime bytes
+        are backed up before either file is changed; a failed post-check rolls
+        both files back and verifies the original bytes.
+        """
+        with self._lock:
+            fresh = self.check()
+            if not fresh.master_valid or not fresh.master:
+                raise ConfigIntegrityBlocked(
+                    f"cannot apply an invalid or missing master configuration: {self.paths.master}"
+                )
+            self._runtime()
+            if self._runtime_error:
+                raise ConfigIntegrityBlocked(
+                    "runtime state is corrupt; explicitly rebuild runtime state before applying master configuration"
+                )
+
+            working_before = self.paths.working.read_bytes() if self.paths.working.exists() else None
+            runtime_before = self.paths.runtime.read_bytes() if self.paths.runtime.exists() else None
+            needs_working_rebuild = (not fresh.working_valid) or bool(fresh.differences)
+            event_dir = fresh.event_dir
+
+            try:
+                if needs_working_rebuild:
+                    self.paths.incidents.mkdir(parents=True, exist_ok=True)
+                    event_dir = event_dir or self.record_incident(fresh, None, None)
+                    before = event_dir / "before_restore"
+                    before.mkdir(parents=True, exist_ok=True)
+                    if working_before is not None:
+                        shutil.copy2(self.paths.working, before / self.paths.working.name)
+                    try:
+                        working_data, _ = _read_json(self.paths.working)
+                    except (ConfigIntegrityError, OSError):
+                        working_data = {}
+                    master_raw, _ = _read_json(self.paths.master)
+                    rebuilt = self._rebuild_working(master_raw, working_data)
+                    atomic_write_json(self.paths.working, rebuilt)
+
+                runtime = self._runtime()
+                if self._runtime_error:
+                    raise ConfigIntegrityBlocked("runtime state is corrupt")
+                runtime["accepted_master_fingerprint"] = fresh.master_fingerprint
+                runtime["last_integrity_event"] = str(event_dir) if event_dir else None
+                atomic_write_json(self.paths.runtime, runtime)
+
+                checked = self.check(record_incident=False, resolve_incidents=False)
+                if not checked.ok:
+                    raise ConfigIntegrityBlocked("account configuration is still inconsistent after applying master")
+                if event_dir:
+                    self._resolve_incident(
+                        event_dir,
+                        "RESOLVED_BY_MASTER_RESTORE" if needs_working_rebuild else "RESOLVED_BY_MASTER_APPLY",
+                    )
+                return checked
+            except Exception:
+                if working_before is not None:
+                    _atomic_replace_bytes(self.paths.working, working_before)
+                    if self.paths.working.read_bytes() != working_before:
+                        raise ConfigIntegrityBlocked("working copy rollback verification failed")
+                elif self.paths.working.exists() and needs_working_rebuild:
+                    self.paths.working.unlink()
+                if runtime_before is not None:
+                    _atomic_replace_bytes(self.paths.runtime, runtime_before)
+                    if self.paths.runtime.read_bytes() != runtime_before:
+                        raise ConfigIntegrityBlocked("runtime rollback verification failed")
+                elif self.paths.runtime.exists():
+                    self.paths.runtime.unlink()
+                raise
+
+    # Descriptive aliases for callers that phrase the action as a user intent.
+    use_master_for_all_accounts = apply_master_to_working
+    apply_master = apply_master_to_working
 
     def rebuild_runtime_state(self, *, confirm: bool = False) -> IntegrityResult:
         """Explicitly replace corrupt runtime metadata with empty state."""
@@ -734,7 +812,7 @@ class ConfigIntegrityService:
             rebuilt = self._rebuild_working(master_raw, working_data)
             try:
                 atomic_write_json(self.paths.working, rebuilt)
-                checked = self.check(record_incident=False)
+                checked = self.check(record_incident=False, resolve_incidents=False)
                 if not checked.ok:
                     raise ConfigIntegrityBlocked("working copy is still inconsistent after restore")
             except Exception:
@@ -751,7 +829,7 @@ class ConfigIntegrityService:
                         pass
                 raise
             self._resolve_incident(event_dir, "RESOLVED_BY_MASTER_RESTORE")
-            return self.check(record_incident=False)
+            return self.check(record_incident=False, resolve_incidents=False)
 
     restore_working_copy = restore_working_from_master
 
@@ -771,17 +849,15 @@ class ConfigIntegrityService:
                     )
                 old_by_id[resolved] = old_profile
         result = {k: copy.deepcopy(v) for k, v in working.items() if k not in ("profiles", "sequences")}
-        protected_flat_keys = {
-            "profile_id", "display_name", "account_aliases", "task_config", "schedule", "extensions",
-            "备用识别名称", "备用识别名称内容", "Account Name", "account_name", "账号名称",
-        }
-        for profile in master.get("profiles", {}).values():
-            protected_flat_keys.update((profile.get("task_config") or {}).keys())
         profiles: dict[str, Any] = {}
         for pid, p in master.get("profiles", {}).items():
             old = old_by_id.get(pid, {})
-            item = {k: copy.deepcopy(v) for k, v in (old.items() if isinstance(old, Mapping) else [])
-                    if k not in protected_flat_keys}
+            # Only retain the explicitly supported historical completion
+            # record.  Arbitrary per-profile keys may be stale or polluted;
+            # all account configuration fields come from the validated master.
+            item = {}
+            if isinstance(old, Mapping) and "last_completed" in old:
+                item["last_completed"] = copy.deepcopy(old["last_completed"])
             item["profile_id"] = pid
             item["display_name"] = p["display_name"]
             item["account_aliases"] = list(p.get("account_aliases", []))

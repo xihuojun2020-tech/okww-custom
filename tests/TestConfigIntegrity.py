@@ -185,6 +185,147 @@ class TestConfigIntegrity(unittest.TestCase):
         self.assertTrue(result.ok)
         self.assertTrue(controller.can_run)
 
+    def test_controller_primary_action_applies_first_deployment_master_and_removes_pollution(self):
+        dirty = working()
+        dirty["profiles"]["A1"]["Which to Farm"] = "Simulation Challenge"
+        dirty["profiles"]["A1"]["polluted_old_option"] = "must disappear"
+        self.service.paths.working.write_text(json.dumps(dirty), encoding="utf-8")
+        controller = ConfigIntegrityDialogController(self.service)
+        self.assertTrue(controller.result.master_changed)
+        self.assertTrue(controller.result.differences)
+        self.assertFalse(controller.can_apply_master)
+        controller.acknowledge()
+        self.assertTrue(controller.can_apply_master)
+        result = controller.apply_master()
+        self.assertTrue(result.ok)
+        restored = json.loads(self.service.paths.working.read_text(encoding="utf-8"))
+        self.assertNotIn("polluted_old_option", restored["profiles"]["A1"])
+        self.assertEqual(restored["profiles"]["A1"]["Which to Farm"], "Tacet Suppression")
+
+    def test_primary_action_handles_external_master_change_and_polluted_working(self):
+        self.assertTrue(self.service.apply_master_to_working().ok)
+        changed_master = master()
+        changed_master["profiles"][PROFILE_A]["task_config"]["Which to Farm"] = "Simulation Challenge"
+        self.service.paths.master.write_text(json.dumps(changed_master), encoding="utf-8")
+        dirty = json.loads(self.service.paths.working.read_text(encoding="utf-8"))
+        dirty["profiles"]["A1"]["Which to Farm"] = "Forgery Challenge"
+        dirty["profiles"]["A1"]["stale_unknown"] = True
+        self.service.paths.working.write_text(json.dumps(dirty), encoding="utf-8")
+        controller = ConfigIntegrityDialogController(self.service)
+        controller.recheck()
+        controller.acknowledge()
+        self.assertTrue(controller.result.master_changed)
+        self.assertTrue(controller.can_apply_master)
+        self.assertTrue(controller.apply_master().ok)
+        restored = json.loads(self.service.paths.working.read_text(encoding="utf-8"))
+        self.assertNotIn("stale_unknown", restored["profiles"]["A1"])
+        self.assertEqual(restored["profiles"]["A1"]["Which to Farm"], "Simulation Challenge")
+
+    def test_primary_action_repairs_working_only_pollution_and_preserves_runtime(self):
+        self.assertTrue(self.service.apply_master_to_working().ok)
+        self.service.record_completion(PROFILE_A, "Daily Task", when="completion")
+        self.service.set_progress("cursor", 42)
+        dirty = json.loads(self.service.paths.working.read_text(encoding="utf-8"))
+        dirty["profiles"]["A1"]["working_only_pollution"] = {"bad": True}
+        self.service.paths.working.write_text(json.dumps(dirty), encoding="utf-8")
+        controller = ConfigIntegrityDialogController(self.service)
+        controller.acknowledge()
+        self.assertFalse(controller.result.master_changed)
+        self.assertTrue(controller.can_apply_master)
+        self.assertTrue(controller.apply_master().ok)
+        self.assertEqual(self.service.get_completion(PROFILE_A, "Daily Task"), "completion")
+        self.assertEqual(self.service.get_progress("cursor"), 42)
+        restored = json.loads(self.service.paths.working.read_text(encoding="utf-8"))
+        self.assertNotIn("working_only_pollution", restored["profiles"]["A1"])
+
+    def test_combined_action_rolls_back_working_and_runtime_after_postcheck_failure(self):
+        self.assertTrue(self.service.apply_master_to_working().ok)
+        self.service.record_completion(PROFILE_A, "Daily Task", when="keep-completion")
+        self.service.set_progress("keep-progress", {"cursor": 7})
+        runtime_before = self.service.paths.runtime.read_bytes()
+
+        changed_master = master()
+        changed_master["profiles"][PROFILE_A]["task_config"]["Which to Farm"] = "Simulation Challenge"
+        self.service.paths.master.write_text(json.dumps(changed_master), encoding="utf-8")
+        dirty = json.loads(self.service.paths.working.read_text(encoding="utf-8"))
+        dirty["profiles"]["A1"]["Which to Farm"] = "Forgery Challenge"
+        self.service.paths.working.write_text(json.dumps(dirty), encoding="utf-8")
+        working_before = self.service.paths.working.read_bytes()
+        fresh = self.service.check()
+        failed = IntegrityResult(
+            ok=False, master_valid=True, working_valid=True,
+            master=fresh.master, working=fresh.working,
+            master_fingerprint=fresh.master_fingerprint,
+            working_fingerprint=fresh.working_fingerprint,
+            accepted_fingerprint=fresh.accepted_fingerprint,
+        )
+        with patch.object(self.service, "check", side_effect=[fresh, failed]):
+            with self.assertRaises(ConfigIntegrityBlocked):
+                self.service.apply_master_to_working(result=fresh)
+        self.assertEqual(self.service.paths.working.read_bytes(), working_before)
+        self.assertEqual(self.service.paths.runtime.read_bytes(), runtime_before)
+        runtime = json.loads(self.service.paths.runtime.read_text(encoding="utf-8"))
+        self.assertEqual(runtime["completed_at"][PROFILE_A]["Daily Task"], "keep-completion")
+        self.assertEqual(runtime["progress"]["keep-progress"], {"cursor": 7})
+
+    def test_combined_action_resolves_rebuilt_incident_with_single_restore_marker(self):
+        self.assertTrue(self.service.apply_master_to_working().ok)
+        dirty = json.loads(self.service.paths.working.read_text(encoding="utf-8"))
+        dirty["profiles"]["A1"]["Which to Farm"] = "Simulation Challenge"
+        self.service.paths.working.write_text(json.dumps(dirty), encoding="utf-8")
+        pending = self.service.check()
+        self.assertIsNotNone(pending.event_dir)
+        self.assertTrue(self.service.apply_master_to_working(result=pending).ok)
+        manifest = json.loads((pending.event_dir / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["status"], "RESOLVED_BY_MASTER_RESTORE")
+        self.assertFalse((pending.event_dir / "PENDING_REVIEW").exists())
+        markers = sorted(path.name for path in pending.event_dir.glob("RESOLVED_*") )
+        self.assertEqual(markers, ["RESOLVED_BY_MASTER_RESTORE"])
+
+    def test_identical_working_with_unaccepted_master_needs_no_working_rewrite(self):
+        before = self.service.paths.working.read_bytes()
+        controller = ConfigIntegrityDialogController(self.service)
+        controller.acknowledge()
+        self.assertTrue(controller.result.master_changed)
+        self.assertFalse(controller.result.differences)
+        self.assertTrue(controller.can_apply_master)
+        self.assertTrue(controller.apply_master().ok)
+        self.assertEqual(self.service.paths.working.read_bytes(), before)
+
+    def test_missing_or_invalid_master_disables_primary_action(self):
+        self.service.paths.master.unlink()
+        controller = ConfigIntegrityDialogController(self.service)
+        controller.acknowledge()
+        self.assertFalse(controller.result.master_valid)
+        self.assertFalse(controller.can_apply_master)
+        self.assertIn("account_master_config.json", str(self.service.master_path))
+
+        self.service.paths.master.write_text("{broken", encoding="utf-8")
+        result = controller.recheck()
+        self.assertFalse(result.master_valid)
+        self.assertFalse(controller.can_apply_master)
+
+    def test_corrupt_runtime_disables_primary_and_allows_explicit_rebuild(self):
+        self.assertTrue(self.service.apply_master_to_working().ok)
+        self.service.paths.runtime.write_text("{broken", encoding="utf-8")
+        controller = ConfigIntegrityDialogController(self.service)
+        controller.recheck()
+        controller.acknowledge()
+        self.assertFalse(controller.can_apply_master)
+        self.assertTrue(controller.can_rebuild_runtime)
+
+    def test_external_master_edit_is_seen_after_controller_recheck(self):
+        self.assertTrue(self.service.apply_master_to_working().ok)
+        changed_master = master()
+        changed_master["profiles"][PROFILE_B]["task_config"]["Which to Farm"] = "Simulation Challenge"
+        self.service.paths.master.write_text(json.dumps(changed_master), encoding="utf-8")
+        controller = ConfigIntegrityDialogController(self.service)
+        result = controller.recheck()
+        self.assertTrue(result.master_changed)
+        controller.acknowledge()
+        self.assertTrue(controller.can_apply_master)
+        self.assertTrue(controller.apply_master().ok)
+
     def test_master_write_is_rejected(self):
         with self.assertRaises(ConfigWriteBlocked):
             assert_master_read_only(self.service.paths.master)
