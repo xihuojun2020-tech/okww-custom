@@ -181,19 +181,21 @@ class TestMultiAccountDailyTask(unittest.TestCase):
     def test_logout_retries_when_confirm_button_was_not_delivered(self):
         class FakeTask:
             _switch_to_login = MultiAccountDailyTask._switch_to_login
+            _logout_state = MultiAccountDailyTask._logout_state
 
             def __init__(self):
                 self.confirm_calls = 0
                 self.logs = []
+                self.states = iter(('confirm', 'confirm', 'login'))
 
             def do_find_account_drop_down(self):
                 return None
 
-            def send_key(self, *_args, **_kwargs):
-                pass
+            def _logout_state(self):
+                return next(self.states)
 
-            def wait_feature(self, *_args, **_kwargs):
-                return True
+            def send_key(self, *_args, **_kwargs):
+                self.logs.append('ESC')
 
             def click_relative(self, *_args, **_kwargs):
                 pass
@@ -201,9 +203,6 @@ class TestMultiAccountDailyTask(unittest.TestCase):
             def click_confirm(self, **_kwargs):
                 self.confirm_calls += 1
                 return self.confirm_calls >= 2
-
-            def _wait_login_screen_stable(self, **_kwargs):
-                return True
 
             def is_main(self, **_kwargs):
                 return True
@@ -226,7 +225,136 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         task = FakeTask()
         self.assertTrue(task._switch_to_login())
         self.assertEqual(task.confirm_calls, 2)
-        self.assertTrue(any('确认退登按钮未点击成功' in message for message in task.logs))
+        self.assertTrue(any('确认退登按钮本次未成功投递' in message for message in task.logs))
+        self.assertNotIn('ESC', task.logs)
+
+    def test_logout_confirm_dialog_is_reclicked_without_esc(self):
+        class FakeTask:
+            _switch_to_login = MultiAccountDailyTask._switch_to_login
+
+            def __init__(self):
+                self.states = iter(('confirm', 'login'))
+                self.esc_count = 0
+                self.confirm_count = 0
+
+            def _logout_state(self):
+                return next(self.states)
+
+            def click_confirm(self, **_kwargs):
+                self.confirm_count += 1
+                return True
+
+            def send_key(self, *_args, **_kwargs):
+                self.esc_count += 1
+
+            def sleep(self, _seconds):
+                pass
+
+            def log_info(self, *_args, **_kwargs):
+                pass
+
+            def log_warning(self, *_args, **_kwargs):
+                pass
+
+            def screenshot(self, *_args):
+                pass
+
+            def tr(self, message):
+                return message
+
+        task = FakeTask()
+        self.assertTrue(task._switch_to_login())
+        self.assertEqual(task.confirm_count, 1)
+        self.assertEqual(task.esc_count, 0)
+
+    def test_logout_setting_page_clicks_logout_without_esc(self):
+        class FakeTask:
+            _switch_to_login = MultiAccountDailyTask._switch_to_login
+
+            def __init__(self):
+                self.states = iter(('setting', 'login'))
+                self.esc_count = 0
+                self.logout_clicks = 0
+
+            def _logout_state(self):
+                return next(self.states)
+
+            def click_relative(self, *_args, **_kwargs):
+                self.logout_clicks += 1
+
+            def send_key(self, *_args, **_kwargs):
+                self.esc_count += 1
+
+            def sleep(self, _seconds):
+                pass
+
+            def log_info(self, *_args, **_kwargs):
+                pass
+
+            def log_warning(self, *_args, **_kwargs):
+                pass
+
+            def screenshot(self, *_args):
+                pass
+
+            def tr(self, message):
+                return message
+
+        task = FakeTask()
+        self.assertTrue(task._switch_to_login())
+        self.assertEqual(task.logout_clicks, 1)
+        self.assertEqual(task.esc_count, 0)
+
+    def test_logout_stop_exception_propagates_from_state_detection(self):
+        class FakeTask:
+            _switch_to_login = MultiAccountDailyTask._switch_to_login
+
+            def _logout_state(self):
+                raise TaskDisabledException()
+
+            def log_info(self, *_args, **_kwargs):
+                pass
+
+            def tr(self, message):
+                return message
+
+        with self.assertRaises(TaskDisabledException):
+            FakeTask()._switch_to_login()
+
+    def test_logout_loading_unknown_state_does_not_exhaust_poll_count(self):
+        class FakeTask:
+            _switch_to_login = MultiAccountDailyTask._switch_to_login
+
+            def __init__(self):
+                # 旧的 12 轮上限会在正常的长加载过程中提前失败。
+                self.states = iter(('confirm',) + ('unknown',) * 20 + ('login',))
+                self.confirm_count = 0
+
+            def _logout_state(self):
+                return next(self.states)
+
+            def click_confirm(self, **_kwargs):
+                self.confirm_count += 1
+                return True
+
+            def sleep(self, _seconds):
+                pass
+
+            def log_info(self, *_args, **_kwargs):
+                pass
+
+            def log_warning(self, *_args, **_kwargs):
+                pass
+
+            def screenshot(self, *_args):
+                pass
+
+            def tr(self, message):
+                return message
+
+        task = FakeTask()
+        self.assertTrue(task._switch_to_login())
+        self.assertEqual(task.confirm_count, 1)
 
     def test_login_back_failure_does_not_send_success_notification(self):
         class FakeTask:
@@ -319,6 +447,128 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         self.assertTrue(task._click_login_for_target('A3'))
         self.assertEqual(task.clicks, 2)
         self.assertEqual(task.transition_checks, 2)
+
+    def test_login_postmessage_failure_switches_to_fresh_screen_click(self):
+        class FakeTask:
+            _click_login_for_target = MultiAccountDailyTask._click_login_for_target
+            _main_login_screen_click = MultiAccountDailyTask._main_login_screen_click
+
+            def __init__(self):
+                self._login_in_dialog = False
+                self.transition_checks = 0
+                self.post_clicks = []
+                self.screen_clicks = []
+                self.ocr_calls = 0
+                self.refreshes = 0
+                self.front_calls = 0
+
+            def _confirm_target_before_login(self, _target):
+                return True
+
+            def ocr(self):
+                self.ocr_calls += 1
+                # The fallback must use this new OCR frame, not the first box.
+                x, y = (100, 200) if self.ocr_calls == 1 else (200, 300)
+                return [AccountBox('登录', x=x, y=y, width=40, height=60)]
+
+            def find_boxes(self, texts, boundary=None, match=None):
+                return list(texts or []) if match == LOGIN_TEXTS else []
+
+            def box_of_screen(self, *_args, **_kwargs):
+                return object()
+
+            def click(self, box, **_kwargs):
+                self.post_clicks.append((box.x, box.y))
+                return True
+
+            def _refresh_hwnd_window_snapshot(self):
+                self.refreshes += 1
+                return True
+
+            def _bring_account_window_to_front(self):
+                self.front_calls += 1
+                return True
+
+            def _main_box_center_screen(self, box):
+                return (box.x + box.width // 2, box.y + box.height // 2)
+
+            def _screen_click(self, x, y, after_sleep=0):
+                self.screen_clicks.append((x, y))
+                return True
+
+            def wait_until(self, _condition, **_kwargs):
+                self.transition_checks += 1
+                return self.transition_checks >= 2
+
+            def sleep(self, _seconds):
+                pass
+
+            def log_info(self, *_args, **_kwargs):
+                pass
+
+            def log_warning(self, *_args, **_kwargs):
+                pass
+
+            def log_error(self, *_args, **_kwargs):
+                pass
+
+            def screenshot(self, *_args):
+                pass
+
+            def tr(self, message):
+                return message
+
+        task = FakeTask()
+        self.assertTrue(task._click_login_for_target('A3'))
+        self.assertEqual(task.post_clicks, [(100, 200)])
+        self.assertEqual(task.screen_clicks, [(220, 330)])
+        self.assertEqual(task.refreshes, 1)
+        self.assertEqual(task.front_calls, 1)
+
+    def test_login_screen_fallback_never_clicks_without_safe_coordinate(self):
+        class FakeTask:
+            _main_login_screen_click = MultiAccountDailyTask._main_login_screen_click
+
+            def __init__(self):
+                self.screen_clicks = []
+                self.refreshes = 0
+
+            def _refresh_hwnd_window_snapshot(self):
+                self.refreshes += 1
+                return True
+
+            def _bring_account_window_to_front(self):
+                return True
+
+            def sleep(self, _seconds):
+                pass
+
+            def ocr(self):
+                return [AccountBox('登录', x=10, y=20)]
+
+            def find_boxes(self, texts, boundary=None, match=None):
+                return list(texts or []) if match == LOGIN_TEXTS else []
+
+            def box_of_screen(self, *_args, **_kwargs):
+                return object()
+
+            def _main_box_center_screen(self, _box):
+                return None
+
+            def _screen_click(self, *args, **kwargs):
+                self.screen_clicks.append((args, kwargs))
+                return True
+
+            def log_info(self, *_args, **_kwargs):
+                pass
+
+            def log_warning(self, *_args, **_kwargs):
+                pass
+
+        task = FakeTask()
+        self.assertFalse(task._main_login_screen_click())
+        self.assertEqual(task.refreshes, 1)
+        self.assertEqual(task.screen_clicks, [])
 
     def test_main_start_identifies_actual_account_before_daily_task(self):
         class FakeTask:

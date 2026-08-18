@@ -667,52 +667,71 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _switch_to_login(self):
         self.log_info(self.tr('Switching back to login screen'))
-        # 容错：如果已经在登录界面（能识别到账号下拉框），跳过游戏内退登流程，
-        # 避免 DailyTask 自动退登后重复操作导致误点
+        # 退登过程中窗口会短暂无 OCR 或闪烁，但输入必须由当前可见状态
+        # 决定。可见状态的动作各自最多重试 3 次；窗口转换/加载只受
+        # 45 秒截止时间限制，不能因为 OCR 轮询次数较多而提前失败。
+        deadline = time.monotonic() + 45
+        last_state = None
+        check_count = 0
+        action_counts = {'confirm': 0, 'setting': 0, 'main': 0}
+        while time.monotonic() < deadline:
+            check_count += 1
+            state = self._logout_state()
+            last_state = state
+            self.log_info(f'退登状态检查 {check_count}：{state}')
+            try:
+                if state == 'login':
+                    self.log_info('已在登录界面，跳过退登流程')
+                    return True
+                if state == 'confirm':
+                    action_counts[state] += 1
+                    if action_counts[state] > 3:
+                        self.log_warning('退登确认框连续 3 次未消失，停止重复点击')
+                        break
+                    self.log_info('确认框仍在屏幕上，直接重试确认按钮，不发送 ESC')
+                    confirmed = self.click_confirm(timeout=3)
+                    if confirmed is False:
+                        self.log_warning('确认退登按钮本次未成功投递，继续检查确认框状态')
+                    self.sleep(1)
+                    continue
+                if state == 'setting':
+                    action_counts[state] += 1
+                    if action_counts[state] > 3:
+                        self.log_warning('ESC 设置页连续 3 次未消失，停止重复点击')
+                        break
+                    self.log_info('已在 ESC 设置页，直接点击退登入口，不发送 ESC')
+                    self.click_relative(0.04, 0.96, after_sleep=1)
+                    self.sleep(1)
+                    continue
+                if state == 'main':
+                    action_counts[state] += 1
+                    if action_counts[state] > 3:
+                        self.log_warning('游戏主界面连续 3 次未进入设置页，停止重复发送 ESC')
+                        break
+                    self.log_info('当前为游戏主界面，发送 ESC 打开设置页')
+                    self.send_key('esc', after_sleep=1)
+                    self.sleep(1)
+                    continue
+                # 短暂无 OCR/窗口转换属于可恢复状态；只等待很短时间后
+                # 重新识别，不在未知状态发键或点击。
+                self.log_info('退登状态暂时无法确认，等待窗口转换后重新识别')
+                self.sleep(0.5)
+            except TaskDisabledException:
+                raise
+            except Exception as e:
+                self.log_warning(f'退登状态动作失败（状态={state}）：{e}')
+                self.sleep(0.5)
+
         try:
-            if self.do_find_account_drop_down() is not None:
-                self.log_info('已在登录界面，跳过退登流程')
-                return
+            self.screenshot('multi')
         except TaskDisabledException:
             raise
         except Exception:
             pass
-        # 游戏菜单和确认框偶发闪烁/点击丢失。确认按钮未命中、等待后仍
-        # 识别到主界面时，重新从 ESC 开始，不能直接空等登录界面超时。
-        last_error = None
-        for attempt in range(1, 4):
-            try:
-                self.log_info(f'退登尝试 {attempt}/3：按 ESC 打开设置页')
-                self.send_key('esc', after_sleep=1.5)
-                if not self.wait_feature('esc_setting', raise_if_not_found=False):
-                    raise Exception('未检测到 ESC 设置页')
-                self.log_info(f'退登尝试 {attempt}/3：点击退登入口')
-                self.click_relative(0.04, 0.96, after_sleep=1)
-                self.log_info(f'退登尝试 {attempt}/3：点击确认退登')
-                confirmed = self.click_confirm(timeout=10)
-                if confirmed is False:
-                    raise Exception('确认退登按钮未点击成功')
-                self.log_info('退登步骤4/4：等待登录界面（抗闪烁等待）')
-                self._wait_login_screen_stable(time_out=30)
-                self.log_info(self.tr('Back at login screen'))
-                return True
-            except TaskDisabledException:
-                raise
-            except Exception as e:
-                last_error = e
-                self.log_warning(f'退登尝试 {attempt}/3 失败：{e}')
-                try:
-                    # 若仍在游戏主界面/ESC菜单，下一次循环重新点击退登入口；
-                    # 不把“仍在终端菜单”误当成登录界面加载中。
-                    if self.is_main(esc=False):
-                        self.log_warning('确认退登后仍在游戏主界面，准备重新执行退登入口')
-                except TaskDisabledException:
-                    raise
-                except Exception:
-                    pass
-                self.sleep(1)
-        self.screenshot('multi')
-        raise Exception(f'退登失败，已重试 3 次：{last_error}')
+        raise Exception(
+            f'退登失败，状态循环已到上限；最后状态={last_state or "未知"}，'
+            f'动作次数={action_counts}'
+        )
 
     def _login_screen_feature_count(self, texts):
         """宽松统计登录界面特征数量：账号身份（含备用名）/登录文本。"""
@@ -1080,6 +1099,115 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             except Exception:
                 pass
         return False
+
+    def _main_login_screen_click(self):
+        """Refresh the main login frame and click its OCR login button physically.
+
+        The normal interaction is intentionally kept in ``_click_login_for_target``
+        for the first attempt.  This method is only the delivery fallback after a
+        PostMessage click did not make the login control disappear.  It must use a
+        fresh OCR box and a verified capture origin; there is no fixed-coordinate
+        fallback because that could click another game control after a layout shift.
+        """
+        self._refresh_hwnd_window_snapshot()
+        if not self._bring_account_window_to_front():
+            self.log_warning('登录按钮屏幕兜底取消：无法确认游戏窗口已置前')
+            return False
+        self.sleep(0.2)
+        try:
+            texts = self.ocr()
+        except TaskDisabledException:
+            raise
+        except Exception as e:
+            self.log_warning(f'登录按钮屏幕兜底 OCR 失败：{e}')
+            return False
+        login_boxes = self.find_boxes(
+            texts,
+            boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.8),
+            match=LOGIN_TEXTS,
+        )
+        if not login_boxes:
+            self.log_warning('登录按钮屏幕兜底取消：当前 OCR 帧未找到登录按钮')
+            return False
+        button = login_boxes[0]
+        screen_point = self._main_box_center_screen(button)
+        if screen_point is None:
+            self.log_warning('登录按钮屏幕兜底取消：无法从当前 OCR 框安全换算屏幕坐标')
+            return False
+        self.log_info(
+            f'登录按钮投递诊断：方式=系统屏幕，OCR框中心=({button.x + button.width / 2:.1f},'
+            f'{button.y + button.height / 2:.1f})，屏幕={screen_point}'
+        )
+        clicked = self._screen_click(*screen_point, after_sleep=3)
+        self._last_login_click_mode = 'screen_main' if clicked else 'screen_main_failed'
+        if clicked:
+            self.log_info(f'已发送登录按钮点击（方式=系统屏幕，屏幕 {screen_point[0]},{screen_point[1]}）')
+        return bool(clicked)
+
+    def _logout_state(self):
+        """Return the currently observable logout state without sending input.
+
+        ``confirm`` is deliberately checked before ``setting`` and ``main``.  A
+        dropped confirm click leaves the dialog on screen; pressing ESC in that
+        state would dismiss the dialog and waste a retry (and can change the
+        meaning of the next click).
+        """
+        try:
+            if self.do_find_account_drop_down() is not None:
+                return 'login'
+        except TaskDisabledException:
+            raise
+        except Exception:
+            pass
+
+        confirm = None
+        try:
+            confirm = self.find_one(
+                ['confirm_btn_hcenter_vcenter', 'confirm_btn_highlight_hcenter_vcenter'],
+                threshold=0.6,
+                horizontal_variance=0.1,
+                vertical_variance=0.1,
+            )
+        except TaskDisabledException:
+            raise
+        except Exception:
+            try:
+                confirm = self.wait_feature(
+                    ['confirm_btn_hcenter_vcenter', 'confirm_btn_highlight_hcenter_vcenter'],
+                    raise_if_not_found=False,
+                    threshold=0.6,
+                    time_out=0.2,
+                )
+            except TaskDisabledException:
+                raise
+            except Exception:
+                confirm = None
+        if confirm is not None:
+            return 'confirm'
+
+        setting = None
+        try:
+            setting = self.find_one('esc_setting', threshold=0.6)
+        except TaskDisabledException:
+            raise
+        except Exception:
+            try:
+                setting = self.wait_feature('esc_setting', raise_if_not_found=False, time_out=0.2)
+            except TaskDisabledException:
+                raise
+            except Exception:
+                setting = None
+        if setting is not None:
+            return 'setting'
+
+        try:
+            if self.is_main(esc=False):
+                return 'main'
+        except TaskDisabledException:
+            raise
+        except Exception:
+            pass
+        return 'unknown'
 
     def _main_box_center_screen(self, box):
         """把主窗口 OCR 框转换为屏幕坐标；无法安全换算时返回 None。"""
@@ -1766,7 +1894,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 self._confirm_target_before_login(target)
                 if getattr(self, '_login_in_dialog', False):
                     clicked = self._dialog_click_login()
-                else:
+                elif attempt == 1:
+                    # 首次仍使用当前交互层的 PostMessage 路径；失败后
+                    # 后续尝试会刷新窗口并改用新 OCR 框的真实屏幕点击。
                     texts = self.ocr()
                     login_btn = self.find_boxes(
                         texts,
@@ -1774,11 +1904,20 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                         match=LOGIN_TEXTS,
                     )
                     if login_btn:
-                        clicked = self.click(login_btn, after_sleep=3)
-                    else:
-                        clicked = self.click_relative(
-                            0.5, 0.568, hcenter=True, vcenter=True, after_sleep=3,
+                        button = login_btn[0]
+                        self._last_login_click_mode = 'postmessage'
+                        self.log_info(
+                            f'登录按钮投递诊断：方式=PostMessage，OCR框中心='
+                            f'({button.x + button.width / 2:.1f},{button.y + button.height / 2:.1f})'
                         )
+                        clicked = self.click(button, after_sleep=3)
+                    else:
+                        self.log_warning('登录按钮 PostMessage 路径取消：当前 OCR 帧未找到登录按钮')
+                        clicked = False
+                else:
+                    # 失败后的每一次主窗口重试都必须走真实鼠标路径，
+                    # 且 _main_login_screen_click 会重新 OCR 当前按钮框。
+                    clicked = self._main_login_screen_click()
                 if clicked is False:
                     raise Exception('登录按钮点击未成功')
 
@@ -1799,6 +1938,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 last_error = e
                 self.log_warning(f'登录按钮点击第 {attempt}/3 次失败：{e}')
                 if attempt < 3:
+                    if not getattr(self, '_login_in_dialog', False):
+                        self.log_info('登录按钮未触发界面转换，下一次改用刷新 OCR 后的系统屏幕点击')
                     self.sleep(1)
         self.log_error(f'登录按钮连续 3 次未成功：{last_error}')
         self.screenshot('multi')
