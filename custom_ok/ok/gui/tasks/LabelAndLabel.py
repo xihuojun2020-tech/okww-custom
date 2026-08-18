@@ -1,5 +1,6 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel
+import json
 
 from ok.gui.tasks.ConfigLabelAndWidget import ConfigLabelAndWidget
 
@@ -33,10 +34,23 @@ class LabelAndLabel(ConfigLabelAndWidget):
     def update_value(self):
         if self.task is not None and self.sub_key and hasattr(self.task, 'get_last_completed'):
             ts = self.task.get_last_completed(self.sub_key)
-            self.label.setText(ts if ts else '')
+            self.label.setText(self._format_value(ts))
+        elif self.task is not None and hasattr(self.task, 'get_readonly_config_value'):
+            self.label.setText(self._format_value(self.task.get_readonly_config_value(self.key)))
         elif self.task is not None and hasattr(self.task, 'get_last_completed_display'):
             text = self.task.get_last_completed_display()
-            self.label.setText(text or '')
+            self.label.setText(self._format_value(text))
         else:
             text = self.config.get(self.key)
-            self.label.setText(text or '')
+            self.label.setText(self._format_value(text))
+
+    @staticmethod
+    def _format_value(value):
+        """Render any JSON value without ever writing it back to Config."""
+        if value is None:
+            return ''
+        if isinstance(value, bool):
+            return '是' if value else '否'
+        if isinstance(value, (dict, list, tuple)):
+            return json.dumps(value, ensure_ascii=False, sort_keys=isinstance(value, dict))
+        return str(value)

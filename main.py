@@ -280,6 +280,27 @@ def _setup_proxy():
         pass
 
 
+def _report_startup_error(error, traceback_text=None):
+    """Persist and surface startup failures, including integrity hook errors."""
+    import traceback
+    tb = traceback_text or traceback.format_exc()
+    try:
+        log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
+        os.makedirs(log_dir, exist_ok=True)
+        with open(os.path.join(log_dir, '启动错误.log'), 'a', encoding='utf-8') as stream:
+            from datetime import datetime
+            stream.write(f'\n[{datetime.now():%Y-%m-%d %H:%M:%S}] 启动失败:\n{tb}\n')
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(
+            0,
+            f'OK-WW 启动失败：\n{str(error)[:300]}\n\n详细信息见 logs\\启动错误.log',
+            'OK-WW 错误',
+            0x10,
+        )
+    except Exception:
+        pass
+
+
 if __name__ == '__main__':
     _sync_custom_ok()
     if not _ensure_single_instance():
@@ -302,6 +323,27 @@ if __name__ == '__main__':
         threading.Thread(target=check_upstream, daemon=True).start()
     except Exception:
         pass
+    # Read-only account integrity preflight must happen before OK constructs
+    # task objects or any start controller can refresh/activate a device.
+    from src.config_integrity import ConfigIntegrityService, install_task_start_guard, set_default_service
+    from config import version as _program_version
+    _integrity_root = os.path.dirname(os.path.abspath(__file__))
+    _integrity_service = ConfigIntegrityService(_integrity_root, program_version=_program_version)
+    _integrity_result = _integrity_service.check()
+    set_default_service(_integrity_service)
+
+    # Install the same guard for GUI, scheduler and headless CLI starts.  The
+    # hook is on StartController.do_start, before its first device refresh.
+    try:
+        from ok.gui.StartController import StartController
+        if not install_task_start_guard(_integrity_service, StartController):
+            raise RuntimeError('StartController integrity hook could not be installed')
+    except Exception as _integrity_hook_error:
+        # A missing hook is unsafe: do not construct OK or allow a device
+        # refresh under an unverified account configuration.
+        _report_startup_error(_integrity_hook_error)
+        raise RuntimeError(f'account integrity start hook unavailable: {_integrity_hook_error}')
+
     from config import config
     from ok import OK
 
@@ -314,19 +356,5 @@ if __name__ == '__main__':
         # 启动异常（含 OK 构造）：写日志 + 弹窗（pythonw 无控制台时不再静默崩溃）
         import traceback
         tb = traceback.format_exc()
-        try:
-            log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
-            os.makedirs(log_dir, exist_ok=True)
-            with open(os.path.join(log_dir, '启动错误.log'), 'a', encoding='utf-8') as f:
-                from datetime import datetime
-                f.write(f'\n[{datetime.now():%Y-%m-%d %H:%M:%S}] 启动失败:\n{tb}\n')
-            import ctypes
-            ctypes.windll.user32.MessageBoxW(
-                0,
-                f'OK-WW 启动失败：\n{str(e)[:300]}\n\n详细信息见 logs\\启动错误.log',
-                'OK-WW 错误',
-                0x10,  # MB_ICONERROR
-            )
-        except Exception:
-            pass
+        _report_startup_error(e, tb)
         sys.exit(1)

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""🧪 账号切换测试任务（v1.05.01）。
+"""🧪 账号切换测试任务（v1.06.00）。
 
 独立测试多账号登录界面的账号切换功能（不跑完整每日任务）。
 直接复用 MultiAccountDailyTask 的切换方法，确保测试路径与正式流程一致。
@@ -15,6 +15,7 @@ from ok import TaskDisabledException
 from src.task.BaseWWTask import BaseWWTask
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.MouseResetTask import MouseResetTask
+from src.config_integrity import get_default_service
 
 
 SINGLE_MODE = '单账号切换'
@@ -79,6 +80,12 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
 
     def _get_profile_names(self):
         try:
+            service = get_default_service()
+            if service is not None:
+                result = service.last_result or service.check()
+                if result.master_valid and result.master:
+                    return list(service.legacy_profile_projection(result.master).get('profiles', {}).keys())
+                return []
             from ok.util.file import get_relative_path, read_json_file
             profiles = read_json_file(get_relative_path('configs', 'daily_profiles.json'))
             if isinstance(profiles, dict) and 'profiles' in profiles:
@@ -95,6 +102,9 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
         return self.executor.get_task_by_class(MultiAccountDailyTask)
 
     def run(self):
+        service = get_default_service()
+        if service is not None:
+            service.guard_task_start()
         WWOneTimeTask.run(self)
 
         mouse_reset_task = self.executor.get_task_by_class(MouseResetTask)

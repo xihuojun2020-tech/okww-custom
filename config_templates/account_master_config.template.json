@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "config_id": "primary-account-plan",
+  "timezone": "Asia/Shanghai",
+  "profiles": {
+    "00000000-0000-4000-8000-000000000001": {
+      "display_name": "A1",
+      "account_aliases": ["A1", "153****9621"],
+      "task_config": {
+        "Which to Farm": "Tacet Suppression",
+        "Which Tacet Suppression to Farm": 1,
+        "Which Forgery Challenge to Farm": 1,
+        "Material Selection": "Shell Credit",
+        "Farm Nightmare Nest for Daily Echo": true,
+        "Nightmare Which to Farm": ["Tacet Discord Nest"],
+        "Tacet Discord Nests to Farm": [
+          "落渊南丘残象聚落",
+          "盲望之塌残象聚落",
+          "复生丘原残象聚落",
+          "陷足流川残象聚落"
+        ],
+        "Auto Farm all Nightmare Nest": false,
+        "Weekly Garden Check Day": "无",
+        "Merge Echo on Sunday": false,
+        "备用识别名称": "无",
+        "备用识别名称内容": ""
+      },
+      "schedule": {
+        "mode": "daily",
+        "local_time": "04:00",
+        "weekdays": [],
+        "extensions": {}
+      },
+      "extensions": {}
+    }
+  },
+  "sequences": {
+    "序列1": ["00000000-0000-4000-8000-000000000001"]
+  },
+  "extensions": {}
+}

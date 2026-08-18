@@ -1,5 +1,7 @@
 import os
 import re
+import copy
+from contextlib import contextmanager
 from datetime import datetime
 
 
@@ -14,6 +16,12 @@ from src.task.TacetTask import TacetTask
 from src.task.SimulationTask import SimulationTask
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.BaseCombatTask import BaseCombatTask
+from src.config_integrity import (
+    PROTECTED_TASK_KEYS,
+    ConfigIntegrityBlocked,
+    ConfigWriteBlocked,
+    get_default_service,
+)
 
 logger = Logger.get_logger(__name__)
 
@@ -75,24 +83,7 @@ LC_SUB_KEYS = {
 }
 
 # 这些键属于"每日任务配置方案"，切换方案时会被保存/加载
-PROFILE_KEYS = [
-    'Which to Farm',
-    'Which Tacet Suppression to Farm',
-    'Which Forgery Challenge to Farm',
-    'Material Selection',
-    'Farm Nightmare Nest for Daily Echo',
-    # 梦魇巢穴设置合并进每日任务模块，随账号方案一起切换
-    'Nightmare Which to Farm',
-    'Tacet Discord Nests to Farm',
-    AUTO_FARM_NIGHTMARE_NEST,
-    # 每周花园检查日随账号方案切换（单选一天 + 周日固定）
-    GARDEN_CHECK_DAY,
-    # 声骸融合每周日运行，随账号方案切换
-    MERGE_ECHO_ON_SUNDAY,
-    # 备用识别名称（扫码 U 账号等）随账号方案切换
-    ALIAS_ENABLE,
-    ALIAS_TEXT,
-]
+PROFILE_KEYS = list(PROTECTED_TASK_KEYS)
 
 # 方案文件中需要随方案一起保留、但不属于用户配置的数据字段（例如上次完成时间）
 PROFILE_EXTRA_FIELDS = ('last_completed', 'account_aliases')
@@ -106,8 +97,26 @@ NEST_NAMES = ['落渊南丘残象聚落', '盲望之塌残象聚落', '复生丘
 
 class DailyTask(WWOneTimeTask, BaseCombatTask):
 
+    def __getattr__(self, name):
+        """Keep legacy object.__new__ test/helpers compatible.
+
+        These values are optional only when the task was not initialized.  A
+        real integrity service is never synthesized or bypassed here.
+        """
+        if name in ('integrity_service', '_verified_profile_id', '_verified_profile_name'):
+            return None
+        if name == '_runtime_overrides':
+            return {}
+        raise AttributeError(name)
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # Installed by the launcher before task construction; keeping this
+        # early is important because config_type option setup reads profiles.
+        self.integrity_service = get_default_service()
+        self._runtime_overrides = {}
+        self._verified_profile_id = None
+        self._verified_profile_name = None
         self.name = "📅 每日任务"
         self.support_schedule_task = True
         self.support_tasks = ["Tacet Suppression", "Forgery Challenge", "Simulation Challenge"]
@@ -236,6 +245,11 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             LC_GARDEN: {'type': 'label', 'sub_key': 'Weekly Garden'},
             LC_MERGE: {'type': 'label', 'sub_key': 'Merge Echo'},
         }
+        # Stable account intent is display-only.  Runtime selectors (the
+        # active profile/sequence) remain controls; account task fields do not.
+        if self.integrity_service is not None:
+            for _profile_key in PROFILE_KEYS:
+                self.config_type[_profile_key] = {'type': 'label'}
         # 迁移旧版"附加任务列表"配置到独立开关
         self._migrate_profiles()
         self.description = "登录、领取月卡、刷声骸并领取每日奖励"
@@ -256,6 +270,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             return None
 
     def run(self):
+        if self.integrity_service is not None:
+            self.integrity_service.guard_task_start()
+            self.ensure_daily_profiles()
         self.validate_daily_tasks()
         self.log_info(f'开始执行每日任务（账号：{self.get_active_profile_name()}）', notify=True)
 
@@ -264,9 +281,13 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self.ensure_main(time_out=180)
         self.ensure_daily_profiles()
         self._sync_sequence_options()
+        # Child farming tasks still accept the historical ``config`` mapping.
+        # Give them a detached snapshot whose protected values come from the
+        # validated master, never from stale Config fields.
+        profile_runtime_config = self._readonly_profile_config()
 
-        auto_farm = self.config.get(AUTO_FARM_NIGHTMARE_NEST)
-        daily_echo = self.config.get('Farm Nightmare Nest for Daily Echo')
+        auto_farm = self._profile_get(AUTO_FARM_NIGHTMARE_NEST, False)
+        daily_echo = self._profile_get('Farm Nightmare Nest for Daily Echo', False)
 
         self.log_info('正在领取每日奖励并检查体力进度...')
         used_stamina, daily_reward_ready = self.open_daily()
@@ -274,7 +295,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         need_nightmare = auto_farm or (
                 daily_echo
                 and not daily_reward_ready
-                and self.config.get('Which to Farm', self.support_tasks[0]) != self.support_tasks[0]
+                and self._profile_get('Which to Farm', self.support_tasks[0]) != self.support_tasks[0]
         )
 
         if need_nightmare:
@@ -282,9 +303,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 # 把合并到每日任务模块的梦魇配置同步给 NightmareNestTask
                 nightmare_task = self.get_task_by_class(NightmareNestTask)
                 nightmare_task.config['Which to Farm'] = list(
-                    self.config.get('Nightmare Which to Farm', ['Tacet Discord Nest']))
+                    self._profile_get('Nightmare Which to Farm', ['Tacet Discord Nest']))
                 nightmare_task.config['Tacet Discord Nests to Farm'] = list(
-                    self.config.get('Tacet Discord Nests to Farm', NEST_NAMES))
+                    self._profile_get('Tacet Discord Nests to Farm', NEST_NAMES))
                 # 劫持 NightmareNestTask.ensure_main 避免梦魇打完关书
                 nightmare_task.ensure_main = lambda *args, **kwargs: None
 
@@ -294,8 +315,10 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 elif daily_echo:
                     self.log_info('开始刷梦魇巢穴（打梦魇聚落）', notify=True)
                     nightmare_task.run_capture_mode()
-                self.record_last_completed('Nightmare Nest')
+                self.record_last_completed('Nightmare Nest', profile_id=getattr(self, '_verified_profile_id', None))
             except TaskDisabledException:
+                raise
+            except ConfigIntegrityBlocked:
                 raise
             except Exception as e:
                 self.log_error("NightmareNestTask Failed", e)
@@ -306,19 +329,19 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 self.get_task_by_class(NightmareNestTask).__dict__.pop('ensure_main', None)
 
         if need_stamina:
-            target = self.config.get('Which to Farm', self.support_tasks[0])
+            target = self._profile_get('Which to Farm', self.support_tasks[0])
             self.log_info(f'开始清体力（打 {target}）', notify=True)
             if target == self.support_tasks[0]:
                 self.get_task_by_class(TacetTask).farm_tacet(daily=True, used_stamina=used_stamina,
-                                                             config=self.config)
+                                                             config=profile_runtime_config)
             elif target == self.support_tasks[1]:
                 self.get_task_by_class(ForgeryTask).farm_forgery(daily=True, used_stamina=used_stamina,
-                                                                 config=self.config)
+                                                                 config=profile_runtime_config)
             else:
                 self.get_task_by_class(SimulationTask).farm_simulation(daily=True, used_stamina=used_stamina,
-                                                                       config=self.config)
+                                                                       config=profile_runtime_config)
             self.sleep(4)
-            self.record_last_completed(target)
+            self.record_last_completed(target, profile_id=getattr(self, '_verified_profile_id', None))
 
         self.log_info('正在领取每日任务奖励...')
         self.claim_daily()
@@ -329,10 +352,10 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self.claim_battle_pass()
         self.log_info('正在检查每周乐园...')
         self.run_weekly_tasks()
-        if self.config.get(RECORD_AFTER_DAILY, True):
+        if self._profile_get(RECORD_AFTER_DAILY, True):
             self.record_progress()
         # 每日任务最后一个环节：自动退登 PC 端（默认开启，取代"完成任务后退出应用"）
-        if self.config.get(LOGOUT_AFTER_DAILY, True):
+        if self._profile_get(LOGOUT_AFTER_DAILY, True):
             try:
                 self._logout_pc_after_daily()
             except Exception as e:
@@ -340,9 +363,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self.log_info('每日任务完成', notify=True)
         # 记录「今日每日任务已完成」到账号方案（多账号任务据此跳过今日已跑的账号）
         try:
-            self.record_last_completed('Daily Task')
-        except Exception:
-            pass
+            self.record_last_completed('Daily Task', profile_id=getattr(self, '_verified_profile_id', None))
+        except ConfigIntegrityBlocked:
+            raise
 
     def _logout_pc_after_daily(self):
         """每日任务完成后自动退登 PC 端，准备下一个账号登录（退登流程在 WWOneTimeTask 基类）。"""
@@ -372,8 +395,80 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         """当前激活的配置方案名称。"""
         return self.config.get(DAILY_PROFILE, '默认')
 
+    def _profile_get(self, key, default=None):
+        """Read protected account intent from the validated snapshot only."""
+        overrides = getattr(self, '_runtime_overrides', None) or {}
+        override = overrides.get(key, None)
+        if key in overrides:
+            return override
+        if self.integrity_service is not None and key in PROFILE_KEYS:
+            profiles = self.load_daily_profiles()
+            profile = None
+            verified_id = getattr(self, '_verified_profile_id', None)
+            if verified_id:
+                profile = next((item for item in profiles.values()
+                                if isinstance(item, dict) and item.get('profile_id') == verified_id), None)
+                if profile is None:
+                    raise ConfigIntegrityBlocked(
+                        f'validated profile snapshot disappeared: {verified_id}'
+                    )
+            else:
+                # UI construction happens before a task run binds an ID; this
+                # fallback is display-only.  Run paths call ensure/bind first.
+                profile = profiles.get(getattr(self, '_verified_profile_name', None) or self.get_active_profile_name()) or {}
+            return profile.get(key, default)
+        return self.config.get(key, default)
+
+    def get_readonly_config_value(self, key):
+        return self._profile_get(key, self.config.get(key))
+
+    def _readonly_profile_config(self):
+        """Return a detached execution mapping for child task compatibility."""
+        result = dict(self.config)
+        for key in PROFILE_KEYS:
+            result[key] = copy.deepcopy(self._profile_get(key))
+        return result
+
+    def bind_verified_profile(self, profile_name, expected_profile_id=None):
+        """Bind this run to one validated profile ID, correcting stale labels."""
+        profiles = self.load_daily_profiles()
+        selected = profiles.get(profile_name) or {}
+        profile_id = selected.get('profile_id')
+        if not profile_id:
+            raise ConfigIntegrityBlocked(f'validated account profile has no stable profile_id: {profile_name}')
+        if expected_profile_id is not None and str(profile_id) != str(expected_profile_id):
+            raise ConfigIntegrityBlocked(
+                f'profile binding mismatch for {profile_name}: expected {expected_profile_id}, got {profile_id}'
+            )
+        self._verified_profile_name = profile_name
+        self._verified_profile_id = str(profile_id)
+        return copy.deepcopy(selected)
+
+    @contextmanager
+    def runtime_config_override(self, key, value):
+        """Temporarily override runtime behavior without touching Config."""
+        overrides = getattr(self, '_runtime_overrides', None)
+        if not isinstance(overrides, dict):
+            overrides = {}
+            self._runtime_overrides = overrides
+        marker = object()
+        old = overrides.get(key, marker)
+        overrides[key] = value
+        try:
+            yield self
+        finally:
+            if old is marker:
+                overrides.pop(key, None)
+            else:
+                overrides[key] = old
+
     def load_daily_profiles(self):
-        """从 configs/daily_profiles.json 读取所有方案。"""
+        """读取只读总配置的兼容投影；未安装门禁时仅作旧版只读读取。"""
+        if self.integrity_service is not None:
+            result = self.integrity_service.last_result or self.integrity_service.check()
+            if result.master_valid and result.master:
+                return self.integrity_service.legacy_profile_projection(result.master).get('profiles', {})
+            return {}
         data = read_json_file(PROFILE_FILE)
         if data is None:
             return {}
@@ -381,13 +476,20 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         return profiles if isinstance(profiles, dict) else {}
 
     def save_daily_profiles(self, profiles):
-        """保存所有方案到 configs/daily_profiles.json（保留顶层 sequences/active_profile 等字段）。"""
+        """受保护账号方案禁止由任务代码保存。"""
+        if self.integrity_service is not None:
+            raise ConfigWriteBlocked('account profile changes must be made in account_master_config.json outside the app')
         data = read_json_file(PROFILE_FILE) or {}
         data['profiles'] = profiles
         write_json_file(PROFILE_FILE, data)
 
     def get_sequences_data(self):
         """读取账号归属序列数据（sequences: {序列名: [方案名...]}）。"""
+        if self.integrity_service is not None:
+            result = self.integrity_service.last_result or self.integrity_service.check()
+            if result.master_valid and result.master:
+                return self.integrity_service.legacy_profile_projection(result.master).get('sequences', {})
+            return {}
         data = read_json_file(PROFILE_FILE)
         if not data:
             return {}
@@ -396,6 +498,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def save_sequences_data(self, sequences):
         """保存账号归属序列数据到 daily_profiles.json 顶层。"""
+        if self.integrity_service is not None:
+            raise ConfigWriteBlocked('account sequence changes must be made in the read-only master configuration')
         data = read_json_file(PROFILE_FILE) or {}
         data['sequences'] = sequences
         write_json_file(PROFILE_FILE, data)
@@ -406,9 +510,14 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def apply_profile_config(self, profile_config):
         """把一套方案的配置值应用到当前 config。"""
+        if self.integrity_service is not None:
+            # Protected account fields must never be copied into Config.  The
+            # validated snapshot is read through _profile_get at execution.
+            return False
         for key, value in profile_config.items():
             if key in self.config:
                 self.config[key] = value
+        return True
 
     def _merge_profile(self, existing, config_values):
         """把收集到的配置合并进方案，同时保留方案中的非配置数据（如上次完成时间）。"""
@@ -430,6 +539,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def set_profile_aliases(self, profile_name, aliases):
         """设置方案的账号别名列表（保存到 daily_profiles.json 的 account_aliases 字段）。"""
+        if self.integrity_service is not None:
+            raise ConfigWriteBlocked('account aliases are read-only in the application')
         profiles = self.load_daily_profiles()
         if profile_name not in profiles:
             return False
@@ -440,6 +551,25 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def ensure_daily_profiles(self):
         """确保至少存在一个方案（默认），并保证当前激活方案有效。"""
+        if self.integrity_service is not None:
+            # Creation/defaulting is explicitly outside the main process.  The
+            # startup guard handles missing/invalid master files before a task
+            # can reach this method.
+            if not self.integrity_service.is_safe:
+                raise ConfigIntegrityBlocked(self.integrity_service.describe())
+            profiles = self.load_daily_profiles()
+            if not profiles:
+                raise ConfigIntegrityBlocked('validated master configuration has no profiles')
+            active = self.config.get(DAILY_PROFILE)
+            if active not in profiles:
+                self._switching_profile = True
+                try:
+                    self.config[DAILY_PROFILE] = next(iter(profiles))
+                finally:
+                    self._switching_profile = False
+                active = self.config.get(DAILY_PROFILE)
+            self.bind_verified_profile(active)
+            return
         profiles = self.load_daily_profiles()
         if not profiles:
             profiles['默认'] = self._merge_profile(profiles.get('默认'), self.collect_profile_config())
@@ -469,6 +599,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         - Merge Echo If discarded > 1000 → MERGE_ECHO_ON_SUNDAY = True
         迁移完成后删除旧键，避免污染新方案。
         """
+        if self.integrity_service is not None:
+            return
         try:
             profiles = self.load_daily_profiles()
             if not isinstance(profiles, dict) or not profiles:
@@ -525,6 +657,11 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             # 空/None/"null" 不做切换（防下拉空白被当方案名，创建 null 方案并污染当前方案）
             return
         profiles = self.load_daily_profiles()
+        if self.integrity_service is not None:
+            if new not in profiles:
+                raise ConfigIntegrityBlocked(f'unknown validated account profile: {new}')
+            self.bind_verified_profile(new)
+            return
         if old and old in profiles:
             profiles[old] = self._merge_profile(profiles.get(old), self.collect_profile_config())
         if new not in profiles:
@@ -537,6 +674,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def create_profile(self, name):
         """用当前配置创建新方案，并切换到该方案（旧方案保持不变）。"""
+        if self.integrity_service is not None:
+            raise ConfigWriteBlocked('account profiles are read-only in the application')
         if not name or name in self.get_profile_names():
             return False
         profiles = self.load_daily_profiles()
@@ -554,6 +693,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def rename_profile(self, old, new):
         """重命名方案。"""
+        if self.integrity_service is not None:
+            raise ConfigWriteBlocked('account profiles are read-only in the application')
         profiles = self.load_daily_profiles()
         if old not in profiles or not new or new in profiles:
             return False
@@ -569,6 +710,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def delete_profile(self, name):
         """删除方案，若删除的是当前方案则切换到剩余第一个。"""
+        if self.integrity_service is not None:
+            raise ConfigWriteBlocked('account profiles are read-only in the application')
         profiles = self.load_daily_profiles()
         if name not in profiles:
             return False
@@ -590,13 +733,29 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     # ==================== 上次完成时间记录 ====================
 
-    def record_last_completed(self, task_name):
-        """记录某子任务的上次完成时间到当前账号方案，并保存到文件中（保留至少一个月）。
+    def _active_profile_id(self, profile_id=None):
+        """Resolve a stable ID only for compatibility with old call sites."""
+        if profile_id:
+            return str(profile_id)
+        value = getattr(self, '_verified_profile_id', None)
+        return str(value) if value else None
 
-        数据与账号方案一起存于 configs/daily_profiles.json，切换账号时随方案切换。
-        同一子任务每次完成时覆盖为最新时间。
-        """
+    def _readonly_active_profile_id(self):
+        verified_id = getattr(self, '_verified_profile_id', None)
+        if verified_id:
+            return verified_id
+        profile = self.load_daily_profiles().get(self.get_active_profile_name()) or {}
+        return profile.get('profile_id')
+
+    def record_last_completed(self, task_name, profile_id=None):
+        """Record completion in runtime state under an explicit stable profile ID."""
         try:
+            if self.integrity_service is not None:
+                resolved_id = self._active_profile_id(profile_id)
+                if not resolved_id:
+                    raise ConfigIntegrityBlocked('completion record requires a validated profile_id')
+                self.integrity_service.record_completion(resolved_id, task_name)
+                return
             profiles = self.load_daily_profiles()
             active = self.get_active_profile_name()
             profile = profiles.get(active)
@@ -609,17 +768,24 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             profile['last_completed'] = last
             profiles[active] = profile
             self.save_daily_profiles(profiles)
+        except ConfigIntegrityBlocked:
+            raise
         except Exception as e:
             self.log_error('record last completed failed', e)
 
     def get_last_completed(self, task_name):
-        """读取当前账号方案中某子任务的上次完成时间（无记录返回 None）。"""
+        """Read completion from runtime state for the active stable profile."""
         try:
+            if self.integrity_service is not None:
+                profile_id = self._readonly_active_profile_id()
+                return self.integrity_service.get_completion(profile_id, task_name) if profile_id else None
             profiles = self.load_daily_profiles()
             active = self.get_active_profile_name()
             profile = profiles.get(active) or {}
             last = profile.get('last_completed') or {}
             return last.get(task_name)
+        except ConfigIntegrityBlocked:
+            raise
         except Exception:
             return None
 
@@ -651,6 +817,10 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
     def import_account_config(self, *args):
         """从 JSON 文件导入账号配置（导入前自动备份现有配置）。"""
         try:
+            if self.integrity_service is not None:
+                raise ConfigWriteBlocked(
+                    'account profile imports are disabled; edit the master configuration outside the application'
+                )
             path = self._ask_open_path()
             if not path:
                 return
@@ -754,6 +924,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def manage_daily_profiles(self, *args):
         """打开配置方案管理对话框，关闭后延迟刷新界面。"""
+        if self.integrity_service is not None:
+            self.log_info('账号方案由只读总配置管理；请在主程序外编辑并重新检查')
+            return False
         from src.gui.DailyProfileDialog import DailyProfileDialog
         parent = None
         try:
@@ -931,7 +1104,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         return None
 
     def validate_daily_tasks(self):
-        if self.config.get(AUTO_FARM_NIGHTMARE_NEST) and not self.config.get('Nightmare Which to Farm'):
+        if self._profile_get(AUTO_FARM_NIGHTMARE_NEST) and not self._profile_get('Nightmare Which to Farm'):
             # NightmareNestTask 已整合进每日任务模块，校验基于每日任务里的可见配置
             raise Exception(
                 self.tr(
@@ -944,7 +1117,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         # 每周乐园：所选日期 + 每周日（必跑）
         self.check_weekly_garden()
         # 声骸融合：每周日运行一次
-        if self.config.get(MERGE_ECHO_ON_SUNDAY) and WEEKDAYS[datetime.now().weekday()] == WEEKDAYS[6]:
+        if self._profile_get(MERGE_ECHO_ON_SUNDAY) and WEEKDAYS[datetime.now().weekday()] == WEEKDAYS[6]:
             self.check_discarded_echo()
 
     def check_weekly_garden(self):
@@ -952,7 +1125,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self.log_info('正在检查每周乐园...')
         # 运行规则：每周日固定检查一次；此外可在所选的一天（周一~周六）检查。
         # 所选日检查到未完成时运行；若运行一半被关闭（未确认完成），下次启动到检查日会再次检查。
-        check_day = (self.config.get(GARDEN_CHECK_DAY) or '无').strip()
+        check_day = (self._profile_get(GARDEN_CHECK_DAY) or '无').strip()
         today = WEEKDAYS[datetime.now().weekday()]
         if today == WEEKDAYS[6]:
             self.log_info('今天是周日，每周乐园强制检查')
@@ -964,12 +1137,14 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             garden_task.open_garden_weekly_page()
             if garden_task.is_weekly_garden_completed():
                 self.log_info('每周乐园已完成，跳过')
-                self.record_last_completed('Weekly Garden')
+                self.record_last_completed('Weekly Garden', profile_id=getattr(self, '_verified_profile_id', None))
                 return
             self.log_info('每周乐园未完成，开始打每周乐园', notify=True)
             self.run_task_by_class(GardenTask)
-            self.record_last_completed('Weekly Garden')
+            self.record_last_completed('Weekly Garden', profile_id=getattr(self, '_verified_profile_id', None))
         except TaskDisabledException:
+            raise
+        except ConfigIntegrityBlocked:
             raise
         except Exception as e:
             self.log_error("GardenTask Failed", e)
@@ -984,8 +1159,10 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         try:
             merge_echo_task.notify_if_not_enough = False
             self.run_task_by_class(MergeEchoTask)
-            self.record_last_completed('Merge Echo')
+            self.record_last_completed('Merge Echo', profile_id=getattr(self, '_verified_profile_id', None))
         except TaskDisabledException:
+            raise
+        except ConfigIntegrityBlocked:
             raise
         except Exception as e:
             self.log_error("MergeEchoTask Failed", e)
@@ -1008,12 +1185,12 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         import cv2
         from datetime import datetime
 
-        pages = self.config.get(RECORD_PAGES) or []
+        pages = self._profile_get(RECORD_PAGES) or []
         if not pages:
             self.log_info('record pages empty, skip recording')
             return
         try:
-            duration = int(float(self.config.get(RECORD_DURATION, 3)))
+            duration = int(float(self._profile_get(RECORD_DURATION, 3)))
         except (TypeError, ValueError):
             duration = 3
         fps = 5

@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from ok import TaskDisabledException
+from src.config_integrity import ConfigIntegrityBlocked
 from src.task.BaseWWTask import LOGIN_TEXTS
 from src.task.MultiAccountDailyTask import (
     CURRENT_ACCOUNT,
@@ -177,6 +178,70 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, '多个账号方案'):
             MultiAccountDailyTask.match_profile_from_login(task, 'SHARED-ID')
+
+    def test_transition_guard_blocks_logout_before_state_detection(self):
+        class FakeService:
+            def __init__(self):
+                self.checks = 0
+
+            def check(self):
+                self.checks += 1
+                return type('Result', (), {'ok': False})()
+
+            def describe(self, _result):
+                return 'integrity mismatch'
+
+        class FakeTask:
+            _switch_to_login = MultiAccountDailyTask._switch_to_login
+            _guard_account_transition = MultiAccountDailyTask._guard_account_transition
+
+            def __init__(self):
+                self.integrity_service = FakeService()
+                self.state_checks = 0
+
+            def _logout_state(self):
+                self.state_checks += 1
+                raise AssertionError('logout state must not be inspected while blocked')
+
+            def log_info(self, *_args, **_kwargs):
+                raise AssertionError('logging after the guard is not expected')
+
+        task = FakeTask()
+        with self.assertRaises(ConfigIntegrityBlocked):
+            task._switch_to_login()
+        self.assertEqual(task.integrity_service.checks, 1)
+        self.assertEqual(task.state_checks, 0)
+
+    def test_transition_guard_blocks_selection_before_any_ui_action(self):
+        class FakeService:
+            def __init__(self):
+                self.checks = 0
+
+            def check(self):
+                self.checks += 1
+                return type('Result', (), {'ok': False})()
+
+            def describe(self, _result):
+                return 'integrity mismatch'
+
+        class FakeTask:
+            _select_and_login_specific = MultiAccountDailyTask._select_and_login_specific
+            _guard_account_transition = MultiAccountDailyTask._guard_account_transition
+
+            def __init__(self):
+                self.integrity_service = FakeService()
+                self.ui_actions = 0
+
+            @property
+            def executor(self):
+                self.ui_actions += 1
+                raise AssertionError('executor must not be touched while blocked')
+
+        task = FakeTask()
+        with self.assertRaises(ConfigIntegrityBlocked):
+            task._select_and_login_specific('A1')
+        self.assertEqual(task.integrity_service.checks, 1)
+        self.assertEqual(task.ui_actions, 0)
 
     def test_logout_retries_when_confirm_button_was_not_delivered(self):
         class FakeTask:
@@ -355,6 +420,44 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         task = FakeTask()
         self.assertTrue(task._switch_to_login())
         self.assertEqual(task.confirm_count, 1)
+
+    def test_logout_none_input_counts_and_unknown_does_not_reset_budget(self):
+        class FakeTask:
+            _switch_to_login = MultiAccountDailyTask._switch_to_login
+
+            def __init__(self):
+                # Unknown OCR frames must not give the confirm action a fresh
+                # budget; a None return still means input was delivered.
+                self.states = iter(('confirm', 'unknown', 'confirm', 'unknown',
+                                    'confirm', 'confirm'))
+                self.confirm_count = 0
+
+            def _logout_state(self):
+                return next(self.states)
+
+            def click_confirm(self, **_kwargs):
+                self.confirm_count += 1
+                return None
+
+            def sleep(self, _seconds):
+                pass
+
+            def log_info(self, *_args, **_kwargs):
+                pass
+
+            def log_warning(self, *_args, **_kwargs):
+                pass
+
+            def screenshot(self, *_args):
+                pass
+
+            def tr(self, message):
+                return message
+
+        task = FakeTask()
+        with self.assertRaises(Exception):
+            task._switch_to_login()
+        self.assertEqual(task.confirm_count, 3)
 
     def test_login_back_failure_does_not_send_success_notification(self):
         class FakeTask:

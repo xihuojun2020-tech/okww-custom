@@ -80,6 +80,15 @@ class MainWindow(FluentWindow):
         self.emulator_starting_dialog = None
         self.do_not_quit = False
         self.config = config
+        # Shared read-only account integrity service is installed by main.py
+        # before OK constructs tasks.  Keep GUI review state separate from the
+        # task guard: acknowledging a dialog never unlocks automatic work.
+        try:
+            from src.config_integrity import get_default_service
+            self.integrity_service = get_default_service()
+        except Exception:
+            self.integrity_service = None
+        self._integrity_review_blocked = False
         self.shown = False
         from ok.notification import NotificationManager
         self.notification_manager = NotificationManager(
@@ -253,6 +262,18 @@ class MainWindow(FluentWindow):
         self.tray.setToolTip(title)
 
         self.navigationInterface.displayModeChanged.connect(self._save_navigation_state)
+
+        if self.integrity_service is not None:
+            try:
+                integrity_icon = getattr(FluentIcon, 'SHIELD', FluentIcon.INFO)
+                self.navigationInterface.addItem(
+                    routeKey='account_integrity', icon=integrity_icon,
+                    text=self.tr('账号完整性检查'), onClick=self.review_account_integrity,
+                    position=NavigationItemPosition.BOTTOM,
+                    tooltip=self.tr('账号完整性检查'),
+                )
+            except Exception as exc:
+                logger.error(f'add integrity review nav item failed: {exc}')
 
         communicate.capture_error.connect(self.capture_error)
         communicate.notification.connect(self.show_notification)
@@ -611,6 +632,11 @@ class MainWindow(FluentWindow):
         first_show = event.type() == QEvent.Show and not self.shown
         if first_show:
             self.shown = True
+            if not self._review_account_integrity_before_start():
+                self._integrity_review_blocked = True
+                super().showEvent(event)
+                QTimer.singleShot(0, self.bring_to_front)
+                return
             args = parse_arguments_to_map()
             pyappify.hide_pyappify()
             if update_pyappify := self.config.get("update_pyappify"):
@@ -641,6 +667,45 @@ class MainWindow(FluentWindow):
         if first_show:
             QTimer.singleShot(0, self.bring_to_front)
             QTimer.singleShot(250, self.show_startup_version_change_notice)
+
+    def _review_account_integrity_before_start(self):
+        """Show the blocking review UI before command-line/auto-start actions."""
+        service = getattr(self, 'integrity_service', None)
+        if service is None:
+            return True
+        result = service.last_result or service.check()
+        if result.ok:
+            return True
+        try:
+            from src.gui.ConfigIntegrityDialog import ConfigIntegrityDialogController, ConfigIntegrityDialog
+            if ConfigIntegrityDialog is None:
+                return False
+            controller = ConfigIntegrityDialogController(service)
+            dialog = ConfigIntegrityDialog(controller, self)
+            dialog.exec()
+            return controller.can_run
+        except Exception as exc:
+            logger.error(f'account integrity review unavailable: {exc}')
+            return False
+
+    def review_account_integrity(self):
+        """Reopen the review dialog after safe-mode dismissal."""
+        service = getattr(self, 'integrity_service', None)
+        if service is None:
+            return True
+        try:
+            from src.gui.ConfigIntegrityDialog import ConfigIntegrityDialogController, ConfigIntegrityDialog
+            controller = ConfigIntegrityDialogController(service)
+            if ConfigIntegrityDialog is None:
+                return False
+            dialog = ConfigIntegrityDialog(controller, self)
+            dialog.exec()
+            self._integrity_review_blocked = not controller.can_run
+            return controller.can_run
+        except Exception as exc:
+            logger.error(f'account integrity review failed: {exc}')
+            self._integrity_review_blocked = True
+            return False
 
     def set_window_size(self, width, height, min_width, min_height):
         screen = QScreen.availableGeometry(self.screen())

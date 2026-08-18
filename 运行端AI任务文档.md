@@ -2,7 +2,7 @@
 
 > 面向：运行端（okww 使用端机器）上的 AI 助手
 > 文档版本：2026-08-18 v3（开发端提供）
-> 目标版本：okww-custom（当前应已更新到 **v1.05.01**）
+> 目标版本：okww-custom（当前应已更新到 **v1.06.00**）
 
 ---
 
@@ -220,3 +220,23 @@ for hwnd, cls, title, vis, rect in found:
         print(f"    截图: {p}") if shot(hwnd, p) else None
 print(f"输出目录: {OUT}")
 ```
+
+---
+
+## 7. 账号总配置完整性（v1.06.00）
+
+账号稳定意图现在由 `configs/account_master_config.json` 提供。主程序只读该文件，
+不会自动创建、迁移、修复或把当前界面配置写回总配置；旧的
+`configs/daily_profiles.json` 仅作为兼容工作副本。请先备份整个 `configs` 文件夹。
+
+首次升级或想新增账号时：
+
+1. 复制 `config_templates/account_master_config.template.json` 到临时位置，根据现有账号手工生成候选文件；每个账号使用新的 UUID `profile_id`，序列只引用 UUID。每个 `task_config` 必须完整包含当前 DailyTask 受保护键（刷取目标、材料、梦魇/残象、每周乐园、融合和备用识别名称）；`RECORD_*` 与 `Logout PC After Daily Task` 是全局/运行字段，不放入账号配置。首次迁移时，`display_name`/`account_aliases`/备用识别名称必须覆盖旧方案的短名（如 A1、A10）、完整手机号对应的掩码手机号和 U 名；否则旧工作副本会保持差异并阻断启动。
+2. 只读验证候选文件：源码环境使用 `.venv\Scripts\python.exe scripts\validate_account_master_config.py <候选文件.json>`；部署目录使用 `runtime\python\python.exe scripts\validate_account_master_config.py <候选文件.json>`。验证命令只输出错误/指纹，不会写文件。
+3. 用户确认无误后，在主程序外把候选文件人工放入 `configs\account_master_config.json`，重新启动。
+4. 若工作副本存在差异，先点击“已知晓并查看差异”，再确认总配置修改，最后选择“按照总配置恢复工作配置（推荐）”。“已知晓”本身不会解锁任何自动任务；关闭对话框或选择手工处理会继续保持安全模式。
+
+完整性事件证据保存在 `config_integrity_incidents\`，重复差异会复用同一待处理目录。
+不要删除事件、旧工作副本或运行状态；恢复前服务会自动备份工作副本。完成时间、游标和断点只写入 `account_runtime_state.json`，不会覆盖账号方案。
+
+运行端 AI 严禁：删除旧配置、把工作副本设为总配置、自动点击“确认总配置修改”、在差异未解决时绕过门禁继续任务，或输出密码、PAT、鉴权 URL 等敏感令牌。需要把当前工作配置作为新标准时，退出程序后由用户在文件夹中手工编辑总配置，再重新验证。

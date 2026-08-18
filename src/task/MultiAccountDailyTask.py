@@ -20,6 +20,7 @@
 import os
 import re
 import time
+from contextlib import nullcontext
 
 from ok import Logger, TaskDisabledException
 from ok.util.file import get_relative_path, read_json_file, write_json_file
@@ -28,6 +29,7 @@ from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.BaseCombatTask import BaseCombatTask
 from src.task.BaseWWTask import LOGIN_TEXTS
 from src.task.MouseResetTask import MouseResetTask
+from src.config_integrity import ConfigIntegrityBlocked, ConfigWriteBlocked, get_default_service
 
 logger = Logger.get_logger(__name__)
 
@@ -86,6 +88,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.integrity_service = get_default_service()
         self.name = "👥 多账号每日任务"
         self.description = "按序列逐账号运行每日任务（支持断点续跑）"
         self.add_exit_after_config()
@@ -105,10 +108,11 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         }
         # 每个序列的账号列表（独立选择、各自记住；账号可跨序列共享，当天已打的账号任何序列都会跳过）
         for i, seq in enumerate(seq_names):
-            self.default_config[SEQ_ACCOUNTS[i]] = []
+            protected_accounts = self._read_sequences().get(seq, []) if self.integrity_service is not None else []
+            self.default_config[SEQ_ACCOUNTS[i]] = list(protected_accounts)
             self.config_description[SEQ_ACCOUNTS[i]] = f'{seq} 包含的账号（按顺序，选过的不会重复出现；无 = 该位置没有账号）'
             self.config_type[SEQ_ACCOUNTS[i]] = {
-                'type': 'account_sequence',
+                'type': 'label',
                 'options': self.get_profile_names(),
                 'last_completed_provider': self.get_profile_last_completed,
             }
@@ -122,26 +126,44 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         # 管理序列（增删/重命名账号归属序列）
         self.default_config[MANAGE_SEQUENCES] = ''
         self.config_description[MANAGE_SEQUENCES] = '增加/删除/重命名账号序列（账号归属随序列保存）'
-        self.config_type[MANAGE_SEQUENCES] = {
-            'type': 'button', 'text': '管理序列', 'callback': self.manage_sequences,
-        }
+        self.config_type[MANAGE_SEQUENCES] = (
+            {'type': 'label'} if self.integrity_service is not None else
+            {'type': 'button', 'text': '管理序列', 'callback': self.manage_sequences}
+        )
 
     def get_profile_last_completed(self, profile_name):
         """返回账号方案的上次完成时间（last_completed 中最新时间，只读展示用）。"""
         try:
             profiles = self._load_profiles()
             profile = profiles.get(profile_name) or {}
+            if self.integrity_service is not None:
+                profile_id = profile.get('profile_id')
+                values = self.integrity_service.get_profile_completions(profile_id).values()
+                return max((str(v) for v in values if v), default='')
             lc = profile.get('last_completed') or {}
             if not isinstance(lc, dict):
                 return ''
             times = [str(v) for v in lc.values() if v]
             return max(times) if times else ''
+        except ConfigIntegrityBlocked:
+            raise
         except Exception:
             return ''
 
     def get_current_sequence(self):
         """当前执行的序列名（仅作账号分类标识，按「当前序列」配置执行）。"""
         return (self.config.get(CURRENT_SEQUENCE) or '序列1').strip()
+
+    def get_readonly_config_value(self, key):
+        if key in SEQ_ACCOUNTS:
+            try:
+                index = SEQ_ACCOUNTS.index(key)
+                sequence_names = self.get_sequence_names()
+                sequence = sequence_names[index] if index < len(sequence_names) else key
+                return self._read_sequences().get(sequence, [])
+            except Exception:
+                return []
+        return self.config.get(key)
 
     def _sync_local_to_sequences(self):
         """把本任务勾选的序列账号同步到统一归属数据（sequences）。
@@ -150,6 +172,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         同步后每日任务的「方案序列 → 账号配置」联动即可读取。
         """
         try:
+            if self.integrity_service is not None:
+                return
             seqs = self._read_sequences()
             if not seqs:
                 seqs = {f'序列{i}': [] for i in range(1, 6)}
@@ -174,9 +198,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         """
         name = seq_name or self.get_current_sequence()
         idx = self._seq_index(name)
-        if idx is None:
-            return []
-        seq = self.config.get(SEQ_ACCOUNTS[idx]) or []
+        seq = self.config.get(SEQ_ACCOUNTS[idx]) or [] if idx is not None else []
         # 统一归属数据优先（多账号任务勾选时同步写入 sequences）
         try:
             seqs = self._read_sequences()
@@ -200,6 +222,14 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _read_sequences(self):
         """读取统一序列归属数据（daily_profiles.json 顶层 sequences）。"""
+        if self.integrity_service is not None:
+            try:
+                result = self.integrity_service.last_result or self.integrity_service.check()
+                if result.master_valid and result.master:
+                    return self.integrity_service.legacy_profile_projection(result.master).get('sequences', {})
+            except Exception:
+                pass
+            return {}
         try:
             import json as _json
             if not os.path.isfile(PROFILE_FILE):
@@ -213,6 +243,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _write_sequences(self, sequences):
         """保存统一序列归属数据。"""
+        if self.integrity_service is not None:
+            raise ConfigWriteBlocked('account sequence membership is read-only in the application')
         try:
             import json as _json
             data = {}
@@ -356,6 +388,11 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
     def _load_profiles(self):
         """加载全部方案（含手机号、账号别名）。"""
         try:
+            if self.integrity_service is not None:
+                result = self.integrity_service.last_result or self.integrity_service.check()
+                if result.master_valid and result.master:
+                    return self.integrity_service.legacy_profile_projection(result.master).get('profiles', {})
+                return {}
             from src.task.DailyTask import PROFILE_FILE
             data = read_json_file(PROFILE_FILE)
             profiles = (data or {}).get('profiles', {})
@@ -465,6 +502,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _load_today_progress(self):
         """读取今天的已完成账号记录。"""
+        if self.integrity_service is not None:
+            values = self.integrity_service.get_progress(f'multi_account:{self._today()}', [])
+            return list(values or [])
         try:
             data = read_json_file(PROGRESS_FILE) or {}
             return list(data.get(self._today(), []) or [])
@@ -473,6 +513,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _save_today_progress(self):
         """把 done_set 持久化到今天记录（每完成一个账号立即调用，防中断丢失）。"""
+        if self.integrity_service is not None:
+            self.integrity_service.set_progress(f'multi_account:{self._today()}', sorted(self.done_set))
+            return
         try:
             data = read_json_file(PROGRESS_FILE) or {}
             if not isinstance(data, dict):
@@ -495,6 +538,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
     # ==================== 主流程 ====================
 
     def run(self):
+        if self.integrity_service is not None:
+            self.integrity_service.guard_task_start()
         WWOneTimeTask.run(self)
         self.done_set.clear()
         self.all_accounts.clear()
@@ -505,25 +550,26 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         # 多账号任务自己统一管理退登（_switch_to_login），避免重复退登冲突
         # （DailyTask 先退一次回到登录界面，MultiAccount 再按"在游戏内"退一次会误操作）
         daily_task = None
-        saved_logout = None
         try:
             daily_task = self.get_task_by_class(DailyTask)
             if daily_task is not None:
-                saved_logout = daily_task.config.get(LOGOUT_AFTER_DAILY_KEY, True)
-                daily_task.config[LOGOUT_AFTER_DAILY_KEY] = False
+                # Multi-account owns the logout transition.  Use an in-memory
+                # override so forced termination cannot leave a persisted
+                # account option behind.
                 self.log_info(f'多账号运行：临时关闭「每日任务完成后自动退登」')
         except Exception as e:
             self.log_error('关闭自动退登失败（继续运行）', e)
 
         try:
-            self._run_inner()
+            if daily_task is not None:
+                override = getattr(daily_task, 'runtime_config_override', None)
+                context = override(LOGOUT_AFTER_DAILY_KEY, False) if callable(override) else nullcontext()
+                with context:
+                    self._run_inner()
+            else:
+                self._run_inner()
         finally:
-            # 恢复自动退登设置
-            if daily_task is not None and saved_logout is not None:
-                try:
-                    daily_task.config[LOGOUT_AFTER_DAILY_KEY] = saved_logout
-                except Exception:
-                    pass
+            pass
 
     def _run_inner(self):
         # 本轮账号序列（配置）
@@ -638,11 +684,20 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _mark_done(self, account):
         if account:
-            self.done_set.add(account)
+            self.done_set.add(self._profile_id_for(account) if self.integrity_service is not None else account)
 
     def _is_done(self, account):
         """账号是否已完成：多账号断点记录，或今天已单独跑过该账号的每日任务（方案文件 last_completed）。"""
-        if account in self.done_set:
+        if self.integrity_service is not None:
+            identity = self._profile_id_for(account)
+            if account in self.done_set or identity in self.done_set:
+                return True
+            profiles = self._load_profiles()
+            profile = profiles.get(account) or {}
+            completion = self.integrity_service.get_completion(identity, 'Daily Task')
+            return bool(str(completion or '').startswith(self._today()))
+        identity = account
+        if account in self.done_set or identity in self.done_set:
             return True
         try:
             from datetime import datetime
@@ -665,18 +720,36 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         rel_y = 0.5 + offset_y / h
         self.click_relative(rel_x, rel_y, after_sleep=after_sleep)
 
+    def _guard_account_transition(self):
+        """Freshly verify integrity before any account-transition interaction."""
+        service = getattr(self, 'integrity_service', None)
+        if service is None:
+            return True
+        result = service.check()
+        if not getattr(result, 'ok', False):
+            raise ConfigIntegrityBlocked(service.describe(result))
+        return True
+
     def _switch_to_login(self):
+        MultiAccountDailyTask._guard_account_transition(self)
         self.log_info(self.tr('Switching back to login screen'))
         # 退登过程中窗口会短暂无 OCR 或闪烁，但输入必须由当前可见状态
         # 决定。可见状态的动作各自最多重试 3 次；窗口转换/加载只受
         # 45 秒截止时间限制，不能因为 OCR 轮询次数较多而提前失败。
         deadline = time.monotonic() + 45
         last_state = None
+        last_meaningful_state = None
         check_count = 0
         action_counts = {'confirm': 0, 'setting': 0, 'main': 0}
         while time.monotonic() < deadline:
             check_count += 1
             state = self._logout_state()
+            if state in ('confirm', 'setting', 'main') and state != last_meaningful_state:
+                # Retry budgets are consecutive-input budgets per observable
+                # state; moving main -> setting -> confirm starts each budget
+                # afresh.  Input failures do not consume a delivery count.
+                action_counts[state] = 0
+                last_meaningful_state = state
             last_state = state
             self.log_info(f'退登状态检查 {check_count}：{state}')
             try:
@@ -684,32 +757,39 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     self.log_info('已在登录界面，跳过退登流程')
                     return True
                 if state == 'confirm':
-                    action_counts[state] += 1
-                    if action_counts[state] > 3:
+                    if action_counts[state] >= 3:
                         self.log_warning('退登确认框连续 3 次未消失，停止重复点击')
                         break
                     self.log_info('确认框仍在屏幕上，直接重试确认按钮，不发送 ESC')
-                    confirmed = self.click_confirm(timeout=3)
+                    confirm_box = getattr(self, '_logout_confirm_box', None)
+                    if confirm_box is not None and callable(getattr(self, 'click', None)):
+                        confirmed = self.click(confirm_box, after_sleep=0.2)
+                    else:
+                        confirmed = self.click_confirm(timeout=3)
+                    if confirmed is not False:
+                        action_counts[state] += 1
                     if confirmed is False:
                         self.log_warning('确认退登按钮本次未成功投递，继续检查确认框状态')
                     self.sleep(1)
                     continue
                 if state == 'setting':
-                    action_counts[state] += 1
-                    if action_counts[state] > 3:
+                    if action_counts[state] >= 3:
                         self.log_warning('ESC 设置页连续 3 次未消失，停止重复点击')
                         break
                     self.log_info('已在 ESC 设置页，直接点击退登入口，不发送 ESC')
-                    self.click_relative(0.04, 0.96, after_sleep=1)
+                    delivered = self.click_relative(0.04, 0.96, after_sleep=1)
+                    if delivered is not False:
+                        action_counts[state] += 1
                     self.sleep(1)
                     continue
                 if state == 'main':
-                    action_counts[state] += 1
-                    if action_counts[state] > 3:
+                    if action_counts[state] >= 3:
                         self.log_warning('游戏主界面连续 3 次未进入设置页，停止重复发送 ESC')
                         break
                     self.log_info('当前为游戏主界面，发送 ESC 打开设置页')
-                    self.send_key('esc', after_sleep=1)
+                    delivered = self.send_key('esc', after_sleep=1)
+                    if delivered is not False:
+                        action_counts[state] += 1
                     self.sleep(1)
                     continue
                 # 短暂无 OCR/窗口转换属于可恢复状态；只等待很短时间后
@@ -1084,6 +1164,15 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 pass
         return False
 
+    def _profile_id_for(self, profile_name):
+        profile = (self._load_profiles() or {}).get(profile_name) or {}
+        profile_id = profile.get('profile_id')
+        if self.integrity_service is not None:
+            if not isinstance(profile_id, str) or not profile_id.strip():
+                raise ConfigIntegrityBlocked(f'validated account profile has no stable profile_id: {profile_name}')
+            return profile_id
+        return profile_id or profile_name
+
     def _bring_account_window_to_front(self):
         """兜底屏幕点击前尝试将游戏窗口置前。"""
         try:
@@ -1160,13 +1249,12 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         except Exception:
             pass
 
+        self._logout_confirm_box = None
         confirm = None
         try:
             confirm = self.find_one(
                 ['confirm_btn_hcenter_vcenter', 'confirm_btn_highlight_hcenter_vcenter'],
                 threshold=0.6,
-                horizontal_variance=0.1,
-                vertical_variance=0.1,
             )
         except TaskDisabledException:
             raise
@@ -1183,6 +1271,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             except Exception:
                 confirm = None
         if confirm is not None:
+            self._logout_confirm_box = confirm
             return 'confirm'
 
         setting = None
@@ -1459,7 +1548,16 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             if daily_task is None:
                 self.log_warning(f'未找到 DailyTask 实例，无法联动方案 {profile_name}')
                 return False
-            if daily_task.config.get(DAILY_PROFILE) == profile_name:
+            if self.integrity_service is not None:
+                # Always bind by ID even when the visible label already looks
+                # correct; the label can be stale while the verified snapshot
+                # belongs to another account (or no account at all).
+                binder = getattr(daily_task, 'bind_verified_profile', None)
+                if not callable(binder):
+                    raise ConfigIntegrityBlocked('DailyTask cannot bind a verified profile ID')
+                binder(profile_name)
+                self.log_info(f'每日任务方案已按验证 ID 联动到 {profile_name}')
+            elif daily_task.config.get(DAILY_PROFILE) == profile_name:
                 self.log_info(f'每日任务方案已是 {profile_name}')
             else:
                 daily_task.switch_profile(profile_name)
@@ -1486,11 +1584,29 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         不允许在方案缺失或切换失败时沿用上一个账号的 DailyTask
         配置，否则即使登录账号正确，也可能按错误方案执行。
         """
-        if not profile_name or profile_name not in self._load_profiles():
+        integrity_service = getattr(self, 'integrity_service', None)
+        if integrity_service is not None:
+            result = integrity_service.check()
+            if not result.ok:
+                raise ConfigWriteBlocked(integrity_service.describe(result))
+        profiles = self._load_profiles()
+        if not profile_name or profile_name not in profiles:
             raise Exception(f'账号方案不存在，已停止每日任务: {profile_name or "未识别"}')
         if not self._link_daily_profile(profile_name):
             raise Exception(f'无法联动每日任务方案，已停止执行: {profile_name}')
+        # Repeat the binding at the execution boundary and verify the ID from
+        # the same validated profile map used by this task.
+        daily_task = getattr(self, 'get_task_by_class', lambda *_: None)(DailyTask)
         self.config[CURRENT_ACCOUNT] = profile_name
+        profile_id = profiles[profile_name].get('profile_id')
+        if integrity_service is not None and (not isinstance(profile_id, str) or not profile_id.strip()):
+            raise ConfigIntegrityBlocked(f'validated account profile has no stable profile_id: {profile_name}')
+        if integrity_service is not None:
+            binder = getattr(daily_task, 'bind_verified_profile', None)
+            if not callable(binder):
+                raise ConfigIntegrityBlocked('DailyTask cannot bind a verified profile ID')
+            binder(profile_name, expected_profile_id=profile_id)
+        self._current_profile_id = profile_id
         return True
 
     def _click_account_in_list(self, profile_name, interaction_mode='postmessage', require_expanded=False):
@@ -1976,6 +2092,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _select_and_login_first_available(self):
         """选择登录列表中第一个能映射到本地方案的账号并登录。"""
+        MultiAccountDailyTask._guard_account_transition(self)
         mouse_reset_task = self.executor.get_task_by_class(MouseResetTask)
         mouse_reset_was_enabled = mouse_reset_task.enabled if mouse_reset_task else False
         if mouse_reset_was_enabled:
@@ -2008,6 +2125,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _select_and_login_account(self):
         """从本轮序列取第一个未完成账号，在登录界面选择并登录；全部完成返回 None。"""
+        MultiAccountDailyTask._guard_account_transition(self)
         target = self._next_target_account()
         if target is None:
             return None
@@ -2052,6 +2170,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _select_and_login_specific(self, profile_name):
         """在登录界面选择并登录指定账号（不执行每日任务）。"""
+        MultiAccountDailyTask._guard_account_transition(self)
         mouse_reset_task = self.executor.get_task_by_class(MouseResetTask)
         mouse_reset_was_enabled = mouse_reset_task.enabled if mouse_reset_task else False
         if mouse_reset_was_enabled:
