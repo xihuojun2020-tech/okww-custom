@@ -1,6 +1,8 @@
 import os
 import re
 import copy
+import importlib
+import inspect
 from contextlib import contextmanager
 from datetime import datetime
 
@@ -792,6 +794,28 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
     def export_account_config(self, *args):
         """导出账号配置（全部方案 + 激活方案）为 JSON 文件，便于跨电脑迁移。"""
         try:
+            service = self._get_account_bundle_service()
+            default_name = f'okww_账号配置_{datetime.now():%Y%m%d_%H%M%S}.json'
+            path = self._ask_save_path(default_name)
+            if not path:
+                return
+            if service is not None:
+                exported = self._invoke_bundle_service(
+                    service, ('export_bundle', 'export'), path=path, task=self)
+                master = exported.get('master_config', {}) if isinstance(exported, dict) else {}
+                runtime = exported.get('runtime_data', {}) if isinstance(exported, dict) else {}
+                profiles = master.get('profiles', {}) if isinstance(master, dict) else {}
+                sequences = master.get('sequences', {}) if isinstance(master, dict) else {}
+                completed = runtime.get('completed_at', {}) if isinstance(runtime, dict) else {}
+                runtime_count = (sum(len(records) for records in completed.values()
+                                     if isinstance(records, dict))
+                                 if isinstance(completed, dict) else 0)
+                self.log_info(
+                    f'已从已验证总配置导出账号配置包 v2: {path}（{len(profiles)} 个账号、'
+                    f'{len(sequences)} 个序列、{runtime_count} 条完成记录）', notify=True)
+                return
+            if self.integrity_service is not None:
+                raise ConfigWriteBlocked('账号配置包 v2 服务不可用；未回退导出旧 v1 文件')
             profiles = self.load_daily_profiles()
             if not profiles:
                 self.log_info('当前没有账号方案可导出')
@@ -805,25 +829,45 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 'profiles': profiles,
                 'sequences': self.get_sequences_data(),
             }
-            default_name = f'okww_账号配置_{datetime.now():%Y%m%d_%H%M%S}.json'
-            path = self._ask_save_path(default_name)
-            if not path:
-                return
             write_json_file(path, payload)
-            self.log_info(f'账号配置已导出: {path}（{len(profiles)} 个方案）', notify=True)
+            self.log_info(f'账号配置已导出（兼容 v1）: {path}（{len(profiles)} 个方案）', notify=True)
         except Exception as e:
             self.log_error('导出账号配置失败', e)
 
     def import_account_config(self, *args):
         """从 JSON 文件导入账号配置（导入前自动备份现有配置）。"""
         try:
+            service = self._get_account_bundle_service()
+            path = self._ask_open_path()
+            if not path:
+                return
+            if service is not None:
+                summary = self._invoke_bundle_service(
+                    service, ('preflight_import', 'preflight'), path=path, task=self)
+                self.log_info(f'导入预检摘要: {self._bundle_summary_text(summary)}')
+                summary_errors = (getattr(summary, 'errors', None)
+                                  if not isinstance(summary, dict) else summary.get('errors'))
+                summary_trust = (getattr(summary, 'trust_required', False)
+                                 if not isinstance(summary, dict) else summary.get('trust_required', False))
+                summary_ok = (getattr(summary, 'ok', True)
+                              if not isinstance(summary, dict) else summary.get('ok', True))
+                if summary_errors or (summary_ok is False and not summary_trust):
+                    self.log_error('账号配置包预检失败，未写入任何文件')
+                    return
+                if not self._confirm_bundle_import(summary):
+                    self.log_info('已取消账号配置包导入')
+                    return
+                self._invoke_bundle_service(
+                    service, ('import_bundle', 'import_config', 'import_bundle_v2', 'import'),
+                    path=path, task=self, confirmed=True, trust_external=bool(summary_trust),
+                    preflight=summary)
+                self.log_info(f'账号配置包已导入: {path}', notify=True)
+                self._refresh_gui()
+                return
             if self.integrity_service is not None:
                 raise ConfigWriteBlocked(
                     'account profile imports are disabled; edit the master configuration outside the application'
                 )
-            path = self._ask_open_path()
-            if not path:
-                return
             data = read_json_file(path)
             if not data or data.get('type') != ACCOUNT_CONFIG_TYPE:
                 self.log_error('文件格式不正确：不是有效的账号配置导出文件')
@@ -873,6 +917,194 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 self.log_error('导入后刷新界面失败', e)
         except Exception as e:
             self.log_error('导入账号配置失败', e)
+
+    def _get_account_bundle_service(self):
+        """Resolve the account bundle v2 service without a hard import edge."""
+        injected = getattr(self, 'account_bundle_service', None)
+        if injected is not None:
+            return injected
+        for module_name in ('src.account_config_bundle', 'src.account_bundle',
+                            'src.account_bundle_service', 'src.services.account_bundle'):
+            try:
+                module = importlib.import_module(module_name)
+            except (ImportError, ModuleNotFoundError):
+                continue
+            for factory_name in ('get_default_service', 'get_account_bundle_service'):
+                factory = getattr(module, factory_name, None)
+                if callable(factory):
+                    return factory()
+            for class_name in ('AccountBundleService', 'AccountConfigBundleService'):
+                cls = getattr(module, class_name, None)
+                if cls is not None:
+                    try:
+                        if class_name == 'AccountConfigBundleService':
+                            return cls(transaction_snapshot_hook=self._transaction_snapshot_hook)
+                        return cls()
+                    except Exception as exc:
+                        raise RuntimeError(f'账号配置包服务构造失败: {exc}') from exc
+        return None
+
+    def _transaction_snapshot_hook(self, _before=None):
+        """Provide the core bundle service with the governed snapshot store."""
+        snapshot = self._config_backup_service().create_transaction_snapshot()
+        return snapshot.path
+
+    @staticmethod
+    def _invoke_bundle_service(service, method_names, **kwargs):
+        for method_name in method_names:
+            method = getattr(service, method_name, None)
+            if not callable(method):
+                continue
+            try:
+                signature = inspect.signature(method)
+            except (TypeError, ValueError):
+                # Signature introspection can be unavailable for extension
+                # methods. Make exactly one call; never retry after method
+                # execution raises (imports/exports have side effects).
+                positional = kwargs.get('path')
+                return method(positional) if positional is not None else method()
+            accepted = {k: v for k, v in kwargs.items() if k in signature.parameters}
+            # Core adapter names are source/destination/confirm; the UI
+            # intentionally speaks in path/confirmed terms.
+            if 'path' in kwargs and 'destination' in signature.parameters:
+                accepted['destination'] = kwargs['path']
+            if 'path' in kwargs and 'source' in signature.parameters:
+                accepted['source'] = kwargs['path']
+            if 'confirmed' in kwargs and 'confirm' in signature.parameters:
+                accepted['confirm'] = kwargs['confirmed']
+            if any(p.kind == p.VAR_KEYWORD for p in signature.parameters.values()):
+                accepted = kwargs
+            return method(**accepted)
+        raise AttributeError(f'account bundle service has no supported method: {method_names}')
+
+    @staticmethod
+    def _bundle_summary_text(summary):
+        if isinstance(summary, str):
+            return summary
+        if hasattr(summary, 'as_dict'):
+            summary = summary.as_dict()
+        elif hasattr(summary, '__dataclass_fields__'):
+            summary = {name: getattr(summary, name) for name in summary.__dataclass_fields__}
+        if isinstance(summary, dict):
+            return ', '.join(f'{k}={v}' for k, v in summary.items()
+                             if v not in (None, '', [], {}, False)) or '无差异'
+        return str(summary)
+
+    def _confirm_bundle_import(self, summary):
+        """Show a second confirmation; integrations/tests may override this."""
+        try:
+            from PySide6.QtWidgets import QMessageBox
+            from ok import og
+            parent = getattr(og, 'main_window', None)
+            trust_required = (summary.get('trust_required', False)
+                              if isinstance(summary, dict)
+                              else getattr(summary, 'trust_required', False))
+            if trust_required:
+                message = ('清单哈希已改变，文件可能在导出后被修改。\n'
+                           f'{self._bundle_summary_text(summary)}\n'
+                           '确认信任此外部修改并替换总配置、恢复运行数据？')
+            else:
+                message = (f'导入预检摘要：{self._bundle_summary_text(summary)}\n'
+                           '确认替换总配置并恢复运行数据？')
+            answer = QMessageBox.question(
+                parent, '确认导入账号配置包',
+                message,
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            return answer == QMessageBox.Yes
+        except Exception:
+            return False
+
+    def _config_backup_service(self):
+        from src.config_backup import ConfigBackupService
+        backup_dir = os.path.join(os.getcwd(), 'configs_backup')
+        try:
+            from ok import og
+            value = og.executor.global_config.get_config('Config Backup') or {}
+            backup_dir = value.get('Config Backup Directory') or backup_dir
+        except Exception:
+            pass
+        return ConfigBackupService(get_relative_path('configs'), backup_dir)
+
+    def verify_backup(self, *args):
+        """Verify a user-selected complete backup without changing config."""
+        path = self._ask_backup_path(open_mode=True)
+        if not path:
+            return None
+        result = self._config_backup_service().verify_snapshot(path)
+        message = ('备份验证通过' if result.ok else '备份验证失败')
+        self.log_info(f'{message}: {self._bundle_summary_text(result)}', notify=True)
+        return result
+
+    def restore_backup(self, *args):
+        """Preflight and confirm a complete backup before transactional restore."""
+        path = self._ask_backup_path(open_mode=True)
+        if not path:
+            return None
+        service = self._config_backup_service()
+        summary = service.preflight_restore(path)
+        self.log_info(f'恢复预检摘要: {self._bundle_summary_text(summary)}')
+        if not summary.ok or not self._confirm_backup_restore(summary):
+            self.log_info('已取消或拒绝配置备份恢复')
+            return summary
+        service.restore(path, confirmed=True)
+        self.log_info('配置备份已事务恢复，请重启程序后继续任务', notify=True)
+        return summary
+
+    def _confirm_backup_restore(self, summary):
+        """Confirm a complete configs-tree replacement separately from import."""
+        try:
+            from PySide6.QtWidgets import QMessageBox
+            from ok import og
+            parent = getattr(og, 'main_window', None)
+            answer = QMessageBox.question(
+                parent, '确认恢复完整配置备份',
+                f'恢复预检摘要：{self._bundle_summary_text(summary)}\n'
+                '这会替换整个 configs 目录，恢复完成后必须重启程序。确认恢复？',
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            return answer == QMessageBox.Yes
+        except Exception:
+            return False
+
+    def repair_legacy_sequences(self, *args):
+        """Inspect and explicitly confirm the core missing-sequence repair."""
+        integrity = getattr(self, 'integrity_service', None)
+        if integrity is None:
+            self.log_info('完整性服务尚未安装；未写入任何文件')
+            return None
+        detection = integrity.detect_missing_sequences()
+        self.log_info('遗漏序列预检: ' + self._bundle_summary_text(detection))
+        if not detection.get('eligible'):
+            self.log_info('当前没有可恢复的旧版遗漏序列；未写入任何文件')
+            return None
+        if not self._confirm_legacy_sequence_repair(detection):
+            self.log_info('已取消旧版遗漏序列恢复')
+            return None
+        snapshot_path = self._transaction_snapshot_hook()
+        self.log_info(f'遗漏序列恢复前事务快照已创建: {snapshot_path}')
+        return integrity.repair_missing_sequences(confirm=True)
+
+    def _confirm_legacy_sequence_repair(self, detection):
+        try:
+            from PySide6.QtWidgets import QMessageBox
+            from ok import og
+            parent = getattr(og, 'main_window', None)
+            answer = QMessageBox.question(
+                parent, '确认恢复旧版遗漏序列',
+                f"发现 {detection.get('sequence_count', 0)} 个序列、"
+                f"{detection.get('account_count', 0)} 个账号。确认恢复？",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            return answer == QMessageBox.Yes
+        except Exception:
+            return False
+
+    def _ask_backup_path(self, open_mode=True):
+        try:
+            from PySide6.QtWidgets import QFileDialog
+            from ok import og
+            parent = getattr(og, 'main_window', None)
+            return QFileDialog.getExistingDirectory(parent, '选择配置备份目录') or None
+        except Exception:
+            return None
 
     def _ask_save_path(self, default_name):
         """弹出保存对话框；默认路径为数据仓库（ok仓库/账号数据），无 GUI 环境时回退项目 export_accounts/。"""

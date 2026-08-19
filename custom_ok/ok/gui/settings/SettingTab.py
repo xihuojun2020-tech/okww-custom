@@ -47,14 +47,32 @@ class SettingTab(Tab):
             self.tr('导出账号配置'),
             FIF.DOWNLOAD,
             self.tr('账号配置'),
-            self.tr('导出全部账号方案（含完成时间）与激活方案为 JSON 文件，便于备份或迁移到其他电脑'),
+            self.tr('从已验证总配置导出账号配置包 v2（含序列、运行数据和清单）'),
             parent=self.data_group
         )
         self.import_account_card = PushSettingCard(
             self.tr('导入账号配置'),
             FIF.UP,
             self.tr('账号配置'),
-            self.tr('从 JSON 文件恢复账号方案（导入前自动备份现有配置）'),
+            self.tr('导入账号配置包（先预检摘要，再二次确认并事务恢复）'),
+            parent=self.data_group
+        )
+        self.verify_backup_card = PushSettingCard(
+            self.tr('验证备份'), FIF.INFO,
+            self.tr('配置备份'),
+            self.tr('检查选定备份的文件缺失、额外文件和 SHA-256 差异'),
+            parent=self.data_group
+        )
+        self.restore_backup_card = PushSettingCard(
+            self.tr('恢复备份'), FIF.SYNC,
+            self.tr('配置备份'),
+            self.tr('预览恢复摘要并确认后事务恢复配置'),
+            parent=self.data_group
+        )
+        self.repair_sequences_card = PushSettingCard(
+            self.tr('恢复旧版遗漏序列'), FIF.SYNC,
+            self.tr('账号序列'),
+            self.tr('从旧版多账号任务文件恢复未锚定的序列'),
             parent=self.data_group
         )
         # 配置自动备份目录（每天首次启动自动备份所有配置）
@@ -77,6 +95,9 @@ class SettingTab(Tab):
         self.basic_group.addSettingCard(self.languageCard)
         self.data_group.addSettingCard(self.export_account_card)
         self.data_group.addSettingCard(self.import_account_card)
+        self.data_group.addSettingCard(self.verify_backup_card)
+        self.data_group.addSettingCard(self.restore_backup_card)
+        self.data_group.addSettingCard(self.repair_sequences_card)
 
     def _get_daily_task(self):
         """获取 DailyTask 实例（其方法负责读写 daily_profiles.json）。"""
@@ -109,6 +130,27 @@ class SettingTab(Tab):
                 duration=2000,
                 parent=self
             )
+
+    def verify_backup(self):
+        task = self._get_daily_task()
+        if task is not None and hasattr(task, 'verify_backup'):
+            task.verify_backup()
+        else:
+            InfoBar.warning(self.tr('备份服务不可用'), self.tr('请稍后再试'), duration=2000, parent=self)
+
+    def restore_backup(self):
+        task = self._get_daily_task()
+        if task is not None and hasattr(task, 'restore_backup'):
+            task.restore_backup()
+        else:
+            InfoBar.warning(self.tr('备份服务不可用'), self.tr('请稍后再试'), duration=2000, parent=self)
+
+    def repair_legacy_sequences(self):
+        task = self._get_daily_task()
+        if task is not None and hasattr(task, 'repair_legacy_sequences'):
+            task.repair_legacy_sequences()
+        else:
+            InfoBar.warning(self.tr('序列修复服务不可用'), self.tr('请稍后再试'), duration=2000, parent=self)
 
     def goto_config(self, key):
         to_scroll = None
@@ -150,3 +192,6 @@ class SettingTab(Tab):
         self.themeCard.optionChanged.connect(lambda ci: setTheme(cfg.get(ci)))
         self.export_account_card.clicked.connect(self.export_accounts)
         self.import_account_card.clicked.connect(self.import_accounts)
+        self.verify_backup_card.clicked.connect(self.verify_backup)
+        self.restore_backup_card.clicked.connect(self.restore_backup)
+        self.repair_sequences_card.clicked.connect(self.repair_legacy_sequences)

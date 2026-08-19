@@ -128,6 +128,9 @@ class ConfigPaths:
     working: Path
     runtime: Path
     incidents: Path
+    # Legacy multi-account task settings are a migration input only.  They are
+    # deliberately not part of the protected master projection.
+    multi_account_task: Path | None = None
 
     @classmethod
     def from_root(cls, root: os.PathLike | str | None = None) -> "ConfigPaths":
@@ -140,6 +143,7 @@ class ConfigPaths:
             working=config_dir / WORKING_FILENAME,
             runtime=config_dir / RUNTIME_FILENAME,
             incidents=(base / INCIDENT_DIRNAME) if config_dir != base else (base.parent / INCIDENT_DIRNAME),
+            multi_account_task=config_dir / "MultiAccountDailyTask.json",
         )
 
 
@@ -548,6 +552,23 @@ def _atomic_replace_bytes(path: Path, payload: bytes) -> None:
             pass
 
 
+def _atomic_replace_bytes_unchecked(path: Path, payload: bytes) -> None:
+    """Atomically restore exact bytes, including the protected master file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".rollback", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temp_name, path)
+    finally:
+        try:
+            os.unlink(temp_name)
+        except FileNotFoundError:
+            pass
+
+
 @dataclass
 class IntegrityResult:
     ok: bool
@@ -732,7 +753,8 @@ class ConfigIntegrityService:
     confirm_master_change = accept_master_change
 
     @staticmethod
-    def _bootstrap_master_candidate(working: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    def _bootstrap_master_candidate(working: Mapping[str, Any],
+                                    task_data: Mapping[str, Any] | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
         """Build schema v1 master data and a working copy with stable IDs.
 
         This helper does not write files.  It preserves legacy sequence order,
@@ -852,11 +874,17 @@ class ConfigIntegrityService:
             for candidate in _identity_candidates(key):
                 identity_index.setdefault(candidate, set()).add(profile_id)
 
-        raw_sequences = working.get("sequences", {})
-        if raw_sequences is None:
-            raw_sequences = {}
+        raw_sequences = working.get("sequences", {}) or {}
         if not isinstance(raw_sequences, Mapping):
             raise ConfigIntegrityError("working sequences must be an object")
+        # First anchoring has two legacy inputs.  Keep the strict source policy
+        # in one module so later import/repair uses exactly the same rules.
+        if task_data is not None:
+            try:
+                from .account_config_bundle import extract_task_sequences, merge_sequence_sources
+                raw_sequences = merge_sequence_sources(raw_sequences, extract_task_sequences(task_data)).sequences
+            except (ValueError, TypeError) as exc:
+                raise ConfigIntegrityError(str(exc)) from exc
         sequences: dict[str, list[str]] = {}
         for sequence_name, members in raw_sequences.items():
             if not isinstance(sequence_name, str) or not sequence_name.strip():
@@ -886,7 +914,20 @@ class ConfigIntegrityService:
                         f"working sequence {sequence_name!r} account {member!r} is ambiguous"
                     )
                 resolved_members.append(next(iter(matches)))
+            # Source normalization retains sequence order, explicit empties
+            # and the selected source's display label (e.g. 序列一).
+            sequence_name = " ".join(str(sequence_name).split()).strip()
+            numeric_sequence = re.match(r"^序列\s*(\d+)$", sequence_name)
+            if numeric_sequence:
+                sequence_name = f"序列{int(numeric_sequence.group(1))}"
             sequences[sequence_name] = resolved_members
+
+        # Legacy consumers read display names from the working projection;
+        # keep this selected source synchronized while the master stores UUIDs.
+        updated["sequences"] = {
+            name: [profiles[profile_id]["display_name"] for profile_id in members]
+            for name, members in sequences.items()
+        }
 
         root_extensions = working.get("extensions", {})
         if not isinstance(root_extensions, Mapping):
@@ -942,7 +983,13 @@ class ConfigIntegrityService:
 
             working_data, working_before = _read_json(self.paths.working)
             try:
-                master_candidate, working_candidate = self._bootstrap_master_candidate(working_data)
+                task_data = None
+                task_path = self.paths.multi_account_task
+                if task_path is not None and task_path.is_file():
+                    task_data, _ = _read_json(task_path)
+                    if not isinstance(task_data, Mapping):
+                        raise ConfigIntegrityError("legacy multi-account task configuration must be an object")
+                master_candidate, working_candidate = self._bootstrap_master_candidate(working_data, task_data)
             except ConfigIntegrityError as exc:
                 raise ConfigIntegrityBlocked(str(exc)) from exc
             runtime_before = self.paths.runtime.read_bytes() if self.paths.runtime.exists() else None
@@ -1035,10 +1082,123 @@ class ConfigIntegrityService:
             return runtime_error
         try:
             working_data, _ = _read_json(self.paths.working)
-            self._bootstrap_master_candidate(working_data)
+            task_data = None
+            task_path = self.paths.multi_account_task
+            if task_path is not None and task_path.is_file():
+                task_data, _ = _read_json(task_path)
+                if not isinstance(task_data, Mapping):
+                    raise ConfigIntegrityError("legacy multi-account task configuration must be an object")
+            self._bootstrap_master_candidate(working_data, task_data)
         except (ConfigIntegrityError, OSError) as exc:
             return str(exc)
         return ""
+
+    def detect_missing_sequences(self) -> dict[str, Any]:
+        """Purely inspect whether an already anchored empty master can recover legacy sequences.
+
+        The returned structure is safe to show in a dialog and contains no
+        writable handles or mutable references to loaded JSON.
+        """
+        with self._lock:
+            result = self.check(record_incident=False, resolve_incidents=False)
+            response: dict[str, Any] = {
+                "eligible": False, "already_applied": False, "sequence_count": 0,
+                "account_count": 0, "sequences": {}, "source": "none", "errors": [],
+            }
+            if not result.master_valid or not result.master:
+                response["errors"] = ["master configuration is invalid or missing"]
+                return response
+            marker = self._runtime().get("legacy_sequence_migration_v1")
+            if isinstance(marker, Mapping) and marker.get("status") == "completed":
+                response["already_applied"] = True
+                response["reason"] = "legacy sequence migration already completed"
+                return response
+            if result.master.get("sequences"):
+                response["reason"] = "master configuration already contains sequences"
+                return response
+            task_data = None
+            if self.paths.multi_account_task is not None and self.paths.multi_account_task.is_file():
+                try:
+                    task_data, _ = _read_json(self.paths.multi_account_task)
+                except (ConfigIntegrityError, OSError) as exc:
+                    response["errors"] = [str(exc)]
+                    return response
+            try:
+                from .account_config_bundle import extract_task_sequences, merge_sequence_sources, resolve_sequence_members
+                working_data, _ = _read_json(self.paths.working) if self.paths.working.is_file() else ({}, None)
+                working_sequences = working_data.get("sequences", {}) if isinstance(working_data, Mapping) else {}
+                task_sequences = extract_task_sequences(task_data)
+                merged = merge_sequence_sources(working_sequences, task_sequences)
+                resolved = resolve_sequence_members(merged.sequences, result.master)
+            except (ConfigIntegrityError, OSError, ValueError, TypeError) as exc:
+                response["errors"] = [str(exc)]
+                return response
+            if not resolved:
+                response["reason"] = "no explicit legacy sequences found"
+                return response
+            response.update({"eligible": True, "sequence_count": len(resolved),
+                             "account_count": sum(len(set(members)) for members in resolved.values()),
+                             "sequences": copy.deepcopy(resolved), "source": merged.source,
+                             "master_fingerprint": result.master_fingerprint})
+            return response
+
+    def repair_missing_sequences(self, *, confirm: bool = False) -> IntegrityResult:
+        """Restore legacy sequences into an empty master with a three-file transaction."""
+        if not confirm:
+            raise ConfigIntegrityBlocked("explicit confirmation is required to restore legacy sequences")
+        with self._lock:
+            detection = self.detect_missing_sequences()
+            if not detection.get("eligible"):
+                reason = "; ".join(detection.get("errors", [])) or str(detection.get("reason", "legacy sequences are not recoverable"))
+                raise ConfigIntegrityBlocked(reason)
+            result = self.check(record_incident=False, resolve_incidents=False)
+            master_before = self.paths.master.read_bytes()
+            working_before = self.paths.working.read_bytes() if self.paths.working.exists() else None
+            runtime_before = self.paths.runtime.read_bytes() if self.paths.runtime.exists() else None
+            master_raw, _ = _read_json(self.paths.master)
+            working_raw, _ = _read_json(self.paths.working) if self.paths.working.exists() else ({}, None)
+            candidate = copy.deepcopy(master_raw)
+            candidate["sequences"] = copy.deepcopy(detection["sequences"])
+            rebuilt = self._rebuild_working(candidate, working_raw if isinstance(working_raw, Mapping) else {})
+            runtime = self._runtime()
+            event_dir = result.event_dir
+            try:
+                _atomic_write_json_unchecked(self.paths.master, candidate)
+                atomic_write_json(self.paths.working, rebuilt)
+                runtime["accepted_master_fingerprint"] = fingerprint(normalize_master(candidate))
+                runtime["legacy_sequence_migration_v1"] = {
+                    "status": "completed", "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "source": detection.get("source"), "sequence_count": detection.get("sequence_count", 0),
+                }
+                atomic_write_json(self.paths.runtime, runtime)
+                checked = self.check(record_incident=False, resolve_incidents=False)
+                if not checked.ok:
+                    raise ConfigIntegrityBlocked("account configuration is still inconsistent after sequence recovery")
+                return checked
+            except Exception:
+                # Restore exact bytes, including formatting and absent runtime.
+                rollback = ((self.paths.master, master_before), (self.paths.working, working_before),
+                            (self.paths.runtime, runtime_before))
+                rollback_errors: list[str] = []
+                for path, payload in rollback:
+                    try:
+                        if payload is None:
+                            path.unlink(missing_ok=True)
+                        else:
+                            _atomic_replace_bytes_unchecked(path, payload)
+                    except Exception as rollback_error:
+                        rollback_errors.append(f"{path}: {rollback_error}")
+                for path, payload in rollback:
+                    current = path.read_bytes() if path.exists() else None
+                    if current != payload:
+                        rollback_errors.append(f"{path}: rollback bytes differ")
+                if rollback_errors:
+                    raise ConfigIntegrityBlocked("sequence recovery rollback failed: " + "; ".join(rollback_errors))
+                raise
+
+    # User-facing aliases used by settings controllers.
+    inspect_missing_sequences = detect_missing_sequences
+    recover_missing_sequences = repair_missing_sequences
 
     def apply_master_to_working(self, *, result: IntegrityResult | None = None) -> IntegrityResult:
         """Accept the current master and replace protected working data in one flow.

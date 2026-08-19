@@ -379,6 +379,75 @@ class TestConfigIntegrity(unittest.TestCase):
         with self.assertRaises(ConfigWriteBlocked):
             assert_master_read_only(self.service.paths.master)
 
+    def test_first_anchor_reads_sequences_from_legacy_multi_account_task(self):
+        self.service.paths.master.unlink()
+        legacy = legacy_working_without_ids()
+        legacy["sequences"] = {}
+        legacy["profiles"]["A1"]["profile_id"] = PROFILE_A
+        legacy["profiles"]["A3"]["profile_id"] = PROFILE_B
+        self.service.paths.working.write_text(json.dumps(legacy), encoding="utf-8")
+        self.service.paths.multi_account_task.write_text(json.dumps({
+            "序列 1 账号": ["A3", "A1"], "序列 2 账号": []
+        }, ensure_ascii=False), encoding="utf-8")
+        self.assertTrue(self.service.bootstrap_master_from_working(confirm=True).ok)
+        generated = json.loads(self.service.paths.master.read_text(encoding="utf-8"))
+        self.assertEqual(generated["sequences"]["序列1"], [PROFILE_B, PROFILE_A])
+        self.assertEqual(generated["sequences"]["序列2"], [])
+
+    def test_empty_master_sequences_have_pure_detection_and_confirmed_recovery(self):
+        empty = master()
+        empty["sequences"] = {}
+        self.service.paths.master.write_text(json.dumps(empty), encoding="utf-8")
+        working_empty = working()
+        working_empty["sequences"] = {}
+        self.service.paths.working.write_text(json.dumps(working_empty), encoding="utf-8")
+        self.service.paths.multi_account_task.write_text(json.dumps({
+            "序列 1 账号": ["A1", "A3"], "序列 2 账号": [],
+            "序列 3 账号": [], "序列 4 账号": [], "序列 5 账号": []
+        }, ensure_ascii=False), encoding="utf-8")
+        self.service.accept_master_change(result=self.service.check())
+        before = self.service.paths.master.read_bytes()
+        detected = self.service.detect_missing_sequences()
+        self.assertTrue(detected["eligible"])
+        self.assertEqual(detected["sequence_count"], 5)
+        self.assertEqual(self.service.paths.master.read_bytes(), before)
+        with self.assertRaises(ConfigIntegrityBlocked):
+            self.service.repair_missing_sequences(confirm=False)
+        recovered = self.service.repair_missing_sequences(confirm=True)
+        self.assertTrue(recovered.ok)
+        after = json.loads(self.service.paths.master.read_text(encoding="utf-8"))
+        self.assertEqual(after["sequences"]["序列1"], [PROFILE_A, PROFILE_B])
+        self.assertEqual(after["sequences"]["序列2"], [])
+        self.assertEqual(after["sequences"]["序列5"], [])
+        runtime = json.loads(self.service.paths.runtime.read_text(encoding="utf-8"))
+        self.assertEqual(runtime["legacy_sequence_migration_v1"]["status"], "completed")
+
+    def test_nonempty_master_sequences_never_recover_old_task_sequences(self):
+        self.service.paths.multi_account_task.write_text(json.dumps({"序列 2 账号": ["A1"]}, ensure_ascii=False), encoding="utf-8")
+        detected = self.service.detect_missing_sequences()
+        self.assertFalse(detected["eligible"])
+        self.assertIn("already contains", detected["reason"])
+
+    def test_missing_sequence_recovery_rolls_back_all_three_files_byte_exactly(self):
+        empty = master()
+        empty["sequences"] = {}
+        self.service.paths.master.write_text(json.dumps(empty, ensure_ascii=False, indent=4), encoding="utf-8")
+        working_empty = working()
+        working_empty["sequences"] = {}
+        self.service.paths.working.write_text(json.dumps(working_empty, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.service.paths.multi_account_task.write_text(json.dumps({"序列 1 账号": ["A1", "A3"]}, ensure_ascii=False), encoding="utf-8")
+        self.service.accept_master_change(result=self.service.check())
+        before = {path: path.read_bytes() if path.exists() else None
+                  for path in (self.service.paths.master, self.service.paths.working, self.service.paths.runtime)}
+        initial = self.service.check(record_incident=False)
+        failed = IntegrityResult(ok=False, master_valid=True, working_valid=True,
+                                 master_fingerprint="failed", working_fingerprint="failed")
+        with patch.object(self.service, "check", side_effect=[initial, initial, failed]):
+            with self.assertRaisesRegex(ConfigIntegrityBlocked, "still inconsistent"):
+                self.service.repair_missing_sequences(confirm=True)
+        for path, payload in before.items():
+            self.assertEqual(path.read_bytes() if path.exists() else None, payload)
+
     def test_dialog_uses_distinct_bootstrap_branch_and_rechecks_external_master(self):
         self.service.paths.master.unlink()
         self.service.paths.working.write_text(

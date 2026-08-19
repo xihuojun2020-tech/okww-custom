@@ -30,6 +30,7 @@ from src.task.BaseCombatTask import BaseCombatTask
 from src.task.BaseWWTask import LOGIN_TEXTS
 from src.task.MouseResetTask import MouseResetTask
 from src.config_integrity import ConfigIntegrityBlocked, ConfigWriteBlocked, get_default_service
+from src.account_switch_evidence import AccountSwitchEvidenceSession
 
 logger = Logger.get_logger(__name__)
 
@@ -730,6 +731,137 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             raise ConfigIntegrityBlocked(service.describe(result))
         return True
 
+    # ==================== 统一账号切换与失败证据 ====================
+
+    def _begin_account_switch_evidence(self, target):
+        """Start a bounded in-memory evidence session for one target switch."""
+        try:
+            blur_area = None
+            config = getattr(self, 'config', None)
+            if isinstance(config, dict):
+                blur_area = config.get('blur_area')
+            self._account_switch_evidence = AccountSwitchEvidenceSession(
+                target, blur_area=blur_area,
+            )
+            self._account_switch_attempt = None
+            self._account_switch_evidence.record_stage('start')
+        except Exception:
+            self._account_switch_evidence = None
+
+    def _evidence_stage(self, stage, **kwargs):
+        session = getattr(self, '_account_switch_evidence', None)
+        if session is not None:
+            try:
+                frame = getattr(self, 'frame', None)
+                session.record_stage(stage, frame=frame, **kwargs)
+            except TaskDisabledException:
+                raise
+            except Exception:
+                pass
+
+    def _evidence_identity(self, account, **kwargs):
+        session = getattr(self, '_account_switch_evidence', None)
+        if session is not None:
+            try:
+                frame = getattr(self, 'frame', None)
+                session.record_identity(account, frame=frame, **kwargs)
+            except TaskDisabledException:
+                raise
+            except Exception:
+                pass
+
+    def _evidence_click(self, mode, point, **kwargs):
+        session = getattr(self, '_account_switch_evidence', None)
+        if session is not None:
+            try:
+                if 'attempt' not in kwargs:
+                    kwargs['attempt'] = getattr(self, '_account_switch_attempt', None)
+                frame = getattr(self, 'frame', None)
+                session.record_click(mode, point, frame=frame, **kwargs)
+            except TaskDisabledException:
+                raise
+            except Exception:
+                pass
+
+    def _evidence_sample(self, stage):
+        session = getattr(self, '_account_switch_evidence', None)
+        if session is not None:
+            try:
+                session.record_frame(getattr(self, 'frame', None), stage=stage)
+            except TaskDisabledException:
+                raise
+            except Exception:
+                pass
+
+    def _finish_account_switch_evidence(self, success, reason=None, **kwargs):
+        session = getattr(self, '_account_switch_evidence', None)
+        self._account_switch_evidence = None
+        self._account_switch_attempt = None
+        if session is None:
+            return None
+        try:
+            if success:
+                return session.succeed()
+            return session.fail(reason or 'account switch failed', **kwargs)
+        except TaskDisabledException:
+            raise
+        except Exception as error:
+            try:
+                self.log_warning(f'账号切换失败证据保存失败：{error}')
+            except Exception:
+                pass
+            return None
+
+    def switch_to_account(self, profile_name, *, max_retries=5):
+        """Public production account-switch entry point.
+
+        This owns the complete login transition.  Callers only resolve a
+        target profile; production and test tasks therefore share exactly the
+        same wait/select/verify/login/ensure-main chain.
+        """
+        if not profile_name:
+            raise ValueError('target account is required')
+        MultiAccountDailyTask._guard_account_transition(self)
+        self._begin_account_switch_evidence(profile_name)
+        mouse_reset_task = None
+        mouse_reset_was_enabled = False
+        try:
+            executor = getattr(self, 'executor', None)
+            getter = getattr(executor, 'get_task_by_class', None)
+            mouse_reset_task = getter(MouseResetTask) if callable(getter) else None
+            mouse_reset_was_enabled = mouse_reset_task.enabled if mouse_reset_task else False
+            if mouse_reset_was_enabled:
+                mouse_reset_task.disable()
+            self._evidence_stage('wait_login_screen')
+            self._wait_login_screen_stable(time_out=120)
+            self._evidence_stage('select_account')
+            self._select_account_with_retry(profile_name, max_retries=max_retries)
+            self.sleep(4)
+            self._evidence_stage('verify_before_login')
+            self._click_login_for_target(profile_name)
+            self.logged_in = False
+            self._evidence_stage('ensure_main')
+            self.ensure_main(time_out=180)
+            self.log_info(f'已登录: {profile_name}')
+            self._finish_account_switch_evidence(True)
+            return profile_name
+        except TaskDisabledException as error:
+            # The evidence session owns the last observed identity; the
+            # target is not evidence of what the login UI displayed.
+            event_dir = self._finish_account_switch_evidence(
+                False, str(error), stage='stopped', stopped=True)
+            if event_dir is not None:
+                self.log_warning(f'账号切换已停止；审核证据正在保存到: {event_dir}')
+            raise
+        except Exception as error:
+            event_dir = self._finish_account_switch_evidence(False, str(error), stage='failed')
+            if event_dir is not None:
+                self.log_warning(f'账号切换失败；最近证据已保存到: {event_dir}')
+            raise
+        finally:
+            if mouse_reset_was_enabled and mouse_reset_task is not None:
+                mouse_reset_task.enable()
+
     def _switch_to_login(self):
         MultiAccountDailyTask._guard_account_transition(self)
         self.log_info(self.tr('Switching back to login screen'))
@@ -850,6 +982,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         last_log = 0.0
         while time.monotonic() < deadline:
             try:
+                sample = getattr(self, '_evidence_sample', None)
+                if callable(sample):
+                    sample('wait_login_screen')
                 hwnd = getattr(self, 'hwnd', None)
                 # 主窗口仍可见时先做同窗口 OCR；不可见时先查同进程登录
                 # 对话框，确认不存在后才 bring_to_front，减少闪烁抢前台。
@@ -1110,7 +1245,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         cy = box.y + box.height / 2.0
         return int(origin[0] + cx), int(origin[1] + cy)
 
-    def _log_account_click_delivery(self, mode, box, screen_point=None, hwnd=None):
+    def _log_account_click_delivery(self, mode, box, screen_point=None, hwnd=None, delivered=None):
         """记录账号点击投递诊断；诊断失败不能影响实际点击。"""
         try:
             interaction = getattr(getattr(self, 'executor', None), 'interaction', None)
@@ -1141,6 +1276,21 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 f'账号点击投递诊断：方式={mode}，目标HWND={hwnd or "?"}，'
                 f'类={class_name}，坐标={point}'
             )
+            if delivered is not None:
+                record_click = getattr(self, '_evidence_click', None)
+                if callable(record_click):
+                    record_click(
+                        mode,
+                        screen_point or (box.x + box.width / 2, box.y + box.height / 2),
+                        target_box=box,
+                        window_point=(box.x + box.width / 2, box.y + box.height / 2),
+                        screen_point=screen_point,
+                        hwnd=hwnd,
+                        stage='select_account',
+                        delivered=delivered,
+                    )
+        except TaskDisabledException:
+            raise
         except Exception:
             pass
 
@@ -1228,6 +1378,12 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             f'{button.y + button.height / 2:.1f})，屏幕={screen_point}'
         )
         clicked = self._screen_click(*screen_point, after_sleep=3)
+        record_click = getattr(self, '_evidence_click', None)
+        if callable(record_click):
+            record_click(
+                '系统屏幕（登录按钮）', screen_point, target_box=button,
+                screen_point=screen_point, stage='login_click', delivered=bool(clicked),
+            )
         self._last_login_click_mode = 'screen_main' if clicked else 'screen_main_failed'
         if clicked:
             self.log_info(f'已发送登录按钮点击（方式=系统屏幕，屏幕 {screen_point[0]},{screen_point[1]}）')
@@ -1335,7 +1491,15 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         cx = (rect[0] + rect[2]) // 2
         cy = (rect[1] + rect[3]) // 2
         self.log_info(f'点击账号下拉框 ComboBox @({cx},{cy})')
-        return self._screen_click(cx, cy, after_sleep=2)
+        clicked = self._screen_click(cx, cy, after_sleep=2)
+        record_click = getattr(self, '_evidence_click', None)
+        if callable(record_click):
+            record_click(
+                '系统屏幕（ComboBox）', (cx, cy),
+                screen_point=(cx, cy), hwnd=hwnd, stage='open_account_list',
+                delivered=bool(clicked),
+            )
+        return clicked
 
     def _find_and_click_account_in_combo_list(self, profile_name):
         """从当前可见 ComboLBox 客户区 OCR 并点击目标账号。
@@ -1400,11 +1564,12 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         except Exception:
             pass
         sx, sy = self._box_center_screen(box, origin)
+        self._last_account_click_mode = 'screen_combobox'
+        sent = self._screen_click(sx, sy, after_sleep=2)
         diagnose = getattr(self, '_log_account_click_delivery', None)
         if callable(diagnose):
-            diagnose('系统屏幕（ComboLBox）', box, (sx, sy), hwnd)
-        self._last_account_click_mode = 'screen_combobox'
-        if self._screen_click(sx, sy, after_sleep=2):
+            diagnose('系统屏幕（ComboLBox）', box, (sx, sy), hwnd, delivered=bool(sent))
+        if sent:
             self.log_info(f'已发送账号点击（方式=系统屏幕，ComboLBox，屏幕 {sx},{sy}）')
             return True, name, True
         self._last_account_click_mode = 'screen_combobox_failed'
@@ -1428,11 +1593,12 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     name = (t.name or '').strip()
                     if self.match_profile_from_login(name) == profile_name:
                         sx, sy = self._box_center_screen(t, origin)
+                        self._last_account_click_mode = 'screen_dialog'
+                        sent = self._screen_click(sx, sy, after_sleep=2)
                         diagnose = getattr(self, '_log_account_click_delivery', None)
                         if callable(diagnose):
-                            diagnose('系统屏幕点击', t, (sx, sy))
-                        self._last_account_click_mode = 'screen_dialog'
-                        if self._screen_click(sx, sy, after_sleep=2):
+                            diagnose('系统屏幕点击', t, (sx, sy), delivered=bool(sent))
+                        if sent:
                             self.log_info(f'已发送账号点击（方式=系统屏幕，对话框，屏幕 {sx},{sy}）')
                             return True, name
                         self._last_account_click_mode = 'screen_dialog_failed'
@@ -1469,7 +1635,14 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             box = login_boxes[0]
             sx, sy = self._box_center_screen(box, origin)
             self.log_info(f'点击登录按钮（屏幕 {sx},{sy}）')
-            return self._screen_click(sx, sy, after_sleep=3)
+            clicked = self._screen_click(sx, sy, after_sleep=3)
+            record_click = getattr(self, '_evidence_click', None)
+            if callable(record_click):
+                record_click(
+                    '系统屏幕（登录按钮）', (sx, sy), target_box=box,
+                    screen_point=(sx, sy), stage='login_click', delivered=bool(clicked),
+                )
+            return clicked
         except TaskDisabledException:
             raise
         except ValueError:
@@ -1768,10 +1941,10 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                             self.log_warning('账号点击兜底取消：无法从目标 OCR 框安全换算屏幕坐标')
                             return False
                     else:
+                        sent = self._screen_click(*screen_point, after_sleep=2)
                         diagnose = getattr(self, '_log_account_click_delivery', None)
                         if callable(diagnose):
-                            diagnose('系统屏幕点击', account, screen_point)
-                        sent = self._screen_click(*screen_point, after_sleep=2)
+                            diagnose('系统屏幕点击', account, screen_point, delivered=bool(sent))
                         self._last_account_click_mode = 'screen_main' if sent else 'screen_main_failed'
                         if sent:
                             self.log_info(f'已发送账号点击（方式=系统屏幕，目标={profile_name}，OCR={name}）')
@@ -1791,7 +1964,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     sent = False
                 diagnose = getattr(self, '_log_account_click_delivery', None)
                 if callable(diagnose):
-                    diagnose('PostMessage（投递后）', account)
+                    diagnose('PostMessage（投递后）', account, delivered=bool(sent))
                 if sent:
                     self.log_info(f'已发送账号点击（方式=PostMessage，目标={profile_name}，OCR={name}）')
                 return sent
@@ -1867,6 +2040,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
             state['last_expanded'] = False
             current = self._detect_current_account_from_login()
+            record_identity = getattr(self, '_evidence_identity', None)
+            if callable(record_identity):
+                record_identity(current, stage='selection_confirmation')
             previous = state['last_current']
             state['last_current'] = current
             current_changed = not self._same_account(previous, current)
@@ -1912,6 +2088,10 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         last_current = None
         unconfirmed_postmessage_deliveries = 0
         for attempt in range(1, max_retries + 1):
+            self._account_switch_attempt = attempt
+            record_stage = getattr(self, '_evidence_stage', None)
+            if callable(record_stage):
+                record_stage('select_attempt', attempt=attempt)
             self.sleep(1)
             if unconfirmed_postmessage_deliveries == 1:
                 # 第一次 PostMessage 投递未获稳定确认后，下一次展开列表前刷新
@@ -1955,6 +2135,11 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 f'账号点击投递后确认：目标 {target}，方式={actual_mode}，'
                 f'当前显示账号：{last_current}'
             )
+            if callable(record_stage):
+                record_stage(
+                    'selection_result', attempt=attempt,
+                    detail=f'{actual_mode}:{last_current or "unknown"}',
+                )
             if stable:
                 self.log_info(f'确认已选择账号：{target}')
                 return True
@@ -1978,7 +2163,13 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         """点登录前再次核对目标；不一致时重新选择，而不是立即停止。"""
         last_shown = None
         for attempt in range(1, max_retries + 1):
+            record_stage = getattr(self, '_evidence_stage', None)
+            if callable(record_stage):
+                record_stage('verify_before_login_attempt', attempt=attempt)
             last_shown = self._detect_current_account_from_login()
+            record_identity = getattr(self, '_evidence_identity', None)
+            if callable(record_identity):
+                record_identity(last_shown, stage='verify_before_login')
             if self._same_account(last_shown, target):
                 return True
 
@@ -2006,6 +2197,10 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         """确认当前账号后点击登录按钮，并确认登录界面开始转换。"""
         last_error = None
         for attempt in range(1, 4):
+            self._account_switch_attempt = attempt
+            record_stage = getattr(self, '_evidence_stage', None)
+            if callable(record_stage):
+                record_stage('login_click_attempt', attempt=attempt)
             try:
                 self._confirm_target_before_login(target)
                 if getattr(self, '_login_in_dialog', False):
@@ -2093,35 +2288,23 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
     def _select_and_login_first_available(self):
         """选择登录列表中第一个能映射到本地方案的账号并登录。"""
         MultiAccountDailyTask._guard_account_transition(self)
-        mouse_reset_task = self.executor.get_task_by_class(MouseResetTask)
-        mouse_reset_was_enabled = mouse_reset_task.enabled if mouse_reset_task else False
-        if mouse_reset_was_enabled:
-            mouse_reset_task.disable()
-        try:
-            if not self._open_account_list():
-                raise Exception(self.tr('Failed to open account list'))
-            profiles = self.wait_until(
-                self._visible_login_profiles,
-                time_out=10,
-                settle_time=1,
-                raise_if_not_found=False,
-            )
-            if not profiles:
-                self.log_error('登录列表中没有能映射到本地方案的账号')
-                self.screenshot('multi')
-                raise Exception('没有可用的已配置账号')
-            target = profiles[0]
-            self.log_info(f'自动识别登录列表中的第一个可用账号: {target}')
-            self._select_account_with_retry(target)
-            self.sleep(4)
-            self._click_login_for_target(target)
-            self.logged_in = False
-            self.ensure_main(time_out=180)
-            self.log_info(self.tr('Login successful'))
-            return target
-        finally:
-            if mouse_reset_was_enabled:
-                mouse_reset_task.enable()
+        self._wait_login_screen_stable(time_out=120)
+        if not self._open_account_list():
+            raise Exception(self.tr('Failed to open account list'))
+        profiles = self.wait_until(
+            self._visible_login_profiles,
+            time_out=10,
+            settle_time=1,
+            raise_if_not_found=False,
+        )
+        if not profiles:
+            self.log_error('登录列表中没有能映射到本地方案的账号')
+            self.screenshot('multi')
+            raise Exception('没有可用的已配置账号')
+        target = profiles[0]
+        self.log_info(f'自动识别登录列表中的第一个可用账号: {target}')
+        switch = getattr(self, 'switch_to_account', None)
+        return switch(target) if callable(switch) else MultiAccountDailyTask.switch_to_account(self, target)
 
     def _select_and_login_account(self):
         """从本轮序列取第一个未完成账号，在登录界面选择并登录；全部完成返回 None。"""
@@ -2129,22 +2312,11 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         target = self._next_target_account()
         if target is None:
             return None
-        mouse_reset_task = self.executor.get_task_by_class(MouseResetTask)
-        mouse_reset_was_enabled = mouse_reset_task.enabled if mouse_reset_task else False
-        if mouse_reset_was_enabled:
-            mouse_reset_task.disable()
-        try:
-            self._select_account_with_retry(target)
-            self.sleep(4)
-            self._click_login_for_target(target)
-            self.logged_in = False
-            self.ensure_main(time_out=180)
-            self.log_info(self.tr('Login successful'))
-            # 返回确定的目标账号，避免 OCR 临时识别失败被误判为「全部完成」。
-            return target
-        finally:
-            if mouse_reset_was_enabled:
-                mouse_reset_task.enable()
+        # Target resolution is the only responsibility left here.  The public
+        # entry owns login-screen stabilization, OCR selection, retries, login,
+        # and ensure_main for both production and test callers.
+        switch = getattr(self, 'switch_to_account', None)
+        return switch(target) if callable(switch) else MultiAccountDailyTask.switch_to_account(self, target)
 
     def _login_back_to(self, first_account):
         """全部完成后登录回起始账号，并提醒用户本轮结束。"""
@@ -2170,22 +2342,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _select_and_login_specific(self, profile_name):
         """在登录界面选择并登录指定账号（不执行每日任务）。"""
-        MultiAccountDailyTask._guard_account_transition(self)
-        mouse_reset_task = self.executor.get_task_by_class(MouseResetTask)
-        mouse_reset_was_enabled = mouse_reset_task.enabled if mouse_reset_task else False
-        if mouse_reset_was_enabled:
-            mouse_reset_task.disable()
-        try:
-            self._select_account_with_retry(profile_name)
-            self.sleep(4)
-            self._click_login_for_target(profile_name)
-            self.logged_in = False
-            self.ensure_main(time_out=180)
-            self.log_info(f'已登录: {profile_name}')
-            return profile_name
-        finally:
-            if mouse_reset_was_enabled:
-                mouse_reset_task.enable()
+        switch = getattr(self, 'switch_to_account', None)
+        return switch(profile_name) if callable(switch) else MultiAccountDailyTask.switch_to_account(self, profile_name)
 
     def _select_and_login_sequence(self, profile_names, progress_callback=None):
         """连续登录一组账号，只模拟每个账号每日任务完成后的切换部分。

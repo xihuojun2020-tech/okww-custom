@@ -247,6 +247,7 @@ class MainWindow(FluentWindow):
             self.auto_backup_config()
         except Exception as e:
             logger.error('auto backup config failed', e)
+        self._start_backup_cleanup_timer()
 
         communicate.executor_paused.connect(self.executor_paused)
         communicate.tab.connect(self.navigate_tab)
@@ -461,16 +462,12 @@ class MainWindow(FluentWindow):
             self.app.quit()
 
     def auto_backup_config(self):
-        """配置自动备份：每天首次启动时把 configs/ 备份到指定目录。
-
-        备份位置：数据仓库（通用设置 → 数据仓库文件夹）→ ok仓库/配置备份；
-        或全局配置「Config Backup → Config Backup Directory」；
-        都未设置则默认 <项目>/configs_backup。按天归档：备份目录/YYYY-MM-DD/。
-        """
-        import shutil
+        """Create a verified whole-tree daily snapshot using the backup engine."""
         from datetime import datetime
+        from pathlib import Path
+        from src.config_backup import ConfigBackupService
+        from ok import og
 
-        # 读取备份目录：优先数据仓库（ok仓库/配置备份），其次全局配置，最后默认 configs_backup
         backup_dir = ''
         try:
             from src.storage import get_warehouse_sub
@@ -488,38 +485,71 @@ class MainWindow(FluentWindow):
         if not backup_dir.strip():
             backup_dir = os.path.join(os.getcwd(), 'configs_backup')
         backup_dir = backup_dir.strip()
-        today = datetime.now().strftime('%Y-%m-%d')
-
-        # 检查今天是否已备份（记录在备份根目录）
-        marker = os.path.join(backup_dir, '.last_backup_date')
+        config_src = Path(os.path.join(os.getcwd(), 'configs'))
+        if not config_src.is_dir():
+            return None
+        # Never place a backup tree inside configs: that would make the next
+        # full snapshot include its own previous snapshots.
         try:
-            if os.path.exists(marker):
-                with open(marker, 'r', encoding='utf-8') as f:
-                    if f.read().strip() == today:
-                        return  # 今天已备份
-        except Exception:
+            if Path(backup_dir).resolve() == config_src.resolve() or config_src.resolve() in Path(backup_dir).resolve().parents:
+                backup_dir = os.path.join(os.getcwd(), 'configs_backup')
+        except OSError:
             pass
-
-        # 执行备份：configs/ → 备份目录/今天/configs/
-        config_src = os.path.join(os.getcwd(), 'configs')
-        if not os.path.isdir(config_src):
-            return
-        day_dir = os.path.join(backup_dir, today)
-        dst = os.path.join(day_dir, 'configs')
+        service = ConfigBackupService(config_src, backup_dir, app_version=str(self.version))
+        if service.has_daily_snapshot_for_date(datetime.now().strftime('%Y-%m-%d')):
+            return None
         try:
-            os.makedirs(dst, exist_ok=True)
-            for name in os.listdir(config_src):
-                s = os.path.join(config_src, name)
-                d = os.path.join(dst, name)
-                if os.path.isdir(s):
-                    shutil.copytree(s, d, dirs_exist_ok=True)
-                else:
-                    shutil.copy2(s, d)
-            with open(marker, 'w', encoding='utf-8') as f:
-                f.write(today)
-            logger.info(f'config auto backup done: {dst} ({today})')
+            snapshot = service.create_daily_snapshot()
+            logger.info(f'config auto backup done: {snapshot.path}')
+            return snapshot
         except Exception as e:
             logger.error('config auto backup failed', e)
+            return None
+
+    def _start_backup_cleanup_timer(self):
+        """Run retention and failure-evidence cleanup off the GUI thread."""
+        self._backup_cleanup_timer = QTimer(self)
+        self._backup_cleanup_timer.setInterval(6 * 60 * 60 * 1000)
+        self._backup_cleanup_timer.timeout.connect(self._cleanup_backup_artifacts)
+        self._backup_cleanup_timer.start()
+        self._cleanup_backup_artifacts()
+
+    def _cleanup_backup_artifacts(self):
+        def cleanup():
+            try:
+                from src.config_backup import ConfigBackupService
+                from ok import og
+                backup_dir = ''
+                try:
+                    from src.storage import get_warehouse_sub
+                    backup_dir = get_warehouse_sub('配置备份') or ''
+                except Exception:
+                    pass
+                if not backup_dir:
+                    try:
+                        global_config = og.executor.global_config.get_config('Config Backup')
+                        backup_dir = (global_config or {}).get('Config Backup Directory', '') or ''
+                    except Exception:
+                        pass
+                backup_dir = backup_dir.strip() or os.path.join(os.getcwd(), 'configs_backup')
+                service = ConfigBackupService(
+                    os.path.join(os.getcwd(), 'configs'),
+                    backup_dir,
+                    app_version=str(self.version))
+                service.cleanup()
+            except Exception as exc:
+                logger.warning(f'config backup cleanup failed: {exc}')
+            # Failure evidence is optional while the evidence implementation
+            # lands; keep this import dynamic to avoid a startup dependency.
+            try:
+                import importlib
+                module = importlib.import_module('src.account_switch_evidence')
+                cleanup_fn = getattr(module, 'cleanup_account_switch_evidence', None)
+                if callable(cleanup_fn):
+                    cleanup_fn()
+            except (ImportError, OSError, RuntimeError) as exc:
+                logger.debug(f'failure evidence cleanup unavailable: {exc}')
+        threading.Thread(target=cleanup, name='config-backup-cleanup', daemon=True).start()
 
     def restart_app(self):
         """一键重启：退出当前进程（正常保存配置）→ 由独立"重启器"进程延迟 2 秒后重新启动 okww。
@@ -675,7 +705,7 @@ class MainWindow(FluentWindow):
             return True
         result = service.last_result or service.check()
         if result.ok:
-            return True
+            return self._review_missing_sequences_before_start(service)
         try:
             from src.gui.ConfigIntegrityDialog import ConfigIntegrityDialogController, ConfigIntegrityDialog
             if ConfigIntegrityDialog is None:
@@ -686,6 +716,82 @@ class MainWindow(FluentWindow):
             return controller.can_run
         except Exception as exc:
             logger.error(f'account integrity review unavailable: {exc}')
+            return False
+
+    def _review_missing_sequences_before_start(self, service):
+        """Offer one-time recovery when a trusted master has empty sequences."""
+        detector = getattr(service, 'detect_missing_sequences', None)
+        repair = getattr(service, 'repair_missing_sequences', None)
+        if not callable(detector) or not callable(repair):
+            return True
+        try:
+            detection = detector()
+        except Exception as exc:
+            logger.warning(f'legacy sequence detection unavailable: {exc}')
+            return True
+        if not isinstance(detection, dict) or not detection.get('eligible'):
+            return True
+        if not self._confirm_missing_sequences(detection):
+            # A rejection is a deliberate choice; the settings page remains
+            # available for a later repair attempt.
+            return True
+        try:
+            snapshot = self._create_sequence_repair_snapshot()
+            logger.info(f'legacy sequence repair transaction snapshot: {snapshot.path}')
+            repair(confirm=True)
+            checked = service.check(record_incident=False, resolve_incidents=False)
+            if not checked.ok:
+                logger.error('legacy sequence repair failed post-check')
+                return False
+            logger.info('legacy missing sequences repaired before startup')
+            return True
+        except Exception as exc:
+            logger.error(f'legacy sequence repair failed: {exc}')
+            return False
+
+    def _create_sequence_repair_snapshot(self):
+        """Create the required whole-config rollback point before migration."""
+        from pathlib import Path
+        from src.config_backup import ConfigBackupService
+
+        backup_dir = ''
+        try:
+            from src.storage import get_warehouse_sub
+            backup_dir = get_warehouse_sub('配置备份') or ''
+        except Exception:
+            pass
+        if not backup_dir:
+            try:
+                from ok import og
+                global_config = og.executor.global_config.get_config('Config Backup')
+                backup_dir = (global_config or {}).get('Config Backup Directory', '') or ''
+            except Exception:
+                pass
+        backup_dir = backup_dir.strip() or os.path.join(os.getcwd(), 'configs_backup')
+        config_dir = Path(os.path.join(os.getcwd(), 'configs'))
+        try:
+            resolved_backup = Path(backup_dir).resolve()
+            resolved_config = config_dir.resolve()
+            if resolved_backup == resolved_config or resolved_config in resolved_backup.parents:
+                backup_dir = os.path.join(os.getcwd(), 'configs_backup')
+        except OSError:
+            pass
+        return ConfigBackupService(
+            config_dir, backup_dir, app_version=str(self.version)).create_transaction_snapshot()
+
+    def _confirm_missing_sequences(self, detection):
+        """UI boundary kept separate so startup recovery can be unit tested."""
+        try:
+            from PySide6.QtWidgets import QMessageBox
+            answer = QMessageBox.question(
+                self, '恢复旧版遗漏序列',
+                f"发现 {detection.get('sequence_count', 0)} 个序列、"
+                f"{detection.get('account_count', 0)} 个账号（来源：{detection.get('source', '未知')}）。\n"
+                '确认恢复后再启动任务？',
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            return answer == QMessageBox.Yes
+        except Exception as exc:
+            logger.error(f'missing sequence confirmation unavailable: {exc}')
             return False
 
     def review_account_integrity(self):
