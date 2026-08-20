@@ -89,6 +89,12 @@ class MainWindow(FluentWindow):
         except Exception:
             self.integrity_service = None
         self._integrity_review_blocked = False
+        # The launcher handshake must complete before a modal integrity dialog
+        # is shown.  Keep the post-show callback state explicit so a repeated
+        # Qt show/activation event cannot start a task twice.
+        self._startup_post_show_scheduled = False
+        self._startup_post_show_complete = False
+        self._startup_args = {}
         self.shown = False
         from ok.notification import NotificationManager
         self.notification_manager = NotificationManager(
@@ -662,41 +668,78 @@ class MainWindow(FluentWindow):
         first_show = event.type() == QEvent.Show and not self.shown
         if first_show:
             self.shown = True
-            if not self._review_account_integrity_before_start():
-                self._integrity_review_blocked = True
-                super().showEvent(event)
-                QTimer.singleShot(0, self.bring_to_front)
-                return
-            args = parse_arguments_to_map()
-            pyappify.hide_pyappify()
-            if update_pyappify := self.config.get("update_pyappify"):
-                pyappify.upgrade(update_pyappify.get('to_version'), update_pyappify.get('sha256'),
-                                 [update_pyappify.get('zip_url')], self.exit_event)
-            logger.info(f"Window has fully displayed {args}")
-            communicate.start_success.emit()
-            if self.basic_global_config.get(KILL_LAUNCHER_AFTER_START):
-                logger.info(f'MainWindow showEvent Kill Launcher After Start')
-                pyappify.kill_pyappify()
-            startup_version_change = get_startup_version_change()
-            if self.version != self.main_window_config.get('last_version'):
-                self.main_window_config['last_version'] = self.version
-                if not self.config.get('auth') and not startup_version_change:
-                    logger.info('update success, show copyright')
-                    self.handler.post(lambda: communicate.copyright.emit(), delay=1)
-                elif startup_version_change:
-                    logger.info('skip copyright dialog because startup version change is shown on about tab')
-            if args.get('task') > 0:
-                task_index = args.get('task') - 1
-                logger.info(f'start with params {task_index} {args.get("exit")}')
-                self.app.start_controller.start(args.get('task') - 1, exit_after=args.get('exit'))
-            elif self.basic_global_config.get('Auto Start Game When App Starts'):
-                self.app.start_controller.start()
-            # Check for .okscript file in command line arguments
-            self._check_okscript_args()
+            # Complete the native show and launcher handshake first.  The
+            # integrity review is intentionally deferred until the event loop
+            # has returned, otherwise QMessageBox.question can leave the
+            # launcher waiting while this window is still hidden.
+            super().showEvent(event)
+            self._handle_first_show()
+            return
         super().showEvent(event)
-        if first_show:
-            QTimer.singleShot(0, self.bring_to_front)
-            QTimer.singleShot(250, self.show_startup_version_change_notice)
+
+    def _handle_first_show(self):
+        """Perform readiness work, then enqueue the integrity-gated startup."""
+        self._complete_window_readiness()
+        QTimer.singleShot(0, self.bring_to_front)
+        self._schedule_post_show_startup()
+
+    def _complete_window_readiness(self):
+        """Notify the launcher only after the main window has been shown."""
+        self._startup_args = parse_arguments_to_map()
+        pyappify.hide_pyappify()
+        if update_pyappify := self.config.get("update_pyappify"):
+            pyappify.upgrade(update_pyappify.get('to_version'), update_pyappify.get('sha256'),
+                             [update_pyappify.get('zip_url')], self.exit_event)
+        logger.info(f"Window has fully displayed {self._startup_args}")
+        communicate.start_success.emit()
+        if self.basic_global_config.get(KILL_LAUNCHER_AFTER_START):
+            logger.info('MainWindow showEvent Kill Launcher After Start')
+            pyappify.kill_pyappify()
+
+    def _schedule_post_show_startup(self):
+        """Run the blocking integrity review after launcher readiness."""
+        if self._startup_post_show_scheduled:
+            logger.debug('post-show startup review already scheduled')
+            return False
+        self._startup_post_show_scheduled = True
+        QTimer.singleShot(150, self._run_post_show_startup)
+        return True
+
+    def _run_post_show_startup(self):
+        """Review integrity, then allow command-line and automatic starts."""
+        if self._startup_post_show_complete:
+            logger.debug('post-show startup callback already completed')
+            return False
+        self._startup_post_show_complete = True
+
+        if not self._review_account_integrity_before_start():
+            self._integrity_review_blocked = True
+            # A failed review is a safe-mode outcome.  Keep the visible window
+            # available for the user to inspect and resolve the incident.
+            self.bring_to_front()
+            return False
+
+        self._integrity_review_blocked = False
+        startup_version_change = get_startup_version_change()
+        if self.version != self.main_window_config.get('last_version'):
+            self.main_window_config['last_version'] = self.version
+            if not self.config.get('auth') and not startup_version_change:
+                logger.info('update success, show copyright')
+                self.handler.post(lambda: communicate.copyright.emit(), delay=1)
+            elif startup_version_change:
+                logger.info('skip copyright dialog because startup version change is shown on about tab')
+        args = self._startup_args
+        if args.get('task', 0) > 0:
+            task_index = args.get('task') - 1
+            logger.info(f'start with params {task_index} {args.get("exit")}')
+            self.app.start_controller.start(task_index, exit_after=args.get('exit'))
+        elif self.basic_global_config.get('Auto Start Game When App Starts'):
+            self.app.start_controller.start()
+        # Check for .okscript file in command line arguments only after the
+        # integrity gate has completed.
+        self._check_okscript_args()
+        QTimer.singleShot(250, self.show_startup_version_change_notice)
+        return True
 
     def _review_account_integrity_before_start(self):
         """Show the blocking review UI before command-line/auto-start actions."""
