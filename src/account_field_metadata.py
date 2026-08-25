@@ -11,6 +11,7 @@ class AccountFieldMetadata:
     help_text: str
     editor_type: str
     options: tuple[Any, ...] = ()
+    option_labels: tuple[str, ...] = ()
     affects_identity: bool = False
     read_only: bool = False
 
@@ -30,9 +31,37 @@ _LABELS = {
 }
 _OPTIONS = {
     "Which to Farm": ("Tacet Suppression", "Forgery Challenge", "Simulation Challenge"),
+    "Material Selection": ("Resonator EXP", "Weapon EXP", "Shell Credit"),
     "Weekly Garden Check Day": ("无", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"),
 }
+_VALUE_LABELS = {
+    "Tacet Suppression": "无音区",
+    "Forgery Challenge": "凝素领域",
+    "Simulation Challenge": "模拟领域",
+    "Resonator EXP": "共鸣者经验",
+    "Weapon EXP": "武器经验",
+    "Shell Credit": "贝币",
+    "Nightmare Purification": "梦魇拔除",
+    "Tacet Discord Nest": "残像聚落",
+}
+_STORAGE_VALUES = {label: value for value, label in _VALUE_LABELS.items()}
 _IDENTITY = {"备用识别名称", "备用识别名称内容", "Account Name", "account_name", "账号名称"}
+
+
+def localize_account_value(value: Any) -> Any:
+    if isinstance(value, list):
+        return [localize_account_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: localize_account_value(item) for key, item in value.items()}
+    return _VALUE_LABELS.get(value, value)
+
+
+def restore_account_value(value: Any) -> Any:
+    if isinstance(value, list):
+        return [restore_account_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: restore_account_value(item) for key, item in value.items()}
+    return _STORAGE_VALUES.get(value, value)
 
 
 def account_field_metadata(tasks: Mapping[str, Any]) -> tuple[AccountFieldMetadata, ...]:
@@ -41,9 +70,12 @@ def account_field_metadata(tasks: Mapping[str, Any]) -> tuple[AccountFieldMetada
         label, help_text = _LABELS.get(key, (str(key), "账号专属任务设置；不会改变账号 UUID。"))
         identity = key in _IDENTITY
         editor = "bool" if isinstance(value, bool) else "choice" if key in _OPTIONS else "json" if isinstance(value, (list, dict)) else "text"
-        result.append(AccountFieldMetadata(str(key), label, help_text, editor,
-                                           tuple(_OPTIONS.get(key, ())), identity, identity))
+        options = tuple(_OPTIONS.get(key, ()))
+        result.append(AccountFieldMetadata(
+            str(key), label, help_text, editor, options,
+            tuple(str(localize_account_value(option)) for option in options), identity, identity))
     return tuple(result)
 
 
-__all__ = ["AccountFieldMetadata", "account_field_metadata"]
+__all__ = ["AccountFieldMetadata", "account_field_metadata", "localize_account_value",
+           "restore_account_value"]

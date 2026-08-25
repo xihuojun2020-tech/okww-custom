@@ -11,7 +11,8 @@ from qfluentwidgets import BodyLabel, FluentIcon
 from ok.gui.widget.CustomTab import CustomTab
 from src.account_config_editor import AccountConfigEditor, sanitize_error
 from src.account_repository import AccountRepository, get_default_repository
-from src.account_field_metadata import account_field_metadata
+from src.account_field_metadata import (account_field_metadata, localize_account_value,
+                                        restore_account_value)
 
 
 class AccountConfigTab(CustomTab):
@@ -113,9 +114,9 @@ class AccountConfigTab(CustomTab):
                 elif isinstance(original, float):
                     self.draft.tasks[key] = float(text)
                 elif isinstance(original, (list, dict)):
-                    self.draft.tasks[key] = json.loads(text)
+                    self.draft.tasks[key] = restore_account_value(json.loads(text))
                 else:
-                    self.draft.tasks[key] = text
+                    self.draft.tasks[key] = restore_account_value(text)
 
     def _render_form(self):
         while self.form_layout.rowCount():
@@ -130,14 +131,16 @@ class AccountConfigTab(CustomTab):
                 widget.setChecked(bool(value))
             elif field.editor_type == "choice":
                 widget = QComboBox(self.form_host)
-                for option in field.options:
-                    widget.addItem(str(option), option)
+                for option, option_label in zip(field.options, field.option_labels):
+                    widget.addItem(option_label, option)
                 index = widget.findData(value)
                 widget.setCurrentIndex(max(index, 0))
             else:
                 from PySide6.QtWidgets import QLineEdit
                 widget = QLineEdit(self.form_host)
-                widget.setText(json.dumps(value, ensure_ascii=False) if isinstance(value, (list, dict)) else str(value))
+                display_value = localize_account_value(value)
+                widget.setText(json.dumps(display_value, ensure_ascii=False)
+                               if isinstance(display_value, (list, dict)) else str(display_value))
             widget.setEnabled(not field.read_only)
             widget.setToolTip(field.help_text)
             self.form_widgets[field.key] = widget
