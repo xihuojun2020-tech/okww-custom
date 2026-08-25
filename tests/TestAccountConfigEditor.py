@@ -2,7 +2,8 @@ import copy
 import unittest
 from types import SimpleNamespace
 
-from src.account_config_editor import AccountConfigEditor, AccountLabelMismatch, LockedProfileField
+from src.account_config_editor import (AccountConfigEditor, AccountLabelMismatch,
+                                       LockedProfileField, sanitize_error)
 from src.account_repository import ProfileRevisionConflict
 
 
@@ -27,6 +28,12 @@ class FakeRepository:
 
 
 class TestAccountConfigEditor(unittest.TestCase):
+    def test_gui_error_text_is_redacted(self):
+        text = sanitize_error(RuntimeError(
+            "phone 13812345678 token abcdefghijklmnopqrstuvwxyz123456"))
+        self.assertNotIn("13812345678", text)
+        self.assertNotIn("abcdefghijklmnopqrstuvwxyz123456", text)
+
     def setUp(self):
         self.repository = FakeRepository()
         self.editor = AccountConfigEditor(self.repository)

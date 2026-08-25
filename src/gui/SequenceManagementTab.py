@@ -6,6 +6,7 @@ from qfluentwidgets import BodyLabel, FluentIcon
 
 from ok.gui.widget.CustomTab import CustomTab
 from src.account_repository import AccountRepository, get_default_repository
+from src.account_config_editor import sanitize_error
 from src.sequence_repository import SequenceRepository
 
 
@@ -60,12 +61,14 @@ class SequenceManagementTab(CustomTab):
         return True
 
     def refresh(self):
+        selected = self._selected().sequence_id if getattr(self, "_drafts", None) and self._selected() else None
         self._drafts = list(self.service.list())
         self.sequences.clear()
         for item in self._drafts:
             self.sequences.addItem(f"{item.sequence_id}（{'启用' if item.enabled else '停用'}）")
         if self._drafts:
-            self.sequences.setCurrentRow(0)
+            names = [item.sequence_id for item in self._drafts]
+            self.sequences.setCurrentRow(names.index(selected) if selected in names else 0)
         else:
             self.members.clear()
 
@@ -89,36 +92,35 @@ class SequenceManagementTab(CustomTab):
     def _create(self):
         name, ok = self._name("新建序列")
         if ok and name.strip():
-            self.service.create(name.strip())
-            self.refresh()
+            self._run_action("新建序列", lambda: self.service.create(name.strip()))
 
     def _copy(self):
         item = self._selected()
         if item:
             name, ok = self._name("复制序列")
             if ok and name.strip():
-                self.service.copy(item.sequence_id, name.strip())
-                self.refresh()
+                self._run_action("复制序列", lambda: self.service.copy(item.sequence_id, name.strip()))
 
     def _rename(self):
         item = self._selected()
         if item:
             name, ok = self._name("重命名序列")
             if ok and name.strip():
-                self.service.rename(item.sequence_id, name.strip())
-                self.refresh()
+                self._run_action("重命名序列", lambda: self.service.rename(item.sequence_id, name.strip()))
 
     def _toggle(self):
         item = self._selected()
         if item:
-            self.service.set_enabled(item.sequence_id, not item.enabled)
-            self.refresh()
+            self._run_action("更新序列状态",
+                             lambda: self.service.set_enabled(item.sequence_id, not item.enabled))
 
     def _delete(self):
         item = self._selected()
-        if item and QMessageBox.question(self.view, "删除序列", f"确认删除 {item.sequence_id}？") == QMessageBox.Yes:
-            self.service.delete(item.sequence_id)
-            self.refresh()
+        if not item:
+            return
+        answer = QMessageBox.question(self.view, "删除序列", f"确认删除 {item.sequence_id}？")
+        if answer == QMessageBox.StandardButton.Yes:
+            self._run_action("删除序列", lambda: self.service.delete(item.sequence_id))
 
     def _move(self, offset):
         item = self._selected()
@@ -128,9 +130,20 @@ class SequenceManagementTab(CustomTab):
             return
         members = list(item.profile_ids)
         members[row], members[target] = members[target], members[row]
-        self.service.publish(item.scope, {"profile_ids": members, "enabled": item.enabled})
-        self.refresh()
-        self.members.setCurrentRow(target)
+        if self._run_action("调整账号顺序", lambda: self.service.publish(
+                item.scope, {"profile_ids": members, "enabled": item.enabled})) is not None:
+            self.members.setCurrentRow(target)
+
+    def _run_action(self, label, callback):
+        try:
+            self.status.setText(f"{label}中…")
+            result = callback()
+            self.refresh()
+            self.status.setText(f"{label}成功")
+            return result
+        except Exception as exc:
+            self.status.setText(f"{label}失败：{sanitize_error(exc)}")
+            return None
 
 
 __all__ = ["SequenceManagementTab"]

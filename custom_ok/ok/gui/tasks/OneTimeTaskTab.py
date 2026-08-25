@@ -7,10 +7,12 @@ logger = Logger.get_logger(__name__)
 
 
 class OneTimeTaskTab(TaskTab):
-    def __init__(self, is_standalone=True, group_name=None):
+    def __init__(self, is_standalone=True, group_name=None, section=None, activity_category=None):
         super().__init__()
         self.is_standalone = is_standalone
         self.group_name = group_name
+        self.section = section
+        self.activity_category = activity_category
         self.card_widgets = []
         self.keep_info_when_done = True
         
@@ -83,7 +85,13 @@ class OneTimeTaskTab(TaskTab):
             if not getattr(task, 'visible', True):
                 continue
             task_group = getattr(task, 'group_name', None)
-            if self.is_standalone and not task_group:
+            if self.section:
+                from src.gui.navigation_sections import classify_task
+                if classify_task(task) == self.section and (
+                        self.activity_category is None or
+                        getattr(task, 'activity_category', task_group) == self.activity_category):
+                    self.tasks.append(task)
+            elif self.is_standalone and not task_group:
                 self.tasks.append(task)
             elif self.group_name and task_group == self.group_name:
                 self.tasks.append(task)

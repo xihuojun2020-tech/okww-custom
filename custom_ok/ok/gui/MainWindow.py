@@ -104,71 +104,29 @@ class MainWindow(FluentWindow):
         if config.get('show_update_copyright'):
             communicate.copyright.connect(self.show_update_copyright)
 
-        self.addSubInterface(self.start_tab, FluentIcon.PLAY, self.tr('监控'),
-                             position=NavigationItemPosition.SCROLL)
-
         self.grouped_task_tabs = []
         self.schedule_tab = None
         self.global_config_tabs = []
+        from src.gui.GeneralSettingsTab import GeneralSettingsTab
+        from src.gui.AccountSettingsTab import AccountSettingsTab
+        from src.gui.TaskHubTab import TaskHubTab
+        from src.gui.ActivityHubTab import ActivityHubTab
+        from src.gui.TestHubTab import TestHubTab
 
-        # Prepare custom tabs and separate them by add_after_default_tabs
-        before_custom_tabs = []
-        after_custom_tabs = []
-        if custom_tabs := config.get('custom_tabs'):
-            for tab in custom_tabs:
-                tab_obj = init_class_by_name(tab[0], tab[1])
-                tab_obj.executor = executor
-                if tab_obj.add_after_default_tabs:
-                    after_custom_tabs.append(tab_obj)
-                else:
-                    before_custom_tabs.append(tab_obj)
-
-        # Add custom tabs that should appear before built-in task tabs
-        for tab_obj in before_custom_tabs:
-            self.addSubInterface(tab_obj, tab_obj.icon, self.app.tr(tab_obj.name), position=tab_obj.position)
-
-        from ok import og
-        self.imported_tabs = {}  # {file_name: tab_object}
-        
-        visible_onetime_tasks = [task for task in self.executor.onetime_tasks if getattr(task, 'visible', True)]
-        visible_trigger_tasks = [task for task in self.executor.trigger_tasks if getattr(task, 'visible', True)]
-
-        if len(visible_trigger_tasks) > 0:
-            from ok.gui.tasks.TriggerTaskTab import TriggerTaskTab
-            self.trigger_tab = TriggerTaskTab()
-            self.addSubInterface(self.trigger_tab, FluentIcon.STOP_WATCH, self.tr('Triggers'),
+        self.general_settings_tab = GeneralSettingsTab(config, exit_event, executor, global_config)
+        self.account_settings_tab = AccountSettingsTab()
+        self.task_hub_tab = TaskHubTab()
+        self.activity_hub_tab = ActivityHubTab()
+        self.test_hub_tab = TestHubTab()
+        self.start_tab = self.general_settings_tab.start_panel
+        self.trigger_tab = self.general_settings_tab.trigger_panel
+        self.onetime_tab = self.task_hub_tab.task_tab
+        self.imported_tabs = {}
+        for tab_obj in (self.general_settings_tab, self.account_settings_tab, self.task_hub_tab,
+                        self.activity_hub_tab, self.test_hub_tab):
+            tab_obj.executor = executor
+            self.addSubInterface(tab_obj, tab_obj.icon, self.app.tr(tab_obj.name),
                                  position=NavigationItemPosition.SCROLL)
-
-        if visible_onetime_tasks:
-            from ok.gui.tasks.OneTimeTaskTab import OneTimeTaskTab
-            from collections import defaultdict
-
-            groups = defaultdict(list)
-            standalone_tasks = []
-            for task in visible_onetime_tasks:
-                if task.group_name:
-                    if task.group_name not in [imp['script_name'] for imp in og.task_manager.imported_scripts.values()]:
-                        groups[task.group_name].append(task)
-                else:
-                    standalone_tasks.append(task)
-
-            if standalone_tasks:
-                self.onetime_tab = OneTimeTaskTab(is_standalone=True)
-                logger.debug(f"add default onetime_tab len {len(standalone_tasks)}")
-                self.addSubInterface(self.onetime_tab, FluentIcon.BOOK_SHELF, self.tr('Tasks'),
-                                     position=NavigationItemPosition.SCROLL)
-
-            for group_name, tasks_in_group in groups.items():
-                group_tab = OneTimeTaskTab(is_standalone=False, group_name=group_name)
-                group_icon = tasks_in_group[0].group_icon
-                logger.debug(f"add grouped_task_tabs {group_name} len {len(tasks_in_group)}")
-                self.addSubInterface(group_tab, group_icon, self.app.tr(group_name),
-                                     position=NavigationItemPosition.SCROLL)
-                self.grouped_task_tabs.append(group_tab)
-
-        # Add custom tabs that should appear after built-in task tabs
-        for tab_obj in after_custom_tabs:
-            self.addSubInterface(tab_obj, tab_obj.icon, self.app.tr(tab_obj.name), position=tab_obj.position)
         if debug:
             from ok.gui.debug.DebugTab import DebugTab
             debug_tab = DebugTab(config, exit_event)
@@ -192,29 +150,7 @@ class MainWindow(FluentWindow):
         #     self.addSubInterface(self.template_tab, FluentIcon.PHOTO, self.tr('Templates'),
         #                          position=NavigationItemPosition.SCROLL)
         
-        # Initial load of imported tabs
-        self.update_imported_tabs()
-        communicate.task_list_updated.connect(self.update_imported_tabs)
-
-        # 添加计划任务Tab
-        any_support_schedule = any(task.support_schedule_task for task in visible_onetime_tasks)
-        if any_support_schedule:
-            from ok.gui.tasks.ScheduleTaskTab import ScheduleTaskTab
-            self.schedule_tab = ScheduleTaskTab(config=self.config)
-            self.addSubInterface(self.schedule_tab, FluentIcon.CALENDAR, self.tr('Schedule'),
-                                 position=NavigationItemPosition.SCROLL)
-
         notification_tab = None
-        for name, config_obj, option in global_config.get_all_visible_configs():
-            if getattr(option, 'show_at_tab', False):
-                from ok.gui.settings.GlobalConfigTab import GlobalConfigTab
-                config_tab = GlobalConfigTab(config_obj, option)
-                self.global_config_tabs.append(config_tab)
-                if name == NOTIFICATION_OPTION_NAME:
-                    notification_tab = config_tab
-                else:
-                    self.addSubInterface(config_tab, option.icon or FluentIcon.INFO, self.app.tr(option.name),
-                                         position=NavigationItemPosition.SCROLL)
 
         # 一键重启（在通知/设置上方，方便修改配置后快速重启生效）
         try:
@@ -229,14 +165,9 @@ class MainWindow(FluentWindow):
         except Exception as e:
             logger.error('add restart nav item failed', e)
 
-        if notification_tab is not None:
-            self.notification_tab = notification_tab
-            self.addSubInterface(notification_tab, FluentIcon.RINGER, self.app.tr(NOTIFICATION_OPTION_NAME),
-                                 position=NavigationItemPosition.BOTTOM)
-
         from ok.gui.settings.SettingTab import SettingTab
         self.setting_tab = SettingTab()
-        self.addSubInterface(self.setting_tab, FluentIcon.SETTING, self.tr('Settings'),
+        self.addSubInterface(self.setting_tab, FluentIcon.SETTING, self.tr('程序设置'),
                              position=NavigationItemPosition.BOTTOM)
 
         from ok.gui.about.AboutTab import AboutTab
@@ -269,18 +200,6 @@ class MainWindow(FluentWindow):
         self.tray.setToolTip(title)
 
         self.navigationInterface.displayModeChanged.connect(self._save_navigation_state)
-
-        if self.integrity_service is not None:
-            try:
-                integrity_icon = getattr(FluentIcon, 'SHIELD', FluentIcon.INFO)
-                self.navigationInterface.addItem(
-                    routeKey='account_integrity', icon=integrity_icon,
-                    text=self.tr('账号完整性检查'), onClick=self.review_account_integrity,
-                    position=NavigationItemPosition.BOTTOM,
-                    tooltip=self.tr('账号完整性检查'),
-                )
-            except Exception as exc:
-                logger.error(f'add integrity review nav item failed: {exc}')
 
         communicate.capture_error.connect(self.capture_error)
         communicate.notification.connect(self.show_notification)

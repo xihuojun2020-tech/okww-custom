@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from src.account_repository import ProfileRevisionConflict
 from src.sequence_repository import SequenceDeletionBlocked, SequenceReferenceError, SequenceRepository
+from src.gui.SequenceManagementTab import SequenceManagementTab
 
 
 class FakeRepository:
@@ -74,6 +75,15 @@ class TestSequenceRepository(unittest.TestCase):
             snapshot.profiles[0]["tasks"]["x"] = 2
         with self.assertRaises(SequenceDeletionBlocked):
             self.service.ensure_profile_deletable("id-a1")
+
+    def test_ui_action_surfaces_sequence_delete_error(self):
+        status = SimpleNamespace(value="", setText=lambda value: setattr(status, "value", value))
+        tab = SimpleNamespace(status=status, refresh=lambda: None)
+        result = SequenceManagementTab._run_action(
+            tab, "删除序列", lambda: (_ for _ in ()).throw(RuntimeError("修订冲突")))
+        self.assertIsNone(result)
+        self.assertIn("删除序列失败", status.value)
+        self.assertIn("修订冲突", status.value)
 
 
 if __name__ == "__main__":

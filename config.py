@@ -14,7 +14,7 @@ from src.task.process_feature import process_feature
 # okww 版本号（固定宽度 X.YY.ZZ）：
 #   小改动 → 第三位 +1；中等改动 → 第二位 +1 且第三位归 00；
 #   大改动 → 第一位 +1 且后两位归 00（仅用户明确提出时执行）
-version = "1.13.00"
+version = "1.14.00"
 
 
 def _find_most_recently_run_pc_exe():
@@ -186,13 +186,8 @@ config = {
     'blur_area': blur_area,
     'gui_icon': 'icons/icon.png',
     'global_configs': [key_config_option, char_config_option, monthly_card_config_option, config_backup_option, data_warehouse_option],
-    'custom_tabs': [
-        # 角色代码 tab 已隐藏（用户要求精简界面）
-        # ["src.gui.CharacterCodeTab", "CharacterCodeTab"],
-        ["src.gui.PermanentEventTab", "PermanentEventTab"],
-        ["src.gui.AccountConfigTab", "AccountConfigTab"],
-        ["src.gui.SequenceManagementTab", "SequenceManagementTab"],
-    ],
+    # 项目功能统一由 MainWindow 的五个整合页面承载，不再创建独立左侧入口。
+    'custom_tabs': [],
     'ocr': {
         'lib': 'onnxocr',
         'auto_simplify': True,

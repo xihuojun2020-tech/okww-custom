@@ -27,10 +27,11 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
 
     直接调用 MultiAccountDailyTask 的切换方法，测试路径与正式流程一致。
     """
+    navigation_section = "tests"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.name = "🔄 账号切换测试"
+        self.name = "🔄 多账号每日任务：账号切换链路测试"
         self.description = (
             "自动检测界面（主界面自动退登），复用多账号任务的切换流程测试账号切换。"
             "不执行每日任务，仅验证 登录识别→下拉框→选号→登录 全链路。"

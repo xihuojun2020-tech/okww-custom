@@ -20,6 +20,8 @@ class EventTask(WWOneTimeTask, BaseWWTask):
     - 战斗倒计时结束后进入奖励选择页（带 👍 推荐的卡牌）
     - 之后进入交易所商店（带 👍 推荐和锁定机制的购买）
     """
+    navigation_section = "activities"
+    activity_category = "常驻活动"
 
     # ==================== 屏幕坐标（归一化 0~1，按 16:9 设计） ====================
     # 4 张奖励卡 / 商品 横向中心（按 1000×562 实拍截图像素位置回算，1920×1080 下同比例）
@@ -93,8 +95,7 @@ class EventTask(WWOneTimeTask, BaseWWTask):
             "带推荐符号（👍）的奖励；进入交易所后锁定并购买带推荐符号的商品。"
             "由游戏自带自动战斗清理敌人。"
         )
-        # 让 okww 自动建一个独立的"限时活动" tab
-        self.group_name = "限时活动"
+        self.group_name = "常驻活动"
         self.group_icon = Icon.GAME
         default_config = {
             # 绕圈

@@ -59,6 +59,14 @@ class SequenceRecord:
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class AccountDeletionPreview:
+    profile_id: str
+    account_label: str
+    sequence_ids: tuple[str, ...]
+    runtime_present: bool
+
+
 @dataclass
 class ReadyResult:
     """Structural readiness with external edits reported at account scope."""
@@ -245,12 +253,17 @@ class AccountRepository:
         return ProfileRecord(profile_id, self._revision(raw), profile, copy.deepcopy(tasks))
 
     def _publish_master(self, raw: Mapping[str, Any]) -> None:
-        from .account_config_bundle import AccountConfigBundleService
+        from . import account_config_bundle as bundle_module
 
-        service = AccountConfigBundleService(self.root, integrity_service=self.integrity_service)
+        service = bundle_module.AccountConfigBundleService(
+            self.root, integrity_service=self.integrity_service)
         bundle = service.export_bundle()
         bundle["master_config"] = copy.deepcopy(dict(raw))
-        bundle["manifest"] = {"hashes_unavailable": True, "partitions": {}}
+        bundle["manifest"]["config_id"] = raw.get("config_id")
+        bundle["manifest"]["partitions"] = {
+            name: bundle_module._digest(bundle[name])
+            for name in bundle_module._PARTITION_NAMES
+        }
         service.import_bundle(bundle, confirm=True, trust_external=True)
 
     def publish_profile(self, scope: ProfileEditScope, payload: Mapping[str, Any], **_kwargs) -> ProfileRecord:
@@ -338,6 +351,66 @@ class AccountRepository:
             del candidate["sequences"][name]
             candidate.get("extensions", {}).get("pc_sequence_settings", {}).pop(name, None)
             self._publish_master(candidate)
+
+    def preview_profile_deletion(self, profile_id: str) -> AccountDeletionPreview:
+        raw, accounts, sequences = self._load_index()
+        profile_id = _profile_id(profile_id)
+        if profile_id not in accounts:
+            raise AccountRepositoryError(f"账号不存在：{profile_id}")
+        account = accounts[profile_id]
+        label = str(account.get("display_name") or account.get("short_name") or "未命名账号")
+        references = tuple(name for name, members in sequences.items() if profile_id in members)
+        return AccountDeletionPreview(profile_id, label, references,
+                                      self._account_state_path(profile_id).is_file())
+
+    def delete_profile_cascade(self, profile_id: str, *, expected_revision: str) -> AccountDeletionPreview:
+        """Back up, remove sequence references, and delete one account atomically."""
+        with self._lock:
+            raw, accounts, sequences = self._load_index()
+            profile_id = _profile_id(profile_id)
+            if self._revision(raw) != str(expected_revision):
+                raise ProfileRevisionConflict("账号配置已被其他操作修改")
+            if profile_id not in accounts:
+                raise AccountRepositoryError(f"账号不存在：{profile_id}")
+            if len(accounts) <= 1:
+                raise AccountRepositoryError("至少必须保留一个账号")
+            preview = self.preview_profile_deletion(profile_id)
+            record = self.load_profile(profile_id)
+            self.backup_profile(profile_id, {
+                "profile_id": profile_id, "revision": record.revision,
+                "account": dict(record.account), "tasks": dict(record.tasks),
+                "referenced_sequences": list(preview.sequence_ids),
+            })
+            state_path = self._account_state_path(profile_id)
+            task_path = self.paths.multi_account_task or self.paths.config_dir / "MultiAccountDailyTask.json"
+            protected_paths = tuple(dict.fromkeys((self.paths.master, self.paths.working,
+                                                   self.paths.runtime, task_path, state_path)))
+            before = {path: path.read_bytes() if path.exists() else None for path in protected_paths}
+            candidate = copy.deepcopy(raw)
+            source_key = "accounts" if "accounts" in candidate else "profiles"
+            del candidate[source_key][profile_id]
+            candidate["sequences"] = {
+                name: [member for member in members if member != profile_id]
+                for name, members in sequences.items()
+            }
+            try:
+                self._publish_master(candidate)
+                state_path.unlink(missing_ok=True)
+                hook = getattr(self, "deletion_postcheck_hook", None)
+                if callable(hook):
+                    hook()
+                return preview
+            except Exception:
+                from . import config_integrity as ci
+                for path, payload in before.items():
+                    if payload is None:
+                        path.unlink(missing_ok=True)
+                    elif path == self.paths.master:
+                        from .account_config_bundle import _atomic_replace_unchecked
+                        _atomic_replace_unchecked(path, payload)
+                    else:
+                        ci._atomic_replace_bytes(path, payload)
+                raise
 
     def _account_state_path(self, profile_id: str) -> Path:
         return self.account_runtime_dir / f"{_profile_id(profile_id)}.json"
@@ -520,6 +593,6 @@ def get_default_repository() -> AccountRepository | None:
     return _DEFAULT_REPOSITORY
 
 
-__all__ = ["AccountRepository", "AccountRepositoryError", "ProfileRevisionConflict",
+__all__ = ["AccountDeletionPreview", "AccountRepository", "AccountRepositoryError", "ProfileRevisionConflict",
            "ProfileEditScope", "ProfileRecord", "SequenceRecord", "ReadyResult",
            "set_default_repository", "get_default_repository"]

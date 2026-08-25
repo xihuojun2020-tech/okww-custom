@@ -13,11 +13,13 @@ from ok.util.GlobalConfig import APP_LAUNCHER_OPTION_NAME
 class SettingTab(Tab):
     """ Setting interface """
 
-    def __init__(self):
+    def __init__(self, account_maintenance_only=False):
         super().__init__()
+        self.account_maintenance_only = account_maintenance_only
         self.basic_group = SettingCardGroup(
             self.tr('App Config'))
-        self.vBoxLayout.addWidget(self.basic_group)
+        if not account_maintenance_only:
+            self.vBoxLayout.addWidget(self.basic_group)
 
         self.languageCard = ComboBoxSettingCard(
             cfg.language,
@@ -41,7 +43,8 @@ class SettingTab(Tab):
         # 数据设置：账号配置导出/导入
         self.data_group = SettingCardGroup(
             self.tr('Data Config'))
-        self.vBoxLayout.addWidget(self.data_group)
+        if account_maintenance_only:
+            self.vBoxLayout.addWidget(self.data_group)
 
         self.export_account_card = PushSettingCard(
             self.tr('导出账号配置'),
@@ -75,6 +78,12 @@ class SettingTab(Tab):
             self.tr('从旧版多账号任务文件恢复未锚定的序列'),
             parent=self.data_group
         )
+        self.integrity_card = PushSettingCard(
+            self.tr('检查账号完整性'), FIF.INFO,
+            self.tr('账号完整性'),
+            self.tr('检查总配置、工作投影和接受指纹，并打开安全审查'),
+            parent=self.data_group
+        )
         # 配置自动备份目录（每天首次启动自动备份所有配置）
         self.backup_config_card = GlobalConfigCard(
             og.executor.global_config.get_config('Config Backup'),
@@ -91,13 +100,16 @@ class SettingTab(Tab):
         self.__connectSignalToSlot()
 
     def __initLayout(self):
-        self.basic_group.addSettingCard(self.themeCard)
-        self.basic_group.addSettingCard(self.languageCard)
-        self.data_group.addSettingCard(self.export_account_card)
-        self.data_group.addSettingCard(self.import_account_card)
-        self.data_group.addSettingCard(self.verify_backup_card)
-        self.data_group.addSettingCard(self.restore_backup_card)
-        self.data_group.addSettingCard(self.repair_sequences_card)
+        if self.account_maintenance_only:
+            self.data_group.addSettingCard(self.export_account_card)
+            self.data_group.addSettingCard(self.import_account_card)
+            self.data_group.addSettingCard(self.verify_backup_card)
+            self.data_group.addSettingCard(self.restore_backup_card)
+            self.data_group.addSettingCard(self.repair_sequences_card)
+            self.data_group.addSettingCard(self.integrity_card)
+        else:
+            self.basic_group.addSettingCard(self.themeCard)
+            self.basic_group.addSettingCard(self.languageCard)
 
     def _get_daily_task(self):
         """获取 DailyTask 实例（其方法负责读写 daily_profiles.json）。"""
@@ -152,6 +164,14 @@ class SettingTab(Tab):
         else:
             InfoBar.warning(self.tr('序列修复服务不可用'), self.tr('请稍后再试'), duration=2000, parent=self)
 
+    def review_account_integrity(self):
+        window = getattr(og, 'main_window', None)
+        callback = getattr(window, 'review_account_integrity', None)
+        if callable(callback):
+            callback()
+        else:
+            InfoBar.warning(self.tr('完整性服务不可用'), self.tr('请稍后再试'), duration=2000, parent=self)
+
     def goto_config(self, key):
         to_scroll = None
         for config in self.config_groups:
@@ -164,6 +184,8 @@ class SettingTab(Tab):
         #     self.scroll()
 
     def add_global_config(self):
+        if self.account_maintenance_only:
+            return
         global_configs = og.executor.global_config.get_all_visible_configs()
         if global_configs:
             global_configs.sort(key=lambda item: item[0] != APP_LAUNCHER_OPTION_NAME)
@@ -195,3 +217,4 @@ class SettingTab(Tab):
         self.verify_backup_card.clicked.connect(self.verify_backup)
         self.restore_backup_card.clicked.connect(self.restore_backup)
         self.repair_sequences_card.clicked.connect(self.repair_legacy_sequences)
+        self.integrity_card.clicked.connect(self.review_account_integrity)

@@ -23,18 +23,25 @@ class AccountLabelMismatch(AccountConfigEditorError):
 
 
 _PHONE = re.compile(r"(?<!\d)(1[3-9]\d{9})(?!\d)")
+_TOKEN = re.compile(r"[A-Za-z0-9]{32,}")
 _LOCKED_ACCOUNT = {"profile_id", "account_aliases", "account_name", "Account Name", "账号名称"}
 _LOCKED_TASK = {"备用识别名称", "备用识别名称内容", "Account Name", "account_name", "账号名称"}
 
 
 def _redact(value: Any) -> Any:
     if isinstance(value, str):
-        return _PHONE.sub(lambda match: match.group(1)[:3] + "****" + match.group(1)[-4:], value)
+        value = _PHONE.sub(lambda match: match.group(1)[:3] + "****" + match.group(1)[-4:], value)
+        return _TOKEN.sub(lambda match: match.group(0)[:8] + "****", value)
     if isinstance(value, Mapping):
         return {key: _redact(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return type(value)(_redact(item) for item in value)
     return value
+
+
+def sanitize_error(error: BaseException) -> str:
+    """Return GUI-safe exception text without phone numbers or long credentials."""
+    return _redact(str(error))
 
 
 @dataclass
@@ -127,6 +134,18 @@ class AccountConfigEditor:
             "account": copy.deepcopy(draft.account), "tasks": copy.deepcopy(draft.tasks),
         }, source="账号配置页面")
 
+    def delete_profile(self, scope: ProfileEditScope, *, confirmed_account_label: str) -> Any:
+        current = self.repository.load_profile(scope.profile_id)
+        if str(current.revision) != str(scope.base_revision):
+            raise ProfileRevisionConflict("账号配置已被其他操作修改")
+        label = str(current.account.get("display_name") or current.account.get("short_name") or "未命名账号")
+        if confirmed_account_label != label:
+            raise AccountLabelMismatch("确认的账号短名不匹配")
+        return self.repository.delete_profile_cascade(
+            scope.profile_id, expected_revision=str(scope.base_revision)
+        )
+
 
 __all__ = ["AccountConfigEditor", "AccountConfigEditorError", "AccountLabelMismatch",
-           "DiffEntry", "LockedProfileField", "ProfileDiff", "ProfileDraft", "ProfileEditScope"]
+           "DiffEntry", "LockedProfileField", "ProfileDiff", "ProfileDraft", "ProfileEditScope",
+           "sanitize_error"]
