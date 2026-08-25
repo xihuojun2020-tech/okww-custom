@@ -24,6 +24,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional
 
+from src.account_identity import (
+    identity_candidates as _shared_identity_candidates,
+    profile_identity_values as _shared_profile_identity_values,
+    split_identity_values as _shared_split_identity_values,
+)
+
 
 SCHEMA_VERSION = 1
 MASTER_FILENAME = "account_master_config.json"
@@ -182,37 +188,15 @@ def _identity_candidates(value: Any) -> set[str]:
     numbers also produce the canonical masked form, and arbitrary aliases
     (including U-prefixed login names) remain exact normalized strings.
     """
-    if value is None:
-        return set()
-    text = " ".join(str(value).split()).strip()
-    if not text:
-        return set()
-    candidates = {_alias_key(text)}
-    for match in _SHORT_PROFILE_RE.finditer(text):
-        candidates.add(match.group(1).casefold())
-    for phone in _PHONE_RE.findall(text):
-        candidates.add(_alias_key(phone[:3] + "****" + phone[-4:]))
-    return {candidate for candidate in candidates if candidate}
+    return set(_shared_identity_candidates(value))
 
 
 def _split_identity_values(value: Any) -> list[str]:
-    if isinstance(value, (list, tuple, set)):
-        values = list(value)
-    elif value:
-        values = re.split(r"[,，;；\r\n]+", str(value))
-    else:
-        values = []
-    return [str(item).strip() for item in values if str(item).strip()]
+    return _shared_split_identity_values(value)
 
 
 def _profile_identity_values(profile_id: str, profile: Mapping[str, Any]) -> list[str]:
-    values: list[str] = [str(profile.get("display_name", "")), str(profile_id)]
-    values.extend(_split_identity_values(profile.get("account_aliases")))
-    task_config = profile.get("task_config")
-    if isinstance(task_config, Mapping):
-        for key in ("备用识别名称内容", "Account Name", "account_name", "账号名称"):
-            values.extend(_split_identity_values(task_config.get(key)))
-    return values
+    return list(_shared_profile_identity_values(profile_id, profile))
 
 
 def _master_identity_index(master: Mapping[str, Any]) -> dict[str, set[str]]:

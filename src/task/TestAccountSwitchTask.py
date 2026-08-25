@@ -129,7 +129,10 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
                 short_names = self._parse_continuous_order(
                     self.config.get('连续账号顺序') or DEFAULT_CONTINUOUS_ORDER
                 )
-                sequence_targets = mat.resolve_profile_short_names(short_names)
+                snapshot = mat.create_run_snapshot(
+                    short_names, sequence_id='账号切换测试', short_names=True
+                )
+                sequence_targets = mat._snapshot_profile_names(snapshot)
                 self.log_info(
                     f'账号切换测试开始（连续顺序: {" → ".join(short_names)}，'
                     f'完整序列轮数: {rounds}）',

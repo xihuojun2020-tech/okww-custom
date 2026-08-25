@@ -16,7 +16,7 @@
 - Preserve all pre-existing dirty-worktree changes and adapt to them.
 - Never log or display complete phone numbers, passwords, tokens, or alternate login identities.
 - `TestAccountSwitchTask` must reuse the production switching path.
-- Code changes require version `1.09.00`, synchronized product update text, changelog, handoff log, and references.
+- Code changes require version `1.13.00` because pre-existing local `v1.09.00` through `v1.12.00` tags are already occupied, synchronized product update text, changelog, handoff log, and references.
 - Use `E:\AI work\ok-wuthering-waves-master\.venv\Scripts\python.exe` for tests when present.
 
 ---
@@ -134,12 +134,11 @@
 **Interfaces:**
 - Documents all new public APIs, decisions, test evidence, remaining risks, and source provenance.
 
-- [ ] Update `config.py` to `1.09.00` and add matching user-facing update text.
+- [ ] Update `config.py` to `1.13.00` and add matching user-facing update text.
 - [ ] Add a changelog entry covering shared identities, safe editor, standalone sequences, immutable snapshots, and migration assessment.
 - [ ] Write the handoff log with changed files, data authority, recovery notes, test commands/results, and known limitations.
 - [ ] Write references citing the archived local implementation files, current repository modules, Python/PySide6/Qt documentation, and security principles used; distinguish local design sources from external references.
 - [ ] Run `py_compile` on changed Python files.
 - [ ] Run all focused account/config/sequence/switch/GUI tests, then the repository test suite.
 - [ ] Review `git diff --check`, status, version text, and ensure no Android code entered the change.
-- [ ] Commit only task-owned files, create annotated `v1.09.00`, and push branch/tag per repository policy if all verification passes.
-
+- [ ] Commit only task-owned files, create annotated `v1.13.00`, and push branch/tag per repository policy if all verification passes.

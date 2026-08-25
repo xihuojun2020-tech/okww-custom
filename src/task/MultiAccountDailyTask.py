@@ -31,6 +31,15 @@ from src.task.BaseWWTask import LOGIN_TEXTS
 from src.task.MouseResetTask import MouseResetTask
 from src.config_integrity import ConfigIntegrityBlocked, ConfigWriteBlocked, get_default_service
 from src.account_switch_evidence import AccountSwitchEvidenceSession
+from src.account_identity import (
+    AccountIdentityError,
+    masked_phone as _masked_phone,
+    resolve_profile_identity,
+    resolve_profile_short_names as _resolve_profile_short_names,
+    short_profile_name as _short_profile_name,
+)
+from src.account_repository import AccountRepository, get_default_repository
+from src.sequence_repository import SequenceRepository
 
 logger = Logger.get_logger(__name__)
 
@@ -63,15 +72,12 @@ def normalize_account_name(account):
 
 def masked_phone(phone):
     """手机号掩码形式：前3 + **** + 后4。"""
-    return phone[:3] + '****' + phone[-4:]
+    return _masked_phone(phone)
 
 
 def profile_short_name(profile_name):
     """从完整方案名提取精确短名（如 A1/A10）；无法提取时返回 None。"""
-    if not profile_name:
-        return None
-    match = profile_short_name_pattern.search(str(profile_name))
-    return match.group(1).upper() if match else None
+    return _short_profile_name(profile_name)
 
 
 def _is_login_identity(task, name):
@@ -411,32 +417,30 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
         短名必须唯一且全部存在。这里不使用前缀/包含匹配，防止 A1 误选 A10。
         """
-        requested = []
-        for value in short_names or []:
-            short = str(value).strip().upper()
-            if short:
-                requested.append(short)
-        if not requested:
-            raise ValueError('连续账号顺序不能为空')
+        try:
+            profiles = self._load_profiles() if hasattr(self, '_load_profiles') else self.get_profile_names()
+            return _resolve_profile_short_names(short_names, profiles)
+        except AccountIdentityError as exc:
+            raise ValueError(str(exc)) from exc
 
-        by_short_name = {}
-        duplicate_short_names = set()
-        for profile_name in self.get_profile_names():
-            short = profile_short_name(profile_name)
-            if not short:
-                continue
-            if short in by_short_name:
-                duplicate_short_names.add(short)
-            else:
-                by_short_name[short] = profile_name
+    def create_run_snapshot(self, profile_names, *, sequence_id=None, short_names=False):
+        """Resolve once and freeze the exact profiles used by this run."""
+        repository = get_default_repository() or AccountRepository(
+            paths=self.integrity_service.paths if self.integrity_service is not None else None,
+            integrity_service=self.integrity_service,
+        )
+        sequences = SequenceRepository(repository)
+        members = sequences.resolve_short_names(profile_names) if short_names else list(profile_names or [])
+        snapshot = sequences.snapshot_for_profile_ids(
+            members, sequence_id=sequence_id or self.get_current_sequence()
+        )
+        self._active_run_snapshot = snapshot
+        return snapshot
 
-        duplicates = [short for short in requested if short in duplicate_short_names]
-        if duplicates:
-            raise ValueError(f'账号短名存在重复方案: {", ".join(dict.fromkeys(duplicates))}')
-        missing = [short for short in requested if short not in by_short_name]
-        if missing:
-            raise ValueError(f'找不到账号方案: {", ".join(missing)}')
-        return [by_short_name[short] for short in requested]
+    @staticmethod
+    def _snapshot_profile_names(snapshot):
+        return [str(profile['account'].get('display_name') or profile['profile_id'])
+                for profile in snapshot.profiles]
 
     def _profile_identities(self, profile_name):
         """返回方案的识别标识列表：手机号掩码 + 账号别名（归一化）。"""
@@ -472,6 +476,13 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         """根据登录界面显示的账号文本（掩码或 U 开头）匹配方案名，未匹配返回 None。"""
         if not login_text:
             return None
+        profiles = self._load_profiles()
+        try:
+            exact = resolve_profile_identity(login_text, profiles)
+        except AccountIdentityError as exc:
+            raise ValueError(str(exc)) from exc
+        if exact is not None:
+            return exact
         wanted = normalize_account_name(str(login_text).strip())
         matches = [
             name for name in self.get_profile_names()
@@ -575,6 +586,10 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
     def _run_inner(self):
         # 本轮账号序列（配置）
         sequence = self.get_sequence_accounts()
+        snapshot_maker = getattr(self, 'create_run_snapshot', None)
+        if sequence and callable(snapshot_maker):
+            snapshot = snapshot_maker(sequence, sequence_id=self.get_current_sequence())
+            sequence = self._snapshot_profile_names(snapshot)
         if not sequence:
             self.log_info('未配置「本轮账号序列」，仅跑当前账号后结束', notify=True)
 
