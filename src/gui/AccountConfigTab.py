@@ -15,6 +15,13 @@ from src.account_field_metadata import (account_field_metadata, localize_account
                                         restore_account_value)
 
 
+class ClickOnlyComboBox(QComboBox):
+    """Keep wheel movement for the page; selection changes only from the menu."""
+
+    def wheelEvent(self, event):
+        event.ignore()
+
+
 class AccountConfigTab(CustomTab):
     """Edit only non-identity task fields through a detached draft."""
 
@@ -130,7 +137,8 @@ class AccountConfigTab(CustomTab):
                 widget = QCheckBox(self.form_host)
                 widget.setChecked(bool(value))
             elif field.editor_type == "choice":
-                widget = QComboBox(self.form_host)
+                widget = (ClickOnlyComboBox(self.form_host)
+                          if field.key == "Which to Farm" else QComboBox(self.form_host))
                 for option, option_label in zip(field.options, field.option_labels):
                     widget.addItem(option_label, option)
                 index = widget.findData(value)
@@ -198,4 +206,4 @@ class AccountConfigTab(CustomTab):
             return None
 
 
-__all__ = ["AccountConfigTab"]
+__all__ = ["AccountConfigTab", "ClickOnlyComboBox"]

@@ -24,6 +24,7 @@
 - Python 3 文档，`tempfile` 与 `os.replace`：现有原子写入和事务回滚实现所依据的同卷临时文件/替换语义。<https://docs.python.org/3/library/tempfile.html>、<https://docs.python.org/3/library/os.html#os.replace>
 - Qt for Python 文档，Widgets：自定义页使用的输入、列表、确认对话框和信号槽。<https://doc.qt.io/qtforpython-6/PySide6/QtWidgets/index.html>
 - Qt for Python 文档，`QMessageBox`：账号与序列删除二次确认及标准按钮返回值。<https://doc.qt.io/qtforpython-6/PySide6/QtWidgets/QMessageBox.html>
+- Qt for Python 文档，`QComboBox` 与 `QWheelEvent`：下拉菜单选择及忽略滚轮事件、交由父级滚动区域处理的行为依据。<https://doc.qt.io/qtforpython-6/PySide6/QtWidgets/QComboBox.html>、<https://doc.qt.io/qtforpython-6/PySide6/QtGui/QWheelEvent.html>
 - GNU gettext 文档：界面翻译与程序内部稳定标识分离的本地化原则。<https://www.gnu.org/software/gettext/manual/gettext.html>
 - OWASP Logging Cheat Sheet：日志与错误信息避免记录认证数据、会话令牌及敏感个人数据。<https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html>
 - CWE-367（TOCTOU）：修订号/指纹检查用于防止预览后、保存前的外部修改被静默覆盖。<https://cwe.mitre.org/data/definitions/367.html>
