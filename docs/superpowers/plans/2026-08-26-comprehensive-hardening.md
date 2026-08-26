@@ -173,7 +173,7 @@ git commit -m "security: protect account identity fields and add explicit rebind
 - Produces `validate_restore_path(source, target)` that rejects traversal, symlink escape and targets outside the configured data root.
 - Existing backup and restore APIs retain their signatures while routing sensitive snapshots through the secure service.
 
-- [ ] **Step 1: Write failing encryption and path tests**
+- [x] **Step 1: Write failing encryption and path tests**
 
 ```python
 def test_sensitive_backup_is_not_plain_json(self):
@@ -185,7 +185,7 @@ def test_restore_path_rejects_symlink_escape(self):
         validate_restore_path(self.backup_root / "source", self.temp_root / "outside")
 ```
 
-- [ ] **Step 2: Run and verify failure**
+- [x] **Step 2: Run and verify failure**
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest tests.TestSecureBackup tests.TestConfigBackup tests.TestConfigIntegrity
@@ -193,7 +193,7 @@ def test_restore_path_rejects_symlink_escape(self):
 
 Expected: FAIL because DPAPI wrapping and the centralized path validator do not exist.
 
-- [ ] **Step 3: Implement Windows DPAPI wrapping**
+- [x] **Step 3: Implement Windows DPAPI wrapping**
 
 Use `CryptProtectData`/`CryptUnprotectData` through `ctypes` with a versioned envelope (`format`, `scope`, `nonce`, `ciphertext`, `created_at`). Do not fall back to plaintext when DPAPI is unavailable; raise a safe-mode exception. Keep non-sensitive manifest metadata outside the encrypted payload so verification can still report corruption without decrypting.
 

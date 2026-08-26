@@ -186,6 +186,8 @@ class ConfigBackupService:
         summary = self.preflight_restore(snapshot_path)
         if not summary.ok:
             raise ValueError(summary.error or "snapshot verification failed")
+        from .secure_backup import validate_restore_path
+        validate_restore_path(snapshot_path, self.config_dir, self.backup_dir.parent)
         if create_rollback:
             self.create_transaction_snapshot()
         source = Path(snapshot_path)

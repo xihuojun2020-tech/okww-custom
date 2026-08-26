@@ -17,3 +17,5 @@
    - https://github.com/LmeSzinc/AzurLaneAutoScript
 7. OWASP Authorization Cheat Sheet：高风险身份变更应使用独立边界、显式确认、最小权限和可审计记录；本项目将身份重绑定与普通任务编辑分离，并在发布前执行修订号 CAS。
    - https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html
+8. Microsoft Data Protection API（DPAPI）：绑定当前 Windows 用户/计算机的本机数据保护接口；本项目在不可用时进入安全错误，不把敏感备份降级为明文。
+   - https://learn.microsoft.com/en-us/windows/win32/api/dpapi/

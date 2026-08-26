@@ -17,7 +17,7 @@ $groups = @{
     "TestAccountRepositoryRuntime.py", "TestSequenceRepository.py", "TestAccountSwitch.py"
   )
   integration = @(
-    "TestAccountConfigBundle.py", "TestAccountPublishService.py", "TestAccountDeletion.py",
+    "TestAccountConfigBundle.py", "TestAccountPublishService.py", "TestAccountDeletion.py", "TestSecureBackup.py",
     "TestConfigBackup.py", "TestConfigIntegrity.py", "TestAccountRuntimeIntegration.py",
     "TestAccountSwitchEvidence.py", "TestMultiAccountDailyTask.py", "TestAccountRepositoryMigrationScenario.py"
   )
@@ -33,7 +33,7 @@ $groups = @{
     "TestOCR.py", "TestTacet.py", "TestWorld.py"
   )
   fault_injection = @(
-    "TestConfigBackup.py", "TestConfigIntegrity.py", "TestAccountConfigBundle.py",
+    "TestConfigBackup.py", "TestConfigIntegrity.py", "TestAccountConfigBundle.py", "TestSecureBackup.py",
     "TestAccountPublishService.py"
   )
 }
