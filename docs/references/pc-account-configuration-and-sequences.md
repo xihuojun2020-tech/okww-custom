@@ -2,6 +2,13 @@
 
 日期：2026-08-25
 
+## 2026-08-26 UI 重构补充
+
+- `src/gui/CodexTheme.py`：固定浅色 palette/QSS，颜色值来自 `docs/superpowers/specs/2026-08-26-codex-light-ui-redesign.md`；主题初始化不订阅系统深色模式。
+- `src/gui/SectionPanel.py` 与 `src/gui/FlatSettingRow.py`：使用 Qt Widgets 原生布局承载区块标题、说明、设置控件和错误状态，不新增第三方依赖。
+- ALAS 的职责型左侧入口和单页分区信息架构仍是界面参考；本项目只借鉴布局组织，不复制其任务实现。<https://github.com/LmeSzinc/AzurLaneAutoScript>
+- Qt for Python `QPalette`、`QApplication.setStyleSheet` 和 Widgets 布局文档是浅色主题与平铺控件实现依据。<https://doc.qt.io/qtforpython-6/PySide6/QtGui/QPalette.html>
+
 ## 本地设计来源
 
 - `E:\AI work\better wuwa\src\account_identity.py`：身份候选、精确短名和歧义拒绝的早期实现；本项目仅吸收纯 PC 解析思想。
