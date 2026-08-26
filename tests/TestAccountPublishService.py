@@ -29,6 +29,7 @@ class TestAccountPublishService(unittest.TestCase):
         self.assertEqual(revision.revision, loaded.revision)
         self.assertIn("account_master_config.json", loaded.manifest["files"])
         self.assertTrue((loaded.bundle_dir / "profiles" / f"{self.a1}.json").is_file())
+        self.assertTrue((self.root / "configs" / "accounts" / "profiles" / f"{self.a1}.json").is_file())
 
     def test_interrupted_publish_keeps_previous_active_bundle(self):
         service = AccountPublishService(self.root)

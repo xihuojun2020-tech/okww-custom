@@ -85,6 +85,21 @@ class AccountPublishService:
         except (OSError, UnicodeError, json.JSONDecodeError):
             return ""
 
+    def _write_editable_mirror(self, profiles: Mapping[str, Any], index: Mapping[str, Any],
+                               sequences: Mapping[str, list[str]]) -> None:
+        """Keep one-JSON-per-account editor files in sync before activation."""
+        root = self.config_dir / "accounts"
+        profile_dir = root / "profiles"
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        mirror_index = copy.deepcopy(dict(index))
+        mirror_index.setdefault("schema_version", 1)
+        mirror_index["profile_ids"] = [str(profile_id) for profile_id in profiles]
+        mirror_index["sequences"] = copy.deepcopy(dict(sequences))
+        atomic_write_json(root / "index.json", mirror_index)
+        atomic_write_json(root / "sequences.json", sequences)
+        for profile_id, profile in profiles.items():
+            atomic_write_json(profile_dir / f"{profile_id}.json", profile)
+
     def publish(self, *, expected_revision: str, profiles: Mapping[str, Any],
                 index: Mapping[str, Any], sequences: Mapping[str, list[str]]) -> PublishedRevision:
         with _PUBLISH_LOCK:
@@ -120,6 +135,7 @@ class AccountPublishService:
                 if bundle_dir.exists():
                     shutil.rmtree(bundle_dir)
                 os.replace(staging, bundle_dir)
+                self._write_editable_mirror(profiles, index, sequences)
                 pointer = {"revision": revision, "manifest_sha256": _file_digest(bundle_dir / "manifest.json")}
                 atomic_write_json(self.active_path, pointer)
                 return PublishedRevision(revision, bundle_dir, manifest)
