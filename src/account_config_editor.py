@@ -24,9 +24,21 @@ class AccountLabelMismatch(AccountConfigEditorError):
 
 _PHONE = re.compile(r"(?<!\d)(1[3-9]\d{9})(?!\d)")
 _TOKEN = re.compile(r"[A-Za-z0-9]{32,}")
-_LOCKED_ACCOUNT = {"profile_id", "account_aliases", "account_name", "Account Name", "账号名称",
-                   "game_feature_code"}
-_LOCKED_TASK = {"备用识别名称", "备用识别名称内容", "Account Name", "account_name", "账号名称"}
+_LOCKED_ACCOUNT = {
+    # Identity is owned by the explicit re-bind workflow.  Keeping these
+    # fields out of the ordinary task editor prevents an accidental save from
+    # changing the account that a sequence or switch operation targets.
+    "profile_id", "phone", "masked_phone", "nickname", "alternate_login_name",
+    "account_aliases", "account_name", "Account Name", "账号名称", "game_feature_code",
+}
+LOCKED_IDENTITY_FIELDS = (
+    "profile_id", "phone", "masked_phone", "nickname", "alternate_login_name",
+    "game_feature_code", "account_aliases",
+)
+_LOCKED_TASK = {
+    "phone", "masked_phone", "nickname", "alternate_login_name", "game_feature_code",
+    "account_aliases", "备用识别名称", "备用识别名称内容", "Account Name", "account_name", "账号名称",
+}
 
 
 def _redact(value: Any) -> Any:
@@ -88,6 +100,8 @@ def _flatten(value: Mapping[str, Any], prefix: str) -> dict[str, Any]:
 
 class AccountConfigEditor:
     """Draft, preview, confirm, backup, then CAS-publish one profile."""
+
+    locked_identity_fields = LOCKED_IDENTITY_FIELDS
 
     def __init__(self, repository: Any, backup_service: Any | None = None):
         self.repository = repository
@@ -153,4 +167,4 @@ class AccountConfigEditor:
 
 __all__ = ["AccountConfigEditor", "AccountConfigEditorError", "AccountLabelMismatch",
            "DiffEntry", "LockedProfileField", "ProfileDiff", "ProfileDraft", "ProfileEditScope",
-           "sanitize_error"]
+           "LOCKED_IDENTITY_FIELDS", "sanitize_error"]

@@ -101,7 +101,7 @@ git commit -m "test: establish security and test-group baseline"
 - Produces `AccountRebindService.preview()` and `.rebind()`; `.rebind()` requires the current identity confirmation, checks uniqueness, creates a backup, and publishes with CAS.
 - `AccountConfigTab` renders protected identity values with read-only widgets and never copies them from editable form data.
 
-- [ ] **Step 1: Add failing protection tests**
+- [x] **Step 1: Add failing protection tests**
 
 ```python
 def test_all_identity_fields_are_rejected_by_backend():
@@ -116,7 +116,7 @@ def test_rebind_rejects_identity_collision(self):
         self.service.rebind(self.profile_id, current_identity="old", new_identity={"masked_phone": "138****0002"})
 ```
 
-- [ ] **Step 2: Run the protection tests and verify failure**
+- [x] **Step 2: Run the protection tests and verify failure**
 
 Run:
 
@@ -126,19 +126,19 @@ Run:
 
 Expected: FAIL because the current lock set omits several identity fields and no rebind service exists.
 
-- [ ] **Step 3: Lock fields at the editor boundary**
+- [x] **Step 3: Lock fields at the editor boundary**
 
 Extend `_LOCKED_ACCOUNT` with `phone`, `masked_phone`, `nickname`, and `alternate_login_name`. Add a public immutable tuple so UI and tests use one source of truth. Keep `game_feature_code` and aliases locked. Ensure `preview_diff()` redacts identity values.
 
-- [ ] **Step 4: Make the UI genuinely read-only**
+- [x] **Step 4: Make the UI genuinely read-only**
 
 Replace editable identity `QLineEdit` widgets with read-only fields or labels. Remove identity assignment from `_apply_text()`. Keep the UUID, masked phone, U…A name and feature code visible. Add a separate “重新绑定账号” button that opens the rebind flow and does not share the normal task-field save path.
 
-- [ ] **Step 5: Implement explicit rebind service**
+- [x] **Step 5: Implement explicit rebind service**
 
 Create `AccountRebindService` using the existing repository and backup service. Validate the current identity, call `match_profile_identity()` for collision checks, require a non-empty new identity, create a transaction backup, publish through CAS, and emit an audit record containing only UUID, revision and redacted identity summaries.
 
-- [ ] **Step 6: Run protection and UI tests**
+- [x] **Step 6: Run protection and UI tests**
 
 Run:
 
@@ -148,7 +148,7 @@ Run:
 
 Expected: all pass, including a test that mutating the UI draft cannot alter protected fields.
 
-- [ ] **Step 7: Commit the identity slice**
+- [x] **Step 7: Commit the identity slice**
 
 ```powershell
 git add src/account_config_editor.py src/account_rebind_service.py src/account_identity.py src/account_field_metadata.py src/gui/AccountConfigTab.py tests/TestAccountIdentityProtection.py tests/TestAccountConfigEditor.py tests/TestAccountManagementTabs.py

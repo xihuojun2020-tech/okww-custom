@@ -45,7 +45,10 @@ _VALUE_LABELS = {
     "Tacet Discord Nest": "残像聚落",
 }
 _STORAGE_VALUES = {label: value for value, label in _VALUE_LABELS.items()}
-_IDENTITY = {"备用识别名称", "备用识别名称内容", "Account Name", "account_name", "账号名称"}
+_IDENTITY = {
+    "phone", "masked_phone", "nickname", "alternate_login_name", "game_feature_code",
+    "account_aliases", "备用识别名称", "备用识别名称内容", "Account Name", "account_name", "账号名称",
+}
 
 
 def localize_account_value(value: Any) -> Any:

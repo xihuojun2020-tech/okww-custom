@@ -4,12 +4,13 @@ import json
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
-                               QMessageBox, QPlainTextEdit, QPushButton,
+                               QMessageBox, QPlainTextEdit, QPushButton, QInputDialog,
                                QVBoxLayout, QWidget, QLineEdit)
 from qfluentwidgets import BodyLabel, FluentIcon
 
 from ok.gui.widget.CustomTab import CustomTab
 from src.account_config_editor import AccountConfigEditor, sanitize_error
+from src.account_rebind_service import AccountRebindService
 from src.account_repository import AccountRepository, AccountRepositoryError, get_default_repository
 from src.account_field_metadata import (account_field_metadata, localize_account_value,
                                         restore_account_value)
@@ -32,6 +33,7 @@ class AccountConfigTab(CustomTab):
         super().__init__()
         repository = get_default_repository() or AccountRepository()
         self.editor = editor or AccountConfigEditor(repository)
+        self.rebind_service = AccountRebindService(self.editor.repository)
         self.draft = None
         root = QWidget(self.view)
         layout = QVBoxLayout(root)
@@ -51,6 +53,8 @@ class AccountConfigTab(CustomTab):
         for key, label in (("phone", "完整手机号"), ("masked_phone", "带星号手机号（切换关键依据）"),
                            ("nickname", "游戏昵称"), ("alternate_login_name", "U…A 备用识别名")):
             widget = QLineEdit(self.identity_group)
+            widget.setReadOnly(True)
+            widget.setToolTip("身份字段由重新绑定流程修改，普通账号配置保存不会覆盖它")
             self.identity_widgets[key] = widget
             self.identity_layout.addRow(label, widget)
         self.feature_code_label = QLabel("未记录（当前不参与任务）", self.identity_group)
@@ -74,7 +78,9 @@ class AccountConfigTab(CustomTab):
         self.save_button = QPushButton("确认保存", root)
         self.discard_button = QPushButton("丢弃草稿", root)
         self.delete_button = QPushButton("删除当前账号", root)
-        for button in (self.preview_button, self.save_button, self.discard_button, self.delete_button):
+        self.rebind_button = QPushButton("重新绑定身份", root)
+        for button in (self.preview_button, self.save_button, self.discard_button,
+                       self.rebind_button, self.delete_button):
             actions.addWidget(button)
         layout.addLayout(actions)
         self.status = BodyLabel("等待操作")
@@ -85,6 +91,7 @@ class AccountConfigTab(CustomTab):
         self.save_button.clicked.connect(self.save)
         self.discard_button.clicked.connect(self._load_selected)
         self.delete_button.clicked.connect(self.delete_account)
+        self.rebind_button.clicked.connect(self.rebind_identity)
         self.refresh()
 
     @property
@@ -145,13 +152,15 @@ class AccountConfigTab(CustomTab):
         self.status.setText("已载入独立草稿")
 
     def _apply_text(self):
-        for key, widget in self.identity_widgets.items():
-            self.draft.account[key] = widget.text().strip()
+        # Identity widgets are intentionally read-only.  Identity changes use
+        # AccountRebindService so they cannot be mixed into task edits.
         value = json.loads(self.task_editor.toPlainText())
         if not isinstance(value, dict):
             raise ValueError("任务配置必须是 JSON 对象")
         self.draft.tasks = value
         for key, widget in self.form_widgets.items():
+            if not widget.isEnabled():
+                continue
             if isinstance(widget, QCheckBox):
                 self.draft.tasks[key] = widget.isChecked()
             elif isinstance(widget, QComboBox):
@@ -252,6 +261,46 @@ class AccountConfigTab(CustomTab):
             return result
         except Exception as exc:
             self.status.setText(f"保存失败：{exc}")
+            return None
+
+    def rebind_identity(self):
+        """Run the explicit identity re-bind flow for the selected account."""
+        if self.draft is None:
+            return None
+        current = str(self.draft.account.get("masked_phone") or "")
+        masked, ok = QInputDialog.getText(
+            self.view, "重新绑定身份", "新的带星号手机号（切换关键依据）：",
+            QLineEdit.Normal, current)
+        if not ok:
+            return None
+        alternate, ok = QInputDialog.getText(
+            self.view, "重新绑定身份", "新的 U…A 备用识别名（可留空）：",
+            QLineEdit.Normal, str(self.draft.account.get("alternate_login_name") or ""))
+        if not ok:
+            return None
+        requested = {"masked_phone": masked.strip()}
+        if alternate.strip():
+            requested["alternate_login_name"] = alternate.strip()
+        try:
+            preview = self.rebind_service.preview(self.draft.profile_id, requested)
+            changes = "、".join(preview.changes) or "无"
+            answer = QMessageBox.question(
+                self.view, "确认重新绑定",
+                f"账号 {self.draft.account.get('display_name', self.draft.profile_id)} 将修改：{changes}\n"
+                "旧身份会先备份，是否继续？")
+            if answer != QMessageBox.StandardButton.Yes:
+                return None
+            result = self.rebind_service.rebind(
+                self.draft.profile_id, current_identity=current,
+                new_identity=requested, confirmed=True)
+            self.status.setText("身份重新绑定成功，已创建旧身份备份")
+            profile_id = self.draft.profile_id
+            self.refresh(profile_id=profile_id)
+            self.changed.emit(AccountChangeEvent("identity_rebound", str(getattr(result, "revision", "")),
+                                                 (profile_id,), ()))
+            return result
+        except Exception as exc:
+            self.status.setText(f"身份重新绑定失败：{sanitize_error(exc)}")
             return None
 
     def delete_account(self):

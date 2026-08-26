@@ -15,3 +15,5 @@
    - https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html
 6. Alas（碧蓝航线脚本）公开的配置分组思路：用户配置与程序设置分离、按账号/任务组织可编辑项。本项目只吸收组织方式，不复制其运行代码或账号数据。
    - https://github.com/LmeSzinc/AzurLaneAutoScript
+7. OWASP Authorization Cheat Sheet：高风险身份变更应使用独立边界、显式确认、最小权限和可审计记录；本项目将身份重绑定与普通任务编辑分离，并在发布前执行修订号 CAS。
+   - https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html
