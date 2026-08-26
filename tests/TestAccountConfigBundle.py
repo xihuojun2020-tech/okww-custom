@@ -7,6 +7,7 @@ from pathlib import Path
 from src.account_config_bundle import (
     AccountConfigBundleService,
     BundleImportBlocked,
+    ConfigBundleError,
     SequenceSourceConflict,
     extract_task_sequences,
     merge_sequence_sources,
@@ -77,7 +78,7 @@ class TestAccountConfigBundle(unittest.TestCase):
         bundle = AccountConfigBundleService(self.root, integrity_service=self.service)
         path = self.root / "export.json"
         exported = bundle.export_bundle(path)
-        self.assertEqual(exported["bundle_version"], 2)
+        self.assertEqual(exported["bundle_version"], 3)
         self.assertIn("master_config", exported)
         preflight = bundle.preflight_import(path)
         self.assertTrue(preflight.ok)
@@ -87,6 +88,51 @@ class TestAccountConfigBundle(unittest.TestCase):
         self.assertTrue(imported.ok)
         self.assertGreaterEqual(imported.account_count, 0)
         self.assertTrue(imported.diff_summary)
+
+    def test_export_recursively_redacts_credentials_but_keeps_full_phone_identity(self):
+        self.master["extensions"] = {
+            "password": "secret-password", "nested": {
+                "token": "secret-token",
+                "auth_url": "https://example.invalid/oauth/token?pat=secret-pat",
+            },
+            "phone_identity": "15300009621",
+        }
+        self.service.paths.master.write_text(json.dumps(self.master, ensure_ascii=False), encoding="utf-8")
+        self.service.paths.working.write_text(
+            json.dumps(ConfigIntegrityService(self.root)._rebuild_working(self.master, {}), ensure_ascii=False),
+            encoding="utf-8")
+        self.service.paths.runtime.write_text(
+            json.dumps({"accepted_master_fingerprint": fingerprint(normalize_master(self.master))}),
+            encoding="utf-8")
+        exported = AccountConfigBundleService(self.root, integrity_service=self.service).export_bundle()
+        serialized = json.dumps(exported, ensure_ascii=False)
+        for secret in ("secret-password", "secret-token", "secret-pat"):
+            self.assertNotIn(secret, serialized)
+        self.assertEqual(exported["master_config"]["extensions"]["phone_identity"], "15300009621")
+        self.assertEqual(exported["master_config"]["extensions"]["password"], "[REDACTED]")
+
+    def test_v3_malformed_nested_shapes_are_blocked_in_preflight(self):
+        service = AccountConfigBundleService(self.root, integrity_service=self.service)
+        bundle = service.export_bundle()
+        bundle["master_config"]["sequences"]["序列1"] = [{}]
+        malformed = service.preflight_import(bundle)
+        self.assertFalse(malformed.ok)
+        self.assertTrue(any("成员必须是字符串" in error for error in malformed.errors))
+
+        bundle = service.export_bundle()
+        bundle["device"] = "not-an-object"
+        malformed = service.preflight_import(bundle)
+        self.assertFalse(malformed.ok)
+        self.assertTrue(any("device" in error for error in malformed.errors))
+
+    def test_overwriting_existing_account_requires_strict_shape(self):
+        service = AccountConfigBundleService(self.root, integrity_service=self.service)
+        bundle = service.export_bundle()
+        bundle["master_config"]["profiles"][PROFILE_A] = []
+        preflight = service.preflight_import(bundle)
+        self.assertFalse(preflight.ok)
+        with self.assertRaises(ConfigBundleError):
+            service.import_bundle(bundle, confirm=True, trust_external=True)
 
     def test_export_and_import_drop_machine_local_runtime_metadata(self):
         runtime = {

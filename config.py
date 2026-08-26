@@ -14,7 +14,30 @@ from src.task.process_feature import process_feature
 # okww 版本号（固定宽度 X.YY.ZZ）：
 #   小改动 → 第三位 +1；中等改动 → 第二位 +1 且第三位归 00；
 #   大改动 → 第一位 +1 且后两位归 00（仅用户明确提出时执行）
-version = "1.17.02"
+version = "1.18.00"
+
+# MuMu/Android 阶段01：只读设备预检配置。实际鸣潮包名由设备预检检测，
+# 这里的包名只作为候选提示；阶段01不会发送任何游戏输入。
+android_config = {
+    "enabled": False,
+    "expected_emulator_version": "6.5.5",
+    "default_resolution": "1280x720",
+    "density": 240,
+    "orientation": "landscape",
+    "capture_backend": "nemu_ipc",
+    "control_backend": "okww_combat_agent",
+    "package_hints": ("com.kurogame.mingchao",),
+    "device_channels": {},
+    "combat_agent": {
+        "jar_path": "assets/android/okww-combat-agent.jar",
+        "remote_jar": "/data/local/tmp/okww-combat-agent.jar",
+        "main_class": "com.okww.combatagent.Main",
+        "protocol_version": 1,
+    },
+    "combat_profile": {
+        "team": ["Augusta", "Iuno", "ShoreKeeper"],
+    },
+}
 
 
 def _find_most_recently_run_pc_exe():
@@ -181,6 +204,7 @@ monthly_card_config_option = ConfigOption('Monthly Card Config', {
 config = {
     'debug': False,  # Optional, default: False
     'custom_tasks': True,
+    'android': android_config,
     'use_gui': True,
     'config_folder': 'configs',
     'blur_area': blur_area,

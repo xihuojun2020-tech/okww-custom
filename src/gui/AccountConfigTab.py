@@ -2,10 +2,10 @@
 
 import json
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
-                               QMessageBox, QPlainTextEdit, QPushButton, QScrollArea,
-                               QVBoxLayout, QWidget)
+                               QMessageBox, QPlainTextEdit, QPushButton,
+                               QVBoxLayout, QWidget, QLineEdit)
 from qfluentwidgets import BodyLabel, FluentIcon
 
 from ok.gui.widget.CustomTab import CustomTab
@@ -13,6 +13,7 @@ from src.account_config_editor import AccountConfigEditor, sanitize_error
 from src.account_repository import AccountRepository, AccountRepositoryError, get_default_repository
 from src.account_field_metadata import (account_field_metadata, localize_account_value,
                                         restore_account_value)
+from src.gui.AccountChangeEvent import AccountChangeEvent
 
 
 class ClickOnlyComboBox(QComboBox):
@@ -24,6 +25,8 @@ class ClickOnlyComboBox(QComboBox):
 
 class AccountConfigTab(CustomTab):
     """Edit only non-identity task fields through a detached draft."""
+
+    changed = Signal(object)
 
     def __init__(self, editor=None):
         super().__init__()
@@ -42,6 +45,18 @@ class AccountConfigTab(CustomTab):
         self.metadata = BodyLabel("")
         self.metadata.setWordWrap(True)
         layout.addWidget(self.metadata)
+        self.identity_group = QGroupBox("账号识别信息", root)
+        self.identity_layout = QFormLayout(self.identity_group)
+        self.identity_widgets = {}
+        for key, label in (("phone", "完整手机号"), ("masked_phone", "带星号手机号（切换关键依据）"),
+                           ("nickname", "游戏昵称"), ("alternate_login_name", "U…A 备用识别名")):
+            widget = QLineEdit(self.identity_group)
+            self.identity_widgets[key] = widget
+            self.identity_layout.addRow(label, widget)
+        self.feature_code_label = QLabel("未记录（当前不参与任务）", self.identity_group)
+        self.feature_code_label.setToolTip("来自游戏防 OLED 烧屏遮罩区域；当前只记录，不参与任务")
+        self.identity_layout.addRow("游戏内特征码（只读）", self.feature_code_label)
+        layout.addWidget(self.identity_group)
         self.sequence_group = QGroupBox("所属序列（勾选后保存即可调整当前账号归属）", root)
         self.sequence_layout = QVBoxLayout(self.sequence_group)
         self.sequence_widgets = {}
@@ -49,10 +64,7 @@ class AccountConfigTab(CustomTab):
         self.form_host = QWidget(root)
         self.form_layout = QFormLayout(self.form_host)
         self.form_widgets = {}
-        form_scroll = QScrollArea(root)
-        form_scroll.setWidgetResizable(True)
-        form_scroll.setWidget(self.form_host)
-        layout.addWidget(form_scroll, 1)
+        layout.addWidget(self.form_host)
         layout.addWidget(BodyLabel("高级 JSON（复杂列表或兼容字段；常用字段请优先使用上方中文表单）"))
         self.task_editor = QPlainTextEdit(root)
         self.task_editor.setPlaceholderText("任务配置 JSON")
@@ -87,7 +99,8 @@ class AccountConfigTab(CustomTab):
     def add_after_default_tabs(self):
         return True
 
-    def refresh(self):
+    def refresh(self, profile_id=None):
+        selected_id = profile_id or self.profile_combo.currentData()
         self.profile_combo.blockSignals(True)
         self.profile_combo.clear()
         try:
@@ -102,7 +115,14 @@ class AccountConfigTab(CustomTab):
             self.status.setText(f"账号仓库暂不可用：{sanitize_error(exc)}")
         finally:
             self.profile_combo.blockSignals(False)
+        if selected_id:
+            index = self.profile_combo.findData(selected_id)
+            self.profile_combo.setCurrentIndex(index if index >= 0 else 0)
         self._load_selected()
+
+    def refresh_sequences(self):
+        """Refresh membership checkboxes without discarding an unsaved draft."""
+        self._render_sequences()
 
     def _load_selected(self, *_args):
         profile_id = self.profile_combo.currentData()
@@ -119,11 +139,14 @@ class AccountConfigTab(CustomTab):
             f"游戏内特征码：{feature_code}"
         )
         self._render_sequences()
+        self._render_identity()
         self.task_editor.setPlainText(json.dumps(self.draft.tasks, ensure_ascii=False, indent=2))
         self._render_form()
         self.status.setText("已载入独立草稿")
 
     def _apply_text(self):
+        for key, widget in self.identity_widgets.items():
+            self.draft.account[key] = widget.text().strip()
         value = json.loads(self.task_editor.toPlainText())
         if not isinstance(value, dict):
             raise ValueError("任务配置必须是 JSON 对象")
@@ -144,6 +167,14 @@ class AccountConfigTab(CustomTab):
                     self.draft.tasks[key] = restore_account_value(json.loads(text))
                 else:
                     self.draft.tasks[key] = restore_account_value(text)
+
+    def _render_identity(self):
+        if self.draft is None:
+            return
+        for key, widget in self.identity_widgets.items():
+            widget.setText(str(self.draft.account.get(key) or ""))
+        self.feature_code_label.setText(str(self.draft.account.get("game_feature_code")
+                                            or "未记录（当前不参与任务）"))
 
     def _render_sequences(self):
         while self.sequence_layout.count():
@@ -213,7 +244,11 @@ class AccountConfigTab(CustomTab):
                                             confirmed_account_label=label,
                                             sequence_ids=sequence_ids)
             self.status.setText("保存成功，已先创建账号备份")
-            self._load_selected()
+            profile_id = self.draft.profile_id
+            revision = str(getattr(result, "revision", ""))
+            self.refresh(profile_id=profile_id)
+            self.changed.emit(AccountChangeEvent(
+                "profile_saved", revision, (profile_id,), tuple(sequence_ids)))
             return result
         except Exception as exc:
             self.status.setText(f"保存失败：{exc}")
@@ -238,7 +273,10 @@ class AccountConfigTab(CustomTab):
         try:
             result = self.editor.delete_profile(self.draft.scope, confirmed_account_label=label)
             self.status.setText("账号删除成功，序列引用已同步移除")
+            profile_id = self.draft.profile_id
             self.refresh()
+            self.changed.emit(AccountChangeEvent(
+                "profile_deleted", "", (profile_id,), tuple(preview.sequence_ids)))
             return result
         except Exception as exc:
             self.status.setText(f"账号删除失败：{sanitize_error(exc)}")

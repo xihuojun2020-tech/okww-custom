@@ -1,6 +1,6 @@
 """Standalone account-sequence management tab."""
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QHBoxLayout, QInputDialog, QListWidget, QMessageBox, QPushButton, QVBoxLayout, QWidget
 from qfluentwidgets import BodyLabel, FluentIcon
 
@@ -8,9 +8,12 @@ from ok.gui.widget.CustomTab import CustomTab
 from src.account_repository import AccountRepository, AccountRepositoryError, get_default_repository
 from src.account_config_editor import sanitize_error
 from src.sequence_repository import SequenceRepository
+from src.gui.AccountChangeEvent import AccountChangeEvent
 
 
 class SequenceManagementTab(CustomTab):
+    changed = Signal(object)
+
     def __init__(self, service=None):
         super().__init__()
         repository = get_default_repository() or AccountRepository()
@@ -21,6 +24,10 @@ class SequenceManagementTab(CustomTab):
         layout.addWidget(BodyLabel("序列配置（运行开始后使用不可变快照；此处删除的是整个序列）"))
         self.sequences = QListWidget(root)
         self.members = QListWidget(root)
+        # The account-settings hub embeds this page flat; keep both short
+        # lists visible instead of creating another scroll surface.
+        self.sequences.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.members.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         layout.addWidget(BodyLabel("当前序列"))
         layout.addWidget(self.sequences)
         layout.addWidget(BodyLabel("当前序列包含的账号（上下移动只调整账号顺序）"))
@@ -66,8 +73,9 @@ class SequenceManagementTab(CustomTab):
     def add_after_default_tabs(self):
         return True
 
-    def refresh(self):
-        selected = self._selected().sequence_id if getattr(self, "_drafts", None) and self._selected() else None
+    def refresh(self, sequence_id=None):
+        selected = sequence_id or (
+            self._selected().sequence_id if getattr(self, "_drafts", None) and self._selected() else None)
         try:
             self._drafts = list(self.service.list())
         except AccountRepositoryError as exc:
@@ -82,6 +90,7 @@ class SequenceManagementTab(CustomTab):
         if self._drafts:
             names = [item.sequence_id for item in self._drafts]
             self.sequences.setCurrentRow(names.index(selected) if selected in names else 0)
+            self._show_members()
         else:
             self.members.clear()
 
@@ -151,8 +160,13 @@ class SequenceManagementTab(CustomTab):
         try:
             self.status.setText(f"{label}中…")
             result = callback()
-            self.refresh()
+            sequence_id = str(getattr(result, "sequence_id", "")) or None
+            revision = str(getattr(result, "revision", ""))
+            self.refresh(sequence_id=sequence_id)
             self.status.setText(f"{label}成功")
+            if sequence_id:
+                self.changed.emit(AccountChangeEvent(
+                    "sequence_changed", revision, (), (sequence_id,)))
             return result
         except Exception as exc:
             self.status.setText(f"{label}失败：{sanitize_error(exc)}")

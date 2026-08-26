@@ -143,6 +143,7 @@ class SettingTab(Tab):
         task = self._get_daily_task()
         if task is not None:
             task.import_account_config()
+            self._refresh_account_settings()
         else:
             InfoBar.warning(
                 self.tr('Daily Task 未加载'),
@@ -162,6 +163,7 @@ class SettingTab(Tab):
         task = self._get_daily_task()
         if task is not None and hasattr(task, 'restore_backup'):
             task.restore_backup()
+            self._refresh_account_settings()
         else:
             InfoBar.warning(self.tr('备份服务不可用'), self.tr('请稍后再试'), duration=2000, parent=self)
 
@@ -169,6 +171,7 @@ class SettingTab(Tab):
         task = self._get_daily_task()
         if task is not None and hasattr(task, 'repair_legacy_sequences'):
             task.repair_legacy_sequences()
+            self._refresh_account_settings()
         else:
             InfoBar.warning(self.tr('序列修复服务不可用'), self.tr('请稍后再试'), duration=2000, parent=self)
 
@@ -179,6 +182,13 @@ class SettingTab(Tab):
             callback()
         else:
             InfoBar.warning(self.tr('完整性服务不可用'), self.tr('请稍后再试'), duration=2000, parent=self)
+
+    def _refresh_account_settings(self):
+        window = getattr(og, 'main_window', None)
+        tab = getattr(window, 'account_settings_tab', None)
+        refresh = getattr(tab, 'refresh_all', None)
+        if callable(refresh):
+            refresh()
 
     def goto_config(self, key):
         to_scroll = None

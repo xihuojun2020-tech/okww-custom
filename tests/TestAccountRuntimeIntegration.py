@@ -70,6 +70,40 @@ class TestAccountRuntimeIntegration(unittest.TestCase):
             self.assertEqual(daily.load_daily_profiles()["A1"]["Which to Farm"], "active")
             self.assertIn("A1", multi._load_profiles())
 
+    def test_task_option_refresh_methods_use_new_account_graph(self):
+        from src.task.DailyTask import DAILY_PROFILE, PROFILE_SEQUENCE, DailyTask
+        from src.task.MultiAccountDailyTask import (
+            CURRENT_ACCOUNT, CURRENT_SEQUENCE, SEQ_ACCOUNTS, MultiAccountDailyTask,
+        )
+
+        daily = object.__new__(DailyTask)
+        daily.running = False
+        daily.config = {PROFILE_SEQUENCE: "序列2", DAILY_PROFILE: "A1"}
+        daily.config_type = {PROFILE_SEQUENCE: {}, DAILY_PROFILE: {}}
+        daily._sync_sequence_options = lambda: None
+        daily.get_profile_sequences = lambda: ["序列2"]
+        daily.get_profile_names = lambda _sequence=None: ["A1"]
+        seen = {}
+        daily._update_dropdown_items = lambda key, options: seen.setdefault(key, list(options))
+        daily._refresh_gui = lambda: None
+        self.assertTrue(daily.refresh_account_options())
+        self.assertEqual(seen[PROFILE_SEQUENCE], ["序列2"])
+        self.assertEqual(seen[DAILY_PROFILE], ["A1"])
+
+        multi = object.__new__(MultiAccountDailyTask)
+        multi.running = False
+        multi._account_refresh_pending = False
+        multi.config = {CURRENT_SEQUENCE: "序列2", CURRENT_ACCOUNT: "A1"}
+        multi.config_type = {
+            CURRENT_SEQUENCE: {}, CURRENT_ACCOUNT: {},
+            **{key: {} for key in SEQ_ACCOUNTS},
+        }
+        multi.get_sequence_names = lambda: ["序列2"]
+        multi.get_profile_names = lambda: ["A1", "A3"]
+        self.assertTrue(multi.refresh_account_options())
+        self.assertEqual(multi.config_type[CURRENT_SEQUENCE]["options"], ["序列2"])
+        self.assertEqual(multi.config_type[CURRENT_ACCOUNT]["options"], ["", "A1", "A3"])
+
     def test_bind_verified_profile_keeps_immutable_run_snapshot(self):
         profile_id = str(uuid.uuid4())
         source = {

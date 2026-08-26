@@ -16,6 +16,7 @@ from src.task.BaseWWTask import BaseWWTask
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.MouseResetTask import MouseResetTask
 from src.config_integrity import get_default_service
+from src.account_repository import AccountRepository
 
 
 SINGLE_MODE = '单账号切换'
@@ -38,6 +39,7 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
         )
         self.group_name = "🧪 测试功能"
         self.group_icon = Icon.DEVELOPER_TOOLS
+        self._account_refresh_pending = False
 
         profile_names = self._get_profile_names()
         self.default_config = {
@@ -83,6 +85,11 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
         try:
             service = get_default_service()
             if service is not None:
+                repository = AccountRepository(paths=service.paths, integrity_service=service)
+                projection = repository.get_detached_projection()
+                profiles = projection.get('profiles', {}) if isinstance(projection, dict) else {}
+                if isinstance(profiles, dict):
+                    return list(profiles.keys())
                 result = service.last_result or service.check()
                 if result.master_valid and result.master:
                     return list(service.legacy_profile_projection(result.master).get('profiles', {}).keys())
@@ -97,12 +104,43 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
             pass
         return []
 
+    def refresh_profile_options(self):
+        """Refresh target-account options without rebuilding the test card."""
+        if getattr(self, 'running', False):
+            self._account_refresh_pending = True
+            return False
+        names = self._get_profile_names()
+        self.config_type['目标账号']['options'] = ['（自动识别）'] + names
+        try:
+            from ok import og
+            main_window = getattr(og, 'main_window', None)
+            test_tab = getattr(main_window, 'test_hub_tab', None)
+            for card in getattr(getattr(test_tab, 'task_tab', None), 'card_widgets', []):
+                if getattr(card, 'task', None) is not self:
+                    continue
+                for widget in getattr(card, 'config_widgets', []):
+                    if getattr(widget, 'key', None) != '目标账号' or not hasattr(widget, 'combo_box'):
+                        continue
+                    combo = widget.combo_box
+                    current = self.config.get('目标账号') or '（自动识别）'
+                    combo.blockSignals(True)
+                    combo.clear()
+                    combo.addItems(['（自动识别）'] + names)
+                    combo.setCurrentText(current if current in names else '（自动识别）')
+                    combo.blockSignals(False)
+        except Exception:
+            pass
+        self._account_refresh_pending = False
+        return True
+
     def _get_multi_account_task(self):
         """获取 MultiAccountDailyTask 实例（复用其方法）。"""
         from src.task.MultiAccountDailyTask import MultiAccountDailyTask
         return self.executor.get_task_by_class(MultiAccountDailyTask)
 
     def run(self):
+        if getattr(self, '_account_refresh_pending', False):
+            self.refresh_profile_options()
         service = get_default_service()
         if service is not None:
             service.guard_task_start()

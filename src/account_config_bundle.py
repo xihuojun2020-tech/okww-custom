@@ -24,7 +24,7 @@ from . import config_integrity as ci
 
 
 BUNDLE_TYPE = "okww_account_bundle"
-BUNDLE_VERSION = 2
+BUNDLE_VERSION = 3
 _TASK_SEQUENCE_RE = re.compile(r"^\s*序列\s*(\d+)\s*账号\s*$")
 _CHINESE_SEQUENCE_RE = re.compile(r"^\s*序列\s*([一二三四五六七八九十百千万零〇两]+)\s*$")
 _CN_DIGITS = {"零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4,
@@ -37,10 +37,108 @@ _NON_PORTABLE_RUNTIME_KEYS = {
     "last_integrity_event",
     "last_bundle_import",
 }
+_REDACTED = "[REDACTED]"
+_SECRET_KEY_RE = re.compile(
+    r"(?:^|[_\-. ])(?:password|passwd|pwd|token|access[_\-. ]?token|refresh[_\-. ]?token|"
+    r"id[_\-. ]?token|api[_\-. ]?key|apikey|secret|pat|personal[_\-. ]?access[_\-. ]?token|"
+    r"authorization|credential|cookie|auth|密码|令牌|口令|鉴权|凭证|密钥)(?:$|[_\-. ])", re.IGNORECASE)
+_SECRET_QUERY_RE = re.compile(
+    r"(?:password|passwd|pwd|token|access[_\-. ]?token|refresh[_\-. ]?token|"
+    r"api[_\-. ]?key|apikey|secret|pat|authorization|credential)\s*=",
+    re.IGNORECASE,
+)
+_AUTH_URL_RE = re.compile(
+    r"https?://[^\s]+(?:auth|oauth|login|token|pat)(?:[^\s]*)",
+    re.IGNORECASE,
+)
 
 
 class BundleImportBlocked(RuntimeError):
     """Raised until a caller explicitly confirms a potentially destructive action."""
+
+
+class ConfigBundleError(BundleImportBlocked):
+    """Raised when a bundle cannot pass its structural/configuration checks."""
+
+
+def _sensitive_key(key: Any) -> bool:
+    text = str(key).strip()
+    return bool(_SECRET_KEY_RE.search(text) or
+                any(term in text for term in ("密码", "令牌", "口令", "鉴权", "凭证", "密钥")))
+
+
+def _redact_sensitive(value: Any, *, key: Any = None) -> Any:
+    """Recursively remove credentials while retaining ordinary identities.
+
+    Full phone numbers are deliberately not treated as secrets: the existing
+    identity index uses them to match masked OCR phone numbers during import.
+    """
+    if _sensitive_key(key):
+        return _REDACTED
+    if isinstance(value, Mapping):
+        return {copy.deepcopy(item_key): _redact_sensitive(item, key=item_key)
+                for item_key, item in value.items()}
+    if isinstance(value, list):
+        return [_redact_sensitive(item) for item in value]
+    if isinstance(value, tuple):
+        return [_redact_sensitive(item) for item in value]
+    if isinstance(value, str):
+        if _SECRET_QUERY_RE.search(value) or _AUTH_URL_RE.search(value):
+            return _REDACTED
+    return copy.deepcopy(value)
+
+
+def _validate_bundle_shapes(bundle: Mapping[str, Any], *, v3: bool = False) -> list[str]:
+    """Reject malformed nested objects before validators can hit unhashables."""
+    errors: list[str] = []
+    master = bundle.get("master_config")
+    if master is not None and not isinstance(master, Mapping):
+        errors.append("配置包 master_config 必须是对象")
+    if isinstance(master, Mapping):
+        profiles = master.get("profiles")
+        if profiles is not None and not isinstance(profiles, Mapping):
+            errors.append("配置包 profiles 必须是对象")
+        elif isinstance(profiles, Mapping):
+            for profile_id, profile in profiles.items():
+                if not isinstance(profile, Mapping):
+                    errors.append(f"配置包账号 {profile_id!r} 必须是对象")
+                    continue
+                if profile.get("profile_id", profile_id) != profile_id:
+                    errors.append(f"配置包账号 {profile_id!r} 的 profile_id 不匹配")
+                for name in ("phone", "masked_phone", "nickname", "alternate_login_name", "game_feature_code"):
+                    if name in profile and not isinstance(profile[name], str):
+                        errors.append(f"配置包账号 {profile_id!r}.{name} 必须是字符串")
+                for name in ("account_aliases",):
+                    if name in profile and (not isinstance(profile[name], list) or
+                                            not all(isinstance(item, str) and item.strip()
+                                                    for item in profile[name])):
+                        errors.append(f"配置包账号 {profile_id!r}.{name} 必须是非空字符串列表")
+                for name in ("task_config", "schedule", "extensions"):
+                    if name in profile and not isinstance(profile[name], Mapping):
+                        errors.append(f"配置包账号 {profile_id!r}.{name} 必须是对象")
+        sequences = master.get("sequences")
+        if sequences is not None and not isinstance(sequences, Mapping):
+            errors.append("配置包 sequences 必须是对象")
+        elif isinstance(sequences, Mapping):
+            for name, members in sequences.items():
+                if not isinstance(members, list):
+                    errors.append(f"配置包序列 {name!r} 的 members 必须是列表")
+                elif any(not isinstance(member, str) for member in members):
+                    errors.append(f"配置包序列 {name!r} 的成员必须是字符串 UUID")
+    if v3:
+        for name in ("accounts", "profiles", "devices", "device", "members"):
+            if name in bundle and not isinstance(bundle[name], Mapping):
+                errors.append(f"配置包 {name} 必须是对象")
+        if "sequences" in bundle:
+            sequences = bundle["sequences"]
+            if not isinstance(sequences, Mapping):
+                errors.append("配置包 sequences 必须是对象")
+            else:
+                for name, members in sequences.items():
+                    if not isinstance(members, list) or any(not isinstance(item, str)
+                                                            for item in members):
+                        errors.append(f"配置包序列 {name!r} 的 members 必须是字符串列表")
+    return errors
 
 
 class SequenceSourceConflict(ValueError):
@@ -264,6 +362,9 @@ class AccountConfigBundleService:
             "runtime_data": runtime, "preferences": self._preferences(),
             "extensions": copy.deepcopy(dict(extensions or {})),
         }
+        # Sanitize before hashing so the manifest authenticates exactly what
+        # leaves this process.  Phone aliases intentionally survive this pass.
+        bundle = _redact_sensitive(bundle)
         partitions = {name: _digest(bundle[name]) for name in _PARTITION_NAMES}
         bundle["manifest"] = {"program_version": self.integrity.program_version,
                                "exported_at": datetime.now(timezone.utc).isoformat(),
@@ -279,10 +380,10 @@ class AccountConfigBundleService:
         try:
             version_number = int(version)
         except (TypeError, ValueError) as exc:
-            raise BundleImportBlocked(f"invalid bundle version: {version!r}") from exc
+            raise ConfigBundleError(f"配置包版本无效：{version!r}") from exc
         if raw_type == BUNDLE_TYPE:
-            if version_number != 2:
-                raise BundleImportBlocked(f"unsupported {BUNDLE_TYPE} version: {version!r}")
+            if version_number not in (2, 3):
+                raise ConfigBundleError(f"不支持的配置包版本：{version!r}")
             return copy.deepcopy(dict(raw))
         if raw_type != "okww_account_config" or version_number != 1:
             raise BundleImportBlocked(f"unsupported account bundle type/version: {raw_type!r} v{version!r}")
@@ -336,7 +437,7 @@ class AccountConfigBundleService:
                 for profile_id, profile in master_profiles.items():
                     if isinstance(profile, dict):
                         _merge_legacy_completions(runtime, str(profile_id), profile.pop("last_completed", None))
-        return {"type": BUNDLE_TYPE, "bundle_version": 2,
+        return {"type": BUNDLE_TYPE, "bundle_version": BUNDLE_VERSION,
                 "manifest": {"upgraded_from": 1, "partitions": {}, "hashes_unavailable": True},
                 "master_config": copy.deepcopy(dict(master)),
                 "runtime_data": runtime,
@@ -357,14 +458,20 @@ class AccountConfigBundleService:
         try:
             raw = copy.deepcopy(dict(source)) if isinstance(source, Mapping) else ci._read_json(Path(source))[0]
             if not isinstance(raw, Mapping):
-                raise BundleImportBlocked("bundle must be a JSON object")
+                raise ConfigBundleError("配置包必须是 JSON 对象")
             bundle = self._upgrade(raw)
             errors: list[str] = []
+            try:
+                raw_version = int(raw.get("bundle_version", raw.get("version", 1)))
+            except (TypeError, ValueError):
+                raw_version = 0
+            errors.extend(_validate_bundle_shapes(bundle, v3=raw.get("type") == BUNDLE_TYPE and
+                                                  raw_version == 3))
             manifest = bundle.get("manifest", {})
             if not isinstance(manifest, Mapping):
                 errors.append("manifest must be an object")
                 manifest = {}
-            native_v2 = raw.get("type") == BUNDLE_TYPE and int(raw.get("bundle_version", 0)) == 2
+            native_v2 = raw.get("type") == BUNDLE_TYPE and raw_version in (2, 3)
             trust_required = False
             partitions = manifest.get("partitions", {})
             if native_v2:
@@ -380,10 +487,14 @@ class AccountConfigBundleService:
                     for name in _PARTITION_NAMES:
                         if partitions[name].casefold() != _digest(bundle.get(name, {})).casefold():
                             trust_required = True
+            # External bundles may contain credentials even when their old
+            # manifest hash is valid.  Never expose those values to callers or
+            # write them back during import.
+            bundle = _redact_sensitive(bundle)
             master = bundle.get("master_config")
             if not isinstance(master, Mapping):
                 errors.append("master_config must be an object")
-            else:
+            elif not errors:
                 errors.extend(ci.validate_master(master))
             runtime_raw = bundle.get("runtime_data", {})
             if not isinstance(runtime_raw, Mapping):
@@ -399,7 +510,7 @@ class AccountConfigBundleService:
                            not _TASK_SEQUENCE_RE.match(str(k))}
             differences = []
             current = self.integrity.check(record_incident=False)
-            if isinstance(master, Mapping) and not ci.validate_master(master) and current.master:
+            if isinstance(master, Mapping) and not errors and not ci.validate_master(master) and current.master:
                 differences = ci.diff_normalized(current.master, ci.normalize_master(master))
             account_count = len(master.get("profiles", {})) if isinstance(master, Mapping) and isinstance(master.get("profiles"), Mapping) else 0
             sequence_count = len(master.get("sequences", {})) if isinstance(master, Mapping) and isinstance(master.get("sequences"), Mapping) else 0
@@ -413,8 +524,12 @@ class AccountConfigBundleService:
                                    bundle=copy.deepcopy(dict(bundle)), account_count=account_count,
                                    sequence_count=sequence_count, runtime_record_count=runtime_record_count,
                                    diff_summary=diff_summary)
-        except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
-            return BundlePreflight(False, errors=[str(exc)])
+        except (OSError, ValueError, RuntimeError, TypeError, KeyError, AttributeError,
+                json.JSONDecodeError) as exc:
+            message = str(exc)
+            if isinstance(exc, (ConfigBundleError, TypeError, KeyError, AttributeError)):
+                message = f"配置包预检失败：{message}"
+            return BundlePreflight(False, errors=[message])
 
     def import_bundle(self, source: str | Path | Mapping[str, Any], *, confirm: bool = False,
                       trust_external: bool = False) -> BundlePreflight:
@@ -424,7 +539,7 @@ class AccountConfigBundleService:
         if preflight.trust_required and not trust_external:
             raise BundleImportBlocked("bundle changed after export; explicitly trust the external modification")
         if not preflight.candidate_master or preflight.errors:
-            raise BundleImportBlocked("bundle preflight failed: " + "; ".join(preflight.errors))
+            raise ConfigBundleError("配置包预检失败：" + "; ".join(preflight.errors))
         master = preflight.candidate_master
         runtime = preflight.candidate_runtime or {}
         task_path = self.paths.multi_account_task or self.paths.config_dir / "MultiAccountDailyTask.json"
@@ -553,6 +668,6 @@ class AccountConfigBundleService:
 AccountConfigBundle = AccountConfigBundleService
 
 
-__all__ = ["BUNDLE_TYPE", "BUNDLE_VERSION", "BundleImportBlocked", "SequenceSourceConflict",
+__all__ = ["BUNDLE_TYPE", "BUNDLE_VERSION", "BundleImportBlocked", "ConfigBundleError", "SequenceSourceConflict",
            "SequenceMergeResult", "extract_task_sequences", "merge_sequence_sources",
            "resolve_sequence_members", "BundlePreflight", "AccountConfigBundleService", "AccountConfigBundle"]

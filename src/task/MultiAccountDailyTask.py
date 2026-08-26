@@ -103,6 +103,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         self.all_accounts = set()
         self.support_schedule_task = True
         self._profile_cache = {}  # 方案名 → 方案内容（含手机号/别名），用于登录账号识别
+        self._account_refresh_pending = False
         # 当前执行序列（账号归属序列，序列列表来自 daily_profiles 的 sequences，可在下方管理增删）
         self.default_config[CURRENT_SEQUENCE] = '序列1'
         self.config_description[CURRENT_SEQUENCE] = '当前执行的账号序列（按该序列的账号执行；序列可增删）'
@@ -408,6 +409,57 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         except Exception:
             pass
 
+    def refresh_account_options(self):
+        """Refresh visible account/sequence controls without rebuilding cards."""
+        if getattr(self, 'running', False):
+            self._account_refresh_pending = True
+            return False
+        seq_names = self.get_sequence_names()
+        profile_names = self.get_profile_names()
+        current_sequence = (self.config.get(CURRENT_SEQUENCE) or '').strip()
+        if current_sequence not in seq_names and seq_names:
+            current_sequence = seq_names[0]
+            self.config[CURRENT_SEQUENCE] = current_sequence
+        self.config_type[CURRENT_SEQUENCE]['options'] = seq_names
+        self.config_type[CURRENT_SEQUENCE]['sub_configs'] = {
+            seq: [SEQ_ACCOUNTS[i]] for i, seq in enumerate(seq_names)
+        }
+        for i, _seq in enumerate(seq_names):
+            if i >= len(SEQ_ACCOUNTS):
+                break
+            self.config_type[SEQ_ACCOUNTS[i]]['options'] = profile_names
+        self.config_type[CURRENT_ACCOUNT]['options'] = [''] + profile_names
+        try:
+            from ok import og
+            main_window = getattr(og, 'main_window', None)
+            onetime_tab = getattr(main_window, 'onetime_tab', None)
+            for card in getattr(onetime_tab, 'card_widgets', []):
+                if getattr(card, 'task', None) is not self:
+                    continue
+                for widget in getattr(card, 'config_widgets', []):
+                    key = getattr(widget, 'key', None)
+                    if key == CURRENT_SEQUENCE and hasattr(widget, 'combo_box'):
+                        combo = widget.combo_box
+                        combo.blockSignals(True)
+                        combo.clear()
+                        combo.addItems(seq_names)
+                        combo.setCurrentText(current_sequence)
+                        combo.blockSignals(False)
+                    elif key == CURRENT_ACCOUNT and hasattr(widget, 'combo_box'):
+                        combo = widget.combo_box
+                        current = self.config.get(CURRENT_ACCOUNT) or ''
+                        combo.blockSignals(True)
+                        combo.clear()
+                        combo.addItems([''] + profile_names)
+                        combo.setCurrentText(current if current in profile_names else '')
+                        combo.blockSignals(False)
+                    elif key in SEQ_ACCOUNTS and hasattr(widget, 'update_value'):
+                        widget.update_value()
+        except Exception:
+            pass
+        self._account_refresh_pending = False
+        return True
+
     # ==================== 账号方案 ↔ 登录显示 匹配 ====================
 
     def _load_profiles(self):
@@ -583,6 +635,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
     # ==================== 主流程 ====================
 
     def run(self):
+        if getattr(self, '_account_refresh_pending', False):
+            self.refresh_account_options()
         if self.integrity_service is not None:
             self.integrity_service.guard_task_start()
         WWOneTimeTask.run(self)

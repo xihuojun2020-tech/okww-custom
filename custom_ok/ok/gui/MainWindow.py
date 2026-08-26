@@ -120,6 +120,7 @@ class MainWindow(FluentWindow):
         self.task_hub_tab = TaskHubTab()
         self.activity_hub_tab = ActivityHubTab()
         self.test_hub_tab = TestHubTab()
+        self.account_settings_tab.account_changed.connect(self.refresh_account_consumers)
         self.start_tab = self.general_settings_tab.start_panel
         self.trigger_tab = self.general_settings_tab.trigger_panel
         self.onetime_tab = self.task_hub_tab.task_tab
@@ -761,6 +762,25 @@ class MainWindow(FluentWindow):
             logger.error(f'account integrity review failed: {exc}')
             self._integrity_review_blocked = True
             return False
+
+    def refresh_account_consumers(self, _event=None):
+        """Refresh account-linked task controls after a published graph change."""
+        if self.executor is None:
+            return
+        from src.task.DailyTask import DailyTask
+        from src.task.MultiAccountDailyTask import MultiAccountDailyTask
+        from src.task.TestAccountSwitchTask import TestAccountSwitchTask
+        for task_class, method_name in (
+                (DailyTask, 'refresh_account_options'),
+                (MultiAccountDailyTask, 'refresh_account_options'),
+                (TestAccountSwitchTask, 'refresh_profile_options')):
+            try:
+                task = self.executor.get_task_by_class(task_class)
+                refresh = getattr(task, method_name, None) if task is not None else None
+                if callable(refresh):
+                    refresh()
+            except Exception as exc:
+                logger.warning(f'账号联动刷新失败 {task_class.__name__}: {exc}')
 
     def set_window_size(self, width, height, min_width, min_height):
         screen = QScreen.availableGeometry(self.screen())

@@ -5,6 +5,7 @@ from custom_ok.ok.gui.MainWindow import MainWindow
 from src.gui.AccountSettingsTab import AccountSettingsTab
 from src.gui.AccountConfigTab import AccountConfigTab, ClickOnlyComboBox
 from src.gui.SequenceManagementTab import SequenceManagementTab
+from src.gui.AccountChangeEvent import AccountChangeEvent
 
 
 class TestAccountManagementTabs(unittest.TestCase):
@@ -50,6 +51,18 @@ class TestAccountManagementTabs(unittest.TestCase):
         self.assertIn("账号仓库暂不可用", account_source)
         self.assertIn("AccountRepositoryError", sequence_source)
         self.assertIn("序列仓库暂不可用", sequence_source)
+
+    def test_account_change_event_carries_stable_ids(self):
+        event = AccountChangeEvent("profile_saved", "rev-2", ("profile-a1",), ("序列2",))
+        self.assertEqual(event.profile_ids, ("profile-a1",))
+        self.assertEqual(event.sequence_ids, ("序列2",))
+
+    def test_account_settings_wires_child_changes_and_refreshes_siblings(self):
+        source = inspect.getsource(AccountSettingsTab)
+        self.assertIn("account_tab.changed.connect", source)
+        self.assertIn("sequence_tab.changed.connect", source)
+        self.assertIn("refresh_sequences", source)
+        self.assertIn("account_changed.emit", source)
 
 
 if __name__ == "__main__":

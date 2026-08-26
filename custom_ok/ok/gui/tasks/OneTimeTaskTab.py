@@ -43,32 +43,9 @@ class OneTimeTaskTab(TaskTab):
         communicate.task_list_updated.connect(self.refresh_ui)
         self.refresh_ui()
 
-        # 运行日志常驻面板（任务页底部：任务开始后实时显示账号/阶段中文日志）
-        from PySide6.QtWidgets import QPlainTextEdit, QVBoxLayout, QWidget
-        self.log_panel_text = QPlainTextEdit()
-        self.log_panel_text.setReadOnly(True)
-        self.log_panel_text.setMaximumBlockCount(800)
-        self.log_panel_text.setPlaceholderText('运行日志将在这里实时显示（任务执行时逐阶段提示）')
-        log_widget = QWidget()
-        log_layout = QVBoxLayout(log_widget)
-        log_layout.setContentsMargins(0, 8, 0, 0)
-        log_layout.addWidget(self.log_panel_text)
-        self.vBoxLayout.addWidget(log_widget)
-        communicate.log.connect(self._append_log)
-
-    def _append_log(self, level_no, message):
-        """把运行日志追加到常驻日志面板（communicate.log 信号）。"""
-        try:
-            # Window geometry churn is an internal capture diagnostic, not a
-            # task-stage message. Keep it in the file log but hide it from the
-            # user-facing task panel to avoid flooding the UI.
-            if 'do_update_window_size changed' in str(message):
-                return
-            self.log_panel_text.appendPlainText(message)
-            sb = self.log_panel_text.verticalScrollBar()
-            sb.setValue(sb.maximum())
-        except Exception:
-            pass
+        # Runtime logs remain in the configured file logger only. Do not
+        # subscribe task pages to communicate.log: the task UI is for controls
+        # and state, not an ever-growing diagnostic console.
 
     def delete_script(self):
         from qfluentwidgets import MessageBox

@@ -118,12 +118,9 @@ class StartTab(Tab):
         self.overlay_switch.checkedChanged.connect(self.on_overlay_boxes_toggled)
         self.overlay_layout.addWidget(self.overlay_switch)
 
-        self.overlay_log_switch = SwitchButton()
-        self.overlay_log_switch.setOnText(self.tr("Show Log on Overlay"))
-        self.overlay_log_switch.setOffText(self.tr("Hide Log on Overlay"))
-        self.overlay_log_switch.setChecked(og.app.ok_config.get('show_overlay_logs', True))
-        self.overlay_log_switch.checkedChanged.connect(self.on_overlay_log_toggled)
-        self.overlay_layout.addWidget(self.overlay_log_switch)
+        # Runtime logs are file-only; never paint them over the game/UI.
+        og.app.ok_config['show_overlay_logs'] = False
+        og.app.ok_config.save_file()
         self.overlay_layout.addStretch(1)
         self.add_card(self.tr("Debug Overlay"), self.overlay_widget)
 
@@ -157,13 +154,6 @@ class StartTab(Tab):
         og.app.ok_config['use_overlay'] = checked
         og.app.ok_config.save_file()
         og.app.get_overlay_view().set_boxes_enabled(checked)
-
-    def on_overlay_log_toggled(self, checked):
-        from ok import og
-        og.app.ok_config['show_overlay_logs'] = checked
-        og.app.ok_config.save_file()
-        if og.app.overlay_window:
-            og.app.overlay_window.update()
 
     @staticmethod
     def capture():

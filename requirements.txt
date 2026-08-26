@@ -4,6 +4,12 @@
 #
 #    pip-compile '.\requirements.in'
 #
+adbutils==2.12.0
+    # via -r .\\requirements.in
+decorator==5.3.1
+    # via retry2
+deprecation==2.1.0
+    # via adbutils
 ok-script==1.0.190
     # via -r .\requirements.in
 OpenCC==1.2.0
@@ -79,3 +85,5 @@ typing-extensions==4.14.1
     # via ok-script
 urllib3==2.5.0
     # via requests
+retry2==0.9.5
+    # via adbutils

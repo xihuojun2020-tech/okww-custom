@@ -1,5 +1,6 @@
 import inspect
 import unittest
+from unittest.mock import Mock
 
 from custom_ok.ok.gui.MainWindow import MainWindow
 from src.gui.GeneralSettingsTab import GeneralSettingsTab
@@ -20,6 +21,22 @@ class TestFiveSectionMainWindow(unittest.TestCase):
         source = inspect.getsource(GeneralSettingsTab.__init__)
         self.assertNotIn("QTabWidget", source)
         self.assertIn("self.add_card(title, panel)", source)
+
+    def test_account_graph_event_refreshes_all_task_consumers(self):
+        window = MainWindow.__new__(MainWindow)
+        consumers = {}
+
+        class Executor:
+            def get_task_by_class(self, task_class):
+                return consumers.get(task_class.__name__)
+
+        for name in ("DailyTask", "MultiAccountDailyTask", "TestAccountSwitchTask"):
+            consumers[name] = Mock()
+        window.executor = Executor()
+        window.refresh_account_consumers()
+        consumers["DailyTask"].refresh_account_options.assert_called_once_with()
+        consumers["MultiAccountDailyTask"].refresh_account_options.assert_called_once_with()
+        consumers["TestAccountSwitchTask"].refresh_profile_options.assert_called_once_with()
 
 
 if __name__ == "__main__":

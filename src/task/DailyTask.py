@@ -257,6 +257,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self._migrate_profiles()
         self.description = "登录、领取月卡、刷声骸并领取每日奖励"
         self._switching_profile = False
+        self._account_refresh_pending = False
         # 启动即同步序列/方案选项（config 可能尚未创建，由 after_init 在配置就绪后真正同步）
         if self.config is not None:
             self._sync_sequence_options()
@@ -273,6 +274,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             return None
 
     def run(self):
+        if getattr(self, '_account_refresh_pending', False):
+            self.refresh_account_options()
         if self.integrity_service is not None:
             self.integrity_service.guard_task_start()
             self.ensure_daily_profiles()
@@ -1305,7 +1308,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                             combo.blockSignals(False)
                         # 防空白：当前方案在选项中则显示它，否则显示第一项（避免偶发空白/不显示）
                         try:
-                            cur = self.config.get(DAILY_PROFILE) if key == DAILY_PROFILE else None
+                            cur = self.config.get(key)
                             if cur and cur in options:
                                 combo.setCurrentText(og.app.tr(cur))
                             elif options:
@@ -1315,6 +1318,20 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                         return
         except Exception:
             pass
+
+    def refresh_account_options(self):
+        """Refresh account/sequence controls without rebuilding the task card."""
+        if getattr(self, 'running', False):
+            self._account_refresh_pending = True
+            return False
+        self._sync_sequence_options()
+        sequences = self.get_profile_sequences()
+        profiles = self.get_profile_names(self.config.get(PROFILE_SEQUENCE) or None)
+        self._update_dropdown_items(PROFILE_SEQUENCE, sequences)
+        self._update_dropdown_items(DAILY_PROFILE, profiles)
+        self._refresh_gui()
+        self._account_refresh_pending = False
+        return True
 
     def _refresh_gui(self):
         """刷新当前任务卡片显示（安全版：只刷新控件值，不重建任务页——重建会导致界面空白）。
