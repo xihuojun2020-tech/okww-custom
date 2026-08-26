@@ -40,6 +40,7 @@ from ok.util.clazz import init_class_by_name
 from ok.util.process import restart_as_admin, parse_arguments_to_map
 
 from ok.util.logger import Logger
+from src.gui.CodexTheme import apply_codex_light_theme
 
 logger = Logger.get_logger(__name__)
 
@@ -57,8 +58,9 @@ class MainWindow(FluentWindow):
         self.stackedWidget.setAnimationEnabled(False)
         self._theme_cooldowns = set()
         logger.info('main window __init__')
-        self._sync_system_accent_color(refresh=True)
-        qconfig.themeChanged.connect(self._on_theme_changed)
+        # The personal build deliberately stays light; Windows theme changes
+        # must not mutate the UI while the game is running.
+        apply_codex_light_theme(QApplication.instance())
         navigation_scroll_area = self.navigationInterface.panel.scrollArea
         navigation_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         enable_touch_scrolling(navigation_scroll_area)
@@ -267,29 +269,14 @@ class MainWindow(FluentWindow):
         return True
 
     def _on_theme_changed(self, _theme):
-        self._sync_system_accent_color()
+        # Keep legacy callers harmless while enforcing the fixed light shell.
+        apply_codex_light_theme(QApplication.instance())
 
     def _apply_system_theme_change(self):
-        """Synchronize qfluentwidgets after a native Windows theme notification."""
+        """Ignore native theme notifications; the app is intentionally light."""
         try:
-            theme_changed = False
-            if qconfig.themeMode.value == Theme.AUTO:
-                previous_theme = qconfig.theme
-                qconfig.theme = Theme.AUTO
-                theme_changed = qconfig.theme != previous_theme
-
-            accent_changed = self._sync_system_accent_color()
-            if theme_changed:
-                qconfig.themeChanged.emit(Theme.AUTO)
-            if theme_changed or accent_changed:
-                updateStyleSheet()
-
-            qconfig.themeChangedFinished.emit()
-            QTimer.singleShot(750, self._refresh_mica)
-            logger.info(
-                f'System theme synchronized: mode={qconfig.themeMode.value}, '
-                f'resolved={qconfig.theme}, accent_changed={accent_changed}'
-            )
+            apply_codex_light_theme(QApplication.instance())
+            logger.info('System theme notification ignored; Codex light theme is fixed')
         finally:
             self._theme_cooldowns.discard('system-theme')
 

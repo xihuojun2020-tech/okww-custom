@@ -4,6 +4,7 @@ from PySide6.QtWidgets import QVBoxLayout, QWidget
 from qfluentwidgets import FluentIcon
 
 from ok.gui.widget.CustomTab import CustomTab
+from src.gui.SectionPanel import SectionPanel
 
 
 class GeneralSettingsTab(CustomTab):
@@ -33,10 +34,19 @@ class GeneralSettingsTab(CustomTab):
                 behavior_layout.addWidget(GlobalConfigCard(config_obj, option))
         hotkey_layout.addStretch(1)
         behavior_layout.addStretch(1)
+        self.section_panels = []
         for title, panel in zip(self.section_titles, (
                 self.start_panel, self.trigger_panel, hotkey_tab, behavior_tab)):
             panel.setMinimumHeight(360)
             self.add_card(title, panel)
+
+    def add_card(self, title, widget, stretch=0, parent=None):
+        """Keep the old call site while using the shared flat section shell."""
+        section = SectionPanel(title, parent=self.view)
+        section.add_widget(widget, stretch=1)
+        self.section_panels.append(section)
+        self.add_widget(section, stretch)
+        return section
 
     @property
     def name(self): return "通用设置"

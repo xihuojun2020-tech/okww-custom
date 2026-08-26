@@ -1,6 +1,6 @@
 # coding:utf-8
 from qfluentwidgets import FluentIcon as FIF
-from qfluentwidgets import InfoBar, setTheme
+from qfluentwidgets import InfoBar, Theme
 from qfluentwidgets import (SettingCardGroup, ComboBoxSettingCard, OptionsSettingCard, PushSettingCard)
 
 from ok import og
@@ -15,6 +15,7 @@ class SettingTab(Tab):
 
     def __init__(self, account_maintenance_only=False):
         super().__init__()
+        self.is_bottom_auxiliary = True
         self.account_maintenance_only = account_maintenance_only
         self.basic_group = SettingCardGroup(
             self.tr('App Config'))
@@ -40,6 +41,13 @@ class SettingTab(Tab):
             ],
             parent=self.basic_group
         )
+        # The personal build uses a fixed light shell; keep the setting visible
+        # as information but prevent a runtime switch to dark/auto mode.
+        try:
+            cfg.set(cfg.themeMode, Theme.LIGHT)
+        except Exception:
+            cfg.themeMode.value = Theme.LIGHT
+        self.themeCard.setEnabled(False)
         # 数据设置：账号配置导出/导入
         self.data_group = SettingCardGroup(
             self.tr('Data Config'))
@@ -211,7 +219,6 @@ class SettingTab(Tab):
         """ connect signal to slot """
         cfg.appRestartSig.connect(self.__showRestartTooltip)
 
-        self.themeCard.optionChanged.connect(lambda ci: setTheme(cfg.get(ci)))
         self.export_account_card.clicked.connect(self.export_accounts)
         self.import_account_card.clicked.connect(self.import_accounts)
         self.verify_backup_card.clicked.connect(self.verify_backup)
