@@ -469,6 +469,12 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         # 账号别名：兼容新旧字段，贯穿登录就绪、展开、选号和登录前核对。
         aliases = []
         if isinstance(profile, dict):
+            for key in ('masked_phone', 'phone', 'nickname', 'alternate_login_name'):
+                value = profile.get(key)
+                if value:
+                    normalized = normalize_account_name(str(value).strip())
+                    if normalized and normalized not in ids:
+                        ids.append(normalized)
             for key in ('备用识别名称内容', 'Account Name', 'account_name', '账号名称'):
                 value = profile.get(key)
                 if isinstance(value, (list, tuple, set)):

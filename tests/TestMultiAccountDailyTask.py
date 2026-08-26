@@ -157,6 +157,26 @@ class TestMultiAccountDailyTask(unittest.TestCase):
             '【A4-测试-18000000004】',
         )
 
+    def test_explicit_masked_phone_and_u_name_are_used_when_display_name_has_no_phone(self):
+        profiles = {
+            'A1': {
+                'masked_phone': '138****1234',
+                'alternate_login_name': 'UabcA',
+                'nickname': '夜归',
+            }
+        }
+
+        class FakeTask:
+            def _load_profiles(self):
+                return profiles
+
+            get_profile_names = MultiAccountDailyTask.get_profile_names
+            _profile_identities = MultiAccountDailyTask._profile_identities
+
+        task = FakeTask()
+        self.assertEqual(MultiAccountDailyTask.match_profile_from_login(task, '138****1234'), 'A1')
+        self.assertEqual(MultiAccountDailyTask.match_profile_from_login(task, 'UabcA'), 'A1')
+
     def test_login_identity_supports_legacy_account_name_and_rejects_ambiguity(self):
         profiles = {
             '【A1-测试-13000000001】': {'Account Name': 'LEGACY-A1'},

@@ -24,7 +24,8 @@ class AccountLabelMismatch(AccountConfigEditorError):
 
 _PHONE = re.compile(r"(?<!\d)(1[3-9]\d{9})(?!\d)")
 _TOKEN = re.compile(r"[A-Za-z0-9]{32,}")
-_LOCKED_ACCOUNT = {"profile_id", "account_aliases", "account_name", "Account Name", "账号名称"}
+_LOCKED_ACCOUNT = {"profile_id", "account_aliases", "account_name", "Account Name", "账号名称",
+                   "game_feature_code"}
 _LOCKED_TASK = {"备用识别名称", "备用识别名称内容", "Account Name", "account_name", "账号名称"}
 
 

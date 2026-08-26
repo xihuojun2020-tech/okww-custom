@@ -110,7 +110,14 @@ class AccountConfigTab(CustomTab):
             return
         self.draft = self.editor.load_draft(profile_id)
         label = self.draft.account.get("display_name", "未命名账号")
-        self.metadata.setText(f"账号短名：{label}\n唯一编号：{self.draft.profile_id}\n登录身份：已锁定，不在页面显示")
+        masked_phone = self.draft.account.get("masked_phone") or "未记录"
+        alternate = self.draft.account.get("alternate_login_name") or "未记录"
+        feature_code = self.draft.account.get("game_feature_code") or "未记录（当前不参与任务）"
+        self.metadata.setText(
+            f"账号短名：{label}\n唯一编号：{self.draft.profile_id}\n"
+            f"切换关键识别：{masked_phone}\n备用识别名：{alternate}\n"
+            f"游戏内特征码：{feature_code}"
+        )
         self._render_sequences()
         self.task_editor.setPlainText(json.dumps(self.draft.tasks, ensure_ascii=False, indent=2))
         self._render_form()
