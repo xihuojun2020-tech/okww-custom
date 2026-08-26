@@ -33,7 +33,7 @@ class AccountConfigTab(CustomTab):
         root = QWidget(self.view)
         layout = QVBoxLayout(root)
         layout.setAlignment(Qt.AlignTop)
-        layout.addWidget(BodyLabel("账号配置（登录身份与唯一编号只读）"))
+        layout.addWidget(BodyLabel("账号配置（登录身份与唯一编号只读；删除操作仅针对当前账号）"))
         row = QHBoxLayout()
         row.addWidget(QLabel("账号"))
         self.profile_combo = QComboBox(root)
@@ -57,7 +57,7 @@ class AccountConfigTab(CustomTab):
         self.preview_button = QPushButton("预览差异", root)
         self.save_button = QPushButton("确认保存", root)
         self.discard_button = QPushButton("丢弃草稿", root)
-        self.delete_button = QPushButton("删除账号", root)
+        self.delete_button = QPushButton("删除当前账号", root)
         for button in (self.preview_button, self.save_button, self.discard_button, self.delete_button):
             actions.addWidget(button)
         layout.addLayout(actions)

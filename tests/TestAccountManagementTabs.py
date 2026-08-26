@@ -18,6 +18,15 @@ class TestAccountManagementTabs(unittest.TestCase):
         self.assertEqual(AccountConfigTab.name.fget(None), "账号配置")
         self.assertEqual(SequenceManagementTab.name.fget(None), "序列管理")
 
+    def test_delete_labels_identify_the_object_being_changed(self):
+        account_source = inspect.getsource(AccountConfigTab.__init__)
+        sequence_source = inspect.getsource(SequenceManagementTab.__init__)
+        self.assertIn("删除当前账号", account_source)
+        self.assertIn("删除当前序列", sequence_source)
+        self.assertIn("当前序列包含的账号", sequence_source)
+        self.assertIn("上移账号", sequence_source)
+        self.assertIn("下移账号", sequence_source)
+
     def test_primary_farm_dropdown_ignores_mouse_wheel(self):
         class Event:
             ignored = False
