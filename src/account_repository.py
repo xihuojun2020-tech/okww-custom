@@ -265,6 +265,19 @@ class AccountRepository:
             for name in bundle_module._PARTITION_NAMES
         }
         service.import_bundle(bundle, confirm=True, trust_external=True)
+        # Keep a complete immutable runtime snapshot alongside the legacy
+        # master/working projection.  Existing callers continue to use the
+        # projection during migration; new callers can resolve active.json.
+        from .account_publish_service import AccountPublishService
+        publish_service = AccountPublishService(self.root)
+        source_profiles = raw.get("profiles", raw.get("accounts", {}))
+        if isinstance(source_profiles, Mapping) and isinstance(raw.get("sequences", {}), Mapping):
+            publish_service.publish(
+                expected_revision=publish_service._active_revision(),
+                profiles=source_profiles,
+                index=raw,
+                sequences=raw.get("sequences", {}),
+            )
 
     def publish_profile(self, scope: ProfileEditScope, payload: Mapping[str, Any], **_kwargs) -> ProfileRecord:
         with self._lock:
