@@ -44,6 +44,11 @@ INCIDENT_DIRNAME = "config_integrity_incidents"
 PROTECTED_PROFILE_FIELDS = (
     "profile_id",
     "display_name",
+    "phone",
+    "masked_phone",
+    "nickname",
+    "alternate_login_name",
+    "game_feature_code",
     "account_aliases",
     "task_config",
     "schedule",
@@ -284,6 +289,10 @@ def validate_master(data: Any) -> list[str]:
             continue
         _require(profile.get("display_name") is not None and isinstance(profile.get("display_name"), str)
                  and bool(profile.get("display_name").strip()), f"{path}.display_name must be a non-empty string", errors)
+        for identity_field in ("phone", "masked_phone", "nickname", "alternate_login_name", "game_feature_code"):
+            if identity_field in profile:
+                _require(isinstance(profile[identity_field], str),
+                         f"{path}.{identity_field} must be a string", errors)
         aliases = profile.get("account_aliases", [])
         _require(isinstance(aliases, list) and all(isinstance(v, str) and v.strip() for v in aliases),
                  f"{path}.account_aliases must be a list of non-empty strings", errors)
@@ -373,6 +382,9 @@ def normalize_master(data: Mapping[str, Any]) -> dict[str, Any]:
         profiles[profile_id] = {
             "profile_id": profile_id,
             "display_name": str(profile["display_name"]).strip(),
+            **{key: str(profile[key]).strip() for key in
+               ("phone", "masked_phone", "nickname", "alternate_login_name", "game_feature_code")
+               if key in profile},
             "account_aliases": _sorted_aliases(profile.get("account_aliases", [])),
             "task_config": _canonical(profile.get("task_config", {})),
             "schedule": _canonical(profile.get("schedule", {})),
@@ -412,12 +424,16 @@ def normalize_working(data: Mapping[str, Any], master: Mapping[str, Any] | None 
         if not isinstance(task_config, Mapping):
             # Legacy files store PROFILE_KEYS at profile top level.
             task_config = {str(k): _canonical(v) for k, v in profile.items()
-                           if k not in {"profile_id", "display_name", "account_aliases", "schedule", "extensions",
+                           if k not in {"profile_id", "display_name", "phone", "masked_phone", "nickname",
+                                        "alternate_login_name", "game_feature_code", "account_aliases", "schedule", "extensions",
                                         "last_completed"}}
         aliases = profile.get("account_aliases") or []
         output[profile_id] = {
             "profile_id": profile_id,
             "display_name": str(profile.get("display_name", key)).strip(),
+            **{name: str(profile[name]).strip() for name in
+               ("phone", "masked_phone", "nickname", "alternate_login_name", "game_feature_code")
+               if name in profile},
             "account_aliases": _sorted_aliases(aliases),
             "task_config": _canonical(task_config),
             "schedule": _canonical(profile.get("schedule", {})),
@@ -767,7 +783,8 @@ class ConfigIntegrityService:
         legacy_keys: dict[str, str] = {}
         seen_ids: set[str] = set()
         excluded_flat_fields = {
-            "profile_id", "display_name", "account_aliases", "task_config", "schedule", "extensions",
+            "profile_id", "display_name", "phone", "masked_phone", "nickname",
+            "alternate_login_name", "game_feature_code", "account_aliases", "task_config", "schedule", "extensions",
             "last_completed",
         }
         for key, profile in entries:
@@ -844,6 +861,9 @@ class ConfigIntegrityService:
 
             profiles[profile_id] = {
                 "display_name": display_name,
+                **{name: copy.deepcopy(profile[name]) for name in
+                   ("phone", "masked_phone", "nickname", "alternate_login_name", "game_feature_code")
+                   if name in profile},
                 "account_aliases": copy.deepcopy(aliases),
                 "task_config": task_config,
                 "schedule": copy.deepcopy(dict(schedule)),
@@ -1354,6 +1374,9 @@ class ConfigIntegrityService:
                 item["last_completed"] = copy.deepcopy(old["last_completed"])
             item["profile_id"] = pid
             item["display_name"] = p["display_name"]
+            for name in ("phone", "masked_phone", "nickname", "alternate_login_name", "game_feature_code"):
+                if name in p:
+                    item[name] = copy.deepcopy(p[name])
             item["account_aliases"] = list(p.get("account_aliases", []))
             item["task_config"] = copy.deepcopy(p.get("task_config", {}))
             # Keep the legacy consumer shape in sync while removing any stale
@@ -1380,6 +1403,9 @@ class ConfigIntegrityService:
         for pid, profile in master.get("profiles", {}).items():
             item = copy.deepcopy(profile.get("task_config", {}))
             item.update({"profile_id": pid, "display_name": profile.get("display_name", pid),
+                         **{name: copy.deepcopy(profile[name]) for name in
+                            ("phone", "masked_phone", "nickname", "alternate_login_name", "game_feature_code")
+                            if name in profile},
                          "account_aliases": list(profile.get("account_aliases", [])),
                          "schedule": copy.deepcopy(profile.get("schedule", {}))})
             profiles[str(profile.get("display_name", pid))] = item

@@ -2,6 +2,8 @@ import unittest
 
 from src.account_identity import (
     AccountIdentityError,
+    extract_account_identity,
+    match_profile_identity,
     masked_phone,
     resolve_profile_identity,
     resolve_profile_short_names,
@@ -40,6 +42,26 @@ class TestAccountIdentity(unittest.TestCase):
         self.assertIsNone(resolve_profile_identity("missing", self.profiles))
         with self.assertRaises(AccountIdentityError):
             resolve_profile_short_names((), self.profiles)
+
+    def test_explicit_identity_fields_and_masked_phone_priority(self):
+        profiles = {
+            "A1": {
+                "profile_id": "A1",
+                "display_name": "A1",
+                "phone": "15300000001",
+                "masked_phone": "153****0001",
+                "nickname": "夜归",
+                "alternate_login_name": "UabcA",
+                "game_feature_code": "FC-A1",
+            }
+        }
+        identity = extract_account_identity("A1", profiles["A1"])
+        self.assertEqual("153****0001", identity.masked_phone)
+        self.assertEqual("UabcA", identity.alternate_login_name)
+        self.assertEqual("A1", match_profile_identity("153****0001", profiles))
+        self.assertEqual("A1", match_profile_identity("UabcA", profiles))
+        self.assertIsNone(match_profile_identity("FC-A1", profiles))
+        self.assertEqual("A1", match_profile_identity("FC-A1", profiles, strict_feature_code=True))
 
 
 if __name__ == "__main__":
