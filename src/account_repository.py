@@ -296,16 +296,15 @@ class AccountRepository:
         # Keep a complete immutable runtime snapshot alongside the legacy
         # master/working projection.  Existing callers continue to use the
         # projection during migration; new callers can resolve active.json.
-        from .account_publish_service import AccountPublishService
-        publish_service = AccountPublishService(self.root)
+        from .account_graph_store import AccountGraphStore
+        graph_store = AccountGraphStore(self.root)
         source_profiles = raw.get("profiles", raw.get("accounts", {}))
         if isinstance(source_profiles, Mapping) and isinstance(raw.get("sequences", {}), Mapping):
-            publish_service.publish(
-                expected_revision=publish_service._active_revision(),
-                profiles=source_profiles,
-                index=raw,
-                sequences=raw.get("sequences", {}),
-            )
+            graph_store.publish({
+                "profiles": source_profiles,
+                "index": raw,
+                "sequences": raw.get("sequences", {}),
+            }, expected_revision=graph_store.service._active_revision())
 
     def publish_profile(self, scope: ProfileEditScope, payload: Mapping[str, Any], **_kwargs) -> ProfileRecord:
         with self._lock:
