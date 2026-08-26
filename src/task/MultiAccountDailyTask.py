@@ -229,6 +229,21 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _read_sequences(self):
         """读取统一序列归属数据（daily_profiles.json 顶层 sequences）。"""
+        # The account settings page writes through AccountRepository.  Do not
+        # use the integrity service's startup snapshot here, otherwise newly
+        # created sequences and membership edits stay invisible until restart.
+        repository = get_default_repository()
+        if repository is not None:
+            try:
+                loader = getattr(repository, 'get_detached_projection', None) or getattr(
+                    repository, 'legacy_profile_projection', None)
+                if callable(loader):
+                    projection = loader()
+                    sequences = projection.get('sequences', {}) if isinstance(projection, dict) else {}
+                    if isinstance(sequences, dict):
+                        return sequences
+            except Exception as exc:
+                logger.warning(f'account repository sequence projection unavailable: {exc}')
         if self.integrity_service is not None:
             try:
                 result = self.integrity_service.last_result or self.integrity_service.check()

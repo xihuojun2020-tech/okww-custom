@@ -32,3 +32,7 @@
 - `src/account_repository.py` 的 `publish_profile`：账号任务配置和所属序列在同一个候选 master 中提交，保持 CAS 修订检查与配置包原子发布。
 - OWASP Logging Cheat Sheet：日志与错误信息避免记录认证数据、会话令牌及敏感个人数据。<https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html>
 - CWE-367（TOCTOU）：修订号/指纹检查用于防止预览后、保存前的外部修改被静默覆盖。<https://cwe.mitre.org/data/definitions/367.html>
+## 2026-08-26：任务联动读取与日志降噪
+
+- 账号设置与任务模块共享 `AccountRepository` 的最新投影，避免完整性服务启动快照导致新序列/成员变更需重启才生效。
+- 任务页仅过滤窗口尺寸内部诊断消息，保留原始文件日志，参考 ok-script 的窗口捕获日志行为。

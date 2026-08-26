@@ -59,6 +59,11 @@ class OneTimeTaskTab(TaskTab):
     def _append_log(self, level_no, message):
         """把运行日志追加到常驻日志面板（communicate.log 信号）。"""
         try:
+            # Window geometry churn is an internal capture diagnostic, not a
+            # task-stage message. Keep it in the file log but hide it from the
+            # user-facing task panel to avoid flooding the UI.
+            if 'do_update_window_size changed' in str(message):
+                return
             self.log_panel_text.appendPlainText(message)
             sb = self.log_panel_text.verticalScrollBar()
             sb.setValue(sb.maximum())

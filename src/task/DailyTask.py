@@ -499,6 +499,21 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def get_sequences_data(self):
         """读取账号归属序列数据（sequences: {序列名: [方案名...]}）。"""
+        # Account/sequence editors publish the master through AccountRepository.
+        # Read that projection first so an already-created sequence is visible
+        # immediately; the integrity service snapshot may still be from startup.
+        repository = get_default_repository()
+        if repository is not None:
+            try:
+                loader = getattr(repository, 'get_detached_projection', None) or getattr(
+                    repository, 'legacy_profile_projection', None)
+                if callable(loader):
+                    projection = loader()
+                    sequences = projection.get('sequences', {}) if isinstance(projection, dict) else {}
+                    if isinstance(sequences, dict):
+                        return copy.deepcopy(sequences)
+            except Exception as exc:
+                logger.warning(f'account repository sequence projection unavailable: {exc}')
         if self.integrity_service is not None:
             result = self.integrity_service.last_result or self.integrity_service.check()
             if result.master_valid and result.master:
