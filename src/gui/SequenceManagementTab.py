@@ -3,6 +3,7 @@
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QAbstractScrollArea, QHBoxLayout, QInputDialog, QListWidget,
                                QMessageBox, QPushButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import QSizePolicy
 from qfluentwidgets import BodyLabel, FluentIcon
 
 from ok.gui.widget.CustomTab import CustomTab
@@ -20,6 +21,7 @@ class SequenceManagementTab(CustomTab):
         repository = get_default_repository() or AccountRepository()
         self.service = service or SequenceRepository(repository)
         root = QWidget(self.view)
+        root.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         layout = QVBoxLayout(root)
         layout.setAlignment(Qt.AlignTop)
         layout.addWidget(BodyLabel("序列配置（运行开始后使用不可变快照；此处删除的是整个序列）"))

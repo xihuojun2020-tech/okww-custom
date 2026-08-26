@@ -1,6 +1,6 @@
 """Flat bordered section container shared by all five top-level pages."""
 
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget, QSizePolicy
 
 from src.gui.FlatSettingRow import FlatSettingRow
 
@@ -9,6 +9,11 @@ class SectionPanel(QWidget):
     def __init__(self, title: str, description: str = "", parent=None):
         super().__init__(parent)
         self.title = title
+        # Sections are the full-width building blocks of every hub page.
+        # Explicitly opting into horizontal expansion prevents a child whose
+        # size hint is only a few hundred pixels wide from leaving a large
+        # unused area on the right side of the window.
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.setObjectName("codexSection")
         self.title_label = QLabel(title, self)
         self.title_label.setStyleSheet("font-size: 14px; font-weight: 600;")
@@ -27,6 +32,9 @@ class SectionPanel(QWidget):
         layout.addLayout(self.content_layout)
 
     def add_widget(self, widget: QWidget, stretch: int = 0):
+        policy = widget.sizePolicy()
+        policy.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        widget.setSizePolicy(policy)
         self.content_layout.addWidget(widget, stretch)
         return widget
 

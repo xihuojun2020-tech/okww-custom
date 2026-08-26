@@ -5,7 +5,7 @@ import json
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
                                QMessageBox, QPlainTextEdit, QPushButton, QInputDialog,
-                               QVBoxLayout, QWidget, QLineEdit)
+                               QVBoxLayout, QWidget, QLineEdit, QSizePolicy)
 from qfluentwidgets import BodyLabel, FluentIcon
 
 from ok.gui.widget.CustomTab import CustomTab
@@ -36,6 +36,7 @@ class AccountConfigTab(CustomTab):
         self.rebind_service = AccountRebindService(self.editor.repository)
         self.draft = None
         root = QWidget(self.view)
+        root.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         layout = QVBoxLayout(root)
         layout.setAlignment(Qt.AlignTop)
         layout.addWidget(BodyLabel("账号配置（登录身份与唯一编号只读；删除操作仅针对当前账号）"))

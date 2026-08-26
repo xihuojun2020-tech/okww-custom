@@ -19,3 +19,7 @@
    - https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html
 8. Microsoft Data Protection API（DPAPI）：绑定当前 Windows 用户/计算机的本机数据保护接口；本项目在不可用时进入安全错误，不把敏感备份降级为明文。
    - https://learn.microsoft.com/en-us/windows/win32/api/dpapi/
+
+9. Qt `QScrollArea.takeWidget()` 与 `QSizePolicy.Expanding`：重新嵌入设置页内容时先解除旧滚动区所有权，再让分区布局接管水平尺寸，避免尺寸提示造成不可用空间。
+   - https://doc.qt.io/qtforpython-6/PySide6/QtWidgets/QScrollArea.html#PySide6.QtWidgets.QScrollArea.takeWidget
+   - https://doc.qt.io/qtforpython-6/PySide6/QtWidgets/QSizePolicy.html

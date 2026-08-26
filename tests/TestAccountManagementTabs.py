@@ -64,6 +64,14 @@ class TestAccountManagementTabs(unittest.TestCase):
         self.assertIn("refresh_sequences", source)
         self.assertIn("account_changed.emit", source)
 
+    def test_embedded_pages_use_full_available_width(self):
+        section_source = inspect.getsource(__import__(
+            "src.gui.SectionPanel", fromlist=["SectionPanel"]).SectionPanel)
+        account_source = inspect.getsource(AccountSettingsTab)
+        self.assertIn("setHorizontalPolicy(QSizePolicy.Policy.Expanding)", section_source)
+        self.assertIn("takeWidget", account_source)
+        self.assertIn("content_policy.setHorizontalPolicy", account_source)
+
 
 if __name__ == "__main__":
     unittest.main()

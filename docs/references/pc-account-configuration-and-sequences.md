@@ -9,6 +9,11 @@
 - ALAS 的职责型左侧入口和单页分区信息架构仍是界面参考；本项目只借鉴布局组织，不复制其任务实现。<https://github.com/LmeSzinc/AzurLaneAutoScript>
 - Qt for Python `QPalette`、`QApplication.setStyleSheet` 和 Widgets 布局文档是浅色主题与平铺控件实现依据。<https://doc.qt.io/qtforpython-6/PySide6/QtGui/QPalette.html>
 
+### 2026-08-26 配置页面宽度修复补充
+
+- `QScrollArea.takeWidget()`：将自定义页内容从原滚动区解除后再挂载到分区面板，避免旧滚动区继续控制内容几何尺寸。<https://doc.qt.io/qtforpython-6/PySide6/QtWidgets/QScrollArea.html#PySide6.QtWidgets.QScrollArea.takeWidget>
+- `QSizePolicy.Expanding`：配置区块和表单容器采用水平扩展策略，使用父级布局提供的可用宽度。<https://doc.qt.io/qtforpython-6/PySide6/QtWidgets/QSizePolicy.html>
+
 ## 本地设计来源
 
 - `E:\AI work\better wuwa\src\account_identity.py`：身份候选、精确短名和歧义拒绝的早期实现；本项目仅吸收纯 PC 解析思想。
