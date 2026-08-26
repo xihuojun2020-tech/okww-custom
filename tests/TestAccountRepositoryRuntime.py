@@ -10,6 +10,7 @@ from src.account_repository import (
     get_default_repository,
     set_default_repository,
 )
+from src.account_publish_service import AccountPublishService
 
 
 class _Migration:
@@ -86,6 +87,26 @@ class TestAccountRepositoryRuntime(unittest.TestCase):
         path = self.repo.backup_profile(self.a, {"name": "A1"})
         self.assertEqual(path.parent.name, self.a)
         self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["profile_id"], self.a)
+
+    def test_runtime_reads_verified_active_snapshot_before_mutable_master(self):
+        service = AccountPublishService(self.root)
+        service.publish(
+            expected_revision="",
+            profiles={self.a: {"profile_id": self.a, "short_name": "A1", "task_config": {}}},
+            index={"config_id": "published", "timezone": "Asia/Shanghai"},
+            sequences={"主序列": [self.a]},
+        )
+        mutable = json.loads(self.repo.index_path.read_text(encoding="utf-8"))
+        mutable["accounts"][self.a]["short_name"] = "不应被运行时读取"
+        self.repo.index_path.write_text(json.dumps(mutable, ensure_ascii=False), encoding="utf-8")
+        self.assertEqual(self.repo.load_profile(self.a).account["short_name"], "A1")
+
+    def test_invalid_active_snapshot_is_a_hard_error(self):
+        service = AccountPublishService(self.root)
+        service.active_path.parent.mkdir(parents=True, exist_ok=True)
+        service.active_path.write_text('{"revision":"missing"}', encoding="utf-8")
+        with self.assertRaisesRegex(AccountRepositoryError, "已发布账号快照无效"):
+            self.repo.list_profile_ids()
 
 
 if __name__ == "__main__":

@@ -161,7 +161,9 @@ class AccountRepository:
         return self.backup_dir
 
     def _load_index(self) -> tuple[dict[str, Any], dict[str, Any], dict[str, list[str]]]:
-        raw = _json_read(self.index_path)
+        publish_root = self.root / "configs" / "published" if self.root.name.casefold() != "configs" else self.root / "published"
+        raw = (self._load_active_master() if (publish_root / "active.json").is_file()
+               else _json_read(self.index_path))
         if not isinstance(raw, Mapping):
             raise AccountRepositoryError("账号索引必须是 JSON 对象")
         raw = dict(raw)
@@ -207,6 +209,29 @@ class AccountRepository:
                 resolved.append(member_id)
             sequences[name] = resolved
         return raw, accounts, sequences
+
+    def _load_active_master(self) -> dict[str, Any] | None:
+        """Read the verified immutable snapshot when one is active.
+
+        The editor still publishes the legacy master for compatibility, but
+        runtime readers must not observe it halfway through a replacement.
+        An existing, invalid active pointer is a hard error: silently falling
+        back to the mutable file could run a different account than the one
+        the user just reviewed.
+        """
+        from .account_publish_service import AccountPublishService
+
+        service = AccountPublishService(self.root)
+        if not service.active_path.is_file():
+            return None
+        try:
+            active = service.load_active()
+            raw = _json_read(active.bundle_dir / "account_master_config.json")
+        except Exception as exc:
+            raise AccountRepositoryError(f"已发布账号快照无效：{exc}") from exc
+        if not isinstance(raw, Mapping):
+            raise AccountRepositoryError("已发布账号快照的总配置必须是 JSON 对象")
+        return copy.deepcopy(dict(raw))
 
     def _require_account(self, profile_id: str) -> str:
         profile_id = _profile_id(profile_id)
