@@ -11,6 +11,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from src.account_repository import AccountRepository
+from src.account_publish_service import AccountPublishService
+from src.config_integrity import ConfigPaths
 from src.task.DailyTask import DailyTask
 from src.task.MultiAccountDailyTask import MultiAccountDailyTask
 from src.task.TestAccountSwitchTask import (
@@ -47,6 +49,26 @@ class TestAccountRuntimeIntegration(unittest.TestCase):
         self.assertEqual(profiles["A1"]["Which to Farm"], "repository")
         profiles["A1"]["Which to Farm"] = "mutated caller copy"
         self.assertEqual(projection["A1"]["Which to Farm"], "repository")
+
+    def test_daily_and_multi_tasks_read_active_snapshot_with_integrity_service(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            profile_id = str(uuid.uuid4())
+            profile = {"profile_id": profile_id, "display_name": "A1",
+                       "phone": "13800001234", "task_config": {"Which to Farm": "active"}}
+            AccountPublishService(root).publish(
+                expected_revision="", profiles={profile_id: profile},
+                index={"config_id": "active-test"}, sequences={"序列1": [profile_id]})
+
+            class Integrity:
+                paths = ConfigPaths.from_root(root)
+
+            daily = object.__new__(DailyTask)
+            daily.integrity_service = Integrity()
+            multi = object.__new__(MultiAccountDailyTask)
+            multi.integrity_service = Integrity()
+            self.assertEqual(daily.load_daily_profiles()["A1"]["Which to Farm"], "active")
+            self.assertIn("A1", multi._load_profiles())
 
     def test_bind_verified_profile_keeps_immutable_run_snapshot(self):
         profile_id = str(uuid.uuid4())

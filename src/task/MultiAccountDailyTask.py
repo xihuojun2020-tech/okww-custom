@@ -233,6 +233,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         # use the integrity service's startup snapshot here, otherwise newly
         # created sequences and membership edits stay invisible until restart.
         repository = get_default_repository()
+        if repository is None and self.integrity_service is not None:
+            repository = AccountRepository(paths=self.integrity_service.paths,
+                                            integrity_service=self.integrity_service)
         if repository is not None:
             try:
                 loader = getattr(repository, 'get_detached_projection', None) or getattr(
@@ -410,6 +413,15 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
     def _load_profiles(self):
         """加载全部方案（含手机号、账号别名）。"""
         try:
+            repository = get_default_repository()
+            if repository is None and self.integrity_service is not None:
+                repository = AccountRepository(paths=self.integrity_service.paths,
+                                                integrity_service=self.integrity_service)
+            if repository is not None:
+                projection = repository.get_detached_projection()
+                profiles = projection.get('profiles', {}) if isinstance(projection, dict) else {}
+                if isinstance(profiles, dict):
+                    return profiles
             if self.integrity_service is not None:
                 result = self.integrity_service.last_result or self.integrity_service.check()
                 if result.master_valid and result.master:

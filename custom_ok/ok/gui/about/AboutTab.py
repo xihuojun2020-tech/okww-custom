@@ -46,6 +46,7 @@ class AboutTab(Tab):
             except Exception:
                 pass
             update_log_text.setPlainText(upstream_note + self.tr(
+                'V1.17.02：每日任务和多账号每日任务正式通过账号仓库读取 active 账号快照，避免继续使用启动时旧内存快照。\n'
                 'V1.17.01：任务运行时优先读取已校验的 active 账号快照；快照损坏时安全停止，不回退到可能半写入的总配置。\n'
                 'V1.17.00：增加独立账号文件、带星号脱敏手机号优先匹配、U…A 备用识别名和暂不启用的游戏内特征码字段；发布快照使用原子指针。\n'
                 'V1.16.01：修复开发版缺少 account_master_config.json 时账号配置页初始化直接退出的问题；现在保留窗口并进入可恢复安全状态。\n'

@@ -24,7 +24,7 @@ from src.config_integrity import (
     ConfigWriteBlocked,
     get_default_service,
 )
-from src.account_repository import get_default_repository
+from src.account_repository import AccountRepository, get_default_repository
 
 logger = Logger.get_logger(__name__)
 
@@ -472,12 +472,18 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
     def load_daily_profiles(self):
         """读取只读总配置的兼容投影；未安装门禁时仅作旧版只读读取。"""
         repository = get_default_repository()
+        if repository is None and self.integrity_service is not None:
+            repository = AccountRepository(paths=self.integrity_service.paths,
+                                            integrity_service=self.integrity_service)
         if repository is not None:
             loader = getattr(repository, 'get_detached_projection', None) or getattr(repository, 'legacy_profile_projection', None)
             if callable(loader):
-                projection = loader()
-                profiles = projection.get('profiles', {}) if isinstance(projection, dict) else {}
-                return copy.deepcopy(profiles) if isinstance(profiles, dict) else {}
+                try:
+                    projection = loader()
+                    profiles = projection.get('profiles', {}) if isinstance(projection, dict) else {}
+                    return copy.deepcopy(profiles) if isinstance(profiles, dict) else {}
+                except Exception as exc:
+                    logger.warning(f'active account snapshot unavailable: {exc}')
         if self.integrity_service is not None:
             result = self.integrity_service.last_result or self.integrity_service.check()
             if result.master_valid and result.master:
@@ -503,6 +509,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         # Read that projection first so an already-created sequence is visible
         # immediately; the integrity service snapshot may still be from startup.
         repository = get_default_repository()
+        if repository is None and self.integrity_service is not None:
+            repository = AccountRepository(paths=self.integrity_service.paths,
+                                            integrity_service=self.integrity_service)
         if repository is not None:
             try:
                 loader = getattr(repository, 'get_detached_projection', None) or getattr(
