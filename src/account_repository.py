@@ -476,7 +476,13 @@ class AccountRepository:
         return False
 
     def backup_profile(self, profile_id: str, payload: Any) -> Path:
-        """Append an immutable backup under exactly one validated account UUID."""
+        """Append an immutable backup under exactly one validated account UUID.
+
+        The compatibility ``.json`` record contains only routing metadata and
+        an encrypted sidecar carries the complete payload on Windows.  This
+        preserves existing backup discovery while preventing identity and
+        credential fields from being stored as plain JSON.
+        """
         with self._lock:
             profile_id = self._require_account(profile_id)
             if isinstance(payload, Mapping):
@@ -487,8 +493,29 @@ class AccountRepository:
             target.mkdir(parents=True, exist_ok=True)
             stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
             path = target / f"{stamp}-{time.time_ns()}-{uuid.uuid4().hex[:8]}.json"
-            data = {"profile_id": profile_id, "created_at": datetime.now(timezone.utc).isoformat(),
-                    "payload": copy.deepcopy(payload)}
+            created_at = datetime.now(timezone.utc).isoformat()
+            data = {"profile_id": profile_id, "created_at": created_at}
+            from .secure_backup import SecureBackupService, SecureBackupUnavailable
+            secure_path = path.with_suffix(path.suffix + ".dpapi")
+            envelope = {"profile_id": profile_id, "created_at": created_at,
+                        "payload": copy.deepcopy(payload)}
+            try:
+                encrypted = SecureBackupService().encrypt_snapshot(
+                    json.dumps(envelope, ensure_ascii=False, sort_keys=True).encode("utf-8"))
+            except SecureBackupUnavailable:
+                # Never write a sensitive payload as plaintext on a host that
+                # cannot provide the required local protection.
+                if isinstance(payload, Mapping) and any(
+                        key in payload for key in ("account", "tasks", "phone", "masked_phone", "credential", "token")):
+                    raise AccountRepositoryError("本机无法加密账号备份，已拒绝写入明文")
+                data["payload"] = copy.deepcopy(payload)
+                atomic_write_json(path, data)
+                return path
+            temp = secure_path.with_name(f".{secure_path.name}.{uuid.uuid4().hex}.tmp")
+            temp.write_bytes(encrypted)
+            os.replace(str(temp), str(secure_path))
+            data.update({"secure": True, "payload": "[ENCRYPTED]",
+                         "encrypted_file": secure_path.name})
             atomic_write_json(path, data)
             return path
 
