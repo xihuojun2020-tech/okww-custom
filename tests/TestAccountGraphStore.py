@@ -2,6 +2,7 @@ import tempfile
 import unittest
 import uuid
 from pathlib import Path
+from unittest.mock import patch
 
 from src.account_graph_store import AccountGraphStore
 from src.account_publish_service import AccountPublishService, PublishState
@@ -34,6 +35,26 @@ class TestAccountGraphStore(unittest.TestCase):
             with self.assertRaises(Exception):
                 store.publish({"profiles": {}, "index": {"config_id": "test"}, "sequences": {}},
                               expected_revision="stale")
+            self.assertEqual(store.load_active().revision, first.revision)
+
+    def test_interrupted_mirror_keeps_previous_active_revision(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            profile_id = str(uuid.uuid4())
+            store = AccountGraphStore(root)
+            first = store.publish({"profiles": {profile_id: {"profile_id": profile_id,
+                                                               "display_name": "A1",
+                                                               "task_config": {}}},
+                                   "index": {"config_id": "test"},
+                                   "sequences": {"主序列": [profile_id]}})
+            candidate = {"profiles": {profile_id: {"profile_id": profile_id,
+                                                    "display_name": "changed",
+                                                    "task_config": {}}},
+                         "index": {"config_id": "test"},
+                         "sequences": {"主序列": [profile_id]}}
+            with patch.object(store.service, "_mirror_projections", side_effect=OSError("interrupt")):
+                with self.assertRaises(OSError):
+                    store.publish(candidate, expected_revision=first.revision)
             self.assertEqual(store.load_active().revision, first.revision)
 
 
