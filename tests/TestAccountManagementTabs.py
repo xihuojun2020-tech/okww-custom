@@ -43,6 +43,14 @@ class TestAccountManagementTabs(unittest.TestCase):
         ClickOnlyComboBox.wheelEvent(None, event)
         self.assertTrue(event.ignored)
 
+    def test_account_pages_enter_safe_state_when_master_is_missing(self):
+        account_source = inspect.getsource(AccountConfigTab.refresh)
+        sequence_source = inspect.getsource(SequenceManagementTab.refresh)
+        self.assertIn("AccountRepositoryError", account_source)
+        self.assertIn("账号仓库暂不可用", account_source)
+        self.assertIn("AccountRepositoryError", sequence_source)
+        self.assertIn("序列仓库暂不可用", sequence_source)
+
 
 if __name__ == "__main__":
     unittest.main()

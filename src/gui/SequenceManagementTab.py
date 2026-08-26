@@ -5,7 +5,7 @@ from PySide6.QtWidgets import QHBoxLayout, QInputDialog, QListWidget, QMessageBo
 from qfluentwidgets import BodyLabel, FluentIcon
 
 from ok.gui.widget.CustomTab import CustomTab
-from src.account_repository import AccountRepository, get_default_repository
+from src.account_repository import AccountRepository, AccountRepositoryError, get_default_repository
 from src.account_config_editor import sanitize_error
 from src.sequence_repository import SequenceRepository
 
@@ -68,7 +68,14 @@ class SequenceManagementTab(CustomTab):
 
     def refresh(self):
         selected = self._selected().sequence_id if getattr(self, "_drafts", None) and self._selected() else None
-        self._drafts = list(self.service.list())
+        try:
+            self._drafts = list(self.service.list())
+        except AccountRepositoryError as exc:
+            self._drafts = []
+            self.sequences.clear()
+            self.members.clear()
+            self.status.setText(f"序列仓库暂不可用：{sanitize_error(exc)}")
+            return
         self.sequences.clear()
         for item in self._drafts:
             self.sequences.addItem(f"{item.sequence_id}（{'启用' if item.enabled else '停用'}）")

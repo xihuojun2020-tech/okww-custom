@@ -10,7 +10,7 @@ from qfluentwidgets import BodyLabel, FluentIcon
 
 from ok.gui.widget.CustomTab import CustomTab
 from src.account_config_editor import AccountConfigEditor, sanitize_error
-from src.account_repository import AccountRepository, get_default_repository
+from src.account_repository import AccountRepository, AccountRepositoryError, get_default_repository
 from src.account_field_metadata import (account_field_metadata, localize_account_value,
                                         restore_account_value)
 
@@ -90,10 +90,18 @@ class AccountConfigTab(CustomTab):
     def refresh(self):
         self.profile_combo.blockSignals(True)
         self.profile_combo.clear()
-        for record in self.editor.repository.list_profiles():
-            label = str(record.account.get("display_name", "未命名账号"))
-            self.profile_combo.addItem(label, record.profile_id)
-        self.profile_combo.blockSignals(False)
+        try:
+            records = self.editor.repository.list_profiles()
+            for record in records:
+                label = str(record.account.get("display_name", "未命名账号"))
+                self.profile_combo.addItem(label, record.profile_id)
+        except AccountRepositoryError as exc:
+            # A missing master is a safe-mode state during first launch or
+            # after an incomplete import.  Keep the shell visible so the
+            # integrity dialog can explain/recover it instead of crashing UI.
+            self.status.setText(f"账号仓库暂不可用：{sanitize_error(exc)}")
+        finally:
+            self.profile_combo.blockSignals(False)
         self._load_selected()
 
     def _load_selected(self, *_args):
