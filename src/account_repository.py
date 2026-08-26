@@ -219,14 +219,17 @@ class AccountRepository:
         back to the mutable file could run a different account than the one
         the user just reviewed.
         """
-        from .account_publish_service import AccountPublishService
+        from .account_graph_store import AccountGraphStore
 
-        service = AccountPublishService(self.root)
+        service = AccountGraphStore(self.root)
         if not service.active_path.is_file():
             return None
         try:
             active = service.load_active()
-            raw = _json_read(active.bundle_dir / "account_master_config.json")
+            raw = {"schema_version": 1,
+                   **copy.deepcopy(dict(active.index)),
+                   "profiles": copy.deepcopy(dict(active.profiles)),
+                   "sequences": copy.deepcopy(dict(active.sequences))}
         except Exception as exc:
             raise AccountRepositoryError(f"已发布账号快照无效：{exc}") from exc
         if not isinstance(raw, Mapping):
