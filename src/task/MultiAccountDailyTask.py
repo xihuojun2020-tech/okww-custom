@@ -40,6 +40,8 @@ from src.account_identity import (
 )
 from src.account_repository import AccountRepository, get_default_repository
 from src.sequence_repository import SequenceRepository
+from src.runtime.sequence_snapshot_service import SequenceSnapshotService
+from src.runtime.task_run_coordinator import TaskRunCoordinator
 
 logger = Logger.get_logger(__name__)
 
@@ -104,6 +106,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         self.support_schedule_task = True
         self._profile_cache = {}  # 方案名 → 方案内容（含手机号/别名），用于登录账号识别
         self._account_refresh_pending = False
+        self.run_coordinator = TaskRunCoordinator()
         # 当前执行序列（账号归属序列，序列列表来自 daily_profiles 的 sequences，可在下方管理增删）
         self.default_config[CURRENT_SEQUENCE] = '序列1'
         self.config_description[CURRENT_SEQUENCE] = '当前执行的账号序列（按该序列的账号执行；序列可增删）'
@@ -508,13 +511,19 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             paths=self.integrity_service.paths if self.integrity_service is not None else None,
             integrity_service=self.integrity_service,
         )
-        sequences = SequenceRepository(repository)
-        members = sequences.resolve_short_names(profile_names) if short_names else list(profile_names or [])
-        snapshot = sequences.snapshot_for_profile_ids(
+        sequences = SequenceSnapshotService(repository)
+        members = (sequences.sequences.resolve_short_names(profile_names)
+                   if short_names else list(profile_names or []))
+        snapshot = sequences.create_for_profile_ids(
             members, sequence_id=sequence_id or self.get_current_sequence()
         )
         self._active_run_snapshot = snapshot
+        self.run_coordinator.start(snapshot)
         return snapshot
+
+    def request_coordinated_stop(self):
+        """Publish a stop request without mutating the active run snapshot."""
+        return self.run_coordinator.request_stop()
 
     @staticmethod
     def _snapshot_profile_names(snapshot):

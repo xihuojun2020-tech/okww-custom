@@ -13,7 +13,7 @@ $Python = if (Test-Path ".\.venv\Scripts\python.exe") {
 
 $groups = @{
   unit = @(
-    "TestAccountIdentity.py", "TestAccountIdentityProtection.py", "TestAccountGraphStore.py", "TestRuntimeServices.py", "TestAccountFieldMetadata.py", "TestAccountProfileStore.py",
+    "TestAccountIdentity.py", "TestAccountIdentityProtection.py", "TestAccountGraphStore.py", "TestRuntimeServices.py", "TestObservability.py", "TestReleaseReadiness.py", "TestAccountFieldMetadata.py", "TestAccountProfileStore.py",
     "TestAccountRepositoryRuntime.py", "TestSequenceRepository.py", "TestAccountSwitch.py"
   )
   integration = @(

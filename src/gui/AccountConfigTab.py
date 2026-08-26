@@ -99,6 +99,36 @@ class AccountConfigTab(CustomTab):
         return "账号配置"
 
     @property
+    def dirty(self):
+        if self.draft is None:
+            return False
+        try:
+            return self.editor.preview_diff(self.draft).changed
+        except Exception:
+            return True
+
+    @property
+    def selected_profile_id(self):
+        return self.draft.profile_id if self.draft is not None else None
+
+    def show_redacted_diff(self):
+        if self.draft is None:
+            return ""
+        diff = self.editor.preview_diff(self.draft)
+        return "\n".join(f"{item.path}: {item.before!r} → {item.after!r}" for item in diff.changes)
+
+    def reset_task_field(self, key):
+        if self.draft is None:
+            return False
+        fresh = self.editor.load_draft(self.draft.profile_id)
+        if key not in fresh.tasks:
+            return False
+        self.draft.tasks[key] = fresh.tasks[key]
+        self.task_editor.setPlainText(json.dumps(self.draft.tasks, ensure_ascii=False, indent=2))
+        self._render_form()
+        return True
+
+    @property
     def icon(self):
         return FluentIcon.SETTING
 
