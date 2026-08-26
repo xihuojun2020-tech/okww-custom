@@ -28,6 +28,9 @@ class SequenceManagementTab(CustomTab):
         # The account-settings hub embeds this page flat; keep both short
         # lists visible instead of creating another scroll surface.
         self.sequences.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.sequences.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.sequences.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
+        self.sequences.setMinimumHeight(32)
         self.members.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.members.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.members.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
@@ -91,6 +94,8 @@ class SequenceManagementTab(CustomTab):
         self.sequences.clear()
         for item in self._drafts:
             self.sequences.addItem(f"{item.sequence_id}（{'启用' if item.enabled else '停用'}）")
+        row_height = self.sequences.sizeHintForRow(0) if self.sequences.count() else 24
+        self.sequences.setFixedHeight(max(32, row_height * self.sequences.count() + 8))
         if self._drafts:
             names = [item.sequence_id for item in self._drafts]
             self.sequences.setCurrentRow(names.index(selected) if selected in names else 0)

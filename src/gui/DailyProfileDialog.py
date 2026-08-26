@@ -1,4 +1,5 @@
-from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QAbstractScrollArea, QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import (
     BodyLabel, FluentIcon, LineEdit, ListWidget, MessageBoxBase, PushButton, SubtitleLabel,
     MessageBox,
@@ -25,6 +26,9 @@ class DailyProfileDialog(MessageBoxBase):
         self.viewLayout.addWidget(self.title_label)
 
         self.list_widget = ListWidget(self)
+        self.list_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.list_widget.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
         self.list_widget.itemDoubleClicked.connect(lambda item: self.switch_to(item.text()))
         self.refresh_list()
 
@@ -60,6 +64,8 @@ class DailyProfileDialog(MessageBoxBase):
         self.list_widget.clear()
         for name in self.profile_names:
             self.list_widget.addItem(name)
+        row_height = self.list_widget.sizeHintForRow(0) if self.list_widget.count() else 24
+        self.list_widget.setFixedHeight(max(32, row_height * self.list_widget.count() + 8))
 
     def get_selected_name(self):
         current = self.list_widget.currentItem()
