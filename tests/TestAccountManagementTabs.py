@@ -27,6 +27,11 @@ class TestAccountManagementTabs(unittest.TestCase):
         self.assertIn("上移账号", sequence_source)
         self.assertIn("下移账号", sequence_source)
 
+    def test_account_page_exposes_sequence_membership(self):
+        source = inspect.getsource(AccountConfigTab)
+        self.assertIn("所属序列", source)
+        self.assertIn("sequence_ids", source)
+
     def test_primary_farm_dropdown_ignores_mouse_wheel(self):
         class Event:
             ignored = False

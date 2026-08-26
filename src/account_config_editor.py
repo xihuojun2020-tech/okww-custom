@@ -116,7 +116,7 @@ class AccountConfigEditor:
                 raise LockedProfileField(f"字段不可在此页面修改：{key}")
 
     def save_draft(self, scope: ProfileEditScope, draft: ProfileDraft, *,
-                   confirmed_account_label: str) -> Any:
+                   confirmed_account_label: str, sequence_ids: tuple[str, ...] | None = None) -> Any:
         if scope.profile_id != draft.profile_id or str(scope.base_revision) != str(draft.revision):
             raise ProfileRevisionConflict("草稿范围已失效")
         current = self.repository.load_profile(draft.profile_id)
@@ -129,10 +129,14 @@ class AccountConfigEditor:
         self.backup_service.backup_profile(draft.profile_id, {
             "profile_id": draft.profile_id, "revision": current.revision,
             "account": copy.deepcopy(dict(current.account)), "tasks": copy.deepcopy(dict(current.tasks)),
+            "sequence_ids": tuple(sequence_ids) if sequence_ids is not None else None,
         })
-        return self.repository.publish_profile(scope, {
+        payload = {
             "account": copy.deepcopy(draft.account), "tasks": copy.deepcopy(draft.tasks),
-        }, source="账号配置页面")
+        }
+        if sequence_ids is not None:
+            payload["sequence_ids"] = tuple(sequence_ids)
+        return self.repository.publish_profile(scope, payload, source="账号配置页面")
 
     def delete_profile(self, scope: ProfileEditScope, *, confirmed_account_label: str) -> Any:
         current = self.repository.load_profile(scope.profile_id)

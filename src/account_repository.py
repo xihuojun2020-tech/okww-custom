@@ -283,6 +283,17 @@ class AccountRepository:
             candidate = copy.deepcopy(raw)
             candidate["profiles"][profile_id] = {**copy.deepcopy(dict(account)),
                                                   "task_config": copy.deepcopy(dict(tasks))}
+            if "sequence_ids" in payload:
+                sequence_ids = tuple(str(name).strip() for name in payload["sequence_ids"])
+                if len(set(sequence_ids)) != len(sequence_ids):
+                    raise AccountRepositoryError("账号序列不能重复")
+                if any(name not in candidate.get("sequences", {}) for name in sequence_ids):
+                    raise AccountRepositoryError("账号序列不存在")
+                for name, members in candidate.get("sequences", {}).items():
+                    members = [member for member in members if member != profile_id]
+                    if name in sequence_ids:
+                        members.append(profile_id)
+                    candidate["sequences"][name] = members
             self._publish_master(candidate)
             return self.load_profile(profile_id)
 

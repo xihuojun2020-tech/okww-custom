@@ -13,6 +13,7 @@ class FakeRepository:
                                       account={"display_name": "A3", "account_aliases": ["secret"]},
                                       tasks={"Which to Farm": "before", "备用识别名称内容": "hidden"})
         self.backups = []
+        self.published_sequence_ids = None
 
     def load_profile(self, _profile_id):
         return copy.deepcopy(self.record)
@@ -24,6 +25,7 @@ class FakeRepository:
         if scope.base_revision != self.record.revision:
             raise ProfileRevisionConflict()
         self.record.account, self.record.tasks, self.record.revision = payload["account"], payload["tasks"], "r2"
+        self.published_sequence_ids = payload.get("sequence_ids")
         return self.load_profile(scope.profile_id)
 
 
@@ -60,6 +62,12 @@ class TestAccountConfigEditor(unittest.TestCase):
         self.repository.record.revision = "r2"
         with self.assertRaises(ProfileRevisionConflict):
             self.editor.save_draft(draft.scope, draft, confirmed_account_label="A3")
+
+    def test_save_passes_sequence_membership_without_changing_identity(self):
+        draft = self.editor.load_draft("id")
+        self.editor.save_draft(draft.scope, draft, confirmed_account_label="A3",
+                               sequence_ids=("序列2",))
+        self.assertEqual(self.repository.published_sequence_ids, ("序列2",))
 
 
 if __name__ == "__main__":

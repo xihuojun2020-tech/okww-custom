@@ -29,5 +29,6 @@
 - Microsoft Windows 文档，`WScript.Shell.CreateShortcut`：本机 `.lnk` 快捷方式的目标、参数、工作目录和图标属性。<https://learn.microsoft.com/en-us/previous-versions/windows/internet-explorer/ie-developer/scripting-articles/cc364547(v=vs.85)>
 - 运行目录约定：`E:\game\okww owener` 是推送后的打包版，`E:\AI work\ok-wuthering-waves-master` 是开发版；本次账号配置包的权威来源是打包版内 `data\apps\okww-custom\working`，导出前通过 `ConfigIntegrityService.check`，导出后通过 `preflight_import` 校验。
 - `src/gui/AccountConfigTab.py` 与 `src/gui/SequenceManagementTab.py`：账号删除、序列删除和序列成员重排的界面对象边界；按钮文案必须明确当前操作对象。
+- `src/account_repository.py` 的 `publish_profile`：账号任务配置和所属序列在同一个候选 master 中提交，保持 CAS 修订检查与配置包原子发布。
 - OWASP Logging Cheat Sheet：日志与错误信息避免记录认证数据、会话令牌及敏感个人数据。<https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html>
 - CWE-367（TOCTOU）：修订号/指纹检查用于防止预览后、保存前的外部修改被静默覆盖。<https://cwe.mitre.org/data/definitions/367.html>

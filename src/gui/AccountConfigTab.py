@@ -3,7 +3,7 @@
 import json
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLabel,
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
                                QMessageBox, QPlainTextEdit, QPushButton, QScrollArea,
                                QVBoxLayout, QWidget)
 from qfluentwidgets import BodyLabel, FluentIcon
@@ -42,6 +42,10 @@ class AccountConfigTab(CustomTab):
         self.metadata = BodyLabel("")
         self.metadata.setWordWrap(True)
         layout.addWidget(self.metadata)
+        self.sequence_group = QGroupBox("所属序列（勾选后保存即可调整当前账号归属）", root)
+        self.sequence_layout = QVBoxLayout(self.sequence_group)
+        self.sequence_widgets = {}
+        layout.addWidget(self.sequence_group)
         self.form_host = QWidget(root)
         self.form_layout = QFormLayout(self.form_host)
         self.form_widgets = {}
@@ -99,6 +103,7 @@ class AccountConfigTab(CustomTab):
         self.draft = self.editor.load_draft(profile_id)
         label = self.draft.account.get("display_name", "未命名账号")
         self.metadata.setText(f"账号短名：{label}\n唯一编号：{self.draft.profile_id}\n登录身份：已锁定，不在页面显示")
+        self._render_sequences()
         self.task_editor.setPlainText(json.dumps(self.draft.tasks, ensure_ascii=False, indent=2))
         self._render_form()
         self.status.setText("已载入独立草稿")
@@ -124,6 +129,22 @@ class AccountConfigTab(CustomTab):
                     self.draft.tasks[key] = restore_account_value(json.loads(text))
                 else:
                     self.draft.tasks[key] = restore_account_value(text)
+
+    def _render_sequences(self):
+        while self.sequence_layout.count():
+            item = self.sequence_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self.sequence_widgets.clear()
+        if self.draft is None:
+            return
+        for sequence_id in self.editor.repository.list_sequence_ids():
+            box = QCheckBox(sequence_id, self.sequence_group)
+            box.setChecked(self.draft.profile_id in self.editor.repository.load_sequence(sequence_id).profile_ids)
+            self.sequence_widgets[sequence_id] = box
+            self.sequence_layout.addWidget(box)
+        if not self.sequence_widgets:
+            self.sequence_layout.addWidget(QLabel("暂无序列；请先在序列配置页新建序列。", self.sequence_group))
 
     def _render_form(self):
         while self.form_layout.rowCount():
@@ -169,10 +190,13 @@ class AccountConfigTab(CustomTab):
         try:
             self._apply_text()
             label = str(self.draft.account.get("display_name", self.draft.profile_id))
+            sequence_ids = tuple(name for name, box in self.sequence_widgets.items() if box.isChecked())
             answer = QMessageBox.question(self.view, "确认账号", f"确认保存账号 {label} 的修改？")
             if answer != QMessageBox.Yes:
                 return None
-            result = self.editor.save_draft(self.draft.scope, self.draft, confirmed_account_label=label)
+            result = self.editor.save_draft(self.draft.scope, self.draft,
+                                            confirmed_account_label=label,
+                                            sequence_ids=sequence_ids)
             self.status.setText("保存成功，已先创建账号备份")
             self._load_selected()
             return result
