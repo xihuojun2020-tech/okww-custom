@@ -1,7 +1,8 @@
 """Standalone account-sequence management tab."""
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QHBoxLayout, QInputDialog, QListWidget, QMessageBox, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (QAbstractScrollArea, QHBoxLayout, QInputDialog, QListWidget,
+                               QMessageBox, QPushButton, QVBoxLayout, QWidget)
 from qfluentwidgets import BodyLabel, FluentIcon
 
 from ok.gui.widget.CustomTab import CustomTab
@@ -28,6 +29,9 @@ class SequenceManagementTab(CustomTab):
         # lists visible instead of creating another scroll surface.
         self.sequences.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.members.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.members.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.members.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
+        self.members.setMinimumHeight(32)
         layout.addWidget(BodyLabel("当前序列"))
         layout.addWidget(self.sequences)
         layout.addWidget(BodyLabel("当前序列包含的账号（上下移动只调整账号顺序）"))
@@ -102,11 +106,16 @@ class SequenceManagementTab(CustomTab):
         self.members.clear()
         item = self._selected()
         if not item:
+            self.members.setFixedHeight(32)
             return
         profiles = {record.profile_id: record.account.get("display_name", "未命名账号")
                     for record in self.service.repository.list_profiles()}
         for profile_id in item.profile_ids:
             self.members.addItem(str(profiles.get(profile_id, "缺失账号")))
+        # Keep every member row visible at once.  The list is deliberately
+        # content-sized instead of relying on a nested scroll area.
+        row_height = self.members.sizeHintForRow(0) if self.members.count() else 24
+        self.members.setFixedHeight(max(32, row_height * self.members.count() + 8))
 
     def _name(self, title):
         return QInputDialog.getText(self.view, title, "序列名称")
