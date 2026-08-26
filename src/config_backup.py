@@ -60,13 +60,16 @@ class ConfigBackupService:
     """Create, verify and safely restore complete configuration snapshots."""
 
     def __init__(self, config_dir, backup_dir, *, app_version="", daily_limit=30,
-                 transaction_limit=20, total_limit_bytes=2 * 1024 ** 3):
+                 transaction_limit=20, total_limit_bytes=2 * 1024 ** 3,
+                 harden_permissions=True):
         self.config_dir = Path(config_dir)
         self.backup_dir = Path(backup_dir)
         self.app_version = app_version
         self.daily_limit = int(daily_limit)
         self.transaction_limit = int(transaction_limit)
         self.total_limit_bytes = int(total_limit_bytes)
+        self.harden_permissions = bool(harden_permissions)
+        self._permissions_hardened = False
         # A process can terminate between the two directory renames during
         # restore.  Recover that swap before exposing this service to callers.
         self.recover_pending_restore()
@@ -363,6 +366,10 @@ class ConfigBackupService:
             raise FileNotFoundError(self.config_dir)
         target_root = self.daily_dir if kind == "daily" else self.transaction_dir
         target_root.mkdir(parents=True, exist_ok=True)
+        if self.harden_permissions and not self._permissions_hardened:
+            from .secure_backup import harden_directory_permissions
+            harden_directory_permissions(self.backup_dir)
+            self._permissions_hardened = True
         timestamp = time.time() if now is None else float(now)
         stamp = datetime.fromtimestamp(timestamp, timezone.utc).strftime("%Y%m%dT%H%M%S")
         snapshot_id = f"{stamp}-{time.time_ns()}-{uuid.uuid4().hex[:8]}"

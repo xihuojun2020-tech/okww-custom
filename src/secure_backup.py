@@ -12,6 +12,8 @@ import ctypes
 import json
 import os
 import secrets
+import shutil
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -125,5 +127,33 @@ def validate_restore_path(source: os.PathLike | str, target: os.PathLike | str,
     return source_abs, target_abs
 
 
+def harden_directory_permissions(path: os.PathLike | str) -> Path:
+    """Restrict a backup directory to the current user plus OS administrators.
+
+    Windows SIDs are used for SYSTEM/Administrators so this remains valid on
+    localized installations.  Non-Windows hosts fail closed because this
+    service promises Windows ACL semantics.
+    """
+    if os.name != "nt":
+        raise SecureBackupUnavailable("当前平台不支持 Windows ACL 备份保护")
+    target = Path(path).resolve()
+    target.mkdir(parents=True, exist_ok=True)
+    icacls = shutil.which("icacls")
+    username = os.environ.get("USERNAME")
+    if not icacls or not username:
+        raise SecureBackupUnavailable("找不到 icacls 或当前 Windows 用户")
+    grants = (
+        f"{username}:(OI)(CI)F",
+        "*S-1-5-18:(OI)(CI)F",       # Local System
+        "*S-1-5-32-544:(OI)(CI)F",   # Built-in Administrators
+    )
+    try:
+        subprocess.run([icacls, str(target), "/inheritance:r", "/grant:r", *grants],
+                       check=True, capture_output=True, text=True)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise SecureBackupUnavailable("无法设置本机备份目录 ACL") from exc
+    return target
+
+
 __all__ = ["SecureBackupError", "SecureBackupService", "SecureBackupUnavailable",
-           "validate_restore_path"]
+           "harden_directory_permissions", "validate_restore_path"]

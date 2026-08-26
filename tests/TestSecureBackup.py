@@ -3,7 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.secure_backup import SecureBackupService, SecureBackupUnavailable, validate_restore_path
+from src.secure_backup import (SecureBackupService, SecureBackupUnavailable,
+                               harden_directory_permissions, validate_restore_path)
 
 
 class TestSecureBackup(unittest.TestCase):
@@ -38,6 +39,14 @@ class TestSecureBackup(unittest.TestCase):
             finally:
                 source.unlink(missing_ok=True)
                 outside.rmdir()
+
+    def test_harden_directory_permissions_keeps_backup_directory_usable(self):
+        if os.name != "nt":
+            self.skipTest("Windows ACL is Windows-only")
+        with tempfile.TemporaryDirectory() as root:
+            target = harden_directory_permissions(Path(root) / "backups")
+            self.assertTrue(target.is_dir())
+            (target / "probe").write_text("ok", encoding="utf-8")
 
 
 if __name__ == "__main__":

@@ -197,7 +197,7 @@ Expected: FAIL because DPAPI wrapping and the centralized path validator do not 
 
 Use `CryptProtectData`/`CryptUnprotectData` through `ctypes` with a versioned envelope (`format`, `scope`, `nonce`, `ciphertext`, `created_at`). Do not fall back to plaintext when DPAPI is unavailable; raise a safe-mode exception. Keep non-sensitive manifest metadata outside the encrypted payload so verification can still report corruption without decrypting.
 
-- [ ] **Step 4: Enforce current-user permissions and restore boundaries**
+- [x] **Step 4: Enforce current-user permissions and restore boundaries**
 
 Create backup directories with current-user ACLs on Windows. Validate every source, staging and target path before copying or replacing. Reject symlinked files/directories that resolve outside the expected root. Preserve the existing rollback journal and add `prepared -> verified -> activated -> mirrored` phases.
 
