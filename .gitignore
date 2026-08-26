@@ -10,6 +10,9 @@ runtime/
 # 个性化数据（账号隐私）
 configs/
 configs_backup/
+账号备份/
+config_bundle_transactions/
+config_integrity_incidents/
 
 # 运行产物
 logs/
@@ -31,6 +34,10 @@ okww_更新包_*.zip
 
 # 记忆/诊断（隐私，不推公开仓库）
 .workbuddy-ai/
+.superpowers/
+
+# Android/Java 构建产物
+android/combat-agent/build/
 # 仅排除根目录的下划线开头脚本（如 _diag_*.py），不匹配 src 下的 __init__.py
 /_*.py
 

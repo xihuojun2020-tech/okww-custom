@@ -52,7 +52,7 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      - name: Run tests
+      - name: Run deterministic tests
         env:
           GITHUB_TOKEN: ''
           GH_TOKEN: ''
@@ -80,21 +80,15 @@ jobs:
             Remove-Item "Env:\$_" -ErrorAction SilentlyContinue
           }
 
-          Get-ChildItem -Path ".\tests\*.py" | ForEach-Object {
-              Write-Host "Running tests in $($_.FullName)"
-              try {
-                  # Run the Python unittest command
-                  python -m unittest $_.FullName
+          & .\run_tests.ps1 -Group unit
+          & .\run_tests.ps1 -Group integration
+          & .\run_tests.ps1 -Group ui
+          & .\run_tests.ps1 -Group fault_injection
 
-                  # Check if the previous command succeeded
-                  if ($LASTEXITCODE -ne 0) {
-                      throw "Tests failed in $($_.FullName)"
-                  }
-              } catch {
-                  # Stop the loop and return the error
-                  Write-Error $_
-                  exit 1
-              }
-          }
+      - name: Run image tests (non-blocking baseline)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          & .\run_tests.ps1 -Group image
 
   

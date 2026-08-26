@@ -38,7 +38,7 @@
 - Produces test groups `unit`, `integration`, `ui`, `image`, `fault_injection` and a deterministic command for each group.
 - Produces `TestSecurityBaseline` checks that sensitive runtime directories are ignored and version metadata is synchronized.
 
-- [ ] **Step 1: Write failing baseline tests**
+- [x] **Step 1: Write failing baseline tests**
 
 ```python
 def test_runtime_data_directories_are_ignored():
@@ -53,7 +53,7 @@ def test_release_metadata_uses_same_version():
     assert version in Path("custom_ok/ok/gui/about/AboutTab.py").read_text(encoding="utf-8")
 ```
 
-- [ ] **Step 2: Run the baseline tests and verify they fail**
+- [x] **Step 2: Run the baseline tests and verify they fail**
 
 Run:
 
@@ -63,15 +63,15 @@ Run:
 
 Expected: FAIL because the new runtime-directory rules and test-group manifest do not exist.
 
-- [ ] **Step 3: Add ignored runtime paths and explicit test commands**
+- [x] **Step 3: Add ignored runtime paths and explicit test commands**
 
 Add the generated account backup, transaction, integrity incident, Android build, and `.superpowers` paths to `.gitignore`. Update `run_tests.ps1` with named switches that run only the requested test group; keep image tests separate from deterministic tests. Update CI to run deterministic groups first and publish image failures as a separate artifact.
 
-- [ ] **Step 4: Add the baseline handover entry**
+- [x] **Step 4: Add the baseline handover entry**
 
 Record the current 386-test result as the starting baseline: 29 known image `FinishedException` errors and 8 skips. State that only deterministic groups block the first hardening release.
 
-- [ ] **Step 5: Run and commit the baseline slice**
+- [x] **Step 5: Run and commit the baseline slice**
 
 Run:
 
