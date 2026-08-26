@@ -211,13 +211,12 @@ class ConfigBackupService:
             if not staged_verification.ok:
                 raise RuntimeError(staged_verification.error or "staged restore verification failed")
             (staging / MANIFEST_NAME).unlink()
+            journal["phase"] = "verified"
             self._write_restore_journal(journal)
             if self.config_dir.exists():
                 os.replace(str(self.config_dir), str(old))
-            journal["phase"] = "old_moved"
-            self._write_restore_journal(journal)
             os.replace(str(staging), str(self.config_dir))
-            journal["phase"] = "new_moved"
+            journal["phase"] = "activated"
             self._write_restore_journal(journal)
             # The preflight above already verified the account integrity
             # graph.  Re-run it at the final path after replacement so a
@@ -225,6 +224,8 @@ class ConfigBackupService:
             if summary.master_config_present and not self._account_tree_valid(self.config_dir):
                 raise RuntimeError("restored account configuration failed final integrity check")
             shutil.rmtree(old, ignore_errors=True)
+            journal["phase"] = "mirrored"
+            self._write_restore_journal(journal)
             self._clear_restore_journal()
         except Exception:
             # Roll back synchronously whenever the previous tree exists.  The
@@ -274,7 +275,7 @@ class ConfigBackupService:
                     expected_config.name + ".rollback-"):
                 raise RuntimeError("restore journal has an unsafe rollback path")
             phase = journal.get("phase")
-            if phase == "prepared":
+            if phase in {"prepared", "verified"}:
                 # No directory rename was committed.  Keep the live config
                 # and discard only the staged copy.
                 if not config.exists() and old.exists():
@@ -292,7 +293,7 @@ class ConfigBackupService:
                 if config.exists():
                     shutil.rmtree(old, ignore_errors=True)
                     shutil.rmtree(staging, ignore_errors=True)
-            elif phase == "new_moved":
+            elif phase in {"new_moved", "activated", "mirrored"}:
                 if not config.exists() and old.exists():
                     os.replace(str(old), str(config))
                 elif config.exists() and old.exists() and not self._account_tree_valid(config):
