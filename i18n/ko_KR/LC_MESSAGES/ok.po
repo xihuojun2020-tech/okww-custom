@@ -1294,3 +1294,15 @@ msgstr "게임과 okww 언어는 중국어 간체/번체여야 하며, 16:9 비�
 
 msgid "Switch to Healer before and after Combat"
 msgstr "전투 전후에 힐러로 전환"
+
+msgid "陨翼云渊-武器及技能材料：迅刀"
+msgstr ""
+
+msgid "静灭云渊-武器及技能材料：音感仪"
+msgstr ""
+
+msgid "裂斩云渊-武器及技能材料：长刃"
+msgstr ""
+
+msgid "碎蚀云渊-武器及技能材料：臂铠"
+msgstr ""

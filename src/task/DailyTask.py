@@ -97,6 +97,19 @@ NIGHTMARE_OPTIONS = ['Nightmare Purification', 'Tacet Discord Nest']
 # 残象聚落名称（合并进每日任务模块，随方案切换）
 NEST_NAMES = ['落渊南丘残象聚落', '盲望之塌残象聚落', '复生丘原残象聚落', '陷足流川残象聚落']
 
+# 凝素领域显示名。持久化值仍为 F2 列表中的整数序号，便于兼容旧账号。
+# 第 5～20 项暂保留序号占位，后续按游戏内实际名称继续补全。
+FORGERY_DOMAIN_NAMES = {
+    1: '陨翼云渊-武器及技能材料：迅刀',
+    2: '静灭云渊-武器及技能材料：音感仪',
+    3: '裂斩云渊-武器及技能材料：长刃',
+    4: '碎蚀云渊-武器及技能材料：臂铠',
+}
+FORGERY_DOMAIN_OPTIONS = tuple(
+    (index, FORGERY_DOMAIN_NAMES.get(index, f'第{index}个凝素领域（待命名）'))
+    for index in range(1, 21)
+)
+
 
 class DailyTask(WWOneTimeTask, BaseCombatTask):
 
@@ -195,6 +208,10 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                     'Simulation Challenge': [
                         'Material Selection', LC_SIMULATION],
                 }
+            },
+            'Which Forgery Challenge to Farm': {
+                'type': 'integer_drop_down',
+                'options': FORGERY_DOMAIN_OPTIONS,
             },
             'Material Selection': {
                 'type': 'drop_down',

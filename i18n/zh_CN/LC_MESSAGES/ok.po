@@ -1599,3 +1599,15 @@ msgstr "配置备份"
 
 msgid "Config Backup Directory"
 msgstr "配置备份目录"
+
+msgid "陨翼云渊-武器及技能材料：迅刀"
+msgstr "陨翼云渊-武器及技能材料：迅刀"
+
+msgid "静灭云渊-武器及技能材料：音感仪"
+msgstr "静灭云渊-武器及技能材料：音感仪"
+
+msgid "裂斩云渊-武器及技能材料：长刃"
+msgstr "裂斩云渊-武器及技能材料：长刃"
+
+msgid "碎蚀云渊-武器及技能材料：臂铠"
+msgstr "碎蚀云渊-武器及技能材料：臂铠"

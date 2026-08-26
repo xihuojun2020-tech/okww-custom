@@ -40,6 +40,9 @@ def config_widget(config_type, config_desc, config, key, value, task):
                     allow_duplication=the_type.get('allow_duplication', False)
                 )
             return LabelAndDropDown(config_desc, the_type['options'], config, key)
+        elif resolved_type == 'integer_drop_down':
+            from src.gui.LabelAndIntegerDropDown import LabelAndIntegerDropDown
+            return LabelAndIntegerDropDown(config_desc, the_type['options'], config, key)
         elif resolved_type == 'multi_selection':
             return LabelAndMultiSelection(config_desc, the_type['options'], config, key)
         elif resolved_type == 'dropdown_multi_selection':

@@ -14,6 +14,12 @@
 - `QScrollArea.takeWidget()`：将自定义页内容从原滚动区解除后再挂载到分区面板，避免旧滚动区继续控制内容几何尺寸。<https://doc.qt.io/qtforpython-6/PySide6/QtWidgets/QScrollArea.html#PySide6.QtWidgets.QScrollArea.takeWidget>
 - `QSizePolicy.Expanding`：配置区块和表单容器采用水平扩展策略，使用父级布局提供的可用宽度。<https://doc.qt.io/qtforpython-6/PySide6/QtWidgets/QSizePolicy.html>
 
+### 2026-08-26 凝素领域名称补充
+
+- `src/task/DailyTask.py` 的 `FORGERY_DOMAIN_OPTIONS` 使用 `(整数值, 显示名)` 对，借鉴 Qt 下拉模型“显示文本与内部数据分离”的做法；账号 JSON 继续保存整数，不影响旧配置和传送索引。
+- `src/gui/LabelAndIntegerDropDown.py`：自定义 ok-script 配置控件负责显示名称、反向映射整数和保留异常旧值；工厂类型由 `custom_ok/ok/gui/tasks/ConfigItemFactory.py` 注册。
+- Qt for Python `QComboBox` 文档：显示文本与当前索引的标准下拉交互。<https://doc.qt.io/qtforpython-6/PySide6/QtWidgets/QComboBox.html>
+
 ## 本地设计来源
 
 - `E:\AI work\better wuwa\src\account_identity.py`：身份候选、精确短名和歧义拒绝的早期实现；本项目仅吸收纯 PC 解析思想。
