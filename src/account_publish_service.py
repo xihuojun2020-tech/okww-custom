@@ -11,6 +11,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -26,6 +27,13 @@ class PublishedRevision:
     revision: str
     bundle_dir: Path
     manifest: Mapping[str, Any]
+
+
+class PublishState(str, Enum):
+    PREPARED = "prepared"
+    VERIFIED = "verified"
+    ACTIVATED = "activated"
+    MIRRORED = "mirrored"
 
 
 def _digest(value: Any) -> str:
@@ -48,6 +56,7 @@ class AccountPublishService:
         self.active_path = self.root / "active.json"
         self.program_version = str(program_version)
         self.fail_after_bundle_write = bool(fail_after_bundle_write)
+        self.publish_state = PublishState.PREPARED
 
     @staticmethod
     def _master(profiles: Mapping[str, Any], sequences: Mapping[str, list[str]], index: Mapping[str, Any]) -> dict[str, Any]:
@@ -100,9 +109,12 @@ class AccountPublishService:
         for profile_id, profile in profiles.items():
             atomic_write_json(profile_dir / f"{profile_id}.json", profile)
 
+    _mirror_projections = _write_editable_mirror
+
     def publish(self, *, expected_revision: str, profiles: Mapping[str, Any],
                 index: Mapping[str, Any], sequences: Mapping[str, list[str]]) -> PublishedRevision:
         with _PUBLISH_LOCK:
+            self.publish_state = PublishState.PREPARED
             current = self._active_revision()
             if expected_revision not in ("", None) and str(expected_revision) != current:
                 raise ProfileRevisionConflict("已发布账号配置已被其他操作修改")
@@ -130,14 +142,17 @@ class AccountPublishService:
                             "program_version": self.program_version,
                             "files": files}
                 atomic_write_json(staging / "manifest.json", manifest)
+                self.publish_state = PublishState.VERIFIED
                 if self.fail_after_bundle_write:
                     raise RuntimeError("forced publication failure")
                 if bundle_dir.exists():
                     shutil.rmtree(bundle_dir)
                 os.replace(staging, bundle_dir)
-                self._write_editable_mirror(profiles, index, sequences)
+                self.publish_state = PublishState.ACTIVATED
+                self._mirror_projections(profiles, index, sequences)
                 pointer = {"revision": revision, "manifest_sha256": _file_digest(bundle_dir / "manifest.json")}
                 atomic_write_json(self.active_path, pointer)
+                self.publish_state = PublishState.MIRRORED
                 return PublishedRevision(revision, bundle_dir, manifest)
             except Exception:
                 if staging.exists():
@@ -170,4 +185,4 @@ class AccountPublishService:
                 shutil.rmtree(path, ignore_errors=True)
 
 
-__all__ = ["AccountPublishService", "PublishedRevision"]
+__all__ = ["AccountPublishService", "PublishState", "PublishedRevision"]

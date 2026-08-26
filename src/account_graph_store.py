@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
-from .account_publish_service import AccountPublishService, PublishedRevision
+from .account_publish_service import AccountPublishService, PublishState, PublishedRevision
 
 
 @dataclass(frozen=True)
@@ -29,6 +29,10 @@ class AccountGraphStore:
     @property
     def active_path(self) -> Path:
         return self.service.active_path
+
+    @property
+    def state(self) -> PublishState:
+        return self.service.publish_state
 
     def load_active(self) -> ActiveAccountGraph:
         active: PublishedRevision = self.service.load_active()

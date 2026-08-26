@@ -4,7 +4,7 @@ import uuid
 from pathlib import Path
 
 from src.account_graph_store import AccountGraphStore
-from src.account_publish_service import AccountPublishService
+from src.account_publish_service import AccountPublishService, PublishState
 
 
 class TestAccountGraphStore(unittest.TestCase):
@@ -30,6 +30,7 @@ class TestAccountGraphStore(unittest.TestCase):
                                                                "task_config": {}}},
                                    "index": {"config_id": "test"},
                                    "sequences": {"主序列": [profile_id]}})
+            self.assertEqual(store.state, PublishState.MIRRORED)
             with self.assertRaises(Exception):
                 store.publish({"profiles": {}, "index": {"config_id": "test"}, "sequences": {}},
                               expected_revision="stale")
