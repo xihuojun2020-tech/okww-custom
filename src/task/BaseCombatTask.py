@@ -837,20 +837,17 @@ class BaseCombatTask(CombatCheck):
         if not in_team:
             return
         previous_char_identity = self._char_identity(self.chars)
-        # self.log_info('load chars')
-        self.chars[0] = get_char_by_pos(self, self.get_box_by_name('box_char_1'), 0, safe_get(self.chars, 0))
-        self.chars[1] = get_char_by_pos(self, self.get_box_by_name('box_char_2'), 1, safe_get(self.chars, 1))
-
-        if count == 3:
-            new_char = get_char_by_pos(self, self.get_box_by_name('box_char_3'), 2, safe_get(self.chars, 2))
-            if len(self.chars) == 2:
-                self.chars.append(new_char)
-            else:
-                self.chars[2] = new_char
-        else:
-            if len(self.chars) == 3:
-                self.chars = self.chars[:2]
-                logger.info(f'team size changed to 2')
+        # in_team() reports the actual party size; do not assume a minimum of two
+        # members (solo teams are valid in the game and must still enter combat).
+        team_size = max(1, min(3, int(count or 1)))
+        old_chars = self.chars
+        self.chars = [
+            get_char_by_pos(
+                self, self.get_box_by_name(f'box_char_{index + 1}'), index,
+                safe_get(old_chars, index)
+            )
+            for index in range(team_size)
+        ]
 
         for char in self.chars:
             if char is not None:
@@ -860,23 +857,18 @@ class BaseCombatTask(CombatCheck):
                 else:
                     char.is_current_char = False
         self.combat_start = time.time()
-        if len(self.chars) >= 2:
-            if self._char_identity(self.chars) != previous_char_identity:
-                translated_names = []
-                for c in self.chars:
-                    if c is not None:
-                        if hasattr(c, 'ensure_display_form'):
-                            c.ensure_display_form()
-                        official_name = getattr(c, 'display_name', None) or mismatched_names.get(
-                            c.name, c.name
-                        )
-                        # 单元测试时 self._app 为 None，此时不进行翻译，直接回传原名
-                        translated_name = self.tr(official_name) if self._app is not None else official_name
-                        translated_names.append(translated_name)
-                self.info_set('Chars', ', '.join(translated_names))
-                for c in self.chars:
-                    self.log_info(f'loaded chars success {c} {c.confidence}')
-            return True
+        if self._char_identity(self.chars) != previous_char_identity:
+            translated_names = []
+            for c in self.chars:
+                if c is not None:
+                    if hasattr(c, 'ensure_display_form'):
+                        c.ensure_display_form()
+                    official_name = getattr(c, 'display_name', None) or mismatched_names.get(c.name, c.name)
+                    translated_names.append(self.tr(official_name) if self._app is not None else official_name)
+            self.info_set('Chars', ', '.join(translated_names))
+            for c in self.chars:
+                self.log_info(f'loaded chars success {c} {c.confidence}')
+        return True
 
     @staticmethod
     def _char_identity(chars):

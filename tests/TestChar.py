@@ -720,6 +720,29 @@ class TestChar(TaskTestCase):
         finally:
             base_combat_task_module.get_char_by_pos = original_get_char_by_pos
 
+    def test_load_chars_supports_solo_team(self):
+        from importlib import import_module
+        module = import_module('src.task.BaseCombatTask')
+        original = module.get_char_by_pos
+        class Solo(BaseChar):
+            pass
+        task = AutoCombatTask.__new__(AutoCombatTask)
+        task.chars = [None, None, None]
+        task.load_hotkey = lambda: None
+        task.in_team = lambda: (True, 0, 1)
+        task.get_box_by_name = lambda name: name
+        task._app = None
+        task.tr = lambda text: text
+        task.info_set = lambda *args: None
+        task.log_info = lambda *args: None
+        module.get_char_by_pos = lambda *args: Solo(task, args[2], char_name='solo', confidence=0.9)
+        try:
+            self.assertTrue(task.load_chars())
+            self.assertEqual(len(task.chars), 1)
+            self.assertIsInstance(task.chars[0], Solo)
+        finally:
+            module.get_char_by_pos = original
+
     def test_switch_priority_rules(self):
         class Task:
             def time_elapsed_accounting_for_freeze(self, start, intro_motion_freeze=False):
