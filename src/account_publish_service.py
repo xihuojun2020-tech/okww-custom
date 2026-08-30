@@ -111,6 +111,68 @@ class AccountPublishService:
 
     _mirror_projections = _write_editable_mirror
 
+    def _validate_bundle_dir(self, bundle_dir: Path, revision: str) -> Mapping[str, Any]:
+        manifest_path = bundle_dir / "manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest.get("revision") != revision:
+            raise ValueError("bundle revision mismatch")
+        for relative, expected in manifest.get("files", {}).items():
+            path = bundle_dir / relative
+            if not path.is_file() or _file_digest(path) != expected.get("sha256"):
+                raise ValueError(f"bundle file mismatch: {relative}")
+        return manifest
+
+    def _install_or_reuse_bundle(self, staging: Path, bundle_dir: Path,
+                                 revision: str) -> Mapping[str, Any]:
+        if not bundle_dir.exists():
+            os.replace(staging, bundle_dir)
+            return self._validate_bundle_dir(bundle_dir, revision)
+        try:
+            manifest = self._validate_bundle_dir(bundle_dir, revision)
+        except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+            if self._active_revision() == revision:
+                raise ValueError("active account bundle is damaged; refusing to replace it")
+            quarantine = self.bundles_dir / f".quarantine-{revision}-{uuid.uuid4().hex[:8]}"
+            os.replace(bundle_dir, quarantine)
+            try:
+                os.replace(staging, bundle_dir)
+                manifest = self._validate_bundle_dir(bundle_dir, revision)
+            except Exception:
+                if not bundle_dir.exists() and quarantine.exists():
+                    os.replace(quarantine, bundle_dir)
+                raise
+            shutil.rmtree(quarantine, ignore_errors=True)
+            return manifest
+        shutil.rmtree(staging, ignore_errors=True)
+        return manifest
+
+    def _write_active_pointer(self, revision: str, bundle_dir: Path) -> None:
+        atomic_write_json(self.active_path, {
+            "revision": revision,
+            "manifest_sha256": _file_digest(bundle_dir / "manifest.json"),
+        })
+
+    def _prune_inactive_bundles(self, keep: int = 2) -> None:
+        active = self._active_revision()
+        valid = []
+        for path in self.bundles_dir.iterdir():
+            if not path.is_dir() or path.name.startswith("."):
+                continue
+            try:
+                self._validate_bundle_dir(path, path.name)
+            except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+                continue
+            valid.append(path)
+        valid.sort(key=lambda path: path.stat().st_mtime_ns, reverse=True)
+        retained = {active}
+        for path in valid:
+            if len(retained) >= max(1, keep):
+                break
+            retained.add(path.name)
+        for path in valid:
+            if path.name not in retained:
+                shutil.rmtree(path)
+
     def publish(self, *, expected_revision: str, profiles: Mapping[str, Any],
                 index: Mapping[str, Any], sequences: Mapping[str, list[str]]) -> PublishedRevision:
         with _PUBLISH_LOCK:
@@ -145,14 +207,12 @@ class AccountPublishService:
                 self.publish_state = PublishState.VERIFIED
                 if self.fail_after_bundle_write:
                     raise RuntimeError("forced publication failure")
-                if bundle_dir.exists():
-                    shutil.rmtree(bundle_dir)
-                os.replace(staging, bundle_dir)
+                manifest = self._install_or_reuse_bundle(staging, bundle_dir, revision)
+                self._write_active_pointer(revision, bundle_dir)
                 self.publish_state = PublishState.ACTIVATED
                 self._mirror_projections(profiles, index, sequences)
-                pointer = {"revision": revision, "manifest_sha256": _file_digest(bundle_dir / "manifest.json")}
-                atomic_write_json(self.active_path, pointer)
                 self.publish_state = PublishState.MIRRORED
+                self._prune_inactive_bundles()
                 return PublishedRevision(revision, bundle_dir, manifest)
             except Exception:
                 if staging.exists():
@@ -166,15 +226,9 @@ class AccountPublishService:
         revision = str(pointer.get("revision") or "")
         bundle_dir = self.bundles_dir / revision
         manifest_path = bundle_dir / "manifest.json"
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        if manifest.get("revision") != revision:
-            raise ValueError("active bundle revision mismatch")
+        manifest = self._validate_bundle_dir(bundle_dir, revision)
         if pointer.get("manifest_sha256") != _file_digest(manifest_path):
             raise ValueError("active bundle manifest mismatch")
-        for relative, expected in manifest.get("files", {}).items():
-            path = bundle_dir / relative
-            if not path.is_file() or _file_digest(path) != expected.get("sha256"):
-                raise ValueError(f"active bundle file mismatch: {relative}")
         return PublishedRevision(revision, bundle_dir, manifest)
 
     def recover_incomplete_transactions(self) -> None:
