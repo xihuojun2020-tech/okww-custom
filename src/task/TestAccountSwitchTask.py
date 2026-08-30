@@ -15,8 +15,8 @@ from ok import TaskDisabledException
 from src.task.BaseWWTask import BaseWWTask
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.MouseResetTask import MouseResetTask
-from src.config_integrity import get_default_service
 from src.account_repository import AccountRepository
+from src.runtime.account_runtime_bootstrap import require_account_runtime_for_task
 
 
 SINGLE_MODE = '单账号切换'
@@ -139,11 +139,9 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
         return self.executor.get_task_by_class(MultiAccountDailyTask)
 
     def run(self):
+        require_account_runtime_for_task(self)
         if getattr(self, '_account_refresh_pending', False):
             self.refresh_profile_options()
-        service = get_default_service()
-        if service is not None:
-            service.guard_task_start()
         WWOneTimeTask.run(self)
 
         mouse_reset_task = self.executor.get_task_by_class(MouseResetTask)

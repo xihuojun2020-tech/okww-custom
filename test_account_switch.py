@@ -32,7 +32,9 @@ def run_task(config: dict[str, Any] | None = None):
     """通过 OKWW 正式注册流程启动账号切换测试任务。"""
     from ok import run_task as ok_run_task
     from config import config as default_config
+    from src.runtime.account_runtime_bootstrap import initialize_account_runtime
 
+    initialize_account_runtime()
     return ok_run_task(config or default_config, task=TestAccountSwitchTask, debug=True)
 
 

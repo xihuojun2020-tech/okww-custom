@@ -325,22 +325,12 @@ if __name__ == '__main__':
         pass
     # Read-only account integrity preflight must happen before OK constructs
     # task objects or any start controller can refresh/activate a device.
-    from src.config_integrity import ConfigIntegrityService, install_task_start_guard, set_default_service
     from config import version as _program_version
+    from src.runtime.account_runtime_bootstrap import initialize_account_runtime
     _integrity_root = os.path.dirname(os.path.abspath(__file__))
-    _integrity_service = ConfigIntegrityService(_integrity_root, program_version=_program_version)
-    _integrity_result = _integrity_service.check()
-    set_default_service(_integrity_service)
-
-    # Install the same guard for GUI, scheduler and headless CLI starts.  The
-    # hook is on StartController.do_start, before its first device refresh.
     try:
-        from ok.gui.StartController import StartController
-        if not install_task_start_guard(_integrity_service, StartController):
-            raise RuntimeError('StartController integrity hook could not be installed')
+        initialize_account_runtime(_integrity_root, _program_version)
     except Exception as _integrity_hook_error:
-        # A missing hook is unsafe: do not construct OK or allow a device
-        # refresh under an unverified account configuration.
         _report_startup_error(_integrity_hook_error)
         raise RuntimeError(f'account integrity start hook unavailable: {_integrity_hook_error}')
 

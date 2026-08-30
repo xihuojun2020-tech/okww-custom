@@ -25,6 +25,10 @@ from src.config_integrity import (
     get_default_service,
 )
 from src.account_repository import AccountRepository, get_default_repository
+from src.runtime.account_runtime_bootstrap import (
+    initialize_account_runtime,
+    require_account_runtime_for_task,
+)
 
 logger = Logger.get_logger(__name__)
 
@@ -291,6 +295,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             return None
 
     def run(self):
+        require_account_runtime_for_task(self)
         if getattr(self, '_account_refresh_pending', False):
             self.refresh_account_options()
         if self.integrity_service is not None:
@@ -1651,4 +1656,5 @@ from ok import run_task
 from config import config
 
 if __name__ == "__main__":
+    initialize_account_runtime()
     run_task(config, task=DailyTask, debug=True)

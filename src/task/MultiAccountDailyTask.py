@@ -42,6 +42,10 @@ from src.account_repository import AccountRepository, get_default_repository
 from src.sequence_repository import SequenceRepository
 from src.runtime.sequence_snapshot_service import SequenceSnapshotService
 from src.runtime.task_run_coordinator import TaskRunCoordinator
+from src.runtime.account_runtime_bootstrap import (
+    initialize_account_runtime,
+    require_account_runtime_for_task,
+)
 
 logger = Logger.get_logger(__name__)
 
@@ -644,6 +648,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
     # ==================== 主流程 ====================
 
     def run(self):
+        require_account_runtime_for_task(self)
         if getattr(self, '_account_refresh_pending', False):
             self.refresh_account_options()
         if self.integrity_service is not None:
@@ -2575,4 +2580,5 @@ from ok import run_task
 from config import config
 
 if __name__ == "__main__":
+    initialize_account_runtime()
     run_task(config, task=MultiAccountDailyTask, debug=True)
