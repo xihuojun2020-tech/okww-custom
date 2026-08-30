@@ -18,7 +18,8 @@ $groups = @{
     "TestAccountIdentityProtection.py", "TestAccountProfileStore.py", "TestAccountRepositoryRuntime.py",
     "TestAccountRuntimeBootstrap.py", "TestAccountSwitch.py", "TestAndroidPreflight.py",
     "TestBaseCombatTask.py", "TestConfig.py", "TestCustomCharLoader.py", "TestDiagnosisRetention.py",
-    "TestDomainRecoveryLoop.py", "TestForgeryDomainLabels.py", "TestLoggingRedaction.py",
+    "TestDiagnosisTask.py", "TestDomainRecoveryLoop.py", "TestForgeryDomainLabels.py",
+    "TestLoggingRedaction.py", "TestMainProxyConfig.py",
     "TestMuMuDiscovery.py", "TestObservability.py", "TestReleaseReadiness.py", "TestRuntimeServices.py",
     "TestScheduleSupport.py", "TestSecurityBaseline.py", "TestSensitiveIdentifierScan.py",
     "TestSequenceRepository.py", "TestTestGroups.py", "TestWaitLogin.py"

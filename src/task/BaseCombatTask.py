@@ -79,6 +79,22 @@ class BaseCombatTask(CombatCheck):
         self.char_texts = ['char_1_text', 'char_2_text', 'char_3_text']
         self.add_text_fix({'Ｅ': 'e'})
         self.use_liberation = True
+        self._con_anomaly_logs = {}
+
+    def _log_con_anomaly(self, key, message, interval=30):
+        """Rate-limit repeated concerto anomalies and report the merged count."""
+        now = time.monotonic()
+        logs = getattr(self, '_con_anomaly_logs', None)
+        if logs is None:
+            logs = self._con_anomaly_logs = {}
+        state = logs.setdefault(str(key), {"last": None, "suppressed": 0})
+        if state["last"] is None or now - state["last"] >= interval:
+            suffix = f'（已合并 {state["suppressed"]} 次重复）' if state["suppressed"] else ''
+            self.logger.warning(f'{message}{suffix}')
+            state["last"] = now
+            state["suppressed"] = 0
+        else:
+            state["suppressed"] += 1
 
     def add_freeze_duration(self, start, duration=-1.0, freeze_time=0.1):
         """添加冻结持续时间。用于精确计算技能冷却等。
@@ -983,11 +999,14 @@ class BaseCombatTask(CombatCheck):
         if percent != 1 and self.con_full_size[str(target_index)] > 0:
             percent = max_area / self.con_full_size[str(target_index)]
         if not max_is_full and percent >= 1:
-            self.logger.warning(
+            self._log_con_anomaly(
+                'not_full_over_one',
                 f'is_con_full not full but percent greater than 1, set to 0.99, {percent} {max_is_full}')
             percent = 0.99
         if percent > 1:
-            self.logger.error(f'is_con_full percent greater than 1, set to 1, {percent} {max_is_full}')
+            self._log_con_anomaly(
+                'over_one',
+                f'is_con_full percent greater than 1, set to 1, {percent} {max_is_full}')
             percent = 1
 
         box.confidence = percent

@@ -195,6 +195,26 @@ def _exit_cleanup():
         pass
 
 
+def _set_owned_git_proxy(git_config, proxy):
+    """Change only http.proxy, preserving every other repository setting."""
+    import subprocess
+
+    command = ['git', 'config', '--file', os.fspath(git_config)]
+    if proxy:
+        result = subprocess.run(
+            [*command, '--replace-all', 'http.proxy', f'http://{proxy}'],
+            check=False, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError('failed to update repository proxy')
+    else:
+        result = subprocess.run(
+            [*command, '--unset-all', 'http.proxy'],
+            check=False, capture_output=True, text=True)
+        if result.returncode not in (0, 5):
+            raise RuntimeError('failed to remove repository proxy')
+    return proxy
+
+
 def _setup_proxy():
     """联网代理自愈：探测可用代理并写入 repo/.git/config 的 [http] proxy。
 
@@ -247,31 +267,8 @@ def _setup_proxy():
                     return f'{host or "127.0.0.1"}:{port}'
             return None
 
-        def _set_git_proxy(proxy):
-            with open(git_config, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-            kept, in_http = [], False
-            for line in lines:
-                if line.strip().startswith('[http]'):
-                    in_http = True
-                    continue
-                if in_http:
-                    if line.strip().startswith('['):
-                        in_http = False
-                        kept.append(line)
-                    continue
-                kept.append(line)
-            while kept and kept[-1].strip() == '':
-                kept.pop()
-            if proxy:
-                kept.append('\n[http]\n')
-                kept.append(f'\tproxy = http://{proxy}\n')
-            with open(git_config, 'w', encoding='utf-8') as f:
-                f.writelines(kept)
-            return proxy
-
         proxy = _find_proxy()
-        result = _set_git_proxy(proxy)
+        result = _set_owned_git_proxy(git_config, proxy)
         if result:
             print(f'[okww] 代理已配置: {result}（git fetch 将走代理）')
         else:

@@ -25,6 +25,11 @@ class TestFiveSectionMainWindow(unittest.TestCase):
         source = inspect.getsource(GeneralSettingsTab.__init__)
         self.assertNotIn("QTabWidget", source)
         self.assertIn("self.add_card(title, panel)", source)
+        self.assertIn("start_stop_combo", source)
+        self.assertIn(
+            "程序启停快捷键",
+            inspect.getsource(GeneralSettingsTab._update_start_stop_hotkey),
+        )
 
     def test_account_graph_event_refreshes_all_task_consumers(self):
         window = MainWindow.__new__(MainWindow)

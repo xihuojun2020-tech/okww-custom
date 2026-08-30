@@ -1,6 +1,9 @@
 import ast
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
+
+from src.task.BaseCombatTask import BaseCombatTask
 
 
 class TestBaseCombatTask(unittest.TestCase):
@@ -66,6 +69,17 @@ class TestBaseCombatTask(unittest.TestCase):
             for node in ast.walk(self.revive_method_node)
         )
         self.assertTrue(has_call)
+
+    @patch("src.task.BaseCombatTask.time.monotonic", side_effect=[0, 1, 2, 31])
+    def test_concerto_anomaly_logs_are_rate_limited_and_aggregated(self, _clock):
+        task = object.__new__(BaseCombatTask)
+        task.logger = Mock()
+
+        for _ in range(4):
+            task._log_con_anomaly("not_full", "协奏值异常")
+
+        self.assertEqual(task.logger.warning.call_count, 2)
+        self.assertIn("已合并 2 次", task.logger.warning.call_args.args[0])
 
 
 if __name__ == "__main__":
