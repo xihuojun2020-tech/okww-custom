@@ -5,8 +5,8 @@ from src.observability import CorrelationContext, redact_message, safe_call
 
 class TestObservability(unittest.TestCase):
     def test_redaction_removes_credentials(self):
-        text = redact_message("phone=13800000000 token=abcdefghijklmnopqrstuvwxyz0123456789")
-        self.assertNotIn("13800000000", text)
+        text = redact_message("phone=19910000002 token=abcdefghijklmnopqrstuvwxyz0123456789")
+        self.assertNotIn("19910000002", text)
         self.assertNotIn("abcdefghijklmnopqrstuvwxyz0123456789", text)
 
     def test_safe_call_reports_failure(self):

@@ -37,7 +37,7 @@ def master():
         "profiles": {
             PROFILE_A: {
                 "display_name": "A1",
-                "account_aliases": ["A1", "153****9621"],
+                "account_aliases": ["A1", "199****0001"],
                 "task_config": {
                     "Which to Farm": "Tacet Suppression", "Which Tacet Suppression to Farm": 1,
                     "Which Forgery Challenge to Farm": 1, "Material Selection": "Shell Credit",
@@ -51,7 +51,7 @@ def master():
             },
             PROFILE_B: {
                 "display_name": "A3",
-                "account_aliases": ["A3", "180****0004"],
+                "account_aliases": ["A3", "199****0006"],
                 "task_config": {
                     "Which to Farm": "Forgery Challenge", "Which Tacet Suppression to Farm": 1,
                     "Which Forgery Challenge to Farm": 1, "Material Selection": "Shell Credit",
@@ -75,7 +75,7 @@ def working():
             "A1": {
                 "profile_id": PROFILE_A,
                 "display_name": "A1",
-                "account_aliases": ["A1", "153****9621"],
+                "account_aliases": ["A1", "199****0001"],
                 "Which to Farm": "Tacet Suppression", "Which Tacet Suppression to Farm": 1,
                 "Which Forgery Challenge to Farm": 1, "Material Selection": "Shell Credit",
                 "Farm Nightmare Nest for Daily Echo": True, "Nightmare Which to Farm": ["Tacet Discord Nest"],
@@ -88,7 +88,7 @@ def working():
             "A3": {
                 "profile_id": PROFILE_B,
                 "display_name": "A3",
-                "account_aliases": ["A3", "180****0004"],
+                "account_aliases": ["A3", "199****0006"],
                 "Which to Farm": "Forgery Challenge", "Which Tacet Suppression to Farm": 1,
                 "Which Forgery Challenge to Farm": 1, "Material Selection": "Shell Credit",
                 "Farm Nightmare Nest for Daily Echo": True, "Nightmare Which to Farm": ["Tacet Discord Nest"],
@@ -177,10 +177,10 @@ class TestConfigIntegrity(unittest.TestCase):
 
     def test_validate_master_rejects_derived_phone_identity_collision(self):
         invalid = master()
-        invalid["profiles"][PROFILE_A]["account_aliases"] = ["15300000001"]
-        invalid["profiles"][PROFILE_B]["account_aliases"] = ["153****0001"]
+        invalid["profiles"][PROFILE_A]["account_aliases"] = ["19910000005"]
+        invalid["profiles"][PROFILE_B]["account_aliases"] = ["199****0005"]
         errors = validate_master(invalid)
-        self.assertTrue(any("153****0001" in error and "ambiguous" in error for error in errors))
+        self.assertTrue(any("199****0005" in error and "ambiguous" in error for error in errors))
 
     def test_validate_master_keeps_a1_and_a10_derived_names_distinct(self):
         valid = master()
@@ -282,17 +282,17 @@ class TestConfigIntegrity(unittest.TestCase):
         profile = legacy["profiles"].pop("A1")
         profile["display_name"] = "主账号"
         profile["account_aliases"] = ["U-A1"]
-        legacy["profiles"]["A1:15300000001"] = profile
-        legacy["sequences"] = {"序列一": ["A1:15300000001", "A3"]}
+        legacy["profiles"]["A1:19910000005"] = profile
+        legacy["sequences"] = {"序列一": ["A1:19910000005", "A3"]}
         self.service.paths.working.write_text(json.dumps(legacy), encoding="utf-8")
 
         self.assertTrue(self.service.bootstrap_master_from_working(confirm=True).ok)
         generated = json.loads(self.service.paths.master.read_text(encoding="utf-8"))
         updated = json.loads(self.service.paths.working.read_text(encoding="utf-8"))
-        profile_id = updated["profiles"]["A1:15300000001"]["profile_id"]
+        profile_id = updated["profiles"]["A1:19910000005"]["profile_id"]
         self.assertEqual(
             generated["profiles"][profile_id]["account_aliases"],
-            ["U-A1", "A1:15300000001"],
+            ["U-A1", "A1:19910000005"],
         )
         self.assertEqual(generated["sequences"]["序列一"][0], profile_id)
 
@@ -714,19 +714,19 @@ class TestConfigIntegrity(unittest.TestCase):
     def test_legacy_identity_candidates_map_short_masked_and_u_names(self):
         source = master()
         source['profiles'][PROFILE_B]['display_name'] = 'A10'
-        source['profiles'][PROFILE_B]['account_aliases'] = ['A10', '180****0004', 'U-A10']
+        source['profiles'][PROFILE_B]['account_aliases'] = ['A10', '199****0006', 'U-A10']
         source['profiles'][PROFILE_B]['task_config']['备用识别名称内容'] = 'U-A10'
         legacy = {
             'profiles': {
-                'A1:15300000001': {
+                'A1:19910000005': {
                     'Which to Farm': 'Tacet Suppression', 'last_completed': {'Daily Task': 'today'}
                 },
                 'U-A10': {
                     'Which to Farm': 'Forgery Challenge', 'last_completed': {'Daily Task': 'yesterday'}
                 },
             },
-            'sequences': {'序列一': ['A1:15300000001', 'U-A10']},
-            'active_profile': 'A1:15300000001',
+            'sequences': {'序列一': ['A1:19910000005', 'U-A10']},
+            'active_profile': 'A1:19910000005',
         }
         normalized = normalize_working(legacy, source)
         self.assertEqual(set(normalized['profiles']), {PROFILE_A, PROFILE_B})
@@ -737,7 +737,7 @@ class TestConfigIntegrity(unittest.TestCase):
     def test_legacy_identity_short_names_do_not_match_a10_or_ambiguous_aliases(self):
         source = master()
         source['profiles'][PROFILE_B]['display_name'] = 'A10'
-        source['profiles'][PROFILE_B]['account_aliases'] = ['A10', '180****0004']
+        source['profiles'][PROFILE_B]['account_aliases'] = ['A10', '199****0006']
         one = {'profiles': {'A1': {'Which to Farm': 'Tacet Suppression'}}, 'sequences': {}}
         self.assertEqual(set(normalize_working(one, source)['profiles']), {PROFILE_A})
         source['profiles'][PROFILE_B]['account_aliases'] = ['A1']

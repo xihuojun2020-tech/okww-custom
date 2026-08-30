@@ -55,7 +55,7 @@ class TestAccountRuntimeIntegration(unittest.TestCase):
             root = Path(temp)
             profile_id = str(uuid.uuid4())
             profile = {"profile_id": profile_id, "display_name": "A1",
-                       "phone": "13800001234", "task_config": {"Which to Farm": "active"}}
+                       "phone": "19910000008", "task_config": {"Which to Farm": "active"}}
             AccountPublishService(root).publish(
                 expected_revision="", profiles={profile_id: profile},
                 index={"config_id": "active-test"}, sequences={"序列1": [profile_id]})

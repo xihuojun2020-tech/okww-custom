@@ -179,7 +179,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             'Tacet Discord Nests to Farm': '勾选 = 刷，取消勾选 = 跳过',
             GARDEN_CHECK_DAY: '周一~周六选一天检查（周日固定检查，不显示）',
             ALIAS_ENABLE: '备用识别名称：无 = 不设置；使用 = 填写扫码登录显示的账号标识',
-            ALIAS_TEXT: '多个用逗号分隔（如 U123456，识别登录界面账号时与手机号掩码同等有效）',
+            ALIAS_TEXT: '多个用逗号分隔（如 UTEST1001A，识别登录界面账号时与手机号掩码同等有效）',
             MERGE_ECHO_ON_SUNDAY: '勾选 = 开启',
             RECORD_AFTER_DAILY: '',
             LOGOUT_AFTER_DAILY: '',

@@ -32,8 +32,8 @@ class FakeRepository:
 class TestAccountConfigEditor(unittest.TestCase):
     def test_gui_error_text_is_redacted(self):
         text = sanitize_error(RuntimeError(
-            "phone 13812345678 token abcdefghijklmnopqrstuvwxyz123456"))
-        self.assertNotIn("13812345678", text)
+            "phone 19910000004 token abcdefghijklmnopqrstuvwxyz123456"))
+        self.assertNotIn("19910000004", text)
         self.assertNotIn("abcdefghijklmnopqrstuvwxyz123456", text)
 
     def setUp(self):
@@ -42,12 +42,12 @@ class TestAccountConfigEditor(unittest.TestCase):
 
     def test_draft_is_detached_diff_is_redacted_and_save_backs_up(self):
         draft = self.editor.load_draft("id")
-        draft.tasks["Which to Farm"] = "15300000001"
+        draft.tasks["Which to Farm"] = "19910000005"
         self.assertEqual(self.repository.record.tasks["Which to Farm"], "before")
         diff = self.editor.preview_diff(draft)
-        self.assertEqual(diff.changes[0].after, "153****0001")
+        self.assertEqual(diff.changes[0].after, "199****0007")
         saved = self.editor.save_draft(draft.scope, draft, confirmed_account_label="A3")
-        self.assertEqual(saved.tasks["Which to Farm"], "15300000001")
+        self.assertEqual(saved.tasks["Which to Farm"], "19910000005")
         self.assertEqual(len(self.repository.backups), 1)
 
     def test_locked_identity_label_and_stale_revision_are_rejected(self):

@@ -94,7 +94,7 @@ def main():
             if ok:
                 print(f"    -> 截图已保存: {path}")
     print("\n判断标准：")
-    print("  - 若登录账号下拉框（掩码 180****1088 / 登录按钮）出现在某个『非 UnrealWindow』窗口的截图里")
+    print("  - 若登录账号下拉框（掩码 199****0005 / 登录按钮）出现在某个『非 UnrealWindow』窗口的截图里")
     print("    -> 假设成立：登录 UI 在独立窗口，主窗口捕获永远看不到它")
     print("  - 若 UnrealWindow 自己的截图里就有登录选项 -> 假设不成立，另找原因")
     print(f"\n输出目录: {OUT_DIR}")

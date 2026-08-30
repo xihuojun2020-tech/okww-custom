@@ -34,7 +34,7 @@ class TestMuMuDiscovery(unittest.TestCase):
             "0": {
                 "index": "0",
                 "android_version": "15.0",
-                "name": "鸣潮长期-18020001088",
+                "name": "鸣潮长期-19910000009",
             },
         })
         candidate = MuMuDiscovery(runner=lambda args, **kwargs: Result(payload)).discover()[0]

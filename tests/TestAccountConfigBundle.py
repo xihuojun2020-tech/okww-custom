@@ -34,9 +34,9 @@ def _master(sequences=None):
     return {
         "schema_version": 1, "config_id": "bundle-test", "timezone": "Asia/Shanghai",
         "profiles": {
-            PROFILE_A: {"display_name": "A1", "account_aliases": ["A1", "153****9621"],
+            PROFILE_A: {"display_name": "A1", "account_aliases": ["A1", "199****0001"],
                         "task_config": _task_config(), "schedule": {}, "extensions": {}},
-            PROFILE_B: {"display_name": "A3", "account_aliases": ["A3", "180****0004"],
+            PROFILE_B: {"display_name": "A3", "account_aliases": ["A3", "199****0006"],
                         "task_config": _task_config(), "schedule": {}, "extensions": {}},
         }, "sequences": sequences or {"序列1": [PROFILE_A, PROFILE_B]}, "extensions": {},
     }
@@ -95,7 +95,7 @@ class TestAccountConfigBundle(unittest.TestCase):
                 "token": "secret-token",
                 "auth_url": "https://example.invalid/oauth/token?pat=secret-pat",
             },
-            "phone_identity": "15300009621",
+            "phone_identity": "19910000003",
         }
         self.service.paths.master.write_text(json.dumps(self.master, ensure_ascii=False), encoding="utf-8")
         self.service.paths.working.write_text(
@@ -108,7 +108,7 @@ class TestAccountConfigBundle(unittest.TestCase):
         serialized = json.dumps(exported, ensure_ascii=False)
         for secret in ("secret-password", "secret-token", "secret-pat"):
             self.assertNotIn(secret, serialized)
-        self.assertEqual(exported["master_config"]["extensions"]["phone_identity"], "15300009621")
+        self.assertEqual(exported["master_config"]["extensions"]["phone_identity"], "19910000003")
         self.assertEqual(exported["master_config"]["extensions"]["password"], "[REDACTED]")
 
     def test_v3_malformed_nested_shapes_are_blocked_in_preflight(self):

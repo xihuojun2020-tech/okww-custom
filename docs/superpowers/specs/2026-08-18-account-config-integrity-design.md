@@ -81,7 +81,7 @@
   "profiles": {
     "0f7b7f52-9da7-4b43-bbc2-9be7c539f801": {
       "display_name": "A1",
-      "account_aliases": ["A1", "153****9621"],
+      "account_aliases": ["A1", "199****0001"],
       "task_config": {},
       "schedule": {},
       "extensions": {}

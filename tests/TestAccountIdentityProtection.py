@@ -10,11 +10,11 @@ from src.account_identity import AccountIdentityError
 class FakeRepository:
     def __init__(self):
         self.records = {
-            "a1": {"profile_id": "a1", "display_name": "A1", "masked_phone": "138****0001",
-                   "nickname": "夜归", "alternate_login_name": "UoneA", "game_feature_code": "F1",
+            "a1": {"profile_id": "a1", "display_name": "A1", "masked_phone": "199****0004",
+                   "nickname": "夜归", "alternate_login_name": "UTEST0003A", "game_feature_code": "F1",
                    "account_aliases": [], "task_config": {"Which to Farm": "Tacet Suppression"}},
-            "a3": {"profile_id": "a3", "display_name": "A3", "masked_phone": "138****0003",
-                   "nickname": "昼行", "alternate_login_name": "UthreeA", "game_feature_code": "F3",
+            "a3": {"profile_id": "a3", "display_name": "A3", "masked_phone": "199****0008",
+                   "nickname": "昼行", "alternate_login_name": "UTEST0004A", "game_feature_code": "F3",
                    "account_aliases": [], "task_config": {"Which to Farm": "Tacet Suppression"}},
         }
         self.revision = "r1"
@@ -49,10 +49,10 @@ class TestAccountIdentityProtection(unittest.TestCase):
 
     def test_all_identity_fields_are_rejected_by_normal_editor(self):
         for key, value in {
-            "phone": "13800000001",
-            "masked_phone": "138****0099",
+            "phone": "19910000007",
+            "masked_phone": "199****0009",
             "nickname": "changed",
-            "alternate_login_name": "UchangedA",
+            "alternate_login_name": "UTEST0005A",
             "game_feature_code": "Fchanged",
             "account_aliases": ["changed"],
         }.items():
@@ -64,16 +64,16 @@ class TestAccountIdentityProtection(unittest.TestCase):
     def test_rebind_rejects_identity_collision(self):
         service = AccountRebindService(self.repository)
         with self.assertRaises(AccountIdentityError):
-            service.preview("a1", {"masked_phone": "138****0003"})
+            service.preview("a1", {"masked_phone": "199****0008"})
 
     def test_rebind_creates_backup_and_publishes_after_confirmation(self):
         service = AccountRebindService(self.repository)
         result = service.rebind(
-            "a1", current_identity="138****0001",
-            new_identity={"masked_phone": "138****0009", "alternate_login_name": "UnineA"},
+            "a1", current_identity="199****0004",
+            new_identity={"masked_phone": "199****0010", "alternate_login_name": "UTEST0006A"},
             confirmed=True,
         )
-        self.assertEqual(result.account["masked_phone"], "138****0009")
+        self.assertEqual(result.account["masked_phone"], "199****0010")
         self.assertEqual(len(self.repository.backups), 1)
 
 

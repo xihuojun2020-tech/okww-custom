@@ -63,9 +63,9 @@ class TestAccountRepositoryMigrationScenario(unittest.TestCase):
         task = object.__new__(MultiAccountDailyTask)
         task.get_profile_names = lambda: list(working["profiles"])
         task._load_profiles = lambda: working["profiles"]
-        self.assertEqual(task.match_profile_from_login("153****0004"), "A4")
-        self.assertEqual(task.match_profile_from_login("153****0010"), "A10")
-        self.assertIsNone(task.match_profile_from_login("153****0099"))
+        self.assertEqual(task.match_profile_from_login("199****0011"), "A4")
+        self.assertEqual(task.match_profile_from_login("199****0012"), "A10")
+        self.assertIsNone(task.match_profile_from_login("199****0013"))
         self.assertIsNone(task.match_profile_from_login("A1-extra"))
 
     def test_interrupted_migration_rolls_back_and_can_resume(self):

@@ -113,7 +113,7 @@ def test_all_identity_fields_are_rejected_by_backend():
 
 def test_rebind_rejects_identity_collision(self):
     with self.assertRaises(AccountIdentityError):
-        self.service.rebind(self.profile_id, current_identity="old", new_identity={"masked_phone": "138****0002"})
+        self.service.rebind(self.profile_id, current_identity="old", new_identity={"masked_phone": "199****0003"})
 ```
 
 - [x] **Step 2: Run the protection tests and verify failure**
@@ -177,8 +177,8 @@ git commit -m "security: protect account identity fields and add explicit rebind
 
 ```python
 def test_sensitive_backup_is_not_plain_json(self):
-    encrypted = SecureBackupService().encrypt_snapshot(b'{"phone":"13800000000"}')
-    self.assertNotIn(b"13800000000", encrypted)
+    encrypted = SecureBackupService().encrypt_snapshot(b'{"phone":"19910000002"}')
+    self.assertNotIn(b"19910000002", encrypted)
 
 def test_restore_path_rejects_symlink_escape(self):
     with self.assertRaises(ValueError):
@@ -315,7 +315,7 @@ git commit -m "refactor: make active account bundle the runtime source"
 
 ```python
 def test_selection_priority_and_ambiguity(self):
-    self.assertEqual(self.selection.resolve("138****0001", self.profiles), self.a1)
+    self.assertEqual(self.selection.resolve("199****0004", self.profiles), self.a1)
     with self.assertRaises(AccountIdentityError):
         self.selection.resolve("A1", {"A1": {}, "A2": {"account_aliases": ["A1"]}})
 
@@ -459,8 +459,8 @@ git commit -m "feat: simplify account sequence and task workflows"
 
 ```python
 def test_redaction_removes_credentials(self):
-    text = redact_message("phone=13800000000 token=abcdefghijklmnopqrstuvwxyz0123456789")
-    self.assertNotIn("13800000000", text)
+    text = redact_message("phone=19910000002 token=abcdefghijklmnopqrstuvwxyz0123456789")
+    self.assertNotIn("19910000002", text)
     self.assertNotIn("abcdefghijklmnopqrstuvwxyz0123456789", text)
 
 def test_refresh_failure_is_reported(self):

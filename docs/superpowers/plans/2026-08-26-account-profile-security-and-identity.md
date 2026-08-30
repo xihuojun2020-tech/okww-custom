@@ -47,14 +47,14 @@ def test_masked_phone_is_preserved_and_matches_first():
         "p-a1": {
             "profile_id": "p-a1",
             "display_name": "A1",
-            "masked_phone": "138****1234",
+            "masked_phone": "199****0002",
             "nickname": "夜归",
-            "alternate_login_name": "UabcA",
+            "alternate_login_name": "UTEST0001A",
         }
     }
-    assert resolve_profile_identity("138****1234", profiles) == "p-a1"
+    assert resolve_profile_identity("199****0002", profiles) == "p-a1"
     identity = extract_account_identity("p-a1", profiles["p-a1"])
-    assert identity.masked_phone == "138****1234"
+    assert identity.masked_phone == "199****0002"
 ```
 
 - [ ] **Step 2: Run the focused tests and verify the missing-field failure**
@@ -237,17 +237,17 @@ git commit -m "feat: publish crash-safe account bundles"
 - `save_draft(scope, draft, confirmed_account_label, sequence_ids) -> ProfileRecord` publishes through `AccountRepository` and `AccountPublishService`.
 - `delete_profile(scope, confirmed_account_label) -> AccountDeletionPreview` remains a two-step, recoverable operation.
 
-Each editor test creates `repository = AccountRepository(tmp_path)` and `editor = AccountConfigEditor(repository)` against a fixture containing A1 with `masked_phone="138****1234"` and full phone `"13800121234"`.
+Each editor test creates `repository = AccountRepository(tmp_path)` and `editor = AccountConfigEditor(repository)` against a fixture containing A1 with `masked_phone="199****0002"` and full phone `"19910000001"`.
 
 - [ ] **Step 1: Write failing UI-service tests**
 
 ```python
 def test_profile_diff_keeps_masked_phone_visible_and_redacts_full_phone():
     draft = editor.load_draft("p-a1")
-    draft.account["masked_phone"] = "138****1234"
+    draft.account["masked_phone"] = "199****0002"
     diff = editor.preview_diff(draft)
-    assert "138****1234" in {entry.after for entry in diff.changes}
-    assert "13800121234" not in str(diff)
+    assert "199****0002" in {entry.after for entry in diff.changes}
+    assert "19910000001" not in str(diff)
 ```
 
 - [ ] **Step 2: Run focused tests and verify the new identity fields are absent from the editor contract**
@@ -304,10 +304,10 @@ The `multi_task` fixture constructs `MultiAccountDailyTask` with the repository 
 
 ```python
 def test_switch_matching_prefers_masked_phone(multi_task):
-    assert multi_task.match_profile_from_login("138****1234") == "A1"
+    assert multi_task.match_profile_from_login("199****0002") == "A1"
 
 def test_switch_matching_uses_u_name_when_masked_phone_is_unavailable(multi_task):
-    assert multi_task.match_profile_from_login("UabcA") == "A1"
+    assert multi_task.match_profile_from_login("UTEST0001A") == "A1"
 ```
 
 - [ ] **Step 2: Run the focused account-switch suite and verify active-snapshot wiring is missing**
@@ -357,7 +357,7 @@ git commit -m "feat: run account switching from published profiles"
 - Produce `MigrationReport` with `profile_ids`, `masked_phone_fields`, `sequence_names`, `warnings`, and `rollback_path`.
 - Migration must preserve UUIDs, `masked_phone`, U…A aliases, feature codes, unknown extensions, sequence order, and runtime completion records.
 
-`MASTER_FIXTURE` is a schema-v1 mapping with one profile containing `profile_id="p-a1"`, `masked_phone="138****1234"`, `alternate_login_name="UabcA"`, `game_feature_code="FC-A1"`, and one sequence named `序列一`; `load_editable_graph(root)` reads the generated index and profile files for assertions.
+`MASTER_FIXTURE` is a schema-v1 mapping with one profile containing `profile_id="p-a1"`, `masked_phone="199****0002"`, `alternate_login_name="UTEST0001A"`, `game_feature_code="FC-A1"`, and one sequence named `序列一`; `load_editable_graph(root)` reads the generated index and profile files for assertions.
 
 - [ ] **Step 1: Write failing round-trip and conflict tests**
 
@@ -366,8 +366,8 @@ def test_master_to_profile_files_round_trip_preserves_three_identity_layers(tmp_
     report = migrate_master_to_profiles(MASTER_FIXTURE, tmp_path, confirm=True)
     assert report.masked_phone_fields == 1
     restored = load_editable_graph(tmp_path)
-    assert restored["profiles"]["p-a1"]["masked_phone"] == "138****1234"
-    assert restored["profiles"]["p-a1"]["alternate_login_name"] == "UabcA"
+    assert restored["profiles"]["p-a1"]["masked_phone"] == "199****0002"
+    assert restored["profiles"]["p-a1"]["alternate_login_name"] == "UTEST0001A"
 ```
 
 - [ ] **Step 2: Run migration tests and verify the migration entry point is absent**

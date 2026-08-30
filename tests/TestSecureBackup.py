@@ -9,11 +9,11 @@ from src.secure_backup import (SecureBackupService, SecureBackupUnavailable,
 
 class TestSecureBackup(unittest.TestCase):
     def test_sensitive_backup_is_not_plain_json(self):
-        payload = b'{"phone":"13800000000"}'
+        payload = b'{"phone":"19910000002"}'
         if os.name != "nt":
             self.skipTest("DPAPI is Windows-only")
         encrypted = SecureBackupService().encrypt_snapshot(payload)
-        self.assertNotIn(b"13800000000", encrypted)
+        self.assertNotIn(b"19910000002", encrypted)
         self.assertEqual(SecureBackupService().decrypt_snapshot(encrypted), payload)
 
     def test_restore_path_rejects_traversal(self):

@@ -10,14 +10,14 @@ class TestRuntimeServices(unittest.TestCase):
     def setUp(self):
         self.profiles = {
             "a1": {"profile_id": "a1", "display_name": "A1",
-                   "masked_phone": "138****0001", "alternate_login_name": "UoneA"},
+                   "masked_phone": "199****0004", "alternate_login_name": "UTEST0003A"},
             "a3": {"profile_id": "a3", "display_name": "A3",
-                   "masked_phone": "138****0003", "alternate_login_name": "UthreeA"},
+                   "masked_phone": "199****0008", "alternate_login_name": "UTEST0004A"},
         }
 
     def test_selection_prioritizes_masked_phone_and_rejects_missing(self):
         service = AccountSelectionService()
-        self.assertEqual(service.resolve("138****0001", self.profiles), "a1")
+        self.assertEqual(service.resolve("199****0004", self.profiles), "a1")
         with self.assertRaises(AccountIdentityError):
             service.resolve("missing", self.profiles)
 

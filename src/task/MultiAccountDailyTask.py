@@ -3,15 +3,15 @@
 
 运行机制（原版 + 增强）：
   1. 先从当前已登录账号开始跑一轮每日任务（第一轮即用户手动登录好的起始账号，如 A1）
-  2. 跑完后退回登录界面，识别登录界面显示的账号（掩码 180****1088 或扫码 U 开头账号）
+  2. 跑完后退回登录界面，识别登录界面显示的账号（掩码 199****0005 或扫码 U 开头账号）
   3. 按「已完成记录」跳过今天已打过的账号，从断点账号继续
   4. 每完成一个账号立即写入进度文件（断电/断网/异常中断后恢复，不重复打已完成的账号）
   5. 全部账号完成后：登录回起始账号（不重复执行其每日任务），并提醒用户
   6. 提醒走预留模块 _notify_user（当前：桌面通知 + 日志；后续可扩展 QQ/微信等外部通道）
 
 账号识别：
-  - 掩码形式：手机号前3 + **** + 后4（如 180****1088），与方案名中的手机号匹配
-  - 扫码登录形式：U 开头的一串字母数字（如 U123456），通过方案里的「账号别名」匹配
+  - 掩码形式：手机号前3 + **** + 后4（如 199****0005），与方案名中的手机号匹配
+  - 扫码登录形式：U 开头的一串字母数字（如 UTEST1001A），通过方案里的「账号别名」匹配
   - 两者都作为该账号的身份依据
 
 进度持久化：configs/multi_account_progress.json（按天记录已完成账号方案名）
@@ -46,7 +46,7 @@ from src.runtime.task_run_coordinator import TaskRunCoordinator
 logger = Logger.get_logger(__name__)
 
 account_pattern = re.compile(r'\*\*\*\*')
-# 扫码登录的 U 开头账号（如 U123456，也可能带其他前缀，宽松匹配）
+# 扫码登录的 U 开头账号（如 UTEST1001A，也可能带其他前缀，宽松匹配）
 scan_account_pattern = re.compile(r'^U[a-zA-Z0-9]+$', re.IGNORECASE)
 # 方案名中的 11 位手机号
 phone_in_name_pattern = re.compile(r'(1[3-9]\d{9})')
@@ -1706,7 +1706,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
     def _dialog_find_and_click_account(self, profile_name):
         """在 #32770 登录对话框/展开的账号列表（ComboLBox）中找到目标账号并点击。
 
-        返回 (是否点击成功, 找到的账号文本或 None)。账号可能是掩码（180****1088）或 U 扫码（U550500484A）。
+        返回 (是否点击成功, 找到的账号文本或 None)。账号可能是掩码（199****0005）或 U 扫码（UTEST0002A）。
         """
         # 1) 展开的账号列表（ComboLBox）优先
         ok, name, attempted = self._find_and_click_account_in_combo_list(profile_name)
@@ -1914,7 +1914,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         """在登录界面账号列表中点击指定的方案账号，返回是否点击成功。
 
         v1.03.73：主窗口内嵌登录走原路径；#32770 对话框登录走对话框帧 + 屏幕坐标路径；
-        账号匹配支持掩码（180****1088）与 U 扫码账号（U550500484A）。
+        账号匹配支持掩码（199****0005）与 U 扫码账号（UTEST0002A）。
 
         ``True`` 仅表示点击事件已投递，不表示登录器已经接受选择；后者由
         ``_wait_for_account_selection_stable`` 单独确认。``interaction_mode=screen``
@@ -2500,7 +2500,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         return self.wait_until(self.do_find_account_drop_down, time_out=60, settle_time=2, raise_if_not_found=True)
 
     def _account_entry_count(self, texts):
-        """OCR 文本中账号条目（掩码 180****1088 或 U 扫码账号）的框数量。
+        """OCR 文本中账号条目（掩码 199****0005 或 U 扫码账号）的框数量。
 
         同一账号文本出现在不同位置（收起态 ComboBox + 展开列表）各算一个，
         用于区分「收起态（1 个）」与「列表已展开（≥2 个）」。
