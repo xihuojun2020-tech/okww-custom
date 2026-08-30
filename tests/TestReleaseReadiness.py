@@ -36,6 +36,13 @@ class TestReleaseReadiness(unittest.TestCase):
         self.assertIn("refs/tags/v", build)
         self.assertIn("SHA256SUMS.txt", build)
 
+    def test_manual_candidate_build_cannot_publish_a_release(self):
+        build = Path(".github/workflows/build.yml").read_text(encoding="utf-8")
+        self.assertIn("build_candidate:", build)
+        self.assertIn("github.event_name == 'workflow_dispatch' && inputs.build_candidate", build)
+        release_job = build.split("  github-release:", 1)[1]
+        self.assertIn("if: startsWith(github.ref, 'refs/tags/v')", release_job)
+
     def test_optional_mirrorchyan_workflows_are_removed(self):
         self.assertFalse(Path(".github/workflows/mirrorchyan_uploading.yml").exists())
         self.assertFalse(Path(".github/workflows/mirrorchyan_release_note.yml").exists())
