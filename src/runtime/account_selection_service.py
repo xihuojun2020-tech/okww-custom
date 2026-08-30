@@ -22,8 +22,15 @@ class AccountSelectionService:
                                               "task_config": dict(record.tasks)}
         return result
 
-    def resolve(self, observed: Any, profiles: Mapping[str, Any] | None = None) -> str:
-        result = match_profile_identity(observed, self._profiles(profiles))
+    def resolve_optional(self, observed: Any, profiles: Mapping[str, Any] | None = None, *,
+                         strict_feature_code: bool = False) -> str | None:
+        return match_profile_identity(
+            observed, self._profiles(profiles), strict_feature_code=strict_feature_code)
+
+    def resolve(self, observed: Any, profiles: Mapping[str, Any] | None = None, *,
+                strict_feature_code: bool = False) -> str:
+        result = self.resolve_optional(
+            observed, profiles, strict_feature_code=strict_feature_code)
         if result is None:
             raise AccountIdentityError("找不到匹配的账号配置")
         return result

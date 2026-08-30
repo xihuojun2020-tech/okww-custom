@@ -34,7 +34,6 @@ from src.account_switch_evidence import AccountSwitchEvidenceSession
 from src.account_identity import (
     AccountIdentityError,
     masked_phone as _masked_phone,
-    resolve_profile_identity,
     resolve_profile_short_names as _resolve_profile_short_names,
     short_profile_name as _short_profile_name,
 )
@@ -42,6 +41,9 @@ from src.account_repository import AccountRepository, get_default_repository
 from src.sequence_repository import SequenceRepository
 from src.runtime.sequence_snapshot_service import SequenceSnapshotService
 from src.runtime.task_run_coordinator import TaskRunCoordinator
+from src.runtime.account_selection_service import AccountSelectionService
+from src.runtime.account_verification_service import AccountVerificationService
+from src.runtime.login_flow_service import LoginFlowService
 from src.runtime.account_runtime_bootstrap import (
     initialize_account_runtime,
     require_account_runtime_for_task,
@@ -111,6 +113,10 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         self._profile_cache = {}  # 方案名 → 方案内容（含手机号/别名），用于登录账号识别
         self._account_refresh_pending = False
         self.run_coordinator = TaskRunCoordinator()
+        self.account_selection_service = AccountSelectionService()
+        self.account_verification_service = AccountVerificationService(
+            self.account_selection_service, strict_feature_code=False)
+        self.login_flow_service = LoginFlowService(self)
         # 当前执行序列（账号归属序列，序列列表来自 daily_profiles 的 sequences，可在下方管理增删）
         self.default_config[CURRENT_SEQUENCE] = '序列1'
         self.config_description[CURRENT_SEQUENCE] = '当前执行的账号序列（按该序列的账号执行；序列可增删）'
@@ -576,7 +582,10 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             return None
         profiles = self._load_profiles()
         try:
-            exact = resolve_profile_identity(login_text, profiles)
+            verifier = getattr(self, 'account_verification_service', None)
+            if verifier is None:
+                verifier = AccountVerificationService(AccountSelectionService())
+            exact = verifier.resolve_observed(login_text, profiles)
         except AccountIdentityError as exc:
             raise ValueError(str(exc)) from exc
         if exact is not None:
@@ -941,59 +950,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         target profile; production and test tasks therefore share exactly the
         same wait/select/verify/login/ensure-main chain.
         """
-        if not profile_name:
-            raise ValueError('target account is required')
-        MultiAccountDailyTask._guard_account_transition(self)
-        self._begin_account_switch_evidence(profile_name)
-        mouse_reset_task = None
-        mouse_reset_was_enabled = False
-        try:
-            executor = getattr(self, 'executor', None)
-            getter = getattr(executor, 'get_task_by_class', None)
-            mouse_reset_task = getter(MouseResetTask) if callable(getter) else None
-            mouse_reset_was_enabled = mouse_reset_task.enabled if mouse_reset_task else False
-            if mouse_reset_was_enabled:
-                mouse_reset_task.disable()
-            if self.do_find_account_drop_down() is None:
-                try:
-                    in_team = bool(self.in_team()[0])
-                except TaskDisabledException:
-                    raise
-                except Exception:
-                    in_team = False
-                if in_team:
-                    self.log_info('检测到仍在游戏世界内，先退登再执行账号切换')
-                    self._evidence_stage('logout_from_world')
-                    self._switch_to_login()
-            self._evidence_stage('wait_login_screen')
-            self._wait_login_screen_stable(time_out=120)
-            self._evidence_stage('select_account')
-            self._select_account_with_retry(profile_name, max_retries=max_retries)
-            self.sleep(4)
-            self._evidence_stage('verify_before_login')
-            self._click_login_for_target(profile_name)
-            self.logged_in = False
-            self._evidence_stage('ensure_main')
-            self.ensure_main(time_out=180)
-            self.log_info(f'已登录: {profile_name}')
-            self._finish_account_switch_evidence(True)
-            return profile_name
-        except TaskDisabledException as error:
-            # The evidence session owns the last observed identity; the
-            # target is not evidence of what the login UI displayed.
-            event_dir = self._finish_account_switch_evidence(
-                False, str(error), stage='stopped', stopped=True)
-            if event_dir is not None:
-                self.log_warning(f'账号切换已停止；审核证据正在保存到: {event_dir}')
-            raise
-        except Exception as error:
-            event_dir = self._finish_account_switch_evidence(False, str(error), stage='failed')
-            if event_dir is not None:
-                self.log_warning(f'账号切换失败；最近证据已保存到: {event_dir}')
-            raise
-        finally:
-            if mouse_reset_was_enabled and mouse_reset_task is not None:
-                mouse_reset_task.enable()
+        service = getattr(self, 'login_flow_service', None) or LoginFlowService(self)
+        return service.switch_to_account(profile_name, max_retries=max_retries)
 
     def _switch_to_login(self):
         MultiAccountDailyTask._guard_account_transition(self)

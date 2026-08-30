@@ -3,6 +3,8 @@ from types import SimpleNamespace
 
 from src.account_identity import AccountIdentityError
 from src.runtime.account_selection_service import AccountSelectionService
+from src.runtime.account_verification_service import AccountVerificationService
+from src.runtime.login_flow_service import LoginFlowService
 from src.runtime.task_run_coordinator import TaskRunCoordinator, TaskRunState
 
 
@@ -29,6 +31,42 @@ class TestRuntimeServices(unittest.TestCase):
         coordinator.request_stop()
         self.assertEqual(snapshot.profile_ids, ("a1", "a3"))
         self.assertEqual(coordinator.state, TaskRunState.STOPPED)
+
+    def test_verification_rejects_wrong_account_and_keeps_feature_code_disabled(self):
+        profiles = {**self.profiles, "a4": {"profile_id": "a4", "display_name": "A4",
+                                             "game_feature_code": "TEST-FEATURE-A4"}}
+        service = AccountVerificationService()
+        self.assertEqual(service.verify("a1", "199****0004", profiles), "a1")
+        with self.assertRaises(AccountIdentityError):
+            service.verify("a3", "199****0004", profiles)
+        self.assertIsNone(service.resolve_observed("TEST-FEATURE-A4", profiles))
+
+    def test_login_flow_orchestrates_the_existing_task_primitives(self):
+        events = []
+
+        class Task:
+            executor = None
+            logged_in = True
+
+            def _guard_account_transition(self): events.append("guard")
+            def _begin_account_switch_evidence(self, target): events.append(("begin", target))
+            def do_find_account_drop_down(self): return object()
+            def _evidence_stage(self, stage): events.append(stage)
+            def _wait_login_screen_stable(self, time_out): events.append(("wait", time_out))
+            def _select_account_with_retry(self, target, max_retries): events.append(("select", target, max_retries))
+            def sleep(self, seconds): events.append(("sleep", seconds))
+            def _click_login_for_target(self, target): events.append(("login", target))
+            def ensure_main(self, time_out): events.append(("main", time_out))
+            def log_info(self, message): events.append(("log", message))
+            def _finish_account_switch_evidence(self, success, *args, **kwargs):
+                events.append(("finish", success))
+
+        task = Task()
+        self.assertEqual(LoginFlowService(task).switch_to_account("a3", max_retries=2), "a3")
+        self.assertIn(("select", "a3", 2), events)
+        self.assertIn(("login", "a3"), events)
+        self.assertIn(("finish", True), events)
+        self.assertFalse(task.logged_in)
 
 
 if __name__ == "__main__":
