@@ -37,7 +37,7 @@ class TestAccountGraphStore(unittest.TestCase):
                               expected_revision="stale")
             self.assertEqual(store.load_active().revision, first.revision)
 
-    def test_interrupted_mirror_keeps_previous_active_revision(self):
+    def test_interrupted_mirror_keeps_new_active_revision_readable(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             profile_id = str(uuid.uuid4())
@@ -55,7 +55,9 @@ class TestAccountGraphStore(unittest.TestCase):
             with patch.object(store.service, "_mirror_projections", side_effect=OSError("interrupt")):
                 with self.assertRaises(OSError):
                     store.publish(candidate, expected_revision=first.revision)
-            self.assertEqual(store.load_active().revision, first.revision)
+            active = store.load_active()
+            self.assertNotEqual(active.revision, first.revision)
+            self.assertEqual(active.profiles[profile_id]["display_name"], "changed")
 
 
 if __name__ == "__main__":

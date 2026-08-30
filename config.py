@@ -2,6 +2,10 @@ import os
 import re
 from pathlib import Path
 
+from src.observability import install_redaction_filters
+
+install_redaction_filters()
+
 from ok import Box, ConfigOption
 try:
     from ok import Icon

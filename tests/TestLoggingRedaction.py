@@ -5,6 +5,7 @@ import unittest
 from src.observability import (
     RedactingFilter,
     _reset_sensitive_values_for_tests,
+    install_redaction_filters,
     register_sensitive_values,
 )
 
@@ -45,6 +46,20 @@ class TestLoggingRedaction(unittest.TestCase):
         self.assertNotIn("UTEST0004A", rendered)
         self.assertNotIn("19910000004", rendered)
         self.assertIn("RuntimeError", rendered)
+
+    def test_global_install_redacts_future_logger_config_dumps(self):
+        install_redaction_filters()
+        stream = io.StringIO()
+        handler = logging.StreamHandler(stream)
+        logger = logging.getLogger(f"future-redaction-test-{id(stream)}")
+        logger.handlers = [handler]
+        logger.propagate = False
+        logger.setLevel(logging.INFO)
+
+        logger.info("Config:init self.config = {'display_name': 'PRIVATE-NICKNAME'}")
+
+        self.assertNotIn("PRIVATE-NICKNAME", stream.getvalue())
+        self.assertIn("REDACTED_CONFIG", stream.getvalue())
 
 
 if __name__ == "__main__":

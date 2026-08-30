@@ -45,7 +45,7 @@ class TestAccountConfigEditor(unittest.TestCase):
         draft.tasks["Which to Farm"] = "19910000005"
         self.assertEqual(self.repository.record.tasks["Which to Farm"], "before")
         diff = self.editor.preview_diff(draft)
-        self.assertEqual(diff.changes[0].after, "199****0007")
+        self.assertEqual(diff.changes[0].after, "199****0005")
         saved = self.editor.save_draft(draft.scope, draft, confirmed_account_label="A3")
         self.assertEqual(saved.tasks["Which to Farm"], "19910000005")
         self.assertEqual(len(self.repository.backups), 1)

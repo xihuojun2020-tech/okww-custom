@@ -13,8 +13,15 @@ $Python = if (Test-Path ".\.venv\Scripts\python.exe") {
 
 $groups = @{
   unit = @(
-    "TestAccountIdentity.py", "TestAccountIdentityProtection.py", "TestAccountGraphStore.py", "TestRuntimeServices.py", "TestObservability.py", "TestReleaseReadiness.py", "TestAccountFieldMetadata.py", "TestAccountProfileStore.py",
-    "TestAccountRepositoryRuntime.py", "TestSequenceRepository.py", "TestAccountSwitch.py"
+    "test_extract_issue_log.py", "TestAccountConfigEditor.py", "TestAccountDirectoryAssessment.py",
+    "TestAccountFieldMetadata.py", "TestAccountGraphStore.py", "TestAccountIdentity.py",
+    "TestAccountIdentityProtection.py", "TestAccountProfileStore.py", "TestAccountRepositoryRuntime.py",
+    "TestAccountRuntimeBootstrap.py", "TestAccountSwitch.py", "TestAndroidPreflight.py",
+    "TestBaseCombatTask.py", "TestConfig.py", "TestCustomCharLoader.py", "TestDiagnosisRetention.py",
+    "TestDomainRecoveryLoop.py", "TestForgeryDomainLabels.py", "TestLoggingRedaction.py",
+    "TestMuMuDiscovery.py", "TestObservability.py", "TestReleaseReadiness.py", "TestRuntimeServices.py",
+    "TestScheduleSupport.py", "TestSecurityBaseline.py", "TestSensitiveIdentifierScan.py",
+    "TestSequenceRepository.py", "TestTestGroups.py", "TestWaitLogin.py"
   )
   integration = @(
     "TestAccountConfigBundle.py", "TestAccountPublishService.py", "TestAccountDeletion.py", "TestSecureBackup.py",
@@ -24,7 +31,8 @@ $groups = @{
   ui = @(
     "TestAccountManagementTabs.py", "TestCodexLightUI.py", "TestFiveSectionMainWindow.py",
     "TestMainWindowStartup.py", "TestNavigationSections.py", "TestTaskNavigationClassification.py",
-    "TestCharacterCodeTab.py"
+    "TestCharacterCodeTab.py", "TestEnhanceEchoStatusBox.py", "TestSkipDialogConfirm.py",
+    "TestSkipDialogWideMode.py", "TestUsabilityUI.py"
   )
   image = @(
     "TestChar.py", "TestCD.py", "TestCombatCheck.py", "TestCon.py", "TestConfirm.py",
@@ -38,13 +46,22 @@ $groups = @{
   )
 }
 
-$testFiles = if ($Group -eq "all") {
-  Get-ChildItem -Path ".\tests\*.py" | Sort-Object Name
-} else {
-  $groups[$Group] | ForEach-Object {
-    $path = Join-Path ".\tests" $_
-    if (Test-Path $path) { Get-Item $path }
+$groupOrder = @("unit", "integration", "ui", "image", "fault_injection")
+$testNames = if ($Group -eq "all") {
+  $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+  foreach ($name in ($groupOrder | ForEach-Object { $groups[$_] })) {
+    if ($seen.Add($name)) { $name }
   }
+} else {
+  $groups[$Group]
+}
+
+$testFiles = $testNames | ForEach-Object {
+  $path = Join-Path ".\tests" $_
+  if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+    throw "Configured test file does not exist: $path"
+  }
+  Get-Item -LiteralPath $path
 }
 
 if (-not $testFiles) {
@@ -52,17 +69,15 @@ if (-not $testFiles) {
 }
 
 $testFiles | ForEach-Object {
-  Write-Host "Running tests in $($_.FullName)"
+  $testFile = $_
+  Write-Host "Running tests in $($testFile.FullName)"
   try {
-      # Run the Python unittest command
-      & $Python -m unittest $_.FullName
+      & $Python .\scripts\run_test_file.py $testFile.FullName
 
-      # Check if the previous command succeeded
       if ($LASTEXITCODE -ne 0) {
-          throw "Tests failed in $($_.FullName)"
+          throw "Tests failed in $($testFile.FullName)"
       }
   } catch {
-      # Stop the loop and return the error
       Write-Error $_
       exit 1
   }

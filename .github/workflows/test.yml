@@ -80,15 +80,6 @@ jobs:
             Remove-Item "Env:\$_" -ErrorAction SilentlyContinue
           }
 
-          & .\run_tests.ps1 -Group unit
-          & .\run_tests.ps1 -Group integration
-          & .\run_tests.ps1 -Group ui
-          & .\run_tests.ps1 -Group fault_injection
-
-      - name: Run image tests (non-blocking baseline)
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          & .\run_tests.ps1 -Group image
+          & .\run_tests.ps1 -Group all
 
   

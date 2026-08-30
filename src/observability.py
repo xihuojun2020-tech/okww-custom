@@ -23,6 +23,7 @@ _LOGIN_URL = re.compile(r"https?://[^\s]+(?:login|oauth|auth|token)[^\s]*", re.I
 _CURRENT_CONTEXT: contextvars.ContextVar[dict[str, Any]] = contextvars.ContextVar("okww_observation", default={})
 _SENSITIVE_VALUES: set[str] = set()
 _SENSITIVE_LOCK = threading.RLock()
+_BASE_RECORD_FACTORY = logging.getLogRecordFactory()
 
 
 def register_sensitive_values(values) -> None:
@@ -43,6 +44,9 @@ def _registered_redaction(text: str) -> str:
 
 def redact_message(value: Any) -> str:
     text = _registered_redaction(str(value))
+    if ("Config:init self.config =" in text or "OKTestRunner init_ok config:" in text
+            or "ok:do_init, config:" in text or "ok-script init " in text and " config:" in text):
+        return "[REDACTED_CONFIG]"
     text = _SECRET.sub(lambda m: f"{m.group(1)}=[REDACTED]", text)
     text = _LOGIN_URL.sub("[REDACTED_URL]", text)
     text = _PHONE.sub("[REDACTED_PHONE]", text)
@@ -66,7 +70,15 @@ class RedactingFilter(logging.Filter):
         return True
 
 
+def _redacting_record_factory(*args, **kwargs):
+    record = _BASE_RECORD_FACTORY(*args, **kwargs)
+    RedactingFilter().filter(record)
+    return record
+
+
 def install_redaction_filters() -> None:
+    if logging.getLogRecordFactory() is not _redacting_record_factory:
+        logging.setLogRecordFactory(_redacting_record_factory)
     for logger in (logging.getLogger("ok"), logging.getLogger()):
         if not any(isinstance(item, RedactingFilter) for item in logger.filters):
             logger.addFilter(RedactingFilter())

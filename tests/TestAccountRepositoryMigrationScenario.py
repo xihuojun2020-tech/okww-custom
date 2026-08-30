@@ -26,7 +26,7 @@ class TestAccountRepositoryMigrationScenario(unittest.TestCase):
                     for name in (f"A{i}" for i in range(1, 13))}
         profiles = {}
         for name, profile_id in self.ids.items():
-            phone = f"1530000{int(name[1:]):04d}"
+            phone = f"199100{int(name[1:]):05d}"
             profiles[name] = {"profile_id": profile_id, "display_name": name,
                               # Keep both legacy full-phone and the OCR form;
                               # migration must retain both identities.
@@ -63,8 +63,8 @@ class TestAccountRepositoryMigrationScenario(unittest.TestCase):
         task = object.__new__(MultiAccountDailyTask)
         task.get_profile_names = lambda: list(working["profiles"])
         task._load_profiles = lambda: working["profiles"]
-        self.assertEqual(task.match_profile_from_login("199****0011"), "A4")
-        self.assertEqual(task.match_profile_from_login("199****0012"), "A10")
+        self.assertEqual(task.match_profile_from_login("199****0004"), "A4")
+        self.assertEqual(task.match_profile_from_login("199****0010"), "A10")
         self.assertIsNone(task.match_profile_from_login("199****0013"))
         self.assertIsNone(task.match_profile_from_login("A1-extra"))
 
