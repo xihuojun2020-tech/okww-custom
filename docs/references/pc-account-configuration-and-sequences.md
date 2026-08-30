@@ -50,6 +50,13 @@
 - `src/account_repository.py` 的 `publish_profile`：账号任务配置和所属序列在同一个候选 master 中提交，保持 CAS 修订检查与配置包原子发布。
 - OWASP Logging Cheat Sheet：日志与错误信息避免记录认证数据、会话令牌及敏感个人数据。<https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html>
 - CWE-367（TOCTOU）：修订号/指纹检查用于防止预览后、保存前的外部修改被静默覆盖。<https://cwe.mitre.org/data/definitions/367.html>
+
+## 2026-08-30 多账号启动恢复补充
+
+- 正式切换入口在账号下拉框不可见时以 `in_team()[0]` 作为只读游戏世界兜底；仅在结果明确为真时退登，未知状态继续等待并保留证据。
+- `TaskRunCoordinator` 的 `FAILED` 与 `STOPPED` 均允许下一轮 `start()`；多账号任务必须在异常、停止和正常出口显式结束状态。
+- Python `try` 语句文档：任务异常边界使用 `except`/`else` 保留原异常并完成生命周期收尾。<https://docs.python.org/3/reference/compound_stmts.html#the-try-statement>
+- Python `pathlib` 文档：备份校验按完整路径区分根 `manifest.json` 与发布 bundle 的嵌套同名文件。<https://docs.python.org/3/library/pathlib.html>
 ## 2026-08-26：任务联动读取与日志降噪
 
 - 账号设置与任务模块共享 `AccountRepository` 的最新投影，避免完整性服务启动快照导致新序列/成员变更需重启才生效。

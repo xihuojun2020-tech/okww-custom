@@ -33,6 +33,21 @@ class TestConfigBackup(unittest.TestCase):
             self.assertEqual(entry["sha256"], hashlib.sha256(b"state").hexdigest())
             self.assertEqual(service.verify_snapshot(snapshot.path).ok, True)
 
+    def test_nested_manifest_is_backed_up_and_verified(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            config_dir = root / "configs"
+            backup_dir = root / "backups"
+            nested = config_dir / "published" / "bundle"
+            nested.mkdir(parents=True)
+            (nested / "manifest.json").write_text('{"revision": "r1"}', encoding="utf-8")
+
+            service = ConfigBackupService(config_dir, backup_dir)
+            snapshot = service.create_daily_snapshot(now=1700000000)
+
+            self.assertTrue((snapshot.path / "published" / "bundle" / "manifest.json").is_file())
+            self.assertTrue(service.verify_snapshot(snapshot.path).ok)
+
     def test_failed_build_does_not_leave_a_complete_snapshot(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

@@ -676,8 +676,14 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     self._run_inner()
             else:
                 self._run_inner()
-        finally:
-            pass
+        except TaskDisabledException:
+            self.run_coordinator.request_stop()
+            raise
+        except Exception as error:
+            self.run_coordinator.fail(str(error))
+            raise
+        else:
+            self.run_coordinator.request_stop()
 
     def _run_inner(self):
         # 本轮账号序列（配置）
@@ -943,6 +949,17 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             mouse_reset_was_enabled = mouse_reset_task.enabled if mouse_reset_task else False
             if mouse_reset_was_enabled:
                 mouse_reset_task.disable()
+            if self.do_find_account_drop_down() is None:
+                try:
+                    in_team = bool(self.in_team()[0])
+                except TaskDisabledException:
+                    raise
+                except Exception:
+                    in_team = False
+                if in_team:
+                    self.log_info('检测到仍在游戏世界内，先退登再执行账号切换')
+                    self._evidence_stage('logout_from_world')
+                    self._switch_to_login()
             self._evidence_stage('wait_login_screen')
             self._wait_login_screen_stable(time_out=120)
             self._evidence_stage('select_account')

@@ -1,8 +1,10 @@
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from ok import TaskDisabledException
 from src.config_integrity import ConfigIntegrityBlocked
+from src.runtime.task_run_coordinator import TaskRunCoordinator, TaskRunState
 from src.task.BaseWWTask import LOGIN_TEXTS
 from src.task.MultiAccountDailyTask import (
     CURRENT_ACCOUNT,
@@ -11,6 +13,7 @@ from src.task.MultiAccountDailyTask import (
     normalize_account_name,
     profile_short_name,
 )
+from src.task.WWOneTimeTask import WWOneTimeTask
 
 
 class AccountBox:
@@ -117,6 +120,100 @@ class TestMultiAccountDailyTask(unittest.TestCase):
             ['A1', 'A3', 'A4'],
         )
         self.assertEqual(resolved, [profiles[2], profiles[3], profiles[0]])
+
+    @staticmethod
+    def _switch_task(*, account_box, in_team, events):
+        task = MultiAccountDailyTask.__new__(MultiAccountDailyTask)
+        task.integrity_service = None
+        task._executor = None
+        task.do_find_account_drop_down = lambda: account_box
+        task.in_team = lambda: in_team
+        task._switch_to_login = lambda: events.append('logout') or True
+        task._wait_login_screen_stable = lambda **_kwargs: events.append('wait_login')
+        task._select_account_with_retry = lambda *_args, **_kwargs: None
+        task._click_login_for_target = lambda *_args, **_kwargs: None
+        task.ensure_main = lambda **_kwargs: None
+        task.sleep = lambda *_args: None
+        task._begin_account_switch_evidence = lambda *_args: None
+        task._evidence_stage = lambda *_args, **_kwargs: None
+        task._finish_account_switch_evidence = lambda *_args, **_kwargs: None
+        task.log_info = lambda *_args, **_kwargs: None
+        return task
+
+    def test_switch_to_account_logs_out_when_world_team_is_visible(self):
+        events = []
+        task = self._switch_task(account_box=None, in_team=(True, 0, 3), events=events)
+
+        with patch('src.task.BaseWWTask.og.my_app', SimpleNamespace(logged_in=True)):
+            self.assertEqual(task.switch_to_account('A3'), 'A3')
+        self.assertEqual(events[:2], ['logout', 'wait_login'])
+
+    def test_switch_to_account_does_not_logout_from_login_screen(self):
+        events = []
+        task = self._switch_task(account_box=object(), in_team=(True, 0, 3), events=events)
+
+        with patch('src.task.BaseWWTask.og.my_app', SimpleNamespace(logged_in=True)):
+            self.assertEqual(task.switch_to_account('A3'), 'A3')
+        self.assertEqual(events, ['wait_login'])
+
+    @staticmethod
+    def _run_task(outcome, state=TaskRunState.IDLE):
+        task = MultiAccountDailyTask.__new__(MultiAccountDailyTask)
+        task.run_coordinator = TaskRunCoordinator()
+        if state == TaskRunState.RUNNING:
+            snapshot = SimpleNamespace(profile_ids=('a3',), sequence_id='序列1', revision='r', run_id='run')
+            task.run_coordinator.start(snapshot)
+        task._account_refresh_pending = False
+        task.integrity_service = None
+        task.done_set = set()
+        task.all_accounts = set()
+        task._sync_local_to_sequences = lambda: None
+        task.get_task_by_class = lambda *_args: None
+        task.log_error = task.log_info = lambda *_args, **_kwargs: None
+        task._run_inner = outcome
+        return task
+
+    def test_run_marks_coordinator_failed_and_allows_retry(self):
+        def fail_run():
+            raise RuntimeError('login timeout')
+
+        task = self._run_task(fail_run)
+        with patch.object(WWOneTimeTask, 'run', return_value=None):
+            with self.assertRaisesRegex(RuntimeError, 'login timeout'):
+                task.run()
+        self.assertEqual(task.run_coordinator.state, TaskRunState.FAILED)
+
+        snapshot = SimpleNamespace(profile_ids=('a3',), sequence_id='序列1', revision='r', run_id='retry')
+        task.run_coordinator.start(snapshot)
+        self.assertEqual(task.run_coordinator.state, TaskRunState.RUNNING)
+
+    def test_run_marks_coordinator_stopped_on_disable(self):
+        def stop_run():
+            raise TaskDisabledException()
+
+        task = self._run_task(stop_run, TaskRunState.RUNNING)
+        with patch.object(WWOneTimeTask, 'run', return_value=None):
+            with self.assertRaises(TaskDisabledException):
+                task.run()
+        self.assertEqual(task.run_coordinator.state, TaskRunState.STOPPED)
+
+    def test_run_marks_coordinator_stopped_after_success(self):
+        task = self._run_task(lambda: None, TaskRunState.RUNNING)
+        with patch.object(WWOneTimeTask, 'run', return_value=None):
+            task.run()
+        self.assertEqual(task.run_coordinator.state, TaskRunState.STOPPED)
+
+    def test_current_account_rotates_a4_a3_sequence_to_a3_then_a4(self):
+        task = MultiAccountDailyTask.__new__(MultiAccountDailyTask)
+        task.config = {CURRENT_ACCOUNT: 'A3'}
+        task.get_sequence_accounts = lambda: ['A4', 'A3']
+        task.done_set = set()
+        task._same_account = lambda left, right: left == right
+        task._is_done = lambda account: account in task.done_set
+
+        self.assertEqual(task._next_target_account(), 'A3')
+        task.done_set.add('A3')
+        self.assertEqual(task._next_target_account(), 'A4')
 
     def test_login_identity_maps_alias_and_masked_phones_for_continuous_accounts(self):
         profiles = {

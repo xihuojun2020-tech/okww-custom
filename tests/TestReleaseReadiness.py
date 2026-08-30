@@ -7,7 +7,7 @@ class TestReleaseReadiness(unittest.TestCase):
     def test_version_and_release_notes_are_synchronized(self):
         version = re.search(r'version\s*=\s*"([0-9]+\.[0-9]{2}\.[0-9]{2})"',
                             Path("config.py").read_text(encoding="utf-8")).group(1)
-        self.assertEqual(version, "1.19.02")
+        self.assertEqual(version, "1.19.12")
         self.assertIn(version, Path("更新日志.md").read_text(encoding="utf-8"))
         self.assertIn(f"V{version}", Path("custom_ok/ok/gui/about/AboutTab.py").read_text(encoding="utf-8"))
 

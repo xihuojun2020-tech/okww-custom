@@ -14,7 +14,7 @@ from src.task.process_feature import process_feature
 # okww 版本号（固定宽度 X.YY.ZZ）：
 #   小改动 → 第三位 +1；中等改动 → 第二位 +1 且第三位归 00；
 #   大改动 → 第一位 +1 且后两位归 00（仅用户明确提出时执行）
-version = "1.19.11"
+version = "1.19.12"
 
 # MuMu/Android 阶段01：只读设备预检配置。实际鸣潮包名由设备预检检测，
 # 这里的包名只作为候选提示；阶段01不会发送任何游戏输入。

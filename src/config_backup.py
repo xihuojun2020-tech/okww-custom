@@ -111,8 +111,9 @@ class ConfigBackupService:
             if manifest.get("complete") is not True:
                 return VerificationResult(False, error="snapshot is not complete")
             expected = {str(item["path"]): item for item in manifest.get("files", [])}
+            root_manifest = path / MANIFEST_NAME
             actual = {p.relative_to(path).as_posix() for p in path.rglob("*")
-                      if p.is_file() and p.name != MANIFEST_NAME}
+                      if p.is_file() and p != root_manifest}
             missing = sorted(set(expected) - actual)
             extra = sorted(actual - set(expected))
             differences = []
