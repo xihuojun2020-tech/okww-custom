@@ -69,8 +69,8 @@ class TestAccountManagementTabs(unittest.TestCase):
             "src.gui.SectionPanel", fromlist=["SectionPanel"]).SectionPanel)
         account_source = inspect.getsource(AccountSettingsTab)
         self.assertIn("setHorizontalPolicy(QSizePolicy.Policy.Expanding)", section_source)
-        self.assertIn("takeWidget", account_source)
-        self.assertIn("content_policy.setHorizontalPolicy", account_source)
+        self.assertIn("takeWidget", section_source)
+        self.assertIn("add_embedded_widget", account_source)
 
 
 if __name__ == "__main__":

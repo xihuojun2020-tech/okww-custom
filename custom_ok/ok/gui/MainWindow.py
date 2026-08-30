@@ -857,7 +857,7 @@ class MainWindow(FluentWindow):
 
     def starting_emulator(self, done, error, seconds_left):
         if error:
-            self.switchTo(self.start_tab)
+            self.switchTo(self.general_settings_tab)
             alert_error(error, True)
         if done:
             if self.emulator_starting_dialog:
@@ -906,26 +906,29 @@ class MainWindow(FluentWindow):
 
     def navigate_tab(self, index):
         logger.debug(f'navigate_tab {index}')
-        if index == "start":
-            self.switchTo(self.start_tab)
-        elif index == "onetime" and self.onetime_tab is not None:
-            self.switchTo(self.onetime_tab)
-        elif index == "trigger" and self.trigger_tab is not None:
-            self.switchTo(self.trigger_tab)
-        elif index == "schedule" and self.schedule_tab is not None:
-            self.switchTo(self.schedule_tab)
+        route_attributes = {
+            "start": "general_settings_tab",
+            "trigger": "general_settings_tab",
+            "general": "general_settings_tab",
+            "account": "account_settings_tab",
+            "accounts": "account_settings_tab",
+            "onetime": "task_hub_tab",
+            "schedule": "task_hub_tab",
+            "tasks": "task_hub_tab",
+            "activity": "activity_hub_tab",
+            "activities": "activity_hub_tab",
+            "test": "test_hub_tab",
+            "tests": "test_hub_tab",
+        }
+        page = getattr(self, route_attributes.get(index, ""), None)
+        if page is not None:
+            self.switchTo(page)
         elif index == "about" and self.about_tab is not None:
             self.switchTo(self.about_tab)
 
     def startup_task_tab(self):
-        """Return the first one-time task tab, falling back to triggers."""
-        if self.onetime_tab is not None:
-            return self.onetime_tab
-        if self.grouped_task_tabs:
-            return self.grouped_task_tabs[0]
-        if self.imported_tabs:
-            return next(iter(self.imported_tabs.values()))
-        return self.trigger_tab
+        """Return the top-level task page used after execution starts."""
+        return getattr(self, "task_hub_tab", None)
 
     def executor_paused(self, paused):
         task_tab = self.startup_task_tab()

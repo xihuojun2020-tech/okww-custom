@@ -43,7 +43,7 @@ class GeneralSettingsTab(CustomTab):
     def add_card(self, title, widget, stretch=0, parent=None):
         """Keep the old call site while using the shared flat section shell."""
         section = SectionPanel(title, parent=self.view)
-        section.add_widget(widget, stretch=1)
+        section.add_embedded_widget(widget, stretch=1)
         self.section_panels.append(section)
         self.add_widget(section, stretch)
         return section

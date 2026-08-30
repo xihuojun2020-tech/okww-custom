@@ -38,6 +38,16 @@ class SectionPanel(QWidget):
         self.content_layout.addWidget(widget, stretch)
         return widget
 
+    def add_embedded_widget(self, widget: QWidget, stretch: int = 0):
+        """Embed a CustomTab's content without keeping its inner scroll area."""
+        content = getattr(widget, "view", widget)
+        if content is not widget:
+            take_widget = getattr(widget, "takeWidget", None)
+            if callable(take_widget):
+                take_widget()
+            content.setParent(self)
+        return self.add_widget(content, stretch)
+
     def add_row(self, label: str, control: QWidget, description: str = "", error: str | None = None):
         row = FlatSettingRow(label, control, description, self)
         row.set_error(error)

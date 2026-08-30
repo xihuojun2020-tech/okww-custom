@@ -13,7 +13,7 @@ class ActivityHubTab(CustomTab):
         self.section_panels = []
         for title, tab in (("限时活动", self.limited_tab), ("常驻活动", self.permanent_tab)):
             section = SectionPanel(title, parent=self.view)
-            section.add_widget(tab, stretch=1)
+            section.add_embedded_widget(tab, stretch=1)
             self.section_panels.append(section)
             self.add_widget(section, stretch=1)
 

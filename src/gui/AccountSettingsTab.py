@@ -1,7 +1,6 @@
 """Integrated account configuration, sequences, and maintenance page."""
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QSizePolicy
 from qfluentwidgets import FluentIcon
 
 from ok.gui.widget.CustomTab import CustomTab
@@ -28,27 +27,7 @@ class AccountSettingsTab(CustomTab):
                 ("序列配置", self.sequence_tab),
                 ("导入导出、备份与完整性", self.maintenance_tab)):
             section = SectionPanel(title, parent=self.view)
-            # Account/sequence editors are CustomTab scroll areas for
-            # standalone use. In this hub, embed their content widget directly
-            # so the three sections render as one flat page without nested
-            # scroll regions.
-            content = getattr(widget, "view", widget)
-            if content is not widget:
-                # QScrollArea keeps resizing its widget even after a direct
-                # reparent. Detach it first so the section layout becomes the
-                # sole geometry owner; otherwise the view remains at its old
-                # size hint (about 640 px) and leaves the right side blank.
-                take_widget = getattr(widget, "takeWidget", None)
-                if callable(take_widget):
-                    take_widget()
-                content.setParent(section)
-            # A CustomTab's view is normally sized by its own QScrollArea.
-            # Once embedded here that owner is gone, so preserve the vertical
-            # policy but explicitly make the content consume the section width.
-            content_policy = content.sizePolicy()
-            content_policy.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
-            content.setSizePolicy(content_policy)
-            section.add_widget(content, stretch=1)
+            section.add_embedded_widget(widget, stretch=1)
             self.section_panels.append(section)
             self.add_widget(section, stretch=1)
 

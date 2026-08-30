@@ -11,7 +11,7 @@ class TestHubTab(CustomTab):
         self.task_tab = OneTimeTaskTab(section=TESTS)
         self.account_switch_description = "账号切换测试（多账号每日任务测试）"
         self.section_panels = [SectionPanel("测试任务", self.account_switch_description, self.view)]
-        self.section_panels[0].add_widget(self.task_tab, stretch=1)
+        self.section_panels[0].add_embedded_widget(self.task_tab, stretch=1)
         self.add_widget(self.section_panels[0], stretch=1)
 
     @property
