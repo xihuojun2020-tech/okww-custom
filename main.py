@@ -283,7 +283,9 @@ def _setup_proxy():
 def _report_startup_error(error, traceback_text=None):
     """Persist and surface startup failures, including integrity hook errors."""
     import traceback
-    tb = traceback_text or traceback.format_exc()
+    from src.observability import redact_message
+    tb = redact_message(traceback_text or traceback.format_exc())
+    safe_error = redact_message(error)
     try:
         log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
         os.makedirs(log_dir, exist_ok=True)
@@ -293,7 +295,7 @@ def _report_startup_error(error, traceback_text=None):
         import ctypes
         ctypes.windll.user32.MessageBoxW(
             0,
-            f'OK-WW 启动失败：\n{str(error)[:300]}\n\n详细信息见 logs\\启动错误.log',
+            f'OK-WW 启动失败：\n{safe_error[:300]}\n\n详细信息见 logs\\启动错误.log',
             'OK-WW 错误',
             0x10,
         )

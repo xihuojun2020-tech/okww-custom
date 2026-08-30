@@ -15,6 +15,7 @@ from src.config_integrity import (
     install_task_start_guard,
     set_default_service,
 )
+from src.observability import install_redaction_filters, register_sensitive_values
 
 from .sequence_snapshot_service import SequenceSnapshotService
 
@@ -54,11 +55,27 @@ def initialize_account_runtime(root=None, program_version=None, *,
             if _RUNTIME.root != resolved:
                 raise RuntimeError("account runtime is already initialized for another root")
             return _RUNTIME
+        install_redaction_filters()
         publish_service = AccountPublishService(resolved, program_version=str(program_version))
         publish_service.recover_incomplete_transactions()
         integrity_service = ConfigIntegrityService(
             resolved, program_version=str(program_version))
         integrity_result = integrity_service.check()
+        master = getattr(integrity_result, "master", None) or {}
+        profiles = master.get("profiles", {}) if isinstance(master, dict) else {}
+        sensitive = []
+        for profile_id, profile in profiles.items():
+            sensitive.append(profile_id)
+            if not isinstance(profile, dict):
+                continue
+            sensitive.extend(profile.get(key) for key in (
+                "display_name", "phone", "masked_phone", "nickname",
+                "alternate_login_name", "game_feature_code",
+            ))
+            aliases = profile.get("account_aliases", ())
+            if isinstance(aliases, (list, tuple, set)):
+                sensitive.extend(aliases)
+        register_sensitive_values(sensitive)
         repository = AccountRepository(
             paths=integrity_service.paths,
             integrity_service=integrity_service,
