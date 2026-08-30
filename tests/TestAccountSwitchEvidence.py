@@ -172,8 +172,10 @@ class TestAccountSwitchEvidence(unittest.TestCase):
         task.screenshot = lambda *_args, **_kwargs: None
         task.is_main = lambda **_kwargs: False
         task.log_error = lambda *_args, **_kwargs: None
-        with patch("src.task.TestAccountSwitchTask.WWOneTimeTask.run"):
+        with patch("src.task.TestAccountSwitchTask.require_account_runtime_for_task") as gate, \
+                patch("src.task.TestAccountSwitchTask.WWOneTimeTask.run"):
             task.run()
+        gate.assert_called_once_with(task)
         self.assertEqual(calls, ['A3'])
 
 
