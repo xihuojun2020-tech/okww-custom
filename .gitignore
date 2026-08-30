@@ -40,6 +40,12 @@ okww_更新包_*.zip
 
 # Android/Java 构建产物
 android/combat-agent/build/
+android/agent-app/build/
+android/agent-app/.debug.keystore
+android/agent-app/**/*.apk
+android/agent-app/**/*.idsig
+android/agent-app/**/*.class
+android/agent-app/**/*.dex
 # 仅排除根目录的下划线开头脚本（如 _diag_*.py），不匹配 src 下的 __init__.py
 /_*.py
 
