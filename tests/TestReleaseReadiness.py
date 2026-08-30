@@ -1,5 +1,7 @@
 import re
+import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 
@@ -22,6 +24,40 @@ class TestReleaseReadiness(unittest.TestCase):
         from src.runtime import AccountSelectionService, SequenceSnapshotService, TaskRunCoordinator
         self.assertTrue(all((AccountGraphStore, CorrelationContext, redact_message,
                              AccountSelectionService, SequenceSnapshotService, TaskRunCoordinator)))
+
+    def test_personal_release_pipeline_has_no_upstream_secrets_or_distribution_jobs(self):
+        build = Path(".github/workflows/build.yml").read_text(encoding="utf-8")
+        lowered = build.lower()
+        for forbidden in ("partial-sync-repo", "signpath", "mirrorchyan", "cnb_token", "ok_gh"):
+            self.assertNotIn(forbidden, lowered)
+        for stage in ("validate-version", "tests", "package", "package-smoke",
+                      "checksums", "github-release"):
+            self.assertIn(stage, lowered)
+        self.assertIn("refs/tags/v", build)
+        self.assertIn("SHA256SUMS.txt", build)
+
+    def test_optional_mirrorchyan_workflows_are_removed(self):
+        self.assertFalse(Path(".github/workflows/mirrorchyan_uploading.yml").exists())
+        self.assertFalse(Path(".github/workflows/mirrorchyan_release_note.yml").exists())
+
+    def test_release_validation_and_package_smoke_scripts_exist(self):
+        self.assertTrue(Path("scripts/validate_release.py").is_file())
+        self.assertTrue(Path("scripts/package_smoke.py").is_file())
+
+    def test_release_validator_rejects_mismatched_tag(self):
+        from scripts.validate_release import validate_release
+        version = validate_release(Path.cwd())
+        with self.assertRaises(ValueError):
+            validate_release(Path.cwd(), f"v{version}.invalid")
+
+    def test_package_smoke_rejects_runtime_config_inside_zip(self):
+        from scripts.package_smoke import inspect_distribution
+        with tempfile.TemporaryDirectory() as temp:
+            archive = Path(temp) / "candidate.zip"
+            with zipfile.ZipFile(archive, "w") as package:
+                package.writestr("working/configs/profile.json", "{}")
+            with self.assertRaises(ValueError):
+                inspect_distribution(Path(temp))
 
 
 if __name__ == "__main__":
