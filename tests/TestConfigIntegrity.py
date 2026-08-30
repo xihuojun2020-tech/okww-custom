@@ -160,7 +160,7 @@ class TestConfigIntegrity(unittest.TestCase):
         self.assertTrue(any(d["field"] == "task_config" for d in result.differences))
         restored = self.service.restore_working_from_master(result=result)
         self.assertTrue(restored.ok)
-        restored_data = json.loads(self.service.paths.working.read_text())
+        restored_data = json.loads(self.service.paths.working.read_text(encoding="utf-8"))
         self.assertEqual(restored_data["profiles"]["A1"]["task_config"]["Which to Farm"],
                          "Tacet Suppression")
         self.assertEqual(restored_data["profiles"]["A1"]["Which to Farm"],
