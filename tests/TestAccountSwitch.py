@@ -55,6 +55,16 @@ class TestAccountSwitchCompatibilityEntryPoint(unittest.TestCase):
         self.assertEqual(SINGLE_MODE, "单账号切换")
         self.assertEqual(CONTINUOUS_MODE, "连续序列切换")
 
+    def test_status_account_label_only_exposes_short_name(self):
+        self.assertEqual(
+            TestAccountSwitchTask._status_account_label("【A3-example-19910000005】"),
+            "A3",
+        )
+        self.assertEqual(
+            TestAccountSwitchTask._status_account_label("2419e7db-b740-4e3f-83d6-5363d76c6c12"),
+            "账号",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

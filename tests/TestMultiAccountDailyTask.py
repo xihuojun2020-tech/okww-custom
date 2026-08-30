@@ -1486,7 +1486,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
             def wait_until(self, callback, **kwargs):
                 if kwargs.get('time_out') == 10:
                     return callback()
-                if kwargs.get('time_out') == 8:
+                if kwargs.get('time_out') == 20:
                     for _ in range(2):
                         if callback():
                             return True
@@ -1585,7 +1585,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
 
             def wait_until(self, callback, **_kwargs):
                 # 生产逻辑的稳定检测需要连续采样；点击列表本身仍只采样一次。
-                if _kwargs.get('time_out') == 8:
+                if _kwargs.get('time_out') == 20:
                     self.current_batch = iter(next(self.detected_batches))
                     for _ in range(3):
                         try:
@@ -1625,6 +1625,36 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         )
         self.assertTrue(selected)
         self.assertEqual(task.click_count, 2)
+
+    def test_selection_skips_click_when_closed_selector_already_matches_target(self):
+        class FakeTask:
+            _same_account = MultiAccountDailyTask._same_account
+
+            def __init__(self):
+                self.logs = []
+
+            def _account_list_expanded(self):
+                return False
+
+            def _detect_current_account_from_login(self):
+                return "profile-a3"
+
+            def _open_account_list(self):
+                raise AssertionError("matching closed selector must not be opened")
+
+            def log_info(self, message, **_kwargs):
+                self.logs.append(str(message))
+
+            def log_warning(self, *_args, **_kwargs):
+                pass
+
+        task = FakeTask()
+        self.assertTrue(
+            MultiAccountDailyTask._select_account_with_retry(
+                task, "profile-a3", max_retries=3,
+            )
+        )
+        self.assertTrue(any("跳过重复点击" in message for message in task.logs))
 
     def test_selection_waits_through_login_ui_flicker_before_confirming(self):
         class FakeTask:
@@ -1689,7 +1719,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
 
         self.assertTrue(selected)
         self.assertEqual(task.click_count, 1)
-        self.assertTrue(any(call.get('time_out') == 8 for call in task.wait_calls))
+        self.assertTrue(any(call.get('time_out') == 20 for call in task.wait_calls))
         self.assertEqual(
             sum('列表已收起' in message for message in task.info_logs),
             1,
@@ -1699,7 +1729,9 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         class FakeTask:
             def __init__(self):
                 self.detected = iter([
-                    "profile-a", "profile-a", "profile-a",
+                    # One initial closed-selector precheck, then the first
+                    # selection remains on the wrong account for three frames.
+                    "profile-a", "profile-a", "profile-a", "profile-a",
                     "profile-c", "profile-c",
                 ])
                 self.click_count = 0
@@ -1719,7 +1751,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
                 return False
 
             def wait_until(self, callback, **kwargs):
-                if kwargs.get('time_out') == 8:
+                if kwargs.get('time_out') == 20:
                     # 第一次选择持续显示错误账号，第二次选择目标连续两帧。
                     for _ in range(3 if self.click_count == 1 else 2):
                         if result := callback():

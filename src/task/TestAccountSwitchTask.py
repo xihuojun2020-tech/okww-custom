@@ -16,6 +16,7 @@ from src.task.BaseWWTask import BaseWWTask
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.MouseResetTask import MouseResetTask
 from src.account_repository import AccountRepository
+from src.account_identity import short_profile_name
 from src.runtime.account_runtime_bootstrap import require_account_runtime_for_task
 
 
@@ -80,6 +81,11 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
     def _parse_continuous_order(order_text):
         """解析 A1,A3,A4 / 中文逗号 / 空白分隔的连续账号短名。"""
         return [value.upper() for value in re.split(r'[,，\s]+', order_text or '') if value]
+
+    @staticmethod
+    def _status_account_label(value):
+        """Only expose the stable short name in the task status UI."""
+        return short_profile_name(value) or '账号'
 
     def _get_profile_names(self):
         try:
@@ -227,7 +233,10 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
                     self.log_info('连续模式：仅模拟每日任务完成后的账号切换，不运行每日任务、不写完成进度')
 
                     def update_progress(index, total, target):
-                        self.info_set('状态', f'连续切换 {index}/{total} → {target}')
+                        self.info_set(
+                            '状态',
+                            f'连续切换 {index}/{total} → {self._status_account_label(target)}',
+                        )
 
                     logged_targets = mat._select_and_login_sequence(
                         sequence_targets,
@@ -242,12 +251,18 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
                     target = mat._select_and_login_first_available()
                 else:
                     self.log_info(f'指定目标: {target_config}')
-                    self.info_set('状态', f'等待登录界面 → 选 {target_config} → 登录...')
+                    self.info_set(
+                        '状态',
+                        f'等待登录界面 → 选 {self._status_account_label(target_config)} → 登录...',
+                    )
                     target = mat._select_and_login_specific(target_config)
 
                 if not continuous_mode:
                     self.log_info(f'✓ 第 {round_i} 轮已登录 {target}')
-                self.info_set('状态', f'✓ 第 {round_i} 轮结束，当前已登录 {target}')
+                self.info_set(
+                    '状态',
+                    f'✓ 第 {round_i} 轮结束，当前已登录 {self._status_account_label(target)}',
+                )
 
                 # 下一轮：退登
                 if round_i < rounds:

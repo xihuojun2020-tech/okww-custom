@@ -31,11 +31,20 @@ powershell -ExecutionPolicy Bypass -File .\run_tests.ps1 -Group all
 .\.venv\Scripts\python.exe .\scripts\package_smoke.py --dist .\pyappify_dist
 ~~~
 
+## PyAppify 无标签候选限制
+
+PyAppify 1.2.3 离线 setup 的安装阶段会克隆仓库并检出最新正式标签。候选提交只有 artifact、尚未创建匹配正式标签时，安装器可能安装上一个正式版本，而不是候选提交。候选验收必须核对安装后 `config.py`、窗口标题和实际 Git 提交；不得为绕过该限制提前创建、移动或临时重写正式标签。
+
+当前候选的安全做法是：保留安装器生成的旧版本 working 基线，在隔离槽中显式检出候选 commit，再用隔离 Python 启动；1.20.02 已完成 A3/A4 两轮实机门禁，正式标签仍须等待匹配提交的 GitHub 候选构件下载、哈希校验和隔离复验。
+
+1.20.02 实机门禁记录：2026-08-31 01:31:25 至 01:41:34，在隔离槽执行 A3→A4 完整序列 2 轮；只验证生产账号切换链路，不执行每日任务、不写完成进度。实测后按候选前清单复核打包版 326 项账号配置，缺失、变化、额外均为 0。日志引用必须脱敏，运行证据目录不计入账号配置清单。
+
 ## 参考
 
 - GitHub Docs, “Publishing packages”：https://docs.github.com/actions/publishing-packages
 - GitHub Docs, “Managing releases in a repository”：https://docs.github.com/repositories/releasing-projects-on-github/managing-releases-in-a-repository
 - GitHub Docs, “Storing workflow data as artifacts”：https://docs.github.com/actions/using-workflows/storing-workflow-data-as-artifacts
 - GitHub Docs, “Using jobs in a workflow”：https://docs.github.com/actions/using-jobs/using-jobs-in-a-workflow
+- PyAppify 1.2.3 候选安装行为：本项目候选流水线 `33320437066` 与隔离安装记录（2026-08-31）。
 
-访问日期：2026-08-30。
+访问日期：2026-08-31。

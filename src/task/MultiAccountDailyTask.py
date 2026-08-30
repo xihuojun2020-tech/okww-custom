@@ -88,6 +88,11 @@ def profile_short_name(profile_name):
     return _short_profile_name(profile_name)
 
 
+def profile_status_label(profile_name):
+    """Return the non-sensitive label allowed in task status UI."""
+    return profile_short_name(profile_name) or '账号'
+
+
 def _is_login_identity(task, name):
     """兼容最小化测试替身地判断账号身份；歧义异常继续向上传播。"""
     value = (name or '').strip()
@@ -798,10 +803,10 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             raise Exception(self.tr('Cannot determine the starting account safely'))
         self.log_info(f'起始账号：{first_account}（全部完成后登录回）', notify=True)
 
-        self.info_set('Completed', self.done_set)
+        self.info_set('Completed', sorted({profile_status_label(item) for item in self.done_set}))
 
         while next_account := self._select_and_login_account():
-            self.info_set('Completed', self.done_set)
+            self.info_set('Completed', sorted({profile_status_label(item) for item in self.done_set}))
             self.log_info(f'开始执行账号 {next_account} 的每日任务', notify=True)
             self._require_daily_profile(next_account)
             self.run_task_by_class(DailyTask)
@@ -2093,7 +2098,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             return False
         return True
 
-    def _wait_for_account_selection_stable(self, target, time_out=8, consecutive=2):
+    def _wait_for_account_selection_stable(self, target, time_out=20, consecutive=2):
         """等待点击账号后的登录界面稳定显示目标账号。
 
         游戏登录器在点击列表项后可能短暂保留下拉列表、返回空 OCR 帧，或先
@@ -2177,6 +2182,25 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         达到重试上限仍无法确认时才安全停止，避免误登录其他账号。
         """
         last_current = None
+        try:
+            selector_expanded = bool(self._account_list_expanded())
+        except TaskDisabledException:
+            raise
+        except Exception:
+            selector_expanded = True
+        if not selector_expanded:
+            try:
+                last_current = self._detect_current_account_from_login()
+            except TaskDisabledException:
+                raise
+            except ValueError:
+                raise
+            except Exception:
+                last_current = None
+            if self._same_account(last_current, target):
+                self.log_info('目标账号已处于选中状态，跳过重复点击')
+                return True
+
         unconfirmed_postmessage_deliveries = 0
         for attempt in range(1, max_retries + 1):
             self._account_switch_attempt = attempt
