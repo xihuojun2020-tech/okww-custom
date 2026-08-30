@@ -29,6 +29,7 @@ from src.account_identity import (
     profile_identity_values as _shared_profile_identity_values,
     split_identity_values as _shared_split_identity_values,
 )
+from src.secure_backup import SecureStoragePolicy
 
 
 SCHEMA_VERSION = 1
@@ -1415,7 +1416,10 @@ class ConfigIntegrityService:
         return {"profiles": profiles, "sequences": sequences}
 
     def record_incident(self, result: IntegrityResult, master_raw: Any, working_raw: Any) -> Path:
-        self.paths.incidents.mkdir(parents=True, exist_ok=True)
+        storage = SecureStoragePolicy(
+            self.paths.incidents, max_entries=20, max_age_days=30)
+        storage.prepare()
+        storage.cleanup()
         diff_fingerprint = fingerprint({"errors": result.errors, "differences": result.differences,
                                         "master": result.master_fingerprint, "working": result.working_fingerprint})
         for candidate in sorted(self.paths.incidents.iterdir()):

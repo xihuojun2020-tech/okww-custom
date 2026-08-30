@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from . import config_integrity as ci
+from .secure_backup import SecureStoragePolicy
 
 
 BUNDLE_TYPE = "okww_account_bundle"
@@ -624,6 +625,8 @@ class AccountConfigBundleService:
                 if adopted_path.exists():
                     return adopted_path
         root = self.paths.root / "config_bundle_transactions"
+        storage = SecureStoragePolicy(root, max_entries=20, max_age_days=14)
+        storage.prepare()
         event = root / (datetime.now().strftime("%Y%m%d_%H%M%S_%f") + "_" + uuid.uuid4().hex[:8])
         event.mkdir(parents=True, exist_ok=False)
         manifest = {"created_at": datetime.now(timezone.utc).isoformat(), "files": {}}
@@ -636,6 +639,7 @@ class AccountConfigBundleService:
             manifest["files"][str(path)] = {"name": name, "length": len(payload),
                                               "sha256": hashlib.sha256(payload).hexdigest()}
         (event / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        storage.cleanup()
         return event
 
     @staticmethod

@@ -310,13 +310,6 @@ if __name__ == '__main__':
         sys.exit(0)
     # 联网代理自愈：探测代理并写入 repo git 配置（下次 fetch 走代理）
     _setup_proxy()
-    # 使用端诊断：启动时收集环境/登录器/配置信息输出日志（排查账号登录信息问题）
-    try:
-        from src.diagnose import save_diagnosis
-        diag_file = save_diagnosis()
-        print(f'[okww] 诊断日志: {diag_file}')
-    except Exception:
-        pass
     atexit.register(_exit_cleanup)
     # 后台检查原版 okww 是否有更新（不阻塞启动；有更新写入标志，首页显示提醒）
     try:

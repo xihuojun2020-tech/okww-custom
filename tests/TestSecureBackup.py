@@ -3,8 +3,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.secure_backup import (SecureBackupService, SecureBackupUnavailable,
-                               harden_directory_permissions, validate_restore_path)
+from src.secure_backup import (
+    SecureBackupService,
+    SecureBackupUnavailable,
+    SecureStoragePolicy,
+    harden_directory_permissions,
+    validate_restore_path,
+)
 
 
 class TestSecureBackup(unittest.TestCase):
@@ -47,6 +52,20 @@ class TestSecureBackup(unittest.TestCase):
             target = harden_directory_permissions(Path(root) / "backups")
             self.assertTrue(target.is_dir())
             (target / "probe").write_text("ok", encoding="utf-8")
+
+    def test_storage_policy_prunes_oldest_entries_without_following_links(self):
+        with tempfile.TemporaryDirectory() as root:
+            policy = SecureStoragePolicy(root, max_entries=2, max_age_days=1)
+            paths = []
+            for index in range(3):
+                path = Path(root) / f"entry-{index}"
+                path.mkdir()
+                os.utime(path, (100 + index, 100 + index))
+                paths.append(path)
+            policy.cleanup(now=200)
+            self.assertFalse(paths[0].exists())
+            self.assertTrue(paths[1].exists())
+            self.assertTrue(paths[2].exists())
 
 
 if __name__ == "__main__":

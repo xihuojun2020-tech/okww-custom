@@ -7,6 +7,7 @@
 - 注册表、游戏目录标记、okww 配置概况（手机号脱敏）、相关进程
 """
 import json
+import hashlib
 import os
 import platform
 import re
@@ -14,6 +15,10 @@ import socket
 import subprocess
 import time
 from datetime import datetime
+from pathlib import Path
+
+from src.observability import redact_message
+from src.secure_backup import SecureStoragePolicy
 
 
 def _mask_phone(text):
@@ -24,13 +29,27 @@ def _mask_phone(text):
 
 
 def _mask_all_sensitive(text):
-    """通用脱敏：手机号 + 长串 token。"""
+    """通用脱敏：账号字段、路径和长设备标识。"""
     if not text:
         return text
-    text = _mask_phone(text)
-    # 长 token/密钥（32+ 位字母数字）打码
-    text = re.sub(r'[A-Za-z0-9]{32,}', lambda m: m.group(0)[:8] + '****', text)
+    text = redact_message(_mask_phone(text))
+    for key in ("USERPROFILE", "APPDATA"):
+        value = os.environ.get(key)
+        if value:
+            text = text.replace(value, f"<{key}>")
+    text = re.sub(
+        r'[A-Za-z0-9]{24,}',
+        lambda match: f"<id:{hashlib.sha256(match.group(0).encode()).hexdigest()[:12]}>",
+        text,
+    )
     return text
+
+
+def _identifier_summary(value):
+    raw = str(value or "").strip()
+    if not raw:
+        return "(空)"
+    return f"<id:{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:12]}>"
 
 
 def _run(cmd, timeout=15):
@@ -71,15 +90,13 @@ def _dir_snapshot(path, max_files=30, max_depth=3):
 
 
 def _read_text(path, limit=500, mask=True):
-    """读取文本文件（截断；mask=False 时保留设备标识原文）。"""
+    """读取并脱敏文本文件；mask=False 只返回不可逆摘要。"""
     if not os.path.isfile(path):
         return '  (文件不存在)'
     try:
         with open(path, encoding='utf-8', errors='replace') as f:
             data = f.read(limit)
-        if mask:
-            data = _mask_all_sensitive(data)
-        return data.strip() or '  (空)'
+        return (_mask_all_sensitive(data) if mask else _identifier_summary(data))
     except Exception as e:
         return f'  <error: {e}>'
 
@@ -93,11 +110,11 @@ def collect_diagnosis():
     ap(f'生成时间: {now}')
     ap(f'')
     ap('【1. 环境】')
-    ap(f'  主机名: {socket.gethostname()}')
+    ap(f'  主机名: {_identifier_summary(socket.gethostname())}')
     ap(f'  系统: {platform.system()} {platform.version()} (build {platform.platform()})')
-    ap(f'  当前账户: {os.environ.get("USERNAME", "?")} ({os.environ.get("USERDOMAIN", "?")})')
-    ap(f'  用户目录: {os.environ.get("USERPROFILE", "?")}')
-    ap(f'  APPDATA: {os.environ.get("APPDATA", "?")}')
+    ap(f'  当前账户: {_identifier_summary(os.environ.get("USERNAME", "?"))}')
+    ap('  用户目录: <USERPROFILE>')
+    ap('  APPDATA: <APPDATA>')
     users = os.listdir(r'C:\Users') if os.path.isdir(r'C:\Users') else []
     # 账户名脱敏（保留首字符 + ***；系统内置目录原样），防止诊断日志泄露账户清单
     _KNOWN = ('Public', 'All Users', 'Default', 'Default User', 'desktop.ini')
@@ -107,7 +124,7 @@ def collect_diagnosis():
 
     ap('【2. KRLauncher 登录器数据】')
     kr = os.path.join(os.environ.get('APPDATA', ''), 'KRLauncher')
-    ap(f'  KRLauncher 路径: {kr}')
+    ap('  KRLauncher 路径: <APPDATA>\\KRLauncher')
     ap(_dir_snapshot(kr, max_files=40, max_depth=3))
     ap(f'')
     # 关键标记文件内容（设备标识类原文输出，便于对比；账号类脱敏）
@@ -228,16 +245,21 @@ def _read_file_try(name):
     return ''
 
 
-def save_diagnosis():
-    """生成诊断日志文件（存放于 logs/实验性日志，按类别归并；每次启动生成新文件），返回文件路径。"""
+def save_diagnosis(root=None, now=None):
+    """按需生成诊断文件并限制为 10 份、14 天。"""
     text = collect_diagnosis()
-    working = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    log_dir = os.path.join(working, 'logs', '实验性日志')
-    os.makedirs(log_dir, exist_ok=True)
-    fname = os.path.join(log_dir, f'诊断_{datetime.now():%Y%m%d_%H%M%S}.log')
-    with open(fname, 'w', encoding='utf-8') as f:
+    working = Path(root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))).resolve()
+    log_dir = working / 'logs' / '实验性日志'
+    storage = SecureStoragePolicy(log_dir, max_entries=10, max_age_days=14)
+    storage.prepare()
+    timestamp = now or datetime.now()
+    fname = log_dir / f'诊断_{timestamp:%Y%m%d_%H%M%S}.log'
+    with fname.open('w', encoding='utf-8') as f:
         f.write(text)
-    return fname
+    timestamp_value = timestamp.timestamp()
+    os.utime(fname, (timestamp_value, timestamp_value))
+    storage.cleanup(now=timestamp_value)
+    return str(fname)
 
 
 if __name__ == '__main__':

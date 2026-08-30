@@ -14,6 +14,7 @@ import os
 import secrets
 import shutil
 import subprocess
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -149,11 +150,51 @@ def harden_directory_permissions(path: os.PathLike | str) -> Path:
     )
     try:
         subprocess.run([icacls, str(target), "/inheritance:r", "/grant:r", *grants],
-                       check=True, capture_output=True, text=True)
+                       check=True, capture_output=True)
     except (OSError, subprocess.CalledProcessError) as exc:
         raise SecureBackupUnavailable("无法设置本机备份目录 ACL") from exc
     return target
 
 
-__all__ = ["SecureBackupError", "SecureBackupService", "SecureBackupUnavailable",
-           "harden_directory_permissions", "validate_restore_path"]
+class SecureStoragePolicy:
+    """Prepare and prune one sensitive directory without following links."""
+
+    def __init__(self, root: os.PathLike | str, *, max_entries=20, max_age_days=30):
+        self.root = Path(root).resolve()
+        self.max_entries = max(1, int(max_entries))
+        self.max_age_seconds = max(1, int(max_age_days)) * 24 * 60 * 60
+
+    def prepare(self) -> Path:
+        self.root.mkdir(parents=True, exist_ok=True)
+        if os.name == "nt":
+            harden_directory_permissions(self.root)
+        return self.root
+
+    @staticmethod
+    def _is_link(path: Path) -> bool:
+        return path.is_symlink() or (
+            hasattr(path, "is_junction") and path.is_junction()
+        )
+
+    def cleanup(self, *, now=None) -> None:
+        root = self.prepare()
+        current = time.time() if now is None else float(now)
+        entries = sorted(
+            (path for path in root.iterdir() if path.parent == root),
+            key=lambda path: path.stat(follow_symlinks=False).st_mtime,
+            reverse=True,
+        )
+        for index, path in enumerate(entries):
+            stat = path.stat(follow_symlinks=False)
+            if index < self.max_entries and current - stat.st_mtime <= self.max_age_seconds:
+                continue
+            if self._is_link(path) or path.is_file():
+                path.unlink(missing_ok=True)
+            elif path.is_dir():
+                shutil.rmtree(path)
+
+
+__all__ = [
+    "SecureBackupError", "SecureBackupService", "SecureBackupUnavailable",
+    "SecureStoragePolicy", "harden_directory_permissions", "validate_restore_path",
+]
