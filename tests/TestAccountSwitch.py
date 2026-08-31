@@ -65,6 +65,18 @@ class TestAccountSwitchCompatibilityEntryPoint(unittest.TestCase):
             "账号",
         )
 
+    def test_formal_task_does_not_maintain_a_separate_click_or_switch_path(self):
+        for production_method in (
+            '_screen_click',
+            '_open_account_list',
+            '_click_account_in_list',
+            '_dialog_click_login',
+            '_select_account_with_retry',
+            '_click_login_for_target',
+            'switch_to_account',
+        ):
+            self.assertNotIn(production_method, TestAccountSwitchTask.__dict__)
+
 
 if __name__ == "__main__":
     unittest.main()

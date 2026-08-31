@@ -1,11 +1,17 @@
 import unittest
+from unittest.mock import patch
 
 from src.task.BaseWWTask import BaseWWTask, LOGIN_CLICK_SETTLE_TIME, LOGIN_TEXTS
+from src.win32_login_input import LoginClickDelivery
 
 
 class TextBox:
-    def __init__(self, name):
+    def __init__(self, name, x=10, y=20, width=30, height=40):
         self.name = name
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
 
 
 class FakeLoginTask:
@@ -48,8 +54,12 @@ class FakeLoginTask:
             return [b for b in texts if '+86' in b.name] or None
         return None
 
-    def click(self, target, after_sleep=0):
+    def _click_login_box(self, target, after_sleep=0):
         self.clicked.append([b.name for b in target])
+        return True
+
+    def click(self, *_args, **_kwargs):
+        raise AssertionError('PC login path must not use PostMessage')
 
     def sleep(self, timeout):
         self.slept.append(timeout)
@@ -62,6 +72,39 @@ class FakeLoginTask:
 
 
 class TestWaitLogin(unittest.TestCase):
+
+    def test_pc_login_click_uses_main_hwnd_capture_origin_and_sendinput(self):
+        class Hwnd:
+            hwnd = 10
+
+            @staticmethod
+            def get_capture_origin():
+                return 100, 200
+
+        class Task:
+            hwnd = Hwnd()
+            executor = None
+
+            @staticmethod
+            def _main_window_identity():
+                return 10, 99
+
+            _main_box_center_screen = BaseWWTask._main_box_center_screen
+
+            @staticmethod
+            def log_warning(*_args, **_kwargs):
+                pass
+
+            @staticmethod
+            def sleep(_seconds):
+                raise AssertionError('after_sleep=0 must not sleep')
+
+        delivered = LoginClickDelivery(True, 'delivered', 10, 10, 11, 99, (125, 240))
+        with patch('src.task.BaseWWTask.send_input_click', return_value=delivered) as send:
+            result = BaseWWTask._click_login_box(Task(), [TextBox('Log In')], after_sleep=0)
+
+        self.assertTrue(result)
+        send.assert_called_once_with(10, 99, (125, 240))
 
     def test_transient_login_button_is_not_clicked(self):
         # Global server auto login: the login button disappears by itself,

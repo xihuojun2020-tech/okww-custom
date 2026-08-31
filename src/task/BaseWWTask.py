@@ -12,6 +12,7 @@ import cv2
 
 from src.Labels import Labels
 from src.scene.WWScene import WWScene
+from src.win32_login_input import send_input_click
 
 logger = Logger.get_logger(__name__)
 number_re = re.compile(r'(\d+)')
@@ -738,6 +739,59 @@ class BaseWWTask(BaseTask):
             self.back(after_sleep=2)
             return False
 
+    def _main_window_identity(self):
+        """Return the trusted PC game HWND and PID, or ``(0, 0)``."""
+        try:
+            import win32gui
+            import win32process
+
+            hwnd = int(getattr(getattr(self, 'hwnd', None), 'hwnd', 0) or 0)
+            if not hwnd or not win32gui.IsWindow(hwnd):
+                return 0, 0
+            pid = int(win32process.GetWindowThreadProcessId(hwnd)[1] or 0)
+            return (hwnd, pid) if pid else (0, 0)
+        except Exception:
+            return 0, 0
+
+    def _main_box_center_screen(self, box):
+        """Map a box from the current WGC frame to a live screen point."""
+        try:
+            origin = self.hwnd.get_capture_origin()
+            if not origin:
+                return None
+            return (
+                int(origin[0] + box.x + box.width / 2),
+                int(origin[1] + box.y + box.height / 2),
+            )
+        except Exception:
+            return None
+
+    def _click_login_box(self, target, after_sleep=0.5):
+        """Click a PC login box through the verified SendInput boundary."""
+        box = target[0] if isinstance(target, (list, tuple)) and target else target
+        if box is None:
+            return False
+        executor = getattr(self, 'executor', None)
+        check_enabled = getattr(executor, 'check_enabled', None)
+        if callable(check_enabled) and check_enabled() is False:
+            return False
+        hwnd, pid = self._main_window_identity()
+        point = self._main_box_center_screen(box)
+        if not hwnd or not pid or point is None:
+            self.log_warning('登录点击未投递：无法确认主窗口、PID 或当前 WGC 坐标')
+            return False
+        delivery = send_input_click(hwnd, pid, point)
+        self._last_login_click_delivery = delivery
+        if not delivery.delivered:
+            self.log_warning(
+                f'登录点击未投递：{delivery.reason}；目标HWND={delivery.target_hwnd or "?"}，'
+                f'前台HWND={delivery.foreground_hwnd or "?"}，命中HWND={delivery.hit_hwnd or "?"}'
+            )
+            return False
+        if after_sleep:
+            self.sleep(after_sleep)
+        return True
+
     def wait_login(self):
         if not self.logged_in:
             if self.in_team_and_world():
@@ -745,8 +799,8 @@ class BaseWWTask(BaseTask):
                 return True
             self.handle_monthly_card()
             if login_close := self.find_one('login_close', horizontal_variance=0.15, vertical_variance=0.1):
-                self.click(login_close, after_sleep=1)
-                self.log_info('关闭公告!')
+                if self._click_login_box(login_close, after_sleep=1):
+                    self.log_info('关闭公告!')
                 return False
             texts = self.ocr(log=self.debug)
 
@@ -763,19 +817,20 @@ class BaseWWTask(BaseTask):
                                             match=LOGIN_TEXTS)
                     if login and not self.find_boxes(texts, boundary=login_box,
                                                      match="+86"):
-                        self.click(login, after_sleep=1)
-                        self.log_info('点击登录按钮!')
+                        if self._click_login_box(login, after_sleep=1):
+                            self.log_info('点击登录按钮!')
                 return False
             if agree := self.find_boxes(texts, boundary=login_box, match="同意"):
                 self.log_debug(f'found agree {agree}')
                 if self.find_boxes(texts, boundary=login_box, match=re.compile("隐私")):
-                    self.click(agree, after_sleep=1)
-                    self.log_info('点击同意按钮!')
+                    if self._click_login_box(agree, after_sleep=1):
+                        self.log_info('点击同意按钮!')
                 return False
             if self.find_boxes(texts, match=[re.compile("游戏即将重启"), re.compile('遊戲即將重啟')]):
                 self.sleep(0.2)
                 self.log_info('游戏更新成功, 游戏即将重启')
-                self.click(self.find_boxes(texts, match=["确认", "確認"]), after_sleep=60)
+                self._click_login_box(
+                    self.find_boxes(texts, match=["确认", "確認"]), after_sleep=60)
                 result = self.start_device()
                 self.log_info(f'start_device end {result}')
                 self.sleep(30)
@@ -783,14 +838,14 @@ class BaseWWTask(BaseTask):
 
             if start := self.find_boxes(texts, boundary='bottom_right', match=["开始游戏", re.compile("进入游戏")]):
                 if not self.find_boxes(texts, boundary='bottom_right', match=LOGIN_TEXTS):
-                    self.click(start)
-                    self.log_info(f'点击开始游戏! {start}')
+                    if self._click_login_box(start, after_sleep=0):
+                        self.log_info(f'点击开始游戏! {start}')
                     return False
             if switch_login := self.find_one(Labels.switch_account, vertical_variance=0.1, threshold=0.7):
                 if boxes := self.find_boxes(texts, boundary=self.box_of_screen(0.37, 0.63, 0.63, 0.99, hcenter=True,
                                                                                vcenter=True)):
                     self.log_info(f'wait_login {switch_login} {boxes}')
-                    self.click_relative(0.503, 0.926, hcenter=True, vcenter=True, after_sleep=3)
+                    self._click_login_box(switch_login, after_sleep=3)
                     return False
 
     def in_team_and_world(self):

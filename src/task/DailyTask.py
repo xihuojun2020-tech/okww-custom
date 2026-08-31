@@ -396,9 +396,14 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             raise
 
     def _logout_pc_after_daily(self):
-        """每日任务完成后自动退登 PC 端，准备下一个账号登录（退登流程在 WWOneTimeTask 基类）。"""
+        """复用正式多账号退登状态机，避免维护第二套点击实现。"""
         self.log_info('每日任务完成，自动退登 PC 端准备下一个账号')
-        self._ensure_pc_login_screen()
+        from src.task.MultiAccountDailyTask import MultiAccountDailyTask
+
+        switch_task = self.get_task_by_class(MultiAccountDailyTask)
+        if switch_task is None:
+            raise RuntimeError('MultiAccountDailyTask 未注册，无法安全执行 PC 退登')
+        return switch_task._switch_to_login()
 
     # ==================== 每日任务配置方案 (Profile) ====================
 
