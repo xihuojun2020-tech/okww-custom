@@ -46,6 +46,7 @@ class AboutTab(Tab):
             except Exception:
                 pass
             update_log_text.setPlainText(upstream_note + self.tr(
+                'V1.22.00：退登状态机优先使用任务级前台桌面捕获并保留 WGC 后备；新增轻量置顶任务状态窗，显示当前账号、阶段、详情、耗时、告警和错误，独立登录窗口继续使用各自 HWND BitBlt。\n'
                 'V1.21.00：PC 登录、退登和账号切换鼠标点击统一使用校验后的 Win32 SendInput；主窗口继续使用 WGC，独立登录窗口及 ComboBox/ComboLBox 使用各自 HWND 的 BitBlt 与实时坐标，投递和界面确认分离，伪 Win32 测试不会操作游戏。\n'
                 'V1.20.02（验证中）：账号选择后稳定核验扩展为 20 秒，保留连续两次一致的安全条件，适配登录器慢速 OCR 与窗口切换。\n'
                 'V1.20.01（候选修复）：修复账号下拉框当前已选目标被重复点击后无法收起，并将账号切换任务状态限制为 A3/A4 等短名，禁止在 UI 显示手机号、备用名或特征码。\n'

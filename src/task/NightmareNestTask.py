@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from ok import Logger
 from src.task.BaseCombatTask import BaseCombatTask, CharRevivedException
 from src.task.WWOneTimeTask import WWOneTimeTask
+from src.task_status import publish_task_status
 
 logger = Logger.get_logger(__name__)
 TRAVEL_FEATURES = ['fast_travel_custom', 'gray_teleport', 'remove_custom']
@@ -24,6 +25,8 @@ FARM_TACET_DISCORD_NESTS = 'Tacet Discord Nests to Farm'
 class NestTarget:
     box: object
     cache_key: str
+    display_name: str = '未知目标'
+    ordinal: int = 0
 
 
 class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
@@ -58,6 +61,7 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
         }
 
     def run(self):
+        publish_task_status(self, stage='刷梦魇巢穴', detail='正在打开 F2 梦魇页面')
         self._capture_mode = False
         self._capture_success = False
         self._unreachable_nests.clear()
@@ -70,6 +74,7 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
         self.ensure_main(time_out=30)
 
     def run_capture_mode(self):
+        publish_task_status(self, stage='刷梦魇巢穴', detail='正在打开 F2 梦魇页面')
         self._capture_mode = True
         self._capture_success = False
         self._unreachable_nests.clear()
@@ -99,6 +104,8 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
 
     def combat_nest(self, nest):
         target_box = nest.box if isinstance(nest, NestTarget) else nest
+        target_name = nest.display_name if isinstance(nest, NestTarget) else '当前目标'
+        publish_task_status(self, stage='刷梦魇巢穴', detail=f'{target_name} · 正在进入挑战')
         self.click(target_box, after_sleep=2)
         feature = self.wait_feature(['fast_travel_custom', 'gray_teleport', 'remove_custom', 'team_close'], time_out=10,
                                     settle_time=0.5, raise_if_not_found=True)
@@ -107,6 +114,7 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
             self.click_team_challenge()
             self.wait_in_team_and_world(time_out=120)
         else:
+            publish_task_status(self, stage='刷梦魇巢穴', detail=f'{target_name} · 正在传送')
             if not self._travel_to_nest_or_skip(nest):
                 return
             self.sleep(1)
@@ -114,6 +122,7 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
                 self.send_key('f', after_sleep=1)
                 self.wait_in_team_and_world(time_out=40, raise_if_not_found=False)
             self.sleep(2)
+            publish_task_status(self, stage='刷梦魇巢穴', detail=f'{target_name} · 正在战斗')
             self.run_until(self.in_combat, 'w', time_out=10, running=False, target=True)
         wait_combat_time = 10
         while True:
@@ -129,6 +138,7 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
                     self.log_info("Captured echo during combat, skipping search.")
                     captured_early = True
             if not captured_early:
+                publish_task_status(self, stage='刷梦魇巢穴', detail=f'{target_name} · 正在拾取声骸')
                 self.sleep(3)
                 if need_find and not self.walk_find_echo(time_out=5, backward_time=2.5):
                     dropped = self.yolo_find_echo(turn=True, use_color=False, time_out=30)[0]
@@ -164,8 +174,14 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
 
         if isinstance(nest, NestTarget):
             self._unreachable_nests.add(nest.cache_key)
+            publish_task_status(
+                self,
+                stage='刷梦魇巢穴',
+                detail=f'{nest.display_name} · 不可到达，已跳过',
+            )
             self.log_info(f'nightmare nest unreachable, skip this run: {nest.cache_key}')
         else:
+            publish_task_status(self, stage='刷梦魇巢穴', detail='当前目标 · 不可到达，已跳过')
             self.log_info('nightmare nest unreachable, skip this run')
         self.back(after_sleep=1)
         return False
@@ -244,7 +260,23 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
                     count_box.y -= count_box.height * 0.9
                     count_box.height = 1
                     count_box.width = 1
-                    return NestTarget(count_box, cache_key)
+                    action_name = self.queues[0].__name__ if self.queues else 'unknown'
+                    display_name = (
+                        nest_name
+                        if action_name == 'go_nest'
+                        else f'梦魇拔除第 {nest_index} 项'
+                    )
+                    publish_task_status(
+                        self,
+                        stage='刷梦魇巢穴',
+                        detail=f'当前目标：{display_name}',
+                    )
+                    return NestTarget(
+                        count_box,
+                        cache_key,
+                        display_name=display_name,
+                        ordinal=nest_index,
+                    )
 
     def _make_nest_cache_key(self, count_box, denominator):
         action_name = self.queues[0].__name__ if self.queues else 'unknown'

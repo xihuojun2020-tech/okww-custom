@@ -29,6 +29,8 @@ from src.runtime.account_runtime_bootstrap import (
     initialize_account_runtime,
     require_account_runtime_for_task,
 )
+from src.account_identity import short_profile_name
+from src.task_status import publish_task_status
 
 logger = Logger.get_logger(__name__)
 
@@ -295,6 +297,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             return None
 
     def run(self):
+        self._publish_daily_stage('每日任务', '正在启动每日任务')
         require_account_runtime_for_task(self)
         if getattr(self, '_account_refresh_pending', False):
             self.refresh_account_options()
@@ -317,6 +320,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         auto_farm = self._profile_get(AUTO_FARM_NIGHTMARE_NEST, False)
         daily_echo = self._profile_get('Farm Nightmare Nest for Daily Echo', False)
 
+        self._publish_daily_stage('每日任务', '正在检查每日奖励和体力进度')
         self.log_info('正在领取每日奖励并检查体力进度...')
         used_stamina, daily_reward_ready = self.open_daily()
         need_stamina = not daily_reward_ready and used_stamina < 180
@@ -338,9 +342,11 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 nightmare_task.ensure_main = lambda *args, **kwargs: None
 
                 if auto_farm:
+                    self._publish_daily_stage('刷梦魇巢穴', '正在打开梦魇页面')
                     self.log_info('开始刷梦魇巢穴（打梦魇聚落）', notify=True)
                     self.run_task_by_class(NightmareNestTask)
                 elif daily_echo:
+                    self._publish_daily_stage('刷梦魇巢穴', '正在打开梦魇页面')
                     self.log_info('开始刷梦魇巢穴（打梦魇聚落）', notify=True)
                     nightmare_task.run_capture_mode()
                 self.record_last_completed('Nightmare Nest', profile_id=getattr(self, '_verified_profile_id', None))
@@ -358,6 +364,12 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
         if need_stamina:
             target = self._profile_get('Which to Farm', self.support_tasks[0])
+            stamina_labels = {
+                self.support_tasks[0]: '无音区',
+                self.support_tasks[1]: '凝素领域',
+                self.support_tasks[2]: '模拟领域',
+            }
+            self._publish_daily_stage('清理体力', stamina_labels.get(target, str(target)))
             self.log_info(f'开始清体力（打 {target}）', notify=True)
             if target == self.support_tasks[0]:
                 self.get_task_by_class(TacetTask).farm_tacet(daily=True, used_stamina=used_stamina,
@@ -371,13 +383,17 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             self.sleep(4)
             self.record_last_completed(target, profile_id=getattr(self, '_verified_profile_id', None))
 
+        self._publish_daily_stage('每日任务', '正在领取每日奖励')
         self.log_info('正在领取每日任务奖励...')
         self.claim_daily()
 
+        self._publish_daily_stage('每日任务', '正在领取邮件')
         self.claim_mail()
         self.sleep(1)
+        self._publish_daily_stage('每日任务', '正在领取战令奖励')
         self.log_info('正在领取战令奖励...')
         self.claim_battle_pass()
+        self._publish_daily_stage('每周任务', '正在检查每周乐园')
         self.log_info('正在检查每周乐园...')
         self.run_weekly_tasks()
         if self._profile_get(RECORD_AFTER_DAILY, True):
@@ -388,12 +404,20 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 self._logout_pc_after_daily()
             except Exception as e:
                 self.log_error('自动退登 PC 端失败（不影响每日任务结果）', e)
+        self._publish_daily_stage('每日任务', '任务已完成')
         self.log_info('每日任务完成', notify=True)
         # 记录「今日每日任务已完成」到账号方案（多账号任务据此跳过今日已跑的账号）
         try:
             self.record_last_completed('Daily Task', profile_id=getattr(self, '_verified_profile_id', None))
         except ConfigIntegrityBlocked:
             raise
+
+    def _publish_daily_stage(self, stage, detail=''):
+        try:
+            account = short_profile_name(self.get_active_profile_name()) or '账号'
+        except Exception:
+            account = '账号'
+        publish_task_status(self, account=account, stage=stage, detail=detail)
 
     def _logout_pc_after_daily(self):
         """复用正式多账号退登状态机，避免维护第二套点击实现。"""

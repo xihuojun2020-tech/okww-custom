@@ -69,6 +69,13 @@ class MainWindow(FluentWindow):
         )
         self.app = app
         self.executor = executor
+        self.task_status_window = None
+        try:
+            from src.gui.TaskStatusWindow import TaskStatusWindow
+            self.task_status_window = TaskStatusWindow(executor)
+            QApplication.instance().aboutToQuit.connect(self.task_status_window.shutdown)
+        except Exception as error:
+            logger.warning(f'任务状态窗初始化失败，主任务继续运行：{error}')
         self.handler = handler
         self.ok_config = ok_config
         self.basic_global_config = global_config.get_config(basic_options)

@@ -22,6 +22,7 @@ $groups = @{
     "TestLoggingRedaction.py", "TestMainProxyConfig.py",
     "TestMuMuDiscovery.py", "TestObservability.py", "TestReleaseReadiness.py", "TestRuntimeServices.py",
     "TestScheduleSupport.py", "TestSecurityBaseline.py", "TestSensitiveIdentifierScan.py",
+    "TestTaskStatus.py", "TestLogoutCapture.py", "TestDailyTaskStatus.py",
     "TestSequenceRepository.py", "TestTestGroups.py", "TestWaitLogin.py", "TestWin32LoginInput.py"
   )
   integration = @(
@@ -33,7 +34,7 @@ $groups = @{
     "TestAccountManagementTabs.py", "TestCodexLightUI.py", "TestFiveSectionMainWindow.py",
     "TestMainWindowStartup.py", "TestNavigationSections.py", "TestTaskNavigationClassification.py",
     "TestCharacterCodeTab.py", "TestEnhanceEchoStatusBox.py", "TestSkipDialogConfirm.py",
-    "TestSkipDialogWideMode.py", "TestUsabilityUI.py"
+    "TestSkipDialogWideMode.py", "TestTaskStatusWindow.py", "TestUsabilityUI.py"
   )
   image = @(
     "TestChar.py", "TestCD.py", "TestCombatCheck.py", "TestCon.py", "TestConfirm.py",

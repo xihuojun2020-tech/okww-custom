@@ -848,8 +848,8 @@ class BaseWWTask(BaseTask):
                     self._click_login_box(switch_login, after_sleep=3)
                     return False
 
-    def in_team_and_world(self):
-        return self.in_team()[
+    def in_team_and_world(self, frame=None):
+        return self.in_team(frame=frame)[
             0]  # and self.find_one(f'gray_book_button', threshold=0.7, canny_lower=50, canny_higher=150)
 
     def get_angle_between(self, my_angle, angle):
@@ -982,13 +982,10 @@ class BaseWWTask(BaseTask):
 
         return current_direction, current_adjust, False
 
-    def in_team(self):
-        c1 = self.find_one('char_1_text',
-                           threshold=0.8)
-        c2 = self.find_one('char_2_text',
-                           threshold=0.8)
-        c3 = self.find_one('char_3_text',
-                           threshold=0.8)
+    def in_team(self, frame=None):
+        c1 = self.find_one('char_1_text', threshold=0.8, frame=frame)
+        c2 = self.find_one('char_2_text', threshold=0.8, frame=frame)
+        c3 = self.find_one('char_3_text', threshold=0.8, frame=frame)
         arr = [c1, c2, c3]
         # logger.debug(f'in_team check {arr}')
         current = -1

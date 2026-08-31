@@ -16,6 +16,16 @@ class FakeBox:
 
 class TestNightmareNestTask(unittest.TestCase):
 
+    def test_nest_target_keeps_display_name_and_ordinal(self):
+        target = NestTarget(
+            object(),
+            'go_nest:41:10',
+            display_name='落渊南丘残象聚落',
+            ordinal=1,
+        )
+        self.assertEqual('落渊南丘残象聚落', target.display_name)
+        self.assertEqual(1, target.ordinal)
+
     def test_nest_is_checked_before_nightmare_changes_book_scroll(self):
         task = NightmareNestTask.__new__(NightmareNestTask)
         task.config = {'Which to Farm': ['Nightmare Purification', 'Tacet Discord Nest']}

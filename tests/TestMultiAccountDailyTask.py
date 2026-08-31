@@ -15,6 +15,7 @@ from src.task.MultiAccountDailyTask import (
     normalize_account_name,
     profile_short_name,
 )
+from src.logout_capture import CaptureSample, ObservedBox
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.win32_login_input import ForegroundResult, LoginClickDelivery
 
@@ -1981,6 +1982,102 @@ class TestMultiAccountDailyTask(unittest.TestCase):
                 raise AssertionError('logout observation must not call wait_login through is_main')
 
         self.assertEqual(FakeTask()._logout_state(), 'main')
+
+    def test_logout_state_uses_explicit_frame_for_features(self):
+        frame = object()
+        sample = CaptureSample(frame, (100, 200), 77, 'foreground_bitblt', 1.0)
+        observed_frames = []
+
+        class FakeTask:
+            _logout_state = MultiAccountDailyTask._logout_state
+            _capture_logout_main_sample = lambda self, session: sample
+
+            @staticmethod
+            def do_find_account_drop_down(**_kwargs):
+                return None
+
+            @staticmethod
+            def find_one(*_args, **kwargs):
+                observed_frames.append(kwargs.get('frame'))
+                return None
+
+            @staticmethod
+            def wait_feature(*_args, **_kwargs):
+                return None
+
+            @staticmethod
+            def in_team_and_world(frame=None):
+                observed_frames.append(frame)
+                return True
+
+        self.assertEqual('main', FakeTask()._logout_state(object()))
+        self.assertEqual([frame, frame, frame], observed_frames)
+
+    def test_logout_click_uses_the_observed_frame_origin(self):
+        box = AccountBox('确认', x=10, y=20, width=30, height=10)
+        clicks = []
+
+        class FakeTask:
+            _click_main_login_box = MultiAccountDailyTask._click_main_login_box
+
+            @staticmethod
+            def _main_window_identity():
+                return 10, 9001
+
+            @staticmethod
+            def _bring_account_window_to_front(_target_hwnd=None):
+                return True
+
+            @staticmethod
+            def _box_center_screen(box, origin):
+                return int(origin[0] + box.x + box.width / 2), int(origin[1] + box.y + box.height / 2)
+
+            def _screen_click(self, x, y, after_sleep=0, *, target_hwnd):
+                clicks.append((x, y, after_sleep, target_hwnd))
+                return True
+
+        task = FakeTask()
+        self.assertTrue(task._click_main_login_box(box, stage='logout_confirm', origin=(100, 200)))
+        self.assertEqual([(125, 225, 0.5, 10)], clicks)
+
+    def test_foreground_capture_failure_falls_back_to_wgc(self):
+        class Session:
+            last_reason = 'pure-color-frame'
+
+            def capture_main(self):
+                return None
+
+        class Window:
+            def get_capture_origin(self):
+                return 100, 200
+
+        class FakeTask:
+            _capture_logout_main_sample = MultiAccountDailyTask._capture_logout_main_sample
+            hwnd = Window()
+
+            @staticmethod
+            def _main_window_identity():
+                return 10, 9001
+
+            @staticmethod
+            def _bring_account_window_to_front(_target_hwnd=None):
+                return True
+
+            @staticmethod
+            def sleep(_seconds):
+                pass
+
+            @staticmethod
+            def next_frame():
+                return object()
+
+            @staticmethod
+            def log_warning(_message):
+                pass
+
+        sample = FakeTask()._capture_logout_main_sample(Session())
+        self.assertEqual('wgc', sample.source)
+        self.assertEqual((100, 200), sample.origin)
 
     def test_login_sendinput_retry_uses_a_fresh_ocr_frame(self):
         class FakeTask:

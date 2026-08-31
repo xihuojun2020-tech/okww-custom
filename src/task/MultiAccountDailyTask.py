@@ -49,6 +49,8 @@ from src.runtime.account_runtime_bootstrap import (
     initialize_account_runtime,
     require_account_runtime_for_task,
 )
+from src.task_status import publish_task_status
+from src.logout_capture import CaptureSample, LogoutCaptureSession, ObservedBox
 
 logger = Logger.get_logger(__name__)
 
@@ -93,6 +95,14 @@ def profile_short_name(profile_name):
 def profile_status_label(profile_name):
     """Return the non-sensitive label allowed in task status UI."""
     return profile_short_name(profile_name) or '账号'
+
+
+def _publish_status_safe(task, **values):
+    publisher = getattr(task, '_publish_status', None)
+    if callable(publisher):
+        publisher(**values)
+    else:
+        publish_task_status(task, **values)
 
 
 def _is_login_identity(task, name):
@@ -664,6 +674,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
     # ==================== 主流程 ====================
 
     def run(self):
+        _publish_status_safe(self, stage='启动', detail='正在启动多账号任务')
         require_account_runtime_for_task(self)
         if getattr(self, '_account_refresh_pending', False):
             self.refresh_account_options()
@@ -734,6 +745,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         except Exception:
             in_main = False
         if in_main:
+            _publish_status_safe(self, stage='账号切换', detail='正在退出当前账号')
             self._switch_to_login()
             try:
                 first_account = self._detect_current_account_from_login()
@@ -751,6 +763,11 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
             in_sequence = any(self._same_account(first_account, acc) for acc in sequence)
             if in_sequence and not self._is_done(first_account):
+                _publish_status_safe(self,
+                    account=first_account,
+                    stage='账号切换',
+                    detail=f'正在选择账号 {profile_status_label(first_account)}',
+                )
                 self.log_info(f'主界面启动识别到真实账号 {first_account}，重新登录后执行其每日任务', notify=True)
                 self._select_and_login_specific(first_account)
                 self._require_daily_profile(first_account)
@@ -778,8 +795,14 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 # 把序列旋转到一个与本次真实启动状态无关的位置。
                 self.config[CURRENT_ACCOUNT] = ''
         else:
+            _publish_status_safe(self, stage='账号切换', detail='正在识别当前账号')
             first_target = self._select_and_login_account()
             if first_target:
+                _publish_status_safe(self,
+                    account=first_target,
+                    stage='每日任务',
+                    detail=f'正在执行账号 {profile_status_label(first_target)}',
+                )
                 self.log_info(f'从登录界面选择下一个未完成账号：{first_target}，开始执行每日任务', notify=True)
                 self._require_daily_profile(first_target)
                 self.run_task_by_class(DailyTask)
@@ -809,6 +832,11 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
         while next_account := self._select_and_login_account():
             self.info_set('Completed', sorted({profile_status_label(item) for item in self.done_set}))
+            _publish_status_safe(self,
+                account=next_account,
+                stage='每日任务',
+                detail=f'正在执行账号 {profile_status_label(next_account)}',
+            )
             self.log_info(f'开始执行账号 {next_account} 的每日任务', notify=True)
             self._require_daily_profile(next_account)
             self.run_task_by_class(DailyTask)
@@ -862,6 +890,14 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         if not getattr(result, 'ok', False):
             raise ConfigIntegrityBlocked(service.describe(result))
         return True
+
+    def _publish_status(self, *, account=None, stage=None, detail=None):
+        publish_task_status(
+            self,
+            account=profile_status_label(account) if account else None,
+            stage=stage,
+            detail=detail,
+        )
 
     # ==================== 统一账号切换与失败证据 ====================
 
@@ -956,6 +992,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _switch_to_login(self):
         MultiAccountDailyTask._guard_account_transition(self)
+        _publish_status_safe(self, stage='账号切换', detail='正在退出当前账号')
         self.log_info(self.tr('Switching back to login screen'))
         # 退登过程中窗口会短暂无 OCR 或闪烁，但输入必须由当前可见状态
         # 决定。可见状态的动作各自最多重试 3 次；窗口转换/加载只受
@@ -965,9 +1002,15 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         last_meaningful_state = None
         check_count = 0
         action_counts = {'confirm': 0, 'setting': 0, 'main': 0}
-        while time.monotonic() < deadline:
+        session_factory = getattr(self, '_create_logout_capture_session', None)
+        session_context = session_factory() if callable(session_factory) else nullcontext(None)
+        with session_context as capture_session:
+          while time.monotonic() < deadline:
             check_count += 1
-            state = self._logout_state()
+            state = (
+                self._logout_state(capture_session)
+                if capture_session is not None else self._logout_state()
+            )
             if state in ('confirm', 'setting', 'main') and state != last_meaningful_state:
                 # Retry budgets are consecutive-input budgets per observable
                 # state; moving main -> setting -> confirm starts each budget
@@ -977,6 +1020,12 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             last_state = state
             self.log_info(f'退登状态检查 {check_count}：{state}')
             try:
+                _publish_status_safe(self, stage='账号切换', detail={
+                    'confirm': '正在确认退出登录',
+                    'setting': '正在点击退出登录',
+                    'main': '正在打开设置页',
+                    'unknown': '等待界面稳定',
+                }.get(state, '等待界面稳定'))
                 if state == 'login':
                     self.log_info('已在登录界面，跳过退登流程')
                     return True
@@ -985,11 +1034,14 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                         self.log_warning('退登确认框连续 3 次未消失，停止重复点击')
                         break
                     self.log_info('确认框仍在屏幕上，直接重试确认按钮，不发送 ESC')
-                    confirm_box = getattr(self, '_logout_confirm_box', None)
+                    observed = getattr(self, '_logout_confirm_target', None)
+                    confirm_box = observed.box if isinstance(observed, ObservedBox) else getattr(
+                        self, '_logout_confirm_box', None)
                     confirmed = self._click_main_login_box(
                         confirm_box,
                         stage='logout_confirm',
                         after_sleep=0.2,
+                        origin=observed.sample.origin if isinstance(observed, ObservedBox) else None,
                     ) if confirm_box is not None else False
                     if confirmed is not False:
                         action_counts[state] += 1
@@ -1002,11 +1054,16 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                         self.log_warning('ESC 设置页连续 3 次未消失，停止重复点击')
                         break
                     self.log_info('已在 ESC 设置页，直接点击退登入口，不发送 ESC')
-                    logout_box = self._find_logout_button_box()
+                    finder = getattr(self, '_find_logout_button_target', None)
+                    observed = finder(capture_session) if callable(finder) else None
+                    logout_box = observed.box if isinstance(observed, ObservedBox) else (
+                        self._find_logout_button_box() if not callable(finder) else None
+                    )
                     delivered = self._click_main_login_box(
                         logout_box,
                         stage='logout_button',
                         after_sleep=1,
+                        origin=observed.sample.origin if isinstance(observed, ObservedBox) else None,
                     ) if logout_box is not None else False
                     if delivered is not False:
                         action_counts[state] += 1
@@ -1552,14 +1609,67 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             self.log_warning(f'退出登录按钮 OCR 失败：{error}')
             return None
 
-    def _click_main_login_box(self, box, *, stage, after_sleep=0.5):
+    def _create_logout_capture_session(self):
+        if getattr(self, '_android_boundary', lambda: None)() is not None:
+            return nullcontext(None)
+        try:
+            return LogoutCaptureSession(self.hwnd, self.executor.exit_event)
+        except Exception as error:
+            self.log_warning(f'退登前台截图初始化失败，保留 WGC：{error}')
+            return nullcontext(None)
+
+    def _capture_logout_main_sample(self, capture_session):
+        main_hwnd, _pid = self._main_window_identity()
+        if not main_hwnd:
+            return None
+        if capture_session is not None and self._bring_account_window_to_front(main_hwnd):
+            self.sleep(0.2)
+            sample = capture_session.capture_main()
+            if sample is not None:
+                return sample
+            self.log_warning(
+                f'退登前台截图不可用（{capture_session.last_reason}），本轮回退 WGC'
+            )
+        try:
+            frame = self.next_frame()
+        except TaskDisabledException:
+            raise
+        except Exception as error:
+            self.log_warning(f'退登 WGC 截图失败：{error}')
+            return None
+        if frame is None:
+            return None
+        origin = self.hwnd.get_capture_origin()
+        if not origin:
+            return None
+        return CaptureSample(
+            frame=frame,
+            origin=(int(origin[0]), int(origin[1])),
+            hwnd=int(main_hwnd),
+            source='wgc',
+            captured_at=time.monotonic(),
+        )
+
+    def _find_logout_button_target(self, capture_session=None):
+        sample = self._capture_logout_main_sample(capture_session)
+        if sample is None:
+            return None
+        texts = self.ocr(frame=sample.frame)
+        boxes = self.find_boxes(
+            texts,
+            boundary=self.box_of_screen(0.0, 0.72, 0.35, 1.0),
+            match=LOGOUT_TEXTS,
+        )
+        return ObservedBox(boxes[0], sample) if boxes else None
+
+    def _click_main_login_box(self, box, *, stage, after_sleep=0.5, origin=None):
         """SendInput-click a recognized box from the current main-window frame."""
         if box is None:
             return False
         main_hwnd, _main_pid = self._main_window_identity()
         if not main_hwnd or not self._bring_account_window_to_front(main_hwnd):
             return False
-        point = self._main_box_center_screen(box)
+        point = self._box_center_screen(box, origin) if origin is not None else self._main_box_center_screen(box)
         if point is None:
             self.log_warning(f'{stage} 点击取消：无法安全换算 OCR/特征框坐标')
             return False
@@ -1577,7 +1687,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             )
         return delivered
 
-    def _logout_state(self):
+    def _logout_state(self, capture_session=None):
         """Return the currently observable logout state without sending input.
 
         ``confirm`` is deliberately checked before ``setting`` and ``main``.  A
@@ -1586,7 +1696,11 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         meaning of the next click).
         """
         try:
-            if self.do_find_account_drop_down() is not None:
+            try:
+                login_hit = self.do_find_account_drop_down(prefer_dialog=True)
+            except TypeError:
+                login_hit = self.do_find_account_drop_down()
+            if login_hit is not None:
                 return 'login'
         except TaskDisabledException:
             raise
@@ -1594,9 +1708,23 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             pass
 
         self._logout_confirm_box = None
+        self._logout_confirm_target = None
+        capture_helper = getattr(self, '_capture_logout_main_sample', None)
+        sample = capture_helper(capture_session) if callable(capture_helper) else None
+        frame = sample.frame if sample is not None else None
+
+        def observe(method, *args, **kwargs):
+            if frame is not None:
+                kwargs['frame'] = frame
+            try:
+                return method(*args, **kwargs)
+            except TypeError:
+                kwargs.pop('frame', None)
+                return method(*args, **kwargs)
+
         confirm = None
         try:
-            confirm = self.find_one(
+            confirm = observe(self.find_one,
                 ['confirm_btn_hcenter_vcenter', 'confirm_btn_highlight_hcenter_vcenter'],
                 threshold=0.6,
             )
@@ -1604,7 +1732,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             raise
         except Exception:
             try:
-                confirm = self.wait_feature(
+                confirm = observe(self.wait_feature,
                     ['confirm_btn_hcenter_vcenter', 'confirm_btn_highlight_hcenter_vcenter'],
                     raise_if_not_found=False,
                     threshold=0.6,
@@ -1616,16 +1744,18 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 confirm = None
         if confirm is not None:
             self._logout_confirm_box = confirm
+            if sample is not None:
+                self._logout_confirm_target = ObservedBox(confirm, sample)
             return 'confirm'
 
         setting = None
         try:
-            setting = self.find_one('esc_setting', threshold=0.6)
+            setting = observe(self.find_one, 'esc_setting', threshold=0.6)
         except TaskDisabledException:
             raise
         except Exception:
             try:
-                setting = self.wait_feature('esc_setting', raise_if_not_found=False, time_out=0.2)
+                setting = observe(self.wait_feature, 'esc_setting', raise_if_not_found=False, time_out=0.2)
             except TaskDisabledException:
                 raise
             except Exception:
@@ -1636,7 +1766,14 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         try:
             # 状态检测必须只观察；is_main() 会继续调用 wait_login()，而后者
             # 可能点击登录按钮，破坏退登状态机的输入边界。
-            if self.in_team_and_world():
+            if frame is not None:
+                try:
+                    in_world = self.in_team_and_world(frame=frame)
+                except TypeError:
+                    in_world = self.in_team_and_world()
+            else:
+                in_world = self.in_team_and_world()
+            if in_world:
                 return 'main'
         except TaskDisabledException:
             raise
@@ -2581,7 +2718,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         texts = self.ocr()
         return bool(texts) and self._account_entry_count(texts) >= 2
 
-    def do_find_account_drop_down(self) -> object | None:
+    def do_find_account_drop_down(self, main_frame=None, prefer_dialog=False) -> object | None:
         """登录界面账号下拉框检测（v1.03.74：收起/展开状态都视为登录就绪）。
 
         命中条件：登录特征（登录/Log/登入）存在 且 至少 1 个账号条目（掩码或 U 扫码账号）。
@@ -2602,14 +2739,24 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             self._login_in_dialog = in_dialog
             return entries[0]
 
-        hit = judge(self.ocr(), False)
+        ocr_dialog = getattr(self, '_ocr_login_dialog', None)
+        def dialog_hit():
+            dlg_texts = ocr_dialog() if callable(ocr_dialog) else None
+            if dlg_texts:
+                return judge(dlg_texts, True)
+            return None
+
+        if prefer_dialog:
+            hit = dialog_hit()
+            if hit is not None:
+                return hit
+        main_texts = self.ocr() if main_frame is None else self.ocr(frame=main_frame)
+        hit = judge(main_texts, False)
         if hit is not None:
             return hit
         # 主窗口无特征 → #32770 登录对话框帧
-        ocr_dialog = getattr(self, '_ocr_login_dialog', None)
-        dlg_texts = ocr_dialog() if callable(ocr_dialog) else None
-        if dlg_texts:
-            hit = judge(dlg_texts, True)
+        if not prefer_dialog:
+            hit = dialog_hit()
             if hit is not None:
                 return hit
         return None
