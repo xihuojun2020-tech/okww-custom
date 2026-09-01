@@ -46,6 +46,7 @@ class AboutTab(Tab):
             except Exception:
                 pass
             update_log_text.setPlainText(upstream_note + self.tr(
+                'V1.23.00：剥离已放弃的 Android/MuMu 实验：相关源码、Agent、Nemu IPC、预检脚本、资源和测试已从 PC 正式程序及更新包移除，并在仓库外完整归档；WGC、Foreground BitBlt、SendInput、点击连接和账号切换流程均保持不变。\n'
                 'V1.22.08：修复账号方案联动后的 Qt 原生崩溃：任务工作线程不再直接刷新任务卡，GUI 刷新入口统一拒绝非主线程调用，避免 QLabel/QTextDocument 布局竞态导致访问违例。\n'
                 'V1.22.07：修复游戏登录页被误判为启动器：账号身份与精确“登录”按钮组合优先确认可操作登录页，KURO、公告、修复和产品版本不再作为启动器专属特征；真正启动器候选还需“开始游戏”且属于不同前台进程。\n'
                 'V1.22.06：修复账号切换 OCR 全角字符兼容：账号身份统一执行 Unicode NFKC 归一化；KURO 公告等启动器强特征优先于普通登录文字判断，检测到启动器时明确停止，不再误报账号下拉框超时。\n'

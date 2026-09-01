@@ -13,7 +13,7 @@ class TestReleaseReadiness(unittest.TestCase):
         changelog = Path("更新日志.md").read_text(encoding="utf-8")
         about = Path("custom_ok/ok/gui/about/AboutTab.py").read_text(encoding="utf-8")
         self.assertRegex(version, r"^[0-9]+\.[0-9]{2}\.[0-9]{2}$")
-        self.assertEqual(version, "1.22.08")
+        self.assertEqual(version, "1.23.00")
         self.assertIn(version, changelog)
         self.assertIn(f"V{version}", about)
         for theme in ("Foreground BitBlt", "WGC", "点击连接", "SendInput"):
@@ -67,6 +67,20 @@ class TestReleaseReadiness(unittest.TestCase):
             "更新日志.md",
         ):
             self.assertIn(required, sync_items)
+
+    def test_pc_only_release_excludes_abandoned_android_artifacts(self):
+        config_text = Path("config.py").read_text(encoding="utf-8")
+        sync_items = runpy.run_path("打包更新.py")["SYNC_ITEMS"]
+        self.assertNotIn("android_config", config_text)
+        self.assertNotIn("probe_mumu.py", sync_items)
+        for removed in (
+            "src/android",
+            "android",
+            "assets/android",
+            "custom_ok/ok/device/capture_methods/nemu_ipc.py",
+            "scripts/preflight_mumu.py",
+        ):
+            self.assertFalse(Path(removed).exists(), removed)
 
     def test_release_validator_rejects_mismatched_tag(self):
         from scripts.validate_release import validate_release

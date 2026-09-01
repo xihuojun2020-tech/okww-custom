@@ -16,11 +16,11 @@ $groups = @{
     "test_extract_issue_log.py", "TestAccountConfigEditor.py", "TestAccountDirectoryAssessment.py",
     "TestAccountFieldMetadata.py", "TestAccountGraphStore.py", "TestAccountIdentity.py",
     "TestAccountIdentityProtection.py", "TestAccountProfileStore.py", "TestAccountRepositoryRuntime.py",
-    "TestAccountRuntimeBootstrap.py", "TestAccountSwitch.py", "TestAndroidPreflight.py",
+    "TestAccountRuntimeBootstrap.py", "TestAccountSwitch.py",
     "TestBaseCombatTask.py", "TestConfig.py", "TestCustomCharLoader.py", "TestDiagnosisRetention.py",
     "TestDiagnosisTask.py", "TestDomainRecoveryLoop.py", "TestForgeryDomainLabels.py",
     "TestLoggingRedaction.py", "TestMainProxyConfig.py",
-    "TestMuMuDiscovery.py", "TestObservability.py", "TestReleaseReadiness.py", "TestRuntimeServices.py",
+    "TestObservability.py", "TestReleaseReadiness.py", "TestRuntimeServices.py",
     "TestScheduleSupport.py", "TestSecurityBaseline.py", "TestSensitiveIdentifierScan.py",
     "TestTaskStatus.py", "TestLogoutCapture.py", "TestDailyTaskStatus.py",
     "TestSequenceRepository.py", "TestTestGroups.py", "TestWaitLogin.py", "TestWin32LoginInput.py"

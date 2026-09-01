@@ -2,7 +2,7 @@
 """生成 okww 功能更新包（主电脑运行，复制到另一台电脑解压覆盖即可）。
 
 只打包「功能更新」文件：
-  - 项目代码：src/、config.py、main.py、fix_venv.py、启动okww.bat、probe_mumu.py
+  - 项目代码：src/、config.py、main.py、fix_venv.py、启动okww.bat
   - 功能资源：COCO 特征定义、退登电源图标、版本说明与更新日志
   - 翻译：i18n/（po + mo）
   - 框架修改：.venv/Lib/site-packages/ok/gui/MainWindow.py、
@@ -33,7 +33,6 @@ SYNC_ITEMS = [
     'main.py',
     'fix_venv.py',
     '启动okww.bat',
-    'probe_mumu.py',
     'assets/coco_annotations.json',
     'assets/images/logout_power_icon.png',
     'custom_ok/ok/gui/about/AboutTab.py',
