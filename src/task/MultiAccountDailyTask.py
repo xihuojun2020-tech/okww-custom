@@ -1153,6 +1153,23 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             pass
         return count
 
+    def _find_login_ready_box(self, texts, in_dialog=False):
+        """用账号身份和精确登录按钮共同确认可操作的游戏登录界面。"""
+        structural = list(self.find_boxes(texts, account_pattern))
+        exact = getattr(self, '_exact_login_button_boxes', None)
+        login_boxes = (
+            exact(texts)
+            if callable(exact) else self.find_boxes(texts, LOGIN_TEXTS)
+        )
+        entries = structural + [
+            item for item in (texts or [])
+            if item not in structural and _is_login_identity(self, getattr(item, 'name', ''))
+        ]
+        if not login_boxes or not entries:
+            return None
+        self._login_in_dialog = bool(in_dialog)
+        return entries[0]
+
     def _find_connect_target(self, sample, texts):
         """Return an exact bottom-center connect entry bound to its sample."""
         if sample is None or not texts:
@@ -1194,8 +1211,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 dlg_texts = None
                 if not monitor_mode and (hwnd is None or not hwnd.visible):
                     dlg_texts = self._ocr_login_dialog()
-                    if dlg_texts and self._login_screen_feature_count(dlg_texts) > 0:
-                        self._login_in_dialog = True
+                    if (dlg_texts
+                            and self._find_login_ready_box(dlg_texts, True) is not None):
                         self.log_info(f'已通过登录对话框窗口识别到登录界面（OCR {len(dlg_texts)} 文本）')
                         break
                 if not monitor_mode and hwnd is not None and hwnd.exists and not hwnd.visible:
@@ -1210,8 +1227,19 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     continue
                 reader = getattr(self, '_ocr_account_switch_main', None)
                 texts, main_sample = reader() if callable(reader) else (self.ocr(), None)
-                # 启动器可能同时显示账号和“登录”字样；强特征必须先于普通登录特征。
-                if texts and self._is_launcher_texts(texts):
+                # 游戏登录页本身也含 KURO、公告、修复和产品版本文字；账号身份
+                # 与精确“登录”按钮的组合是更强证据，必须先于启动器候选判断。
+                if texts and self._find_login_ready_box(texts, False) is not None:
+                    self._login_in_dialog = False
+                    record_stage = getattr(self, '_evidence_stage', None)
+                    if connect_attempts and callable(record_stage):
+                        record_stage(
+                            'connect_entry_confirmed',
+                            attempt=connect_attempts,
+                            detail='delivered=True,confirmed=True',
+                        )
+                    break
+                if texts and self._is_verified_launcher(texts):
                     self.log_error('检测到启动器界面（退过头到启动器），请手动重新进入游戏后再试')
                     try:
                         self.screenshot('multi')
@@ -1244,20 +1272,10 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     if not connect_exhausted_logged:
                         connect_exhausted_logged = True
                         self.log_warning('点击连接入口连续 3 次未消失，停止重复点击并等待超时')
-                if self._login_screen_feature_count(texts) > 0:
-                    self._login_in_dialog = False
-                    record_stage = getattr(self, '_evidence_stage', None)
-                    if connect_attempts and callable(record_stage):
-                        record_stage(
-                            'connect_entry_confirmed',
-                            attempt=connect_attempts,
-                            detail='delivered=True,confirmed=True',
-                        )
-                    break
                 if not monitor_mode and dlg_texts is None:
                     dlg_texts = self._ocr_login_dialog()
-                if not monitor_mode and dlg_texts and self._login_screen_feature_count(dlg_texts) > 0:
-                    self._login_in_dialog = True
+                if (not monitor_mode and dlg_texts
+                        and self._find_login_ready_box(dlg_texts, True) is not None):
                     record_stage = getattr(self, '_evidence_stage', None)
                     if connect_attempts and callable(record_stage):
                         record_stage(
@@ -1302,10 +1320,29 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     @staticmethod
     def _is_launcher_texts(texts):
-        """启动器强特征：KURO 与至少一个启动器专属文字同时出现。"""
+        """仅返回没有账号身份且明确提供“开始游戏”的启动器候选画面。"""
         joined = _normalize_identity(' '.join((t.name or '') for t in texts)) if texts else ''
-        markers = ('公告', '修复', 'cn_windows product', '启动游戏', '开始游戏')
-        return 'kuro' in joined and any(marker in joined for marker in markers)
+        if not joined or 'kuro' not in joined:
+            return False
+        if any(_looks_like_login_identity(getattr(item, 'name', '')) for item in texts or []):
+            return False
+        markers = ('启动游戏', '开始游戏', 'start game')
+        return any(marker in joined for marker in markers)
+
+    def _is_verified_launcher(self, texts):
+        """只有启动器候选属于不同前台进程时才确认，证据不足则安全等待。"""
+        if not self._is_launcher_texts(texts):
+            return False
+        try:
+            import win32gui
+            import win32process
+            foreground = win32gui.GetForegroundWindow()
+            foreground_pid = win32process.GetWindowThreadProcessId(foreground)[1]
+            identity = getattr(self, '_main_window_identity', None)
+            _game_hwnd, game_pid = identity() if callable(identity) else (0, 0)
+            return bool(foreground_pid and game_pid and foreground_pid != game_pid)
+        except Exception:
+            return False
 
     def _find_login_dialog(self):
         """找可见的 #32770 登录对话框，返回 (hwnd, (left, top, right, bottom)) 或 (0, None)。
@@ -2923,20 +2960,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         命中对话框帧时置 self._login_in_dialog = True，后续账号操作改用对话框帧。
         """
         def judge(texts, in_dialog):
-            structural = list(self.find_boxes(texts, account_pattern))
-            exact = getattr(self, '_exact_login_button_boxes', None)
-            login_boxes = (
-                exact(texts)
-                if callable(exact) else self.find_boxes(texts, LOGIN_TEXTS)
-            )
-            entries = structural + [
-                t for t in (texts or [])
-                if t not in structural and _is_login_identity(self, (t.name or '').strip())
-            ]
-            if not login_boxes or len(entries) < 1:
-                return None
-            self._login_in_dialog = in_dialog
-            return entries[0]
+            return MultiAccountDailyTask._find_login_ready_box(self, texts, in_dialog)
 
         ocr_dialog = getattr(self, '_ocr_login_dialog', None)
         def dialog_hit():

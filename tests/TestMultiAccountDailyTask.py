@@ -1776,17 +1776,27 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         task = _fake_login_task(main_texts=['ＵＴＥＳＴ０００３Ａ', 'UTEST1002A', '登入'])
         self.assertTrue(MultiAccountDailyTask._account_list_expanded(task))
 
-    def test_launcher_strong_features_win_over_login_and_account_text(self):
+    def test_kuro_resource_login_screen_is_not_launcher(self):
         texts = [
             AccountBox('KUROGAMES'),
             AccountBox('公告'),
+            AccountBox('CN_Windows Product:3'),
             AccountBox('登录'),
             AccountBox('ＵTEST0003A'),
         ]
-        self.assertTrue(MultiAccountDailyTask._is_launcher_texts(texts))
+        task = _fake_login_task(main_texts=[])
 
-    def test_wait_login_rejects_launcher_before_login_feature_count(self):
-        texts = [AccountBox('KUROGAMES'), AccountBox('公告'), AccountBox('登录')]
+        self.assertFalse(MultiAccountDailyTask._is_launcher_texts(texts))
+        self.assertIsNotNone(MultiAccountDailyTask._find_login_ready_box(task, texts, False))
+
+    def test_wait_login_accepts_ready_login_before_launcher_check(self):
+        texts = [
+            AccountBox('KUROGAMES'),
+            AccountBox('公告'),
+            AccountBox('CN_Windows Product:3'),
+            AccountBox('登录'),
+            AccountBox('ＵTEST0003A'),
+        ]
         account = AccountBox('ＵTEST0003A')
 
         class Window:
@@ -1795,7 +1805,6 @@ class TestMultiAccountDailyTask(unittest.TestCase):
 
         class FakeTask:
             _wait_login_screen_stable = MultiAccountDailyTask._wait_login_screen_stable
-            _is_launcher_texts = staticmethod(MultiAccountDailyTask._is_launcher_texts)
             hwnd = Window()
             _active_account_switch_capture = object()
 
@@ -1808,8 +1817,12 @@ class TestMultiAccountDailyTask(unittest.TestCase):
                 return None
 
             @staticmethod
-            def _login_screen_feature_count(_texts):
-                return 1
+            def _find_login_ready_box(_texts, _in_dialog=False):
+                return account
+
+            @staticmethod
+            def _is_verified_launcher(_texts):
+                raise AssertionError('ready game login must win before launcher checks')
 
             @staticmethod
             def do_find_account_drop_down():
@@ -1839,8 +1852,31 @@ class TestMultiAccountDailyTask(unittest.TestCase):
             def tr(message):
                 return message
 
-        with self.assertRaisesRegex(Exception, 'launcher'):
-            FakeTask()._wait_login_screen_stable(time_out=1, settle=0)
+        self.assertIs(account, FakeTask()._wait_login_screen_stable(time_out=1, settle=0))
+
+    def test_launcher_candidate_requires_start_game_without_account_identity(self):
+        launcher = [AccountBox('KURO GAMES'), AccountBox('开始游戏')]
+        login = launcher + [AccountBox('ＵTEST0003A'), AccountBox('登录')]
+
+        self.assertTrue(MultiAccountDailyTask._is_launcher_texts(launcher))
+        self.assertFalse(MultiAccountDailyTask._is_launcher_texts(login))
+
+    def test_launcher_requires_a_different_foreground_process(self):
+        texts = [AccountBox('KURO GAMES'), AccountBox('开始游戏')]
+
+        class FakeTask:
+            _is_launcher_texts = staticmethod(MultiAccountDailyTask._is_launcher_texts)
+
+            @staticmethod
+            def _main_window_identity():
+                return 77, 9001
+
+        with patch('win32gui.GetForegroundWindow', return_value=88), \
+                patch('win32process.GetWindowThreadProcessId', return_value=(1, 9001)):
+            self.assertFalse(MultiAccountDailyTask._is_verified_launcher(FakeTask(), texts))
+        with patch('win32gui.GetForegroundWindow', return_value=88), \
+                patch('win32process.GetWindowThreadProcessId', return_value=(1, 9002)):
+            self.assertTrue(MultiAccountDailyTask._is_verified_launcher(FakeTask(), texts))
 
     def test_account_list_expanded_true_with_two_entries(self):
         task = _fake_login_task(main_texts=['199****0014', 'UTEST1002A', '登入'])
@@ -2474,8 +2510,8 @@ class TestMultiAccountDailyTask(unittest.TestCase):
                 return object()
 
             @staticmethod
-            def _login_screen_feature_count(texts):
-                return int(any(box.name == '登录' for box in texts or []))
+            def _find_login_ready_box(texts, _in_dialog=False):
+                return account if any(box.name == '登录' for box in texts or []) else None
 
             def _click_main_login_box(self, box, **_kwargs):
                 self.clicks += 1
@@ -2485,7 +2521,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
                 self.evidence.append((stage, kwargs))
 
             @staticmethod
-            def _is_launcher_texts(_texts):
+            def _is_verified_launcher(_texts):
                 return False
 
             @staticmethod
