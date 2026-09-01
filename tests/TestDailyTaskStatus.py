@@ -1,4 +1,5 @@
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from src.task.DailyTask import DailyTask
@@ -29,6 +30,46 @@ class TestDailyTaskStatus(unittest.TestCase):
             stage='每日任务',
             detail='正在领取奖励',
         )
+
+    def test_refresh_gui_never_updates_qt_widgets_from_worker_thread(self):
+        task = DailyTask.__new__(DailyTask)
+        updates = []
+        card = SimpleNamespace(task=task, update_config=lambda: updates.append('updated'))
+        fake_og = SimpleNamespace(
+            main_window=SimpleNamespace(
+                onetime_tab=SimpleNamespace(card_widgets=[card]),
+            ),
+        )
+        gui_thread = object()
+
+        with patch('ok.og', fake_og), \
+                patch('src.task.DailyTask.QApplication') as application, \
+                patch('src.task.DailyTask.QThread') as q_thread:
+            application.instance.return_value.thread.return_value = gui_thread
+            q_thread.currentThread.return_value = object()
+            self.assertFalse(task._refresh_gui())
+
+        self.assertEqual([], updates)
+
+    def test_refresh_gui_still_updates_task_card_on_gui_thread(self):
+        task = DailyTask.__new__(DailyTask)
+        updates = []
+        card = SimpleNamespace(task=task, update_config=lambda: updates.append('updated'))
+        fake_og = SimpleNamespace(
+            main_window=SimpleNamespace(
+                onetime_tab=SimpleNamespace(card_widgets=[card]),
+            ),
+        )
+        gui_thread = object()
+
+        with patch('ok.og', fake_og), \
+                patch('src.task.DailyTask.QApplication') as application, \
+                patch('src.task.DailyTask.QThread') as q_thread:
+            application.instance.return_value.thread.return_value = gui_thread
+            q_thread.currentThread.return_value = gui_thread
+            self.assertTrue(task._refresh_gui())
+
+        self.assertEqual(['updated'], updates)
 
 
 if __name__ == '__main__':

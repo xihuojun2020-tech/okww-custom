@@ -2293,11 +2293,6 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 self.config[DAILY_PROFILE] = profile_name
             except Exception:
                 pass
-            try:
-                if hasattr(daily_task, '_refresh_gui'):
-                    daily_task._refresh_gui()
-            except Exception:
-                pass
             return True
         except TaskDisabledException:
             raise

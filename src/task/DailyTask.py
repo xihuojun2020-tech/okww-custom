@@ -6,6 +6,8 @@ import inspect
 from contextlib import contextmanager
 from datetime import datetime
 
+from PySide6.QtCore import QThread
+from PySide6.QtWidgets import QApplication
 
 from ok import Logger, TaskDisabledException
 from ok.util.file import get_relative_path, read_json_file, write_json_file
@@ -1392,14 +1394,18 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         （重建任务页有白屏风险，故不采用）。
         """
         try:
+            app = QApplication.instance()
+            if app is not None and QThread.currentThread() is not app.thread():
+                return False
             from ok import og
             if og.main_window and hasattr(og.main_window, 'onetime_tab'):
                 for card in getattr(og.main_window.onetime_tab, 'card_widgets', []):
                     if getattr(card, 'task', None) is self:
                         card.update_config()
-                        break
+                        return True
         except Exception as e:
             self.log_error('刷新界面失败', e)
+        return False
 
     def validate_config(self, key, value):
         """当 Daily Profile 下拉框变化时，自动保存旧方案并加载新方案。
