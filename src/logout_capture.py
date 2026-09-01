@@ -16,6 +16,13 @@ from ok.util.color import is_close_to_pure_color
 CAPTUREBLT = 0x40000000
 
 
+def _as_bgr(frame):
+    """Detach desktop BGRA pixels and remove alpha for OCR/feature consumers."""
+    if getattr(frame, "ndim", 0) == 3 and frame.shape[2] == 4:
+        return np.ascontiguousarray(frame[:, :, :3])
+    return frame
+
+
 @dataclass(frozen=True)
 class CaptureSample:
     frame: object
@@ -92,7 +99,7 @@ class MonitorBitBltCapture:
             )
             image = np.frombuffer(self.bitmap.GetBitmapBits(True), dtype=np.uint8)
             image.shape = (height, width, 4)
-            return image, (left, top, right, bottom)
+            return _as_bgr(image), (left, top, right, bottom)
 
     def close(self):
         with self.lock:

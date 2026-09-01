@@ -3,7 +3,7 @@ import unittest
 
 import numpy as np
 
-from src.logout_capture import AccountSwitchCaptureSession, LogoutCaptureSession
+from src.logout_capture import AccountSwitchCaptureSession, LogoutCaptureSession, _as_bgr
 
 
 class FakeHwndWindow:
@@ -29,6 +29,16 @@ class FakeCapture:
 
 
 class TestLogoutCapture(unittest.TestCase):
+    def test_monitor_bitmap_drops_alpha_before_ocr(self):
+        bgra = np.array([[[1, 2, 3, 4], [5, 6, 7, 8]]], dtype=np.uint8)
+
+        bgr = _as_bgr(bgra)
+
+        self.assertEqual((1, 2, 3), bgr.shape)
+        np.testing.assert_array_equal(bgr, bgra[:, :, :3])
+        self.assertTrue(bgr.flags.c_contiguous)
+        self.assertFalse(np.shares_memory(bgr, bgra))
+
     def test_logout_name_remains_a_compatibility_alias(self):
         self.assertIs(AccountSwitchCaptureSession, LogoutCaptureSession)
 
