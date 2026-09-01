@@ -1172,7 +1172,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                         pass
                     self.sleep(1)
                     continue
-                texts = self.ocr()
+                reader = getattr(self, '_ocr_account_switch_main', None)
+                texts, _sample = reader() if callable(reader) else (self.ocr(), None)
                 if self._login_screen_feature_count(texts) > 0:
                     self._login_in_dialog = False
                     break
@@ -1208,7 +1209,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         if box is None:
             try:
                 self.screenshot('multi')
-                texts = self.ocr()
+                reader = getattr(self, '_ocr_account_switch_main', None)
+                texts, _sample = reader() if callable(reader) else (self.ocr(), None)
                 hwnd = getattr(self, 'hwnd', None)
                 win_state = 'visible' if (hwnd is not None and hwnd.visible) else 'invisible'
                 snippet = ' | '.join(t.name[:20] for t in texts[:5]) if texts else ''
@@ -1562,7 +1564,11 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             return False
         self.sleep(0.2)
         try:
-            texts = self.ocr()
+            reader = getattr(self, '_ocr_account_switch_main', None)
+            if callable(reader):
+                texts, sample = reader()
+            else:
+                texts, sample = self.ocr(), None
         except TaskDisabledException:
             raise
         except Exception as e:
@@ -1577,7 +1583,10 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             self.log_warning('登录按钮点击取消：当前 OCR 帧未找到登录按钮')
             return False
         button = login_boxes[0]
-        screen_point = self._main_box_center_screen(button)
+        screen_point = (
+            self._box_center_screen(button, sample.origin)
+            if sample is not None else self._main_box_center_screen(button)
+        )
         if screen_point is None:
             self.log_warning('登录按钮点击取消：无法从当前 OCR 框安全换算屏幕坐标')
             return False
@@ -1653,7 +1662,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             if sample is not None:
                 return sample
             self.log_warning(
-                f'退登前台截图不可用（{capture_session.last_reason}），本轮回退 WGC'
+                f'账号切换前台截图不可用（{capture_session.last_reason}），本轮回退 WGC'
             )
         try:
             frame = self.next_frame()
@@ -1674,6 +1683,21 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             source='wgc',
             captured_at=time.monotonic(),
         )
+
+    def _capture_account_switch_main_sample(self):
+        """Capture the main login surface through the active transition session."""
+        return self._capture_logout_main_sample(
+            getattr(self, '_active_account_switch_capture', None)
+        )
+
+    def _ocr_account_switch_main(self):
+        """Return OCR text and the exact main-window sample that produced it."""
+        if getattr(self, '_active_account_switch_capture', None) is None:
+            return self.ocr(), None
+        sample = self._capture_account_switch_main_sample()
+        if sample is None:
+            return None, None
+        return self.ocr(frame=sample.frame), sample
 
     def _find_logout_button_target(self, capture_session=None):
         sample = self._capture_logout_main_sample(capture_session)
@@ -2093,7 +2117,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 except Exception:
                     pass
             return None
-        texts = self.ocr()
+        reader = getattr(self, '_ocr_account_switch_main', None)
+        texts, _sample = reader() if callable(reader) else (self.ocr(), None)
         candidates = [
             t.name.strip() for t in (texts or [])
             if _is_login_identity(self, t.name)
@@ -2250,7 +2275,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         # 主登录界面只取一帧 OCR，同时覆盖掩码手机号、U 扫码账号和备用识别名。
         # 两次 OCR 可能跨越登录器刷新，导致目标框与实际点击帧不一致。
         try:
-            texts = self.ocr()
+            reader = getattr(self, '_ocr_account_switch_main', None)
+            texts, main_sample = reader() if callable(reader) else (self.ocr(), None)
         except TaskDisabledException:
             raise
         except Exception as e:
@@ -2288,7 +2314,10 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             if is_account_text or mapped_profile:
                 accounts.append(account)
             if matched:
-                screen_point = self._main_box_center_screen(account)
+                screen_point = (
+                    self._box_center_screen(account, main_sample.origin)
+                    if main_sample is not None else self._main_box_center_screen(account)
+                )
                 if screen_point is None:
                     self.log_warning('账号点击取消：无法从目标 OCR 框安全换算屏幕坐标')
                     return False
@@ -2645,7 +2674,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             if not texts:
                 texts = self._ocr_login_dialog()
         else:
-            texts = self.ocr()
+            reader = getattr(self, '_ocr_account_switch_main', None)
+            texts, _sample = reader() if callable(reader) else (self.ocr(), None)
 
         profiles = []
         for box in texts or []:
@@ -2778,7 +2808,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 pass
             dlg_texts = self._ocr_login_dialog()
             return bool(dlg_texts) and self._account_entry_count(dlg_texts) >= 2
-        texts = self.ocr()
+        reader = getattr(self, '_ocr_account_switch_main', None)
+        texts, _sample = reader() if callable(reader) else (self.ocr(), None)
         return bool(texts) and self._account_entry_count(texts) >= 2
 
     def do_find_account_drop_down(self, main_frame=None, prefer_dialog=False) -> object | None:
@@ -2809,11 +2840,20 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 return judge(dlg_texts, True)
             return None
 
+        prefer_dialog = bool(
+            prefer_dialog
+            or getattr(self, '_login_in_dialog', False)
+            or getattr(self, '_active_account_switch_capture', None) is not None
+        )
         if prefer_dialog:
             hit = dialog_hit()
             if hit is not None:
                 return hit
-        main_texts = self.ocr() if main_frame is None else self.ocr(frame=main_frame)
+        if main_frame is None:
+            reader = getattr(self, '_ocr_account_switch_main', None)
+            main_texts, _sample = reader() if callable(reader) else (self.ocr(), None)
+        else:
+            main_texts = self.ocr(frame=main_frame)
         hit = judge(main_texts, False)
         if hit is not None:
             return hit

@@ -2239,6 +2239,99 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         self.assertEqual('wgc', sample.source)
         self.assertEqual((100, 200), sample.origin)
 
+    def test_active_account_switch_capture_drives_main_ocr(self):
+        frame = object()
+        sample = CaptureSample(frame, (100, 200), 77, 'foreground_bitblt', 1.0)
+
+        class Session:
+            last_reason = ''
+
+            @staticmethod
+            def capture_main():
+                return sample
+
+        class FakeTask:
+            _capture_logout_main_sample = MultiAccountDailyTask._capture_logout_main_sample
+            _capture_account_switch_main_sample = MultiAccountDailyTask._capture_account_switch_main_sample
+            _ocr_account_switch_main = MultiAccountDailyTask._ocr_account_switch_main
+            _active_account_switch_capture = Session()
+
+            @staticmethod
+            def _main_window_identity():
+                return 77, 9001
+
+            @staticmethod
+            def _bring_account_window_to_front(_target_hwnd=None):
+                return True
+
+            @staticmethod
+            def sleep(_seconds):
+                pass
+
+            @staticmethod
+            def ocr(*, frame=None):
+                return ['foreground'] if frame is sample.frame else ['wrong-frame']
+
+        texts, observed = FakeTask()._ocr_account_switch_main()
+        self.assertEqual(['foreground'], texts)
+        self.assertIs(sample, observed)
+
+    def test_main_login_click_uses_foreground_sample_origin(self):
+        frame = object()
+        box = AccountBox('登录', x=10, y=20, width=30, height=10)
+        sample = CaptureSample(frame, (100, 200), 77, 'foreground_bitblt', 1.0)
+        clicks = []
+
+        class FakeTask:
+            _main_login_screen_click = MultiAccountDailyTask._main_login_screen_click
+
+            @staticmethod
+            def _refresh_hwnd_window_snapshot():
+                return True
+
+            @staticmethod
+            def _main_window_identity():
+                return 77, 9001
+
+            @staticmethod
+            def _bring_account_window_to_front(_target_hwnd=None):
+                return True
+
+            @staticmethod
+            def sleep(_seconds):
+                pass
+
+            @staticmethod
+            def _ocr_account_switch_main():
+                return [box], sample
+
+            @staticmethod
+            def find_boxes(texts, boundary=None, match=None):
+                return list(texts or []) if match == LOGIN_TEXTS else []
+
+            @staticmethod
+            def box_of_screen(*_args, **_kwargs):
+                return object()
+
+            @staticmethod
+            def _box_center_screen(target, origin):
+                return int(origin[0] + target.x + target.width / 2), int(origin[1] + target.y + target.height / 2)
+
+            def _screen_click(self, x, y, after_sleep=0, *, target_hwnd):
+                clicks.append((x, y, target_hwnd))
+                return True
+
+            @staticmethod
+            def log_info(*_args, **_kwargs):
+                pass
+
+            @staticmethod
+            def log_warning(*_args, **_kwargs):
+                pass
+
+        self.assertTrue(FakeTask()._main_login_screen_click())
+        self.assertEqual([(125, 225, 77)], clicks)
+
     def test_login_sendinput_retry_uses_a_fresh_ocr_frame(self):
         class FakeTask:
             _click_login_for_target = MultiAccountDailyTask._click_login_for_target
