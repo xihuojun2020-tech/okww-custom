@@ -86,6 +86,8 @@ class _CtypesWin32Api:
         self.kernel32 = ctypes.windll.kernel32
         self.user32.WindowFromPoint.argtypes = [_POINT]
         self.user32.WindowFromPoint.restype = wintypes.HWND
+        self.user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+        self.user32.GetClassNameW.restype = ctypes.c_int
         self.user32.SendInput.argtypes = [wintypes.UINT, ctypes.POINTER(_INPUT), ctypes.c_int]
         self.user32.SendInput.restype = wintypes.UINT
 
@@ -149,6 +151,11 @@ class _CtypesWin32Api:
 
     def window_from_point(self, point):
         return int(self.user32.WindowFromPoint(_POINT(int(point[0]), int(point[1]))) or 0)
+
+    def window_class(self, hwnd):
+        buffer = ctypes.create_unicode_buffer(256)
+        self.user32.GetClassNameW(int(hwnd), buffer, len(buffer))
+        return buffer.value
 
     def send_mouse_click(self, point, virtual_screen):
         dx, dy = _normalize_absolute_point(point, virtual_screen)
@@ -343,7 +350,8 @@ def send_input_click(
     if hit_pid != expected_pid:
         return _delivery(False, "point-pid-mismatch", target_hwnd, front.foreground_hwnd, hit_hwnd,
                          expected_pid, point)
-    if not _same_window_tree(api, target_hwnd, hit_hwnd):
+    if (not _same_window_tree(api, target_hwnd, hit_hwnd)
+            and api.window_class(hit_hwnd) != "ComboLBox"):
         return _delivery(False, "point-target-mismatch", target_hwnd, front.foreground_hwnd, hit_hwnd,
                          expected_pid, point)
 

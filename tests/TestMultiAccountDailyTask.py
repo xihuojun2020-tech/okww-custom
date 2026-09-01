@@ -2,7 +2,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from ok import TaskDisabledException
+from ok import Box, TaskDisabledException
 from src.config_integrity import ConfigIntegrityBlocked
 from src.runtime.task_run_coordinator import TaskRunCoordinator, TaskRunState
 from src.task.BaseWWTask import LOGIN_TEXTS
@@ -10,6 +10,7 @@ from src.task.DailyTask import DailyTask
 from src.task.MultiAccountDailyTask import (
     CURRENT_ACCOUNT,
     LOGOUT_TEXTS,
+    RETURN_LOGIN_TEXTS,
     MultiAccountDailyTask,
     account_pattern,
     normalize_account_name,
@@ -388,6 +389,8 @@ class TestMultiAccountDailyTask(unittest.TestCase):
             def __init__(self):
                 self.confirm_calls = 0
                 self._logout_confirm_box = object()
+                sample = CaptureSample(object(), (0, 0), 10, 'test', 1.0)
+                self._logout_confirm_target = ObservedBox(self._logout_confirm_box, sample)
                 self.logs = []
                 self.states = iter(('confirm', 'confirm', 'login'))
 
@@ -440,6 +443,8 @@ class TestMultiAccountDailyTask(unittest.TestCase):
                 self.esc_count = 0
                 self.confirm_count = 0
                 self._logout_confirm_box = object()
+                sample = CaptureSample(object(), (0, 0), 10, 'test', 1.0)
+                self._logout_confirm_target = ObservedBox(self._logout_confirm_box, sample)
 
             def _logout_state(self):
                 return next(self.states)
@@ -513,6 +518,50 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         self.assertEqual(task.logout_clicks, 1)
         self.assertEqual(task.esc_count, 0)
 
+    def test_logout_deadline_renews_after_each_meaningful_state_transition(self):
+        clock = [0.0]
+        sample = CaptureSample(object(), (0, 0), 10, 'test', 1.0)
+
+        class FakeTask:
+            _switch_to_login = MultiAccountDailyTask._switch_to_login
+
+            def __init__(self):
+                self.states = iter(('main', 'setting', 'confirm', 'login'))
+                self._logout_confirm_box = object()
+                self._logout_confirm_target = ObservedBox(self._logout_confirm_box, sample)
+
+            def _logout_state(self):
+                state = next(self.states)
+                clock[0] += 30
+                return state
+
+            def _find_logout_button_box(self):
+                return object()
+
+            def _click_main_login_box(self, *_args, **_kwargs):
+                return True
+
+            def send_key(self, *_args, **_kwargs):
+                return True
+
+            def sleep(self, _seconds):
+                pass
+
+            def log_info(self, *_args, **_kwargs):
+                pass
+
+            def log_warning(self, *_args, **_kwargs):
+                pass
+
+            def screenshot(self, *_args):
+                pass
+
+            def tr(self, message):
+                return message
+
+        with patch('src.task.MultiAccountDailyTask.time.monotonic', side_effect=lambda: clock[0]):
+            self.assertTrue(FakeTask()._switch_to_login())
+
     def test_logout_stop_exception_propagates_from_state_detection(self):
         class FakeTask:
             _switch_to_login = MultiAccountDailyTask._switch_to_login
@@ -538,6 +587,8 @@ class TestMultiAccountDailyTask(unittest.TestCase):
                 self.states = iter(('confirm',) + ('unknown',) * 20 + ('login',))
                 self.confirm_count = 0
                 self._logout_confirm_box = object()
+                sample = CaptureSample(object(), (0, 0), 10, 'test', 1.0)
+                self._logout_confirm_target = ObservedBox(self._logout_confirm_box, sample)
 
             def _logout_state(self):
                 return next(self.states)
@@ -576,6 +627,8 @@ class TestMultiAccountDailyTask(unittest.TestCase):
                                     'confirm', 'confirm'))
                 self.confirm_count = 0
                 self._logout_confirm_box = object()
+                sample = CaptureSample(object(), (0, 0), 10, 'test', 1.0)
+                self._logout_confirm_target = ObservedBox(self._logout_confirm_box, sample)
 
             def _logout_state(self):
                 return next(self.states)
@@ -1809,6 +1862,113 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         self.assertIs(FakeTask()._find_logout_button_box(), logout_box)
         logout_box.name = '未匹配文字'
         self.assertIsNone(FakeTask()._find_logout_button_box())
+
+    def test_logout_target_uses_power_icon_only_after_same_frame_setting_check(self):
+        frame = type('Frame', (), {'shape': (100, 200, 3)})()
+        sample = CaptureSample(frame, (100, 200), 77, 'foreground_bitblt', 1.0)
+        observed_frames = []
+
+        class FakeTask:
+            _find_logout_button_target = MultiAccountDailyTask._find_logout_button_target
+            _capture_logout_main_sample = lambda self, _session: sample
+
+            @staticmethod
+            def ocr(frame=None):
+                observed_frames.append(('ocr', frame))
+                return []
+
+            @staticmethod
+            def find_boxes(*_args, **_kwargs):
+                return []
+
+            @staticmethod
+            def find_one(name, **kwargs):
+                observed_frames.append((name, kwargs.get('frame')))
+                return object() if name == 'esc_setting' else None
+
+            @staticmethod
+            def box_of_screen(*_args):
+                return object()
+
+        target = FakeTask()._find_logout_button_target(object())
+        self.assertIs(sample, target.sample)
+        self.assertEqual((8, 94), target.box.center())
+        self.assertEqual(
+            [('logout_power_icon', frame), ('ocr', frame), ('esc_setting', frame)],
+            observed_frames,
+        )
+
+    def test_logout_target_prefers_detected_power_icon(self):
+        frame = type('Frame', (), {'shape': (100, 200, 3)})()
+        sample = CaptureSample(frame, (100, 200), 77, 'foreground_bitblt', 1.0)
+        icon = Box(4, 88, 8, 12, name='logout_power_icon')
+        observed_features = []
+
+        class FakeTask:
+            _find_logout_button_target = MultiAccountDailyTask._find_logout_button_target
+            _capture_logout_main_sample = lambda self, _session: sample
+            ocr = staticmethod(lambda frame=None: [])
+            find_boxes = staticmethod(lambda *_args, **_kwargs: [])
+            box_of_screen = staticmethod(lambda *_args: object())
+
+            @staticmethod
+            def find_one(name, **kwargs):
+                observed_features.append((name, kwargs.get('frame')))
+                if name == 'logout_power_icon':
+                    return icon
+                raise AssertionError('setting fallback must not run after icon detection')
+
+        target = FakeTask()._find_logout_button_target(object())
+        self.assertIs(icon, target.box)
+        self.assertIs(sample, target.sample)
+        self.assertEqual([('logout_power_icon', frame)], observed_features)
+
+    def test_logout_target_refuses_power_icon_without_same_frame_setting_check(self):
+        frame = type('Frame', (), {'shape': (100, 200, 3)})()
+        sample = CaptureSample(frame, (100, 200), 77, 'foreground_bitblt', 1.0)
+
+        class FakeTask:
+            _find_logout_button_target = MultiAccountDailyTask._find_logout_button_target
+            _capture_logout_main_sample = lambda self, _session: sample
+            ocr = staticmethod(lambda frame=None: [])
+            find_boxes = staticmethod(lambda *_args, **_kwargs: [])
+            find_one = staticmethod(lambda *_args, **_kwargs: None)
+            box_of_screen = staticmethod(lambda *_args: object())
+            log_warning = staticmethod(lambda *_args, **_kwargs: None)
+
+        self.assertIsNone(FakeTask()._find_logout_button_target(object()))
+
+    def test_logout_state_targets_return_login_text_instead_of_generic_confirm(self):
+        frame = object()
+        sample = CaptureSample(frame, (100, 200), 77, 'foreground_bitblt', 1.0)
+        return_login = Box(80, 50, 30, 10, name='返回登录')
+
+        class FakeTask:
+            _logout_state = MultiAccountDailyTask._logout_state
+            _capture_logout_main_sample = lambda self, _session: sample
+            do_find_account_drop_down = staticmethod(lambda **_kwargs: None)
+            ocr = staticmethod(lambda frame=None: [return_login])
+            box_of_screen = staticmethod(lambda *_args: object())
+
+            @staticmethod
+            def find_boxes(texts, boundary=None, match=None):
+                self.assertIsNotNone(boundary)
+                self.assertEqual(RETURN_LOGIN_TEXTS, match)
+                return [box for box in texts if box.name in match]
+
+            @staticmethod
+            def find_one(name, **_kwargs):
+                if isinstance(name, list):
+                    return Box(10, 10, 20, 10, name='generic-confirm')
+                return None
+
+            wait_feature = staticmethod(lambda *_args, **_kwargs: None)
+            in_team_and_world = staticmethod(lambda **_kwargs: False)
+
+        task = FakeTask()
+        self.assertEqual('confirm', task._logout_state(object()))
+        self.assertIs(return_login, task._logout_confirm_target.box)
+        self.assertIs(sample, task._logout_confirm_target.sample)
 
     def test_click_main_login_box_targets_the_main_hwnd(self):
         class FakeTask:

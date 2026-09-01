@@ -30,6 +30,7 @@ class FakeWin32Api:
         enabled=True,
         iconic=False,
         thread_id=None,
+        class_name="Window",
     ):
         self.windows[hwnd] = {
             "pid": pid,
@@ -41,6 +42,7 @@ class FakeWin32Api:
             "enabled": enabled,
             "iconic": iconic,
             "thread_id": thread_id or (pid + 1000),
+            "class_name": class_name,
         }
 
     def is_window(self, hwnd):
@@ -104,6 +106,9 @@ class FakeWin32Api:
     def window_from_point(self, _point):
         return self.hit
 
+    def window_class(self, hwnd):
+        return self.windows[hwnd]["class_name"]
+
     def send_mouse_click(self, point, virtual_screen):
         self.sent_points.append((point, virtual_screen))
         return self.send_count
@@ -139,6 +144,23 @@ class TestWin32LoginInput(unittest.TestCase):
         self.assertFalse(result.delivered)
         self.assertEqual(result.reason, "point-target-mismatch")
         self.assertEqual(api.sent_points, [])
+
+    def test_click_accepts_same_process_combo_list_popup_over_target(self):
+        api = _ready_api()
+        api.add_window(
+            20,
+            pid=99,
+            rect=(200, 200, 400, 300),
+            root=20,
+            class_name="ComboLBox",
+        )
+        api.hit = 20
+
+        result = send_input_click(10, 99, (250, 250), api=api)
+
+        self.assertTrue(result.delivered)
+        self.assertEqual(result.reason, "delivered")
+        self.assertEqual(result.hit_hwnd, 20)
 
     def test_click_rejects_target_pid_mismatch(self):
         api = _ready_api()

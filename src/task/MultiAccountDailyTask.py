@@ -22,7 +22,7 @@ import re
 import time
 from contextlib import nullcontext
 
-from ok import Logger, TaskDisabledException
+from ok import Box, Logger, TaskDisabledException
 from ok.util.file import get_relative_path, read_json_file, write_json_file
 from src.task.DailyTask import DailyTask, DAILY_PROFILE, LOGOUT_AFTER_DAILY as LOGOUT_AFTER_DAILY_KEY
 from src.task.WWOneTimeTask import WWOneTimeTask
@@ -58,6 +58,8 @@ account_pattern = re.compile(r'\*\*\*\*')
 # 扫码登录的 U 开头账号（如 UTEST1001A，也可能带其他前缀，宽松匹配）
 scan_account_pattern = re.compile(r'^U[a-zA-Z0-9]+$', re.IGNORECASE)
 LOGOUT_TEXTS = ('退出登录', '退出登入', '退出登錄', '登出', 'Log Out', 'Logout')
+RETURN_LOGIN_TEXTS = ('返回登录', '返回登入', '返回登錄', 'Return to Login', 'Return Login')
+LOGOUT_POWER_POSITION = (0.040, 0.942)
 # 方案名中的 11 位手机号
 phone_in_name_pattern = re.compile(r'(1[3-9]\d{9})')
 # 方案短名只匹配开头的完整编号（A1、A3、A10 等），避免 A1 误命中 A10。
@@ -716,6 +718,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             raise
         else:
             self.run_coordinator.request_stop()
+        finally:
+            if daily_task is not None and hasattr(daily_task, '_runtime_status_account'):
+                del daily_task._runtime_status_account
 
     def _run_inner(self):
         # 本轮账号序列（配置）
@@ -1014,9 +1019,11 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             if state in ('confirm', 'setting', 'main') and state != last_meaningful_state:
                 # Retry budgets are consecutive-input budgets per observable
                 # state; moving main -> setting -> confirm starts each budget
-                # afresh.  Input failures do not consume a delivery count.
+                # and the 45-second observation window afresh.  Input failures
+                # do not consume a delivery count.
                 action_counts[state] = 0
                 last_meaningful_state = state
+                deadline = time.monotonic() + 45
             last_state = state
             self.log_info(f'退登状态检查 {check_count}：{state}')
             try:
@@ -1035,8 +1042,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                         break
                     self.log_info('确认框仍在屏幕上，直接重试确认按钮，不发送 ESC')
                     observed = getattr(self, '_logout_confirm_target', None)
-                    confirm_box = observed.box if isinstance(observed, ObservedBox) else getattr(
-                        self, '_logout_confirm_box', None)
+                    confirm_box = observed.box if isinstance(observed, ObservedBox) else None
                     confirmed = self._click_main_login_box(
                         confirm_box,
                         stage='logout_confirm',
@@ -1654,13 +1660,32 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         sample = self._capture_logout_main_sample(capture_session)
         if sample is None:
             return None
+        power_icon = self.find_one('logout_power_icon', threshold=0.6, frame=sample.frame)
+        if power_icon is not None:
+            return ObservedBox(power_icon, sample)
         texts = self.ocr(frame=sample.frame)
         boxes = self.find_boxes(
             texts,
             boundary=self.box_of_screen(0.0, 0.72, 0.35, 1.0),
             match=LOGOUT_TEXTS,
         )
-        return ObservedBox(boxes[0], sample) if boxes else None
+        if boxes:
+            return ObservedBox(boxes[0], sample)
+
+        try:
+            setting = self.find_one('esc_setting', threshold=0.6, frame=sample.frame)
+        except TaskDisabledException:
+            raise
+        except Exception as error:
+            self.log_warning(f'电源图标点击取消：无法在同一帧复核设置页：{error}')
+            return None
+        if setting is None:
+            self.log_warning('电源图标点击取消：当前捕获帧未确认处于 ESC 设置页')
+            return None
+        height, width = sample.frame.shape[:2]
+        x = round(width * LOGOUT_POWER_POSITION[0])
+        y = round(height * LOGOUT_POWER_POSITION[1])
+        return ObservedBox(Box(x - 1, y - 1, 2, 2, name='logout_power_icon'), sample)
 
     def _click_main_login_box(self, box, *, stage, after_sleep=0.5, origin=None):
         """SendInput-click a recognized box from the current main-window frame."""
@@ -1721,6 +1746,23 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             except TypeError:
                 kwargs.pop('frame', None)
                 return method(*args, **kwargs)
+
+        if sample is not None:
+            try:
+                texts = self.ocr(frame=sample.frame)
+                return_login = self.find_boxes(
+                    texts,
+                    boundary=self.box_of_screen(0.45, 0.35, 0.95, 0.85),
+                    match=RETURN_LOGIN_TEXTS,
+                )
+            except TaskDisabledException:
+                raise
+            except Exception:
+                return_login = []
+            if return_login:
+                self._logout_confirm_box = return_login[0]
+                self._logout_confirm_target = ObservedBox(return_login[0], sample)
+                return 'confirm'
 
         confirm = None
         try:
@@ -2135,6 +2177,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             if not callable(binder):
                 raise ConfigIntegrityBlocked('DailyTask cannot bind a verified profile ID')
             binder(profile_name, expected_profile_id=profile_id)
+        if daily_task is not None:
+            daily_task._runtime_status_account = profile_status_label(profile_name)
         self._current_profile_id = profile_id
         return True
 

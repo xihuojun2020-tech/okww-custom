@@ -413,10 +413,11 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             raise
 
     def _publish_daily_stage(self, stage, detail=''):
+        account = getattr(self, '_runtime_status_account', None)
         try:
-            account = short_profile_name(self.get_active_profile_name()) or '账号'
+            account = account or short_profile_name(self.get_active_profile_name()) or '账号'
         except Exception:
-            account = '账号'
+            account = account or '账号'
         publish_task_status(self, account=account, stage=stage, detail=detail)
 
     def _logout_pc_after_daily(self):

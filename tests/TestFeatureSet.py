@@ -9,6 +9,26 @@ from ok.feature.FeatureSet import FeatureSet
 
 
 class TestFeatureSet(unittest.TestCase):
+    def test_logout_power_icon_template_keeps_game_resolution_scale(self):
+        frame = cv2.imread('assets/images/logout_power_icon.png')
+        self.assertEqual((1440, 2560), frame.shape[:2])
+
+        feature_set = FeatureSet(
+            False,
+            'assets/coco_annotations.json',
+            0.002,
+            0.002,
+            default_threshold=0.7,
+        )
+        matches = feature_set.find_one_feature(
+            frame,
+            'logout_power_icon',
+            threshold=0.6,
+        )
+
+        self.assertTrue(matches)
+        self.assertEqual((102, 1357), matches[0].center())
+
     def test_chisa_e2_template_loads_from_current_source_image(self):
         frame = cv2.imread('assets/images/35.png')
         self.assertIsNotNone(frame)

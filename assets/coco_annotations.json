@@ -1379,6 +1379,11 @@
             "id": 273,
             "name": "echo_select_all",
             "supercategory": ""
+        },
+        {
+            "id": 274,
+            "name": "logout_power_icon",
+            "supercategory": ""
         }
     ],
     "images": [
@@ -2587,6 +2592,12 @@
             "file_name": "images/0.png",
             "width": 3840,
             "height": 2160
+        },
+        {
+            "id": 283,
+            "file_name": "images/logout_power_icon.png",
+            "width": 2560,
+            "height": 1440
         }
     ],
     "annotations": [
@@ -6495,6 +6506,21 @@
                 45
             ],
             "area": 2025,
+            "iscrowd": 0,
+            "ignore": 0,
+            "segmentation": []
+        },
+        {
+            "id": 440,
+            "image_id": 283,
+            "category_id": 274,
+            "bbox": [
+                54,
+                1309,
+                96,
+                96
+            ],
+            "area": 9216,
             "iscrowd": 0,
             "ignore": 0,
             "segmentation": []

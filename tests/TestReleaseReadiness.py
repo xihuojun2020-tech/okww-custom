@@ -1,4 +1,5 @@
 import re
+import runpy
 import tempfile
 import unittest
 import zipfile
@@ -50,6 +51,16 @@ class TestReleaseReadiness(unittest.TestCase):
     def test_release_validation_and_package_smoke_scripts_exist(self):
         self.assertTrue(Path("scripts/validate_release.py").is_file())
         self.assertTrue(Path("scripts/package_smoke.py").is_file())
+
+    def test_update_package_includes_logout_feature_and_release_notes(self):
+        sync_items = runpy.run_path("打包更新.py")["SYNC_ITEMS"]
+        for required in (
+            "assets/coco_annotations.json",
+            "assets/images/logout_power_icon.png",
+            "custom_ok/ok/gui/about/AboutTab.py",
+            "更新日志.md",
+        ):
+            self.assertIn(required, sync_items)
 
     def test_release_validator_rejects_mismatched_tag(self):
         from scripts.validate_release import validate_release
