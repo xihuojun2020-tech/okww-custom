@@ -242,6 +242,13 @@ def force_foreground(
         if (foreground_pid == expected_pid
                 and int(api.root_window(foreground) or foreground) == root):
             return ForegroundResult(True, "foreground-ready", target_hwnd, foreground, expected_pid)
+        # Native ComboLBox popups can be owned by the desktop window tree even
+        # though their PID is the game's.  Keeping that verified popup in front
+        # avoids collapsing the open account list before WindowFromPoint and
+        # SendInput validate the intended item.
+        if foreground_pid == expected_pid and api.window_class(foreground) == "ComboLBox":
+            return ForegroundResult(True, "foreground-combo-popup-ready", target_hwnd,
+                                    foreground, expected_pid)
 
     if api.is_iconic(root):
         api.restore_window(root)

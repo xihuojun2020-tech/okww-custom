@@ -155,12 +155,14 @@ class TestWin32LoginInput(unittest.TestCase):
             class_name="ComboLBox",
         )
         api.hit = 20
+        api.foreground = 20
 
         result = send_input_click(10, 99, (250, 250), api=api)
 
         self.assertTrue(result.delivered)
         self.assertEqual(result.reason, "delivered")
         self.assertEqual(result.hit_hwnd, 20)
+        self.assertEqual(api.foreground, 20)
 
     def test_click_rejects_target_pid_mismatch(self):
         api = _ready_api()

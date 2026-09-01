@@ -1739,6 +1739,23 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         task = _fake_login_task(main_texts=['199****0014', '登入'])
         self.assertFalse(MultiAccountDailyTask._account_list_expanded(task))
 
+    def test_active_monitor_capture_ignores_combo_window_tree_for_expansion(self):
+        task = _fake_login_task(main_texts=['199****0014', 'UTEST1002A', '登入'])
+        task._active_account_switch_capture = object()
+        task._login_in_dialog = True
+        task._find_control_hwnd = lambda *_args: self.fail('must not enumerate ComboLBox')
+        task._ocr_login_dialog = lambda: self.fail('must not capture dialog separately')
+
+        self.assertTrue(MultiAccountDailyTask._account_list_expanded(task))
+
+    def test_active_monitor_dropdown_detection_does_not_fall_back_to_dialog(self):
+        task = _fake_login_task(main_texts=[])
+        task._active_account_switch_capture = object()
+        task._login_in_dialog = True
+        task._ocr_login_dialog = lambda: self.fail('must not capture dialog separately')
+
+        self.assertIsNone(MultiAccountDailyTask.do_find_account_drop_down(task))
+
 
     def test_standalone_daily_logout_reuses_multi_account_production_state_machine(self):
         class SwitchTask:
@@ -2200,7 +2217,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         self.assertTrue(task._click_main_login_box(box, stage='logout_confirm', origin=(100, 200)))
         self.assertEqual([(125, 225, 0.5, 10)], clicks)
 
-    def test_foreground_capture_failure_falls_back_to_wgc(self):
+    def test_active_monitor_capture_failure_does_not_fall_back_to_wgc(self):
         class Session:
             last_reason = 'pure-color-frame'
 
@@ -2229,15 +2246,14 @@ class TestMultiAccountDailyTask(unittest.TestCase):
 
             @staticmethod
             def next_frame():
-                return object()
+                raise AssertionError('active account switch must not fall back to WGC')
 
             @staticmethod
             def log_warning(_message):
                 pass
 
         sample = FakeTask()._capture_logout_main_sample(Session())
-        self.assertEqual('wgc', sample.source)
-        self.assertEqual((100, 200), sample.origin)
+        self.assertIsNone(sample)
 
     def test_active_account_switch_capture_drives_main_ocr(self):
         frame = object()
