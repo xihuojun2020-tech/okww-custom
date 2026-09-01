@@ -10,9 +10,15 @@ class TestReleaseReadiness(unittest.TestCase):
     def test_version_and_release_notes_are_synchronized(self):
         version = re.search(r'version\s*=\s*"([0-9]+\.[0-9]{2}\.[0-9]{2})"',
                             Path("config.py").read_text(encoding="utf-8")).group(1)
+        changelog = Path("更新日志.md").read_text(encoding="utf-8")
+        about = Path("custom_ok/ok/gui/about/AboutTab.py").read_text(encoding="utf-8")
         self.assertRegex(version, r"^[0-9]+\.[0-9]{2}\.[0-9]{2}$")
-        self.assertIn(version, Path("更新日志.md").read_text(encoding="utf-8"))
-        self.assertIn(f"V{version}", Path("custom_ok/ok/gui/about/AboutTab.py").read_text(encoding="utf-8"))
+        self.assertEqual(version, "1.22.03")
+        self.assertIn(version, changelog)
+        self.assertIn(f"V{version}", about)
+        for theme in ("Foreground BitBlt", "WGC", "点击连接", "SendInput"):
+            self.assertIn(theme, changelog)
+            self.assertIn(theme, about)
 
     def test_sensitive_runtime_boundaries_are_ignored(self):
         ignored = Path(".gitignore").read_text(encoding="utf-8")
