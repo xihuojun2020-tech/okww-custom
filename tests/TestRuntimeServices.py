@@ -44,12 +44,22 @@ class TestRuntimeServices(unittest.TestCase):
     def test_login_flow_orchestrates_the_existing_task_primitives(self):
         events = []
 
+        class CaptureSession:
+            def __enter__(self):
+                events.append("capture_enter")
+                return self
+
+            def __exit__(self, *_args):
+                events.append("capture_exit")
+
         class Task:
             executor = None
             logged_in = True
+            _active_account_switch_capture = None
 
             def _guard_account_transition(self): events.append("guard")
             def _begin_account_switch_evidence(self, target): events.append(("begin", target))
+            def _create_account_switch_capture_session(self): return CaptureSession()
             def do_find_account_drop_down(self): return object()
             def _evidence_stage(self, stage): events.append(stage)
             def _wait_login_screen_stable(self, time_out): events.append(("wait", time_out))
@@ -67,6 +77,41 @@ class TestRuntimeServices(unittest.TestCase):
         self.assertIn(("login", "a3"), events)
         self.assertIn(("finish", True), events)
         self.assertFalse(task.logged_in)
+        self.assertIsNone(task._active_account_switch_capture)
+        self.assertLess(events.index("capture_enter"), events.index(("wait", 120)))
+        self.assertGreater(events.index("capture_exit"), events.index(("main", 180)))
+
+    def test_login_flow_cleans_capture_session_after_failure(self):
+        events = []
+
+        class CaptureSession:
+            def __enter__(self):
+                events.append("capture_enter")
+                return self
+
+            def __exit__(self, *_args):
+                events.append("capture_exit")
+
+        class Task:
+            executor = None
+            logged_in = True
+            _active_account_switch_capture = None
+
+            def _guard_account_transition(self): pass
+            def _begin_account_switch_evidence(self, _target): pass
+            def _create_account_switch_capture_session(self): return CaptureSession()
+            def do_find_account_drop_down(self): return object()
+            def _evidence_stage(self, _stage): pass
+            def _wait_login_screen_stable(self, time_out):
+                raise RuntimeError(f"wait failed after {time_out}")
+            def _finish_account_switch_evidence(self, *_args, **_kwargs): return None
+
+        task = Task()
+        with self.assertRaises(RuntimeError):
+            LoginFlowService(task).switch_to_account("a3")
+
+        self.assertEqual(["capture_enter", "capture_exit"], events)
+        self.assertIsNone(task._active_account_switch_capture)
 
 
 if __name__ == "__main__":

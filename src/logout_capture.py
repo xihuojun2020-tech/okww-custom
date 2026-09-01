@@ -1,4 +1,4 @@
-"""Task-scoped foreground capture used only during PC logout observation."""
+"""Task-scoped foreground capture used during one PC account transition."""
 
 from dataclasses import dataclass
 import time
@@ -22,7 +22,7 @@ class ObservedBox:
     sample: CaptureSample
 
 
-class LogoutCaptureSession:
+class AccountSwitchCaptureSession:
     def __init__(self, hwnd_window, exit_event, capture_factory=ForegroundBitBltCaptureMethod):
         self.hwnd_window = hwnd_window
         self.exit_event = exit_event
@@ -80,3 +80,7 @@ class LogoutCaptureSession:
     def __exit__(self, exc_type, exc_value, traceback):
         self.close()
         return False
+
+
+# Compatibility for the already released logout-only callers and tests.
+LogoutCaptureSession = AccountSwitchCaptureSession

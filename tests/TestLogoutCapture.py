@@ -3,7 +3,7 @@ import unittest
 
 import numpy as np
 
-from src.logout_capture import LogoutCaptureSession
+from src.logout_capture import AccountSwitchCaptureSession, LogoutCaptureSession
 
 
 class FakeHwndWindow:
@@ -32,6 +32,9 @@ class FakeCapture:
 
 
 class TestLogoutCapture(unittest.TestCase):
+    def test_logout_name_remains_a_compatibility_alias(self):
+        self.assertIs(AccountSwitchCaptureSession, LogoutCaptureSession)
+
     def test_valid_foreground_frame_returns_live_origin(self):
         frame = np.zeros((100, 200, 3), dtype=np.uint8)
         frame[20:40, 30:60] = 255

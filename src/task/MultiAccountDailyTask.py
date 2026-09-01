@@ -50,7 +50,7 @@ from src.runtime.account_runtime_bootstrap import (
     require_account_runtime_for_task,
 )
 from src.task_status import publish_task_status
-from src.logout_capture import CaptureSample, LogoutCaptureSession, ObservedBox
+from src.logout_capture import AccountSwitchCaptureSession, CaptureSample, ObservedBox
 
 logger = Logger.get_logger(__name__)
 
@@ -136,6 +136,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         self.account_verification_service = AccountVerificationService(
             self.account_selection_service, strict_feature_code=False)
         self.login_flow_service = LoginFlowService(self)
+        self._active_account_switch_capture = None
         # 当前执行序列（账号归属序列，序列列表来自 daily_profiles 的 sequences，可在下方管理增删）
         self.default_config[CURRENT_SEQUENCE] = '序列1'
         self.config_description[CURRENT_SEQUENCE] = '当前执行的账号序列（按该序列的账号执行；序列可增删）'
@@ -1007,8 +1008,13 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         last_meaningful_state = None
         check_count = 0
         action_counts = {'confirm': 0, 'setting': 0, 'main': 0}
+        active_capture = getattr(self, '_active_account_switch_capture', None)
         session_factory = getattr(self, '_create_logout_capture_session', None)
-        session_context = session_factory() if callable(session_factory) else nullcontext(None)
+        session_context = (
+            nullcontext(active_capture)
+            if active_capture is not None
+            else (session_factory() if callable(session_factory) else nullcontext(None))
+        )
         with session_context as capture_session:
           while time.monotonic() < deadline:
             check_count += 1
@@ -1615,14 +1621,27 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             self.log_warning(f'退出登录按钮 OCR 失败：{error}')
             return None
 
-    def _create_logout_capture_session(self):
+    def _create_account_switch_capture_session(self):
         if getattr(self, '_android_boundary', lambda: None)() is not None:
             return nullcontext(None)
-        try:
-            return LogoutCaptureSession(self.hwnd, self.executor.exit_event)
-        except Exception as error:
-            self.log_warning(f'退登前台截图初始化失败，保留 WGC：{error}')
+        executor = getattr(self, 'executor', None)
+        device_manager = getattr(executor, 'device_manager', None)
+        hwnd_window = getattr(device_manager, 'hwnd_window', None)
+        exit_event = getattr(executor, 'exit_event', None)
+        if hwnd_window is None or exit_event is None:
             return nullcontext(None)
+        try:
+            return AccountSwitchCaptureSession(hwnd_window, exit_event)
+        except Exception as error:
+            try:
+                self.log_warning(f'账号切换前台截图初始化失败，保留 WGC：{error}')
+            except Exception:
+                pass
+            return nullcontext(None)
+
+    def _create_logout_capture_session(self):
+        """Compatibility wrapper for focused logout tests and older callers."""
+        return self._create_account_switch_capture_session()
 
     def _capture_logout_main_sample(self, capture_session):
         main_hwnd, _pid = self._main_window_identity()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from typing import Any
 
 from ok import TaskDisabledException
@@ -30,30 +31,37 @@ class LoginFlowService:
             mouse_reset_was_enabled = mouse_reset_task.enabled if mouse_reset_task else False
             if mouse_reset_was_enabled:
                 mouse_reset_task.disable()
-            if task.do_find_account_drop_down() is None:
+            capture_factory = getattr(task, "_create_account_switch_capture_session", None)
+            capture_context = capture_factory() if callable(capture_factory) else nullcontext(None)
+            with capture_context as capture_session:
+                task._active_account_switch_capture = capture_session
                 try:
-                    in_team = bool(task.in_team()[0])
-                except TaskDisabledException:
-                    raise
-                except Exception:
-                    in_team = False
-                if in_team:
-                    task.log_info("检测到仍在游戏世界内，先退登再执行账号切换")
-                    task._evidence_stage("logout_from_world")
-                    task._switch_to_login()
-            task._evidence_stage("wait_login_screen")
-            task._wait_login_screen_stable(time_out=120)
-            task._evidence_stage("select_account")
-            task._select_account_with_retry(target, max_retries=max_retries)
-            task.sleep(4)
-            task._evidence_stage("verify_before_login")
-            task._click_login_for_target(target)
-            task.logged_in = False
-            task._evidence_stage("ensure_main")
-            task.ensure_main(time_out=180)
-            task.log_info(f"已登录: {target}")
-            task._finish_account_switch_evidence(True)
-            return target
+                    if task.do_find_account_drop_down() is None:
+                        try:
+                            in_team = bool(task.in_team()[0])
+                        except TaskDisabledException:
+                            raise
+                        except Exception:
+                            in_team = False
+                        if in_team:
+                            task.log_info("检测到仍在游戏世界内，先退登再执行账号切换")
+                            task._evidence_stage("logout_from_world")
+                            task._switch_to_login()
+                    task._evidence_stage("wait_login_screen")
+                    task._wait_login_screen_stable(time_out=120)
+                    task._evidence_stage("select_account")
+                    task._select_account_with_retry(target, max_retries=max_retries)
+                    task.sleep(4)
+                    task._evidence_stage("verify_before_login")
+                    task._click_login_for_target(target)
+                    task.logged_in = False
+                    task._evidence_stage("ensure_main")
+                    task.ensure_main(time_out=180)
+                    task.log_info(f"已登录: {target}")
+                    task._finish_account_switch_evidence(True)
+                    return target
+                finally:
+                    task._active_account_switch_capture = None
         except TaskDisabledException as error:
             event_dir = task._finish_account_switch_evidence(
                 False, str(error), stage="stopped", stopped=True)
