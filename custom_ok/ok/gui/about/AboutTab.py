@@ -46,6 +46,7 @@ class AboutTab(Tab):
             except Exception:
                 pass
             update_log_text.setPlainText(upstream_note + self.tr(
+                'V1.22.06：修复账号切换 OCR 全角字符兼容：账号身份统一执行 Unicode NFKC 归一化；KURO 公告等启动器强特征优先于普通登录文字判断，检测到启动器时明确停止，不再误报账号下拉框超时。\n'
                 'V1.22.05：加速多账号退登观察：设置页、电源按钮和世界状态优先复用同一张整屏 BitBlt 帧进行模板识别，“返回登录”只 OCR 右侧按钮区域；只有这些状态均未命中才执行登录整屏 OCR，并移除 ESC 与电源点击后重复的第二个 1 秒等待。\n'
                 'V1.22.04：修复整显示器 BitBlt 返回 BGRA 四通道图像导致 OCR 在打开账号下拉列表前异常；现在统一转换为三通道 BGR，整屏坐标、前台校验和 SendInput 路径保持不变。\n'
                 'V1.22.03：账号切换期间强制鸣潮前台并用 Foreground BitBlt 捕获游戏所在整块显示器；组合登录窗口和 ComboLBox 统一从最终桌面图像识别，坐标使用显示器原点；失败时不回退 WGC，所有点击继续使用校验后的 SendInput，并保留“点击连接”精确识别，状态与日志只显示 A3/A4 等短名。\n'

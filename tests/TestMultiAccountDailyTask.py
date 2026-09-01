@@ -1772,6 +1772,76 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         task = _fake_login_task(main_texts=['KURO GAMES', '公告', '修复'])
         self.assertIsNone(MultiAccountDailyTask.do_find_account_drop_down(task))
 
+    def test_fullwidth_u_login_identity_is_counted_as_account_entry(self):
+        task = _fake_login_task(main_texts=['ＵＴＥＳＴ０００３Ａ', 'UTEST1002A', '登入'])
+        self.assertTrue(MultiAccountDailyTask._account_list_expanded(task))
+
+    def test_launcher_strong_features_win_over_login_and_account_text(self):
+        texts = [
+            AccountBox('KUROGAMES'),
+            AccountBox('公告'),
+            AccountBox('登录'),
+            AccountBox('ＵTEST0003A'),
+        ]
+        self.assertTrue(MultiAccountDailyTask._is_launcher_texts(texts))
+
+    def test_wait_login_rejects_launcher_before_login_feature_count(self):
+        texts = [AccountBox('KUROGAMES'), AccountBox('公告'), AccountBox('登录')]
+        account = AccountBox('ＵTEST0003A')
+
+        class Window:
+            exists = True
+            visible = True
+
+        class FakeTask:
+            _wait_login_screen_stable = MultiAccountDailyTask._wait_login_screen_stable
+            _is_launcher_texts = staticmethod(MultiAccountDailyTask._is_launcher_texts)
+            hwnd = Window()
+            _active_account_switch_capture = object()
+
+            @staticmethod
+            def _ocr_account_switch_main():
+                return texts, None
+
+            @staticmethod
+            def _find_connect_target(_sample, _texts):
+                return None
+
+            @staticmethod
+            def _login_screen_feature_count(_texts):
+                return 1
+
+            @staticmethod
+            def do_find_account_drop_down():
+                return account
+
+            @staticmethod
+            def wait_until(callback, **_kwargs):
+                return callback()
+
+            @staticmethod
+            def sleep(_seconds):
+                pass
+
+            @staticmethod
+            def log_info(*_args, **_kwargs):
+                pass
+
+            @staticmethod
+            def log_error(*_args, **_kwargs):
+                pass
+
+            @staticmethod
+            def screenshot(*_args, **_kwargs):
+                pass
+
+            @staticmethod
+            def tr(message):
+                return message
+
+        with self.assertRaisesRegex(Exception, 'launcher'):
+            FakeTask()._wait_login_screen_stable(time_out=1, settle=0)
+
     def test_account_list_expanded_true_with_two_entries(self):
         task = _fake_login_task(main_texts=['199****0014', 'UTEST1002A', '登入'])
         self.assertTrue(MultiAccountDailyTask._account_list_expanded(task))

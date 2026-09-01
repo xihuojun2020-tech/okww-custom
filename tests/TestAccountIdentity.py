@@ -5,6 +5,7 @@ from src.account_identity import (
     extract_account_identity,
     match_profile_identity,
     masked_phone,
+    normalize_identity,
     resolve_profile_identity,
     resolve_profile_short_names,
     short_profile_name,
@@ -62,6 +63,12 @@ class TestAccountIdentity(unittest.TestCase):
         self.assertEqual("A1", match_profile_identity("UTEST0001A", profiles))
         self.assertIsNone(match_profile_identity("FC-A1", profiles))
         self.assertEqual("A1", match_profile_identity("FC-A1", profiles, strict_feature_code=True))
+
+    def test_fullwidth_login_identity_matches_ascii_profile(self):
+        profiles = {"A3": {"alternate_login_name": "UTEST0003A"}}
+
+        self.assertEqual("utest0003a", normalize_identity("ＵＴＥＳＴ０００３Ａ"))
+        self.assertEqual("A3", resolve_profile_identity("ＵTEST0003A", profiles))
 
 
 if __name__ == "__main__":

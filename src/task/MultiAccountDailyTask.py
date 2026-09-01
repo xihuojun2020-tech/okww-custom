@@ -35,6 +35,7 @@ from src.win32_login_input import force_foreground, send_input_click
 from src.account_identity import (
     AccountIdentityError,
     masked_phone as _masked_phone,
+    normalize_identity as _normalize_identity,
     resolve_profile_short_names as _resolve_profile_short_names,
     short_profile_name as _short_profile_name,
 )
@@ -81,7 +82,13 @@ def normalize_account_name(account):
     """账号归一化（掩码/别名匹配用）：小写、0→o、.con→.com。"""
     if not account:
         return account
-    return account.lower().replace('0', 'o').replace('.con', '.com')
+    return _normalize_identity(account).replace('0', 'o').replace('.con', '.com')
+
+
+def _looks_like_login_identity(name):
+    """在快速正则判断前统一兼容 OCR 输出的全角字母和数字。"""
+    value = _normalize_identity(name)
+    return bool(value and (account_pattern.search(value) or scan_account_pattern.match(value)))
 
 
 def masked_phone(phone):
@@ -109,10 +116,10 @@ def _publish_status_safe(task, **values):
 
 def _is_login_identity(task, name):
     """兼容最小化测试替身地判断账号身份；歧义异常继续向上传播。"""
-    value = (name or '').strip()
+    value = _normalize_identity(name)
     if not value:
         return False
-    if account_pattern.search(value) or scan_account_pattern.match(value):
+    if _looks_like_login_identity(value):
         return True
     matcher = getattr(task, 'match_profile_from_login', None)
     return bool(callable(matcher) and matcher(value) is not None)
@@ -626,10 +633,10 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _is_login_account_text(self, name):
         """判断 OCR 文本是否可能是账号身份（含备用识别名）。"""
-        value = (name or '').strip()
+        value = _normalize_identity(name)
         if not value:
             return False
-        if account_pattern.search(value) or scan_account_pattern.match(value):
+        if _looks_like_login_identity(value):
             return True
         return _is_login_identity(self, value)
 
@@ -1203,6 +1210,14 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     continue
                 reader = getattr(self, '_ocr_account_switch_main', None)
                 texts, main_sample = reader() if callable(reader) else (self.ocr(), None)
+                # 启动器可能同时显示账号和“登录”字样；强特征必须先于普通登录特征。
+                if texts and self._is_launcher_texts(texts):
+                    self.log_error('检测到启动器界面（退过头到启动器），请手动重新进入游戏后再试')
+                    try:
+                        self.screenshot('multi')
+                    except Exception:
+                        pass
+                    raise Exception(self.tr('Logged out to launcher, please re-enter the game'))
                 connect_target = self._find_connect_target(main_sample, texts)
                 if connect_target is not None:
                     if connect_attempts < 3:
@@ -1252,14 +1267,6 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                         )
                     self.log_info(f'已通过登录对话框窗口识别到登录界面（OCR {len(dlg_texts)} 文本）')
                     break
-                # 启动器兜底：退过头回到启动器（KURO GAMES 启动器界面，无登录特征）
-                if texts and self._is_launcher_texts(texts):
-                    self.log_error('检测到启动器界面（退过头到启动器），请手动重新进入游戏后再试')
-                    try:
-                        self.screenshot('multi')
-                    except Exception:
-                        pass
-                    raise Exception(self.tr('Logged out to launcher, please re-enter the game'))
                 now = time.monotonic()
                 if now - last_log >= 30:
                     last_log = now
@@ -1295,15 +1302,10 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     @staticmethod
     def _is_launcher_texts(texts):
-        """启动器界面特征：含 KURO GAMES 且无登录特征（登录文本/U账号）。"""
-        joined = ' '.join((t.name or '') for t in texts) if texts else ''
-        if 'kuro' not in joined.lower() or not joined:
-            return False
-        if any((t.name or '') in ('登录', '登入', 'Log') for t in texts):
-            return False
-        if any(scan_account_pattern.match((t.name or '').strip()) for t in texts):
-            return False
-        return True
+        """启动器强特征：KURO 与至少一个启动器专属文字同时出现。"""
+        joined = _normalize_identity(' '.join((t.name or '') for t in texts)) if texts else ''
+        markers = ('公告', '修复', 'cn_windows product', '启动游戏', '开始游戏')
+        return 'kuro' in joined and any(marker in joined for marker in markers)
 
     def _find_login_dialog(self):
         """找可见的 #32770 登录对话框，返回 (hwnd, (left, top, right, bottom)) 或 (0, None)。
@@ -2385,7 +2387,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             except Exception:
                 mapped_profile = None
                 matched = False
-            is_account_text = bool(account_pattern.search(name) or scan_account_pattern.match(name))
+            is_account_text = _looks_like_login_identity(name)
             if is_account_text or mapped_profile:
                 accounts.append(account)
             if matched:

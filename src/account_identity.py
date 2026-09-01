@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -33,7 +34,8 @@ class AccountIdentity:
 
 
 def normalize_identity(value: Any) -> str:
-    return " ".join(str("" if value is None else value).split()).casefold()
+    text = unicodedata.normalize("NFKC", str("" if value is None else value))
+    return " ".join(text.split()).casefold()
 
 
 def split_identity_values(value: Any) -> list[str]:
