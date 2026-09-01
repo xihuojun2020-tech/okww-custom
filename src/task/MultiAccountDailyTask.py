@@ -1094,7 +1094,6 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     ) if logout_box is not None else False
                     if delivered is not False:
                         action_counts[state] += 1
-                    self.sleep(1)
                     continue
                 if state == 'main':
                     if action_counts[state] >= 3:
@@ -1104,7 +1103,6 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     delivered = self.send_key('esc', after_sleep=1)
                     if delivered is not False:
                         action_counts[state] += 1
-                    self.sleep(1)
                     continue
                 # 短暂无 OCR/窗口转换属于可恢复状态；只等待很短时间后
                 # 重新识别，不在未知状态发键或点击。
@@ -1781,14 +1779,6 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         power_icon = self.find_one('logout_power_icon', threshold=0.6, frame=sample.frame)
         if power_icon is not None:
             return ObservedBox(power_icon, sample)
-        texts = self.ocr(frame=sample.frame)
-        boxes = self.find_boxes(
-            texts,
-            boundary=self.box_of_screen(0.0, 0.72, 0.35, 1.0),
-            match=LOGOUT_TEXTS,
-        )
-        if boxes:
-            return ObservedBox(boxes[0], sample)
 
         try:
             setting = self.find_one('esc_setting', threshold=0.6, frame=sample.frame)
@@ -1838,18 +1828,6 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         state would dismiss the dialog and waste a retry (and can change the
         meaning of the next click).
         """
-        try:
-            try:
-                login_hit = self.do_find_account_drop_down(prefer_dialog=True)
-            except TypeError:
-                login_hit = self.do_find_account_drop_down()
-            if login_hit is not None:
-                return 'login'
-        except TaskDisabledException:
-            raise
-        except Exception:
-            pass
-
         self._logout_confirm_box = None
         self._logout_confirm_target = None
         capture_helper = getattr(self, '_capture_logout_main_sample', None)
@@ -1867,10 +1845,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
         if sample is not None:
             try:
-                texts = self.ocr(frame=sample.frame)
-                return_login = self.find_boxes(
-                    texts,
-                    boundary=self.box_of_screen(0.45, 0.35, 0.95, 0.85),
+                return_login = self.ocr(
+                    0.50, 0.52, 0.80, 0.72,
+                    frame=sample.frame,
                     match=RETURN_LOGIN_TEXTS,
                 )
             except TaskDisabledException:
@@ -1935,6 +1912,21 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 in_world = self.in_team_and_world()
             if in_world:
                 return 'main'
+        except TaskDisabledException:
+            raise
+        except Exception:
+            pass
+
+        # Full-monitor login OCR is the expensive fallback.  The normal logout
+        # path resolves through the small return-login ROI or existing visual
+        # features before account text is considered.
+        try:
+            try:
+                login_hit = self.do_find_account_drop_down(prefer_dialog=True)
+            except TypeError:
+                login_hit = self.do_find_account_drop_down()
+            if login_hit is not None:
+                return 'login'
         except TaskDisabledException:
             raise
         except Exception:
