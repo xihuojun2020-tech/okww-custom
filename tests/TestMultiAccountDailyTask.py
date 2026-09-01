@@ -2276,6 +2276,94 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         self.assertEqual(['foreground'], texts)
         self.assertIs(sample, observed)
 
+    def test_wait_login_retries_exact_connect_entry_until_login_appears(self):
+        connect = AccountBox('点击连接', x=1000, y=1300, width=200, height=60)
+        login = AccountBox('登录', x=1000, y=800, width=120, height=50)
+        account = AccountBox('199****0001', x=900, y=700)
+        sample = CaptureSample(object(), (0, 0), 77, 'foreground_bitblt', 1.0)
+
+        class Window:
+            exists = True
+            visible = True
+
+        class FakeTask:
+            _wait_login_screen_stable = MultiAccountDailyTask._wait_login_screen_stable
+            _find_connect_target = MultiAccountDailyTask._find_connect_target
+            hwnd = Window()
+            _login_in_dialog = False
+
+            def __init__(self):
+                self.frames = [([connect], sample), ([connect], sample), ([login, account], sample)]
+                self.clicks = 0
+                self.evidence = []
+
+            @staticmethod
+            def _ocr_login_dialog():
+                return None
+
+            def _ocr_account_switch_main(self):
+                return self.frames.pop(0)
+
+            @staticmethod
+            def _connect_button_boxes(texts, boundary=None):
+                return [box for box in texts or [] if box.name == '点击连接']
+
+            @staticmethod
+            def box_of_screen(*_args, **_kwargs):
+                return object()
+
+            @staticmethod
+            def _login_screen_feature_count(texts):
+                return int(any(box.name == '登录' for box in texts or []))
+
+            def _click_main_login_box(self, box, **_kwargs):
+                self.clicks += 1
+                return box.name == '点击连接'
+
+            def _evidence_stage(self, stage, **kwargs):
+                self.evidence.append((stage, kwargs))
+
+            @staticmethod
+            def _is_launcher_texts(_texts):
+                return False
+
+            @staticmethod
+            def do_find_account_drop_down():
+                return account
+
+            @staticmethod
+            def wait_until(callback, **_kwargs):
+                return callback()
+
+            @staticmethod
+            def sleep(_seconds):
+                pass
+
+            @staticmethod
+            def log_info(*_args, **_kwargs):
+                pass
+
+            @staticmethod
+            def log_warning(*_args, **_kwargs):
+                pass
+
+            @staticmethod
+            def log_error(*_args, **_kwargs):
+                pass
+
+            @staticmethod
+            def screenshot(*_args, **_kwargs):
+                pass
+
+            @staticmethod
+            def tr(message):
+                return message
+
+        task = FakeTask()
+        self.assertIs(account, task._wait_login_screen_stable(time_out=10, settle=0))
+        self.assertEqual(2, task.clicks)
+        self.assertTrue(any(stage == 'connect_entry_confirmed' for stage, _ in task.evidence))
+
     def test_main_login_click_uses_foreground_sample_origin(self):
         frame = object()
         box = AccountBox('登录', x=10, y=20, width=30, height=10)

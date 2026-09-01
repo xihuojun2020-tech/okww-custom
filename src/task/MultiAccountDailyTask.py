@@ -1126,10 +1126,23 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         except Exception:
             pass
         try:
-            count += len(self.find_boxes(texts, LOGIN_TEXTS))
+            exact = getattr(self, '_exact_login_button_boxes', None)
+            login_boxes = exact(texts) if callable(exact) else self.find_boxes(texts, LOGIN_TEXTS)
+            count += len(login_boxes or [])
         except Exception:
             pass
         return count
+
+    def _find_connect_target(self, sample, texts):
+        """Return an exact bottom-center connect entry bound to its sample."""
+        if sample is None or not texts:
+            return None
+        finder = getattr(self, '_connect_button_boxes', None)
+        if not callable(finder):
+            return None
+        boundary = self.box_of_screen(0.25, 0.75, 0.75, 1.0)
+        boxes = finder(texts, boundary=boundary)
+        return ObservedBox(boxes[0], sample) if boxes else None
 
     def _wait_login_screen_stable(self, time_out=120, settle=2):
         """抗闪烁等待登录界面稳定。
@@ -1147,6 +1160,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         self.log_info(f'等待登录界面（宽松探测，超时 {time_out}s，容忍闪烁/暗屏）')
         deadline = time.monotonic() + time_out
         last_log = 0.0
+        connect_attempts = 0
+        connect_exhausted_logged = False
         while time.monotonic() < deadline:
             try:
                 sample = getattr(self, '_evidence_sample', None)
@@ -1173,14 +1188,54 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     self.sleep(1)
                     continue
                 reader = getattr(self, '_ocr_account_switch_main', None)
-                texts, _sample = reader() if callable(reader) else (self.ocr(), None)
+                texts, main_sample = reader() if callable(reader) else (self.ocr(), None)
+                connect_target = self._find_connect_target(main_sample, texts)
+                if connect_target is not None:
+                    if connect_attempts < 3:
+                        connect_attempts += 1
+                        delivered = self._click_main_login_box(
+                            connect_target.box,
+                            stage='connect_entry',
+                            after_sleep=1,
+                            origin=connect_target.sample.origin,
+                        )
+                        record_stage = getattr(self, '_evidence_stage', None)
+                        if callable(record_stage):
+                            record_stage(
+                                'connect_entry_result',
+                                attempt=connect_attempts,
+                                detail=f'delivered={bool(delivered)},confirmed=False',
+                            )
+                        self.log_info(
+                            f'点击连接入口第 {connect_attempts}/3 次投递；'
+                            f'等待新帧确认界面转换'
+                        )
+                        self.sleep(1)
+                        continue
+                    if not connect_exhausted_logged:
+                        connect_exhausted_logged = True
+                        self.log_warning('点击连接入口连续 3 次未消失，停止重复点击并等待超时')
                 if self._login_screen_feature_count(texts) > 0:
                     self._login_in_dialog = False
+                    record_stage = getattr(self, '_evidence_stage', None)
+                    if connect_attempts and callable(record_stage):
+                        record_stage(
+                            'connect_entry_confirmed',
+                            attempt=connect_attempts,
+                            detail='delivered=True,confirmed=True',
+                        )
                     break
                 if dlg_texts is None:
                     dlg_texts = self._ocr_login_dialog()
                 if dlg_texts and self._login_screen_feature_count(dlg_texts) > 0:
                     self._login_in_dialog = True
+                    record_stage = getattr(self, '_evidence_stage', None)
+                    if connect_attempts and callable(record_stage):
+                        record_stage(
+                            'connect_entry_confirmed',
+                            attempt=connect_attempts,
+                            detail='delivered=True,confirmed=True,window=dialog',
+                        )
                     self.log_info(f'已通过登录对话框窗口识别到登录界面（OCR {len(dlg_texts)} 文本）')
                     break
                 # 启动器兜底：退过头回到启动器（KURO GAMES 启动器界面，无登录特征）
@@ -1574,10 +1629,12 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         except Exception as e:
             self.log_warning(f'登录按钮 OCR 失败：{e}')
             return False
-        login_boxes = self.find_boxes(
-            texts,
-            boundary=self.box_of_screen(0.3, 0.3, 0.7, 0.8),
-            match=LOGIN_TEXTS,
+        boundary = self.box_of_screen(0.3, 0.3, 0.7, 0.8)
+        exact = getattr(self, '_exact_login_button_boxes', None)
+        login_boxes = (
+            exact(texts, boundary=boundary)
+            if callable(exact)
+            else self.find_boxes(texts, boundary=boundary, match=LOGIN_TEXTS)
         )
         if not login_boxes:
             self.log_warning('登录按钮点击取消：当前 OCR 帧未找到登录按钮')
@@ -2067,7 +2124,11 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             return False
         try:
             texts = self.ocr(frame=frame)
-            login_boxes = self.find_boxes(texts, LOGIN_TEXTS)
+            exact = getattr(self, '_exact_login_button_boxes', None)
+            login_boxes = (
+                exact(texts)
+                if callable(exact) else self.find_boxes(texts, LOGIN_TEXTS)
+            )
             if not login_boxes:
                 self.log_warning('登录对话框里未找到「登录」按钮')
                 return False
@@ -2823,7 +2884,11 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         """
         def judge(texts, in_dialog):
             structural = list(self.find_boxes(texts, account_pattern))
-            login_boxes = self.find_boxes(texts, LOGIN_TEXTS)
+            exact = getattr(self, '_exact_login_button_boxes', None)
+            login_boxes = (
+                exact(texts)
+                if callable(exact) else self.find_boxes(texts, LOGIN_TEXTS)
+            )
             entries = structural + [
                 t for t in (texts or [])
                 if t not in structural and _is_login_identity(self, (t.name or '').strip())

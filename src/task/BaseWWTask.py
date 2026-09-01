@@ -18,6 +18,16 @@ logger = Logger.get_logger(__name__)
 number_re = re.compile(r'(\d+)')
 stamina_re = re.compile(r'(\d+)/(\d+)')
 LOGIN_TEXTS = ["登录", re.compile('Log', re.IGNORECASE), '登入']
+CONNECT_TEXTS = [
+    '点击连接',
+    '點擊連接',
+    re.compile(r'Click\s+(?:to\s+)?(?:Connect|Start)', re.IGNORECASE),
+]
+LOGIN_BUTTON_RE = re.compile(r'^(?:登录|登入|登錄|Log\s*In)$', re.IGNORECASE)
+CONNECT_BUTTON_RE = re.compile(
+    r'^(?:点击连接|點擊連接|Click\s+(?:to\s+)?(?:Connect|Start))$',
+    re.IGNORECASE,
+)
 LOGIN_CLICK_SETTLE_TIME = 4  # seconds; keep below AutoLoginTask trigger_interval (5) so triggers don't overlap
 f_white_color = {
     'r': (235, 255),  # Red range
@@ -792,6 +802,22 @@ class BaseWWTask(BaseTask):
             self.sleep(after_sleep)
         return True
 
+    def _exact_login_button_boxes(self, texts, boundary=None):
+        """Return only complete login-button labels, never status text."""
+        candidates = self.find_boxes(texts, boundary=boundary, match=LOGIN_TEXTS) or []
+        return [
+            box for box in candidates
+            if LOGIN_BUTTON_RE.fullmatch((getattr(box, 'name', '') or '').strip())
+        ]
+
+    def _connect_button_boxes(self, texts, boundary=None):
+        """Return exact title-screen connect entries inside the requested area."""
+        candidates = self.find_boxes(texts, boundary=boundary, match=CONNECT_TEXTS) or []
+        return [
+            box for box in candidates
+            if CONNECT_BUTTON_RE.fullmatch((getattr(box, 'name', '') or '').strip())
+        ]
+
     def wait_login(self):
         if not self.logged_in:
             if self.in_team_and_world():
@@ -805,16 +831,18 @@ class BaseWWTask(BaseTask):
             texts = self.ocr(log=self.debug)
 
             login_box = self.box_of_screen(0.3, 0.3, 0.7, 0.7, hcenter=True, vcenter=True)
-            if login := self.find_boxes(texts,
-                                        boundary=login_box,
-                                        match=LOGIN_TEXTS):
+            connect_box = self.box_of_screen(0.25, 0.75, 0.75, 1.0)
+            if connect := self._connect_button_boxes(texts, boundary=connect_box):
+                if self._click_login_box(connect, after_sleep=1):
+                    self.log_info('点击连接入口!')
+                return False
+            if login := self._exact_login_button_boxes(texts, boundary=login_box):
                 if not self.find_boxes(texts, boundary=login_box, match="+86"):
                     # the game may be auto logging in with saved credentials, wait and
                     # confirm the login button is still there before clicking (#1356)
                     self.sleep(LOGIN_CLICK_SETTLE_TIME)
                     texts = self.ocr(log=self.debug)
-                    login = self.find_boxes(texts, boundary=login_box,
-                                            match=LOGIN_TEXTS)
+                    login = self._exact_login_button_boxes(texts, boundary=login_box)
                     if login and not self.find_boxes(texts, boundary=login_box,
                                                      match="+86"):
                         if self._click_login_box(login, after_sleep=1):

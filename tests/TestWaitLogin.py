@@ -1,7 +1,12 @@
 import unittest
 from unittest.mock import patch
 
-from src.task.BaseWWTask import BaseWWTask, LOGIN_CLICK_SETTLE_TIME, LOGIN_TEXTS
+from src.task.BaseWWTask import (
+    BaseWWTask,
+    CONNECT_TEXTS,
+    LOGIN_CLICK_SETTLE_TIME,
+    LOGIN_TEXTS,
+)
 from src.win32_login_input import LoginClickDelivery
 
 
@@ -15,6 +20,8 @@ class TextBox:
 
 
 class FakeLoginTask:
+    _connect_button_boxes = BaseWWTask._connect_button_boxes
+    _exact_login_button_boxes = BaseWWTask._exact_login_button_boxes
     """Drives BaseWWTask.wait_login with scripted OCR frames.
 
     Each entry in frames is the list of TextBox returned by one ocr() call,
@@ -50,6 +57,8 @@ class FakeLoginTask:
         if match == LOGIN_TEXTS:
             return [b for b in texts
                     if 'log' in b.name.lower() or '登录' in b.name or '登入' in b.name] or None
+        if match == CONNECT_TEXTS:
+            return [b for b in texts if '点击连接' in b.name or 'Click to Connect' in b.name] or None
         if match == "+86":
             return [b for b in texts if '+86' in b.name] or None
         return None
@@ -147,6 +156,24 @@ class TestWaitLogin(unittest.TestCase):
 
         self.assertFalse(result)
         self.assertEqual(task.clicked, [])
+
+    def test_login_status_text_is_never_clicked_as_a_login_button(self):
+        task = FakeLoginTask(frames=[[TextBox('登录状态：0')]])
+
+        result = BaseWWTask.wait_login(task)
+
+        self.assertFalse(result)
+        self.assertEqual(task.clicked, [])
+        self.assertEqual(task.slept, [])
+
+    def test_click_connect_uses_its_own_exact_entry_match(self):
+        task = FakeLoginTask(frames=[[TextBox('点击连接')]])
+
+        result = BaseWWTask.wait_login(task)
+
+        self.assertFalse(result)
+        self.assertEqual(task.clicked, [['点击连接']])
+        self.assertEqual(task.slept, [])
 
 
 if __name__ == "__main__":
