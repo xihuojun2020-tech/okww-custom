@@ -27,6 +27,7 @@ probe_out.txt
 /test_out/
 /probe_login_out/
 /实验性日志/
+/build/character_ports/
 
 # 备份与临时
 backup_合并前_0815/
