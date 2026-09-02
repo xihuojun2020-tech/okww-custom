@@ -25,6 +25,12 @@ class TestAutoAbyssTask(unittest.TestCase):
         wrong = SimpleNamespace(x=100, y=400, width=80, height=30)
         self.assertIsNone(match_travel_button(title, [wrong]))
 
+    def test_match_travel_button_accepts_the_button_below_the_content_title(self):
+        title = SimpleNamespace(x=960, y=385, width=120, height=40)
+        same_card = SimpleNamespace(x=1720, y=465, width=100, height=40)
+        other_card = SimpleNamespace(x=1720, y=850, width=100, height=40)
+        self.assertIs(match_travel_button(title, [other_card, same_card]), same_card)
+
     def test_aggregate_floor_states_prefers_completed_then_locked_then_available(self):
         self.assertEqual(
             aggregate_floor_states([True, False, False, False], [False, True, False, False]),

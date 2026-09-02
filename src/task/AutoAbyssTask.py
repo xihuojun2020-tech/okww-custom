@@ -27,13 +27,14 @@ def _center_y(box):
     return box.y + box.height / 2
 
 
-def match_travel_button(title_box, travel_boxes):
+def match_travel_button(title_box, travel_boxes, vertical_tolerance=None):
     """Return the 前往 button aligned with the target card, never another card."""
     title_y = _center_y(title_box)
+    tolerance = vertical_tolerance if vertical_tolerance is not None else max(title_box.height * 4, 120)
     candidates = [
         box for box in travel_boxes
         if box.x > title_box.x + title_box.width
-        and abs(_center_y(box) - title_y) <= max(title_box.height * 2, 80)
+        and abs(_center_y(box) - title_y) <= tolerance
     ]
     return min(candidates, key=lambda box: abs(_center_y(box) - title_y), default=None)
 
@@ -87,6 +88,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
         self.info_set("状态", "打开 F2 周期挑战...")
         self.openF2Book()
         self._open_period_challenge()
+        self._select_adversity_tower()
         self._open_adversity_tower()
 
         results = {}
@@ -112,17 +114,39 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
         self.wait_ocr(match="周期挑战", time_out=8, raise_if_not_found=True)
 
     def _open_adversity_tower(self):
-        self.log_info("识别深境区并点击同卡片的前往")
-        title_boxes = self.wait_ocr(match="深境区", time_out=8, raise_if_not_found=True)
-        title = next((box for box in title_boxes if "深境区" in str(box.name)), None)
-        all_boxes = self.ocr()
-        travel = [box for box in all_boxes if "前往" in str(box.name)]
-        button = match_travel_button(title, travel) if title else None
+        self.log_info("识别中间深境区并点击同卡片的前往")
+        title = self._wait_content_deep_area()
+        travel = self.wait_ocr(match="前往", time_out=5, raise_if_not_found=True)
+        button = match_travel_button(title, travel)
         if button is None:
             self.screenshot("abyss_travel_button_not_found")
             raise Exception("未找到深境区同卡片的前往按钮")
         self.click_box(button, after_sleep=2)
         self._wait_for_tower_screen()
+
+    def _select_adversity_tower(self):
+        """Explicitly choose 逆境深塔 before using its 深境区 card."""
+        self.log_info("选择逆境深塔")
+        cards = self.wait_ocr(
+            x=0.06, y=0.10, to_x=0.36, to_y=0.50,
+            match="逆境深塔", time_out=8, raise_if_not_found=True,
+        )
+        card = next((box for box in cards if "逆境深塔" in str(box.name)), None)
+        if card is None:
+            raise Exception("未识别到逆境深塔卡片")
+        self.click_box(card, after_sleep=1)
+        self._wait_content_deep_area()
+
+    def _wait_content_deep_area(self):
+        """Only accept 深境区 from the middle content card, never the left activity card."""
+        boxes = self.wait_ocr(
+            x=0.35, y=0.15, to_x=0.65, to_y=0.45,
+            match="深境区", time_out=8, raise_if_not_found=True,
+        )
+        title = next((box for box in boxes if "深境区" in str(box.name)), None)
+        if title is None:
+            raise Exception("未识别到中间深境区卡片")
+        return title
 
     def _wait_for_tower_screen(self):
         for tower_name in TOWER_NAMES:
