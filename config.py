@@ -18,7 +18,7 @@ from src.task.process_feature import process_feature
 # okww 版本号（固定宽度 X.YY.ZZ）：
 #   小改动 → 第三位 +1；中等改动 → 第二位 +1 且第三位归 00；
 #   大改动 → 第一位 +1 且后两位归 00（仅用户明确提出时执行）
-version = "1.23.00"
+version = "1.23.01"
 
 
 def _find_most_recently_run_pc_exe():
@@ -300,6 +300,7 @@ config = {
         ["src.task.EventTask", "EventTask"],
         # 测试功能（🧪 测试功能 tab）
         ["src.task.TestAccountSwitchTask", "TestAccountSwitchTask"],
+        ["src.task.AutoAbyssTask", "AutoAbyssTask"],
         # 序列切换任务已废弃（2026-08-15 封存，见 E:\AI work\废弃代码\【鸣潮多账号切换的序列切换设想】）
         # ["src.task.KRLauncherSwitchTask", "KRLauncherSwitchTask"],
         # ["src.task.DiagnosisTask", "DiagnosisTask"],

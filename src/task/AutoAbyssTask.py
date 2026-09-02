@@ -1,0 +1,189 @@
+# -*- coding: utf-8 -*-
+"""Scan Adversity Tower floors without entering the team or combat screens."""
+from pathlib import Path
+
+import cv2
+
+from qfluentwidgets import FluentIcon as Icon
+
+from src.task.BaseWWTask import BaseWWTask
+from src.task.WWOneTimeTask import WWOneTimeTask
+
+
+TOWER_NAMES = ("残响之塔", "深境之塔", "回音之塔")
+FLOOR_ROWS = (
+    (0.145, 0.275),
+    (0.285, 0.415),
+    (0.425, 0.555),
+    (0.565, 0.695),
+)
+COMPLETED = "已完成"
+AVAILABLE = "未完成（可挑战）"
+LOCKED = "未解锁"
+
+
+def _center_y(box):
+    return box.y + box.height / 2
+
+
+def match_travel_button(title_box, travel_boxes):
+    """Return the 前往 button aligned with the target card, never another card."""
+    title_y = _center_y(title_box)
+    candidates = [
+        box for box in travel_boxes
+        if box.x > title_box.x + title_box.width
+        and abs(_center_y(box) - title_y) <= max(title_box.height * 2, 80)
+    ]
+    return min(candidates, key=lambda box: abs(_center_y(box) - title_y), default=None)
+
+
+def aggregate_floor_states(completed, locked):
+    """Convert per-floor template hits into user-facing, mutually exclusive states."""
+    return tuple(
+        COMPLETED if completed_hit else LOCKED if locked_hit else AVAILABLE
+        for completed_hit, locked_hit in zip(completed, locked)
+    )
+
+
+def tower_click_point(title_box, screen_width):
+    """Click the lower centre of a tower's diamond area using its OCR title as anchor."""
+    return (title_box.x + title_box.width / 2) / screen_width, 0.47
+
+
+class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
+    """Enter the Adversity Tower and report its four floor states for each tower."""
+
+    navigation_section = "tests"
+    _ASSET_DIR = Path("assets/images")
+    _TEMPLATES = {
+        "period": _ASSET_DIR / "abyss_period_challenge_icon.png",
+        "completed": _ASSET_DIR / "abyss_completed_icon.png",
+        "locked": _ASSET_DIR / "abyss_locked_icon.png",
+    }
+    _template_cache = {}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.name = "🧪 自动深渊：深塔关卡扫描"
+        self.description = (
+            "从大世界进入周期挑战和逆境深塔，逐座扫描四个关卡的完成状态。"
+            "仅扫描：不会进入编队、不会选择角色、不会点击挑战开始或启动自动战斗。"
+        )
+        self.group_name = "🧪 测试功能"
+        self.group_icon = Icon.DEVELOPER_TOOLS
+        self.default_config = {}
+        self.config_description = {}
+
+    def run(self):
+        WWOneTimeTask.run(self)
+        self._assert_scan_only()
+        self.info_set("状态", "打开 F2 周期挑战...")
+        self.openF2Book()
+        self._open_period_challenge()
+        self._open_adversity_tower()
+
+        results = {}
+        for tower_name in TOWER_NAMES:
+            self.info_set("状态", f"扫描 {tower_name}...")
+            self._open_tower(tower_name)
+            results[tower_name] = self._scan_tower_floors()
+            self._return_to_towers()
+
+        summary = "；".join(f"{tower}: {', '.join(states)}" for tower, states in results.items())
+        self.info_set("扫描结果", summary)
+        self.info_set("状态", "扫描完成 ✓")
+        self.log_info(f"深塔关卡扫描完成：{summary}", notify=True)
+
+    def _assert_scan_only(self):
+        self.log_info("扫描模式：不会进入编队或点击挑战开始")
+
+    def _open_period_challenge(self):
+        self.log_info("识别并打开周期挑战入口")
+        if not self.wait_until(self._click_period_challenge_icon, time_out=8, raise_if_not_found=False):
+            self.screenshot("abyss_period_challenge_not_found")
+            raise Exception("未识别到周期挑战入口")
+        self.wait_ocr(match="周期挑战", time_out=8, raise_if_not_found=True)
+
+    def _open_adversity_tower(self):
+        self.log_info("识别深境区并点击同卡片的前往")
+        title_boxes = self.wait_ocr(match="深境区", time_out=8, raise_if_not_found=True)
+        title = next((box for box in title_boxes if "深境区" in str(box.name)), None)
+        all_boxes = self.ocr()
+        travel = [box for box in all_boxes if "前往" in str(box.name)]
+        button = match_travel_button(title, travel) if title else None
+        if button is None:
+            self.screenshot("abyss_travel_button_not_found")
+            raise Exception("未找到深境区同卡片的前往按钮")
+        self.click_box(button, after_sleep=2)
+        self._wait_for_tower_screen()
+
+    def _wait_for_tower_screen(self):
+        for tower_name in TOWER_NAMES:
+            self.wait_ocr(match=tower_name, time_out=8, raise_if_not_found=True)
+
+    def _open_tower(self, tower_name):
+        title_boxes = self.wait_ocr(match=tower_name, time_out=5, raise_if_not_found=True)
+        title = next((box for box in title_boxes if tower_name in str(box.name)), None)
+        if title is None:
+            raise Exception(f"未识别到{tower_name}")
+        x, y = tower_click_point(title, self.width)
+        self.log_info(f"打开 {tower_name}")
+        self.click_relative(x, y, after_sleep=2, name=tower_name)
+        self.wait_ocr(match="挑战目标", time_out=8, raise_if_not_found=True)
+
+    def _scan_tower_floors(self):
+        frame = self.frame
+        completed = [self._row_matches(frame, row, "completed", 0.70) for row in FLOOR_ROWS]
+        locked = [not done and self._row_matches(frame, row, "locked", 0.68) for done, row in zip(completed, FLOOR_ROWS)]
+        states = aggregate_floor_states(completed, locked)
+        self.log_info(f"当前塔扫描结果：{', '.join(states)}")
+        return states
+
+    def _return_to_towers(self):
+        self.send_key("esc", after_sleep=2)
+        self._wait_for_tower_screen()
+
+    def _click_period_challenge_icon(self):
+        match = self._find_template(self.frame, (0.0, 0.08, 0.12, 0.90), "period", 0.70)
+        if match is None:
+            return False
+        x, y, width, height, _score = match
+        self.click_relative((x + width / 2) / self.width, (y + height / 2) / self.height, after_sleep=1)
+        return True
+
+    def _row_matches(self, frame, row, template_name, threshold):
+        y1, y2 = row
+        region = (0.340, y1, 0.390, min(y2, y1 + 0.08)) if template_name == "completed" else (0.015, y1, 0.075, y2)
+        return self._find_template(frame, region, template_name, threshold) is not None
+
+    @classmethod
+    def _template(cls, name):
+        if name not in cls._template_cache:
+            image = cv2.imread(str(cls._TEMPLATES[name]), cv2.IMREAD_GRAYSCALE)
+            if image is None:
+                raise FileNotFoundError(f"深塔扫描模板不存在: {cls._TEMPLATES[name]}")
+            cls._template_cache[name] = image
+        return cls._template_cache[name]
+
+    def _find_template(self, frame, region, template_name, threshold):
+        if frame is None:
+            return None
+        height, width = frame.shape[:2]
+        x1, y1, x2, y2 = region
+        left, top = int(x1 * width), int(y1 * height)
+        right, bottom = int(x2 * width), int(y2 * height)
+        crop = frame[top:bottom, left:right]
+        template = self._template(template_name)
+        scale = height / 1440
+        if scale != 1:
+            interpolation = cv2.INTER_AREA if scale < 1 else cv2.INTER_CUBIC
+            template = cv2.resize(template, None, fx=scale, fy=scale, interpolation=interpolation)
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        if gray.shape[0] < template.shape[0] or gray.shape[1] < template.shape[1]:
+            return None
+        _min_score, max_score, _min_loc, max_loc = cv2.minMaxLoc(
+            cv2.matchTemplate(gray, template, cv2.TM_CCOEFF_NORMED)
+        )
+        if max_score < threshold:
+            return None
+        return left + max_loc[0], top + max_loc[1], template.shape[1], template.shape[0], max_score
