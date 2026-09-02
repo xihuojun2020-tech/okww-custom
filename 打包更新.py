@@ -36,6 +36,8 @@ SYNC_ITEMS = [
     'assets/coco_annotations.json',
     'assets/images/logout_power_icon.png',
     'assets/images/abyss_period_challenge_icon.png',
+    'assets/images/abyss_period_challenge_selected.png',
+    'assets/images/abyss_period_challenge_unselected.png',
     'assets/images/abyss_completed_icon.png',
     'assets/images/abyss_locked_icon.png',
     'custom_ok/ok/gui/about/AboutTab.py',

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from src.task.AutoAbyssTask import (
     AVAILABLE,
+    best_template_match,
     COMPLETED,
     LOCKED,
     aggregate_floor_states,
@@ -33,6 +34,11 @@ class TestAutoAbyssTask(unittest.TestCase):
     def test_tower_click_uses_title_x_and_diamond_height(self):
         title = SimpleNamespace(x=1000, y=100, width=200, height=40)
         self.assertEqual(tower_click_point(title, 2560), (1100 / 2560, 0.47))
+
+    def test_best_template_match_uses_score_without_requiring_a_fixed_navigation_y(self):
+        upper = (30, 220, 80, 80, 0.31)
+        lower = (30, 760, 80, 80, 0.28)
+        self.assertIs(best_template_match([lower, None, upper]), upper)
 
 
 if __name__ == "__main__":

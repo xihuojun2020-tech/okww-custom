@@ -46,6 +46,7 @@ class AboutTab(Tab):
             except Exception:
                 pass
             update_log_text.setPlainText(upstream_note + self.tr(
+                'V1.23.02：修复自动深渊将左栏“敌迹探寻”误判为周期挑战：周期挑战图标改用去背景的灰色/金色双状态边缘模板，在整个导航栏内识别，不依赖固定上下位置；点击后仍须 OCR 确认“周期挑战”。\n'
                 'V1.23.01：测试功能新增“自动深渊：深塔关卡扫描”；从 F2 周期挑战进入逆境深塔，逐座识别四个关卡的已完成、可挑战或未解锁状态。严格止步于扫描，不进入编队、不选择角色、不点击挑战开始，也不调用自动战斗。\n'
                 'V1.23.00：剥离已放弃的 Android/MuMu 实验：相关源码、Agent、Nemu IPC、预检脚本、资源和测试已从 PC 正式程序及更新包移除，并在仓库外完整归档；WGC、Foreground BitBlt、SendInput、点击连接和账号切换流程均保持不变。\n'
                 'V1.22.08：修复账号方案联动后的 Qt 原生崩溃：任务工作线程不再直接刷新任务卡，GUI 刷新入口统一拒绝非主线程调用，避免 QLabel/QTextDocument 布局竞态导致访问违例。\n'

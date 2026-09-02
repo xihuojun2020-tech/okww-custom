@@ -20,6 +20,7 @@ FLOOR_ROWS = (
 COMPLETED = "已完成"
 AVAILABLE = "未完成（可挑战）"
 LOCKED = "未解锁"
+PERIOD_ICON_EDGE_THRESHOLD = 0.24
 
 
 def _center_y(box):
@@ -50,13 +51,19 @@ def tower_click_point(title_box, screen_width):
     return (title_box.x + title_box.width / 2) / screen_width, 0.47
 
 
+def best_template_match(matches):
+    """Choose the strongest non-empty match while retaining a full navigation scan."""
+    return max((match for match in matches if match is not None), key=lambda match: match[-1], default=None)
+
+
 class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
     """Enter the Adversity Tower and report its four floor states for each tower."""
 
     navigation_section = "tests"
     _ASSET_DIR = Path("assets/images")
     _TEMPLATES = {
-        "period": _ASSET_DIR / "abyss_period_challenge_icon.png",
+        "period_selected": _ASSET_DIR / "abyss_period_challenge_selected.png",
+        "period_unselected": _ASSET_DIR / "abyss_period_challenge_unselected.png",
         "completed": _ASSET_DIR / "abyss_completed_icon.png",
         "locked": _ASSET_DIR / "abyss_locked_icon.png",
     }
@@ -144,12 +151,41 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
         self._wait_for_tower_screen()
 
     def _click_period_challenge_icon(self):
-        match = self._find_template(self.frame, (0.0, 0.08, 0.12, 0.90), "period", 0.70)
+        # The left navigation order changes with game content.  Scan its full height, but compare
+        # only the background-free icon edges so a highlighted different category cannot win by color.
+        match = self._find_period_challenge_icon(self.frame)
         if match is None:
             return False
         x, y, width, height, _score = match
         self.click_relative((x + width / 2) / self.width, (y + height / 2) / self.height, after_sleep=1)
         return True
+
+    def _find_period_challenge_icon(self, frame):
+        if frame is None:
+            return None
+        height, width = frame.shape[:2]
+        left, top, right, bottom = 0, int(0.08 * height), int(0.12 * width), int(0.90 * height)
+        navigation = frame[top:bottom, left:right]
+        edges = cv2.Canny(cv2.cvtColor(navigation, cv2.COLOR_BGR2GRAY), 70, 160)
+        matches = []
+        for template_name in ("period_selected", "period_unselected"):
+            template = self._template(template_name)
+            scale = height / 1440
+            if scale != 1:
+                interpolation = cv2.INTER_AREA if scale < 1 else cv2.INTER_CUBIC
+                template = cv2.resize(template, None, fx=scale, fy=scale, interpolation=interpolation)
+            template_edges = cv2.Canny(template, 70, 160)
+            if edges.shape[0] < template_edges.shape[0] or edges.shape[1] < template_edges.shape[1]:
+                continue
+            _min_score, max_score, _min_loc, max_loc = cv2.minMaxLoc(
+                cv2.matchTemplate(edges, template_edges, cv2.TM_CCOEFF_NORMED)
+            )
+            if max_score >= PERIOD_ICON_EDGE_THRESHOLD:
+                matches.append((
+                    left + max_loc[0], top + max_loc[1],
+                    template_edges.shape[1], template_edges.shape[0], max_score,
+                ))
+        return best_template_match(matches)
 
     def _row_matches(self, frame, row, template_name, threshold):
         y1, y2 = row
