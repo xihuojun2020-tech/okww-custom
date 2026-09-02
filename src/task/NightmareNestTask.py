@@ -2,7 +2,7 @@ import re
 import cv2
 from dataclasses import dataclass
 
-from ok import Logger
+from ok import Logger, TaskDisabledException
 from src.task.BaseCombatTask import BaseCombatTask, CharRevivedException
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task_status import publish_task_status
@@ -161,16 +161,22 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
             target=True, time_out=3, raise_if_not_found=False)
 
     def _travel_to_nest_or_skip(self, nest):
-        travel = self.wait_until(self._find_travel_button, raise_if_not_found=False, time_out=1)
+        travel = self.wait_until(self._find_travel_button, raise_if_not_found=False, time_out=3)
         if travel:
             self.click(travel, after_sleep=1)
             if confirm := self._find_first_feature(CONFIRM_FEATURES, threshold=0.6):
                 self.click(confirm, after_sleep=1)
 
-        button_still_visible = travel and self.find_one(travel.name, threshold=0.7)
-        if travel and not button_still_visible and self.wait_in_team_and_world(
-                time_out=120, raise_if_not_found=False):
-            return True
+            button_gone = self.wait_until(
+                lambda: not self.find_one(travel.name, threshold=0.7),
+                time_out=5,
+                raise_if_not_found=False,
+            )
+            if button_gone:
+                if self.wait_in_team_and_world(time_out=120, raise_if_not_found=False):
+                    return True
+            elif self.wait_in_team_and_world(time_out=10, raise_if_not_found=False):
+                return True
 
         if isinstance(nest, NestTarget):
             self._unreachable_nests.add(nest.cache_key)
@@ -195,13 +201,26 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
                 return feature
 
     def get_nest_to_go(self):
-        self.openF2Book("gray_book_boss")
+        self._open_book_with_retry("gray_book_boss")
 
         while self.queues:
             self.queues[0]()
             if nest := self.find_nest():
                 return nest
             self.queues.pop(0)
+
+    def _open_book_with_retry(self, feature, attempts=3):
+        for attempt in range(1, attempts + 1):
+            try:
+                return self.openF2Book(feature)
+            except TaskDisabledException:
+                raise
+            except Exception:
+                if attempt >= attempts:
+                    raise
+                self.log_warning(f'打开 F2 页面失败，正在恢复后重试（{attempt}/{attempts}）')
+                self.ensure_main(time_out=30)
+                self.sleep(1)
 
     def _init_queue(self):
         quests = self.config.get('Which to Farm') or ['Nightmare Purification', 'Tacet Discord Nest']

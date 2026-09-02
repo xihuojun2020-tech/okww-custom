@@ -122,6 +122,26 @@ class TestAccountRuntimeIntegration(unittest.TestCase):
         self.assertEqual(task._profile_get("Which to Farm"), "before")
         self.assertEqual(task._profile_get("Nested")["value"], 1)
 
+    def test_bind_verified_profile_synchronizes_runtime_selector(self):
+        profile_a = str(uuid.uuid4())
+        profile_b = str(uuid.uuid4())
+        task = object.__new__(DailyTask)
+        task.config = {"Daily Profile": "A1"}
+        task.integrity_service = type("Integrity", (), {"is_safe": True})()
+        task._runtime_overrides = {}
+        task._switching_profile = False
+        task.load_daily_profiles = lambda: {
+            "A1": {"profile_id": profile_a, "Auto Farm all Nightmare Nest": False},
+            "A3": {"profile_id": profile_b, "Auto Farm all Nightmare Nest": True},
+        }
+
+        task.bind_verified_profile("A3", expected_profile_id=profile_b)
+        task.ensure_daily_profiles()
+
+        self.assertEqual(task.config["Daily Profile"], "A3")
+        self.assertEqual(task._verified_profile_id, profile_b)
+        self.assertTrue(task._profile_get("Auto Farm all Nightmare Nest"))
+
     def test_unconfirmed_external_edit_is_scoped_to_changed_account(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

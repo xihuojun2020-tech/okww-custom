@@ -1109,6 +1109,52 @@ class TestChar(TaskTestCase):
         aemeath.do_perform()
         self.assertEqual(aemeath.actions, ['switch'])
 
+    def test_aemeath_heavy_wait_is_bounded_when_target_indicator_sticks(self):
+        class Task:
+            def __init__(self):
+                self.elapsed = 0
+                self.warnings = []
+
+            def time_elapsed_accounting_for_freeze(self, start, intro_motion_freeze=False):
+                self.elapsed += 3
+                return self.elapsed
+
+            def sleep(self, _seconds):
+                pass
+
+            def log_warning(self, message):
+                self.warnings.append(message)
+
+        class TrackingAemeath(Aemeath):
+            def __init__(self, task):
+                super().__init__(task, 0)
+                self.long_action_checks = 0
+                self.heavy_attempts = 0
+                self.switched = False
+
+            def has_all_buff(self):
+                return False
+
+            def has_long_action(self):
+                self.long_action_checks += 1
+                return self.long_action_checks <= 10
+
+            def handle_heavy(self):
+                self.heavy_attempts += 1
+                return True
+
+            def switch_next_char(self):
+                self.switched = True
+
+        task = Task()
+        aemeath = TrackingAemeath(task)
+
+        aemeath.do_perform()
+
+        self.assertEqual(2, aemeath.heavy_attempts)
+        self.assertTrue(aemeath.switched)
+        self.assertEqual(1, len(task.warnings))
+
     def test_aemeath_handle_heavy_uses_highlight_wait(self):
         class TrackingAemeath(Aemeath):
             def __init__(self):

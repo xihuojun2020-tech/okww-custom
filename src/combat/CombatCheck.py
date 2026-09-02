@@ -33,6 +33,8 @@ class CombatCheck(BaseWWTask):
         self.last_in_realm_not_combat = 0
         self._last_liberation = 0
         self.target_enemy_time_out = 3
+        self.target_loss_grace_period = 6
+        self.target_loss_started_at = None
         self.switch_char_time_out = 5
         self.combat_end_condition = None
         self.has_lavitator = False
@@ -75,6 +77,7 @@ class CombatCheck(BaseWWTask):
         self.last_in_realm_not_combat = 0
         self.has_lavitator = False
         self.can_break = False
+        self.target_loss_started_at = None
         self.scene.set_not_in_combat()
         return False
 
@@ -140,8 +143,11 @@ class CombatCheck(BaseWWTask):
         if self.in_liberation:
             return True
         if self._in_combat:
-            if self.scene.in_combat() is not None:
-                return self.scene.in_combat()
+            scene_in_combat = self.scene.in_combat()
+            if scene_in_combat is not None:
+                if scene_in_combat:
+                    self.target_loss_started_at = None
+                return scene_in_combat
             self.check_f_break()
             if current_char := self.get_current_char():
                 if current_char.skip_combat_check():
@@ -151,13 +157,26 @@ class CombatCheck(BaseWWTask):
                 return self.reset_to_false(reason='on_combat_check failed')
             if self.has_target():
                 self.last_in_realm_not_combat = 0
+                self.target_loss_started_at = None
                 return self.scene.set_in_combat()
             if self.combat_end_condition is not None and self.combat_end_condition():
                 return self.reset_to_false(reason='end condition reached')
             if self.target_enemy(wait=True):
                 logger.debug(f'retarget enemy succeeded')
+                self.target_loss_started_at = None
                 return self.scene.set_in_combat()
             if self.should_check_monthly_card() and self.handle_monthly_card():
+                self.target_loss_started_at = None
+                return self.scene.set_in_combat()
+            now = time.time()
+            if self.target_loss_started_at is None:
+                self.target_loss_started_at = now
+            target_lost_for = now - self.target_loss_started_at
+            if target_lost_for < self.target_loss_grace_period:
+                logger.info(
+                    f'target still missing, keep combat during grace period '
+                    f'{target_lost_for:.1f}/{self.target_loss_grace_period}s'
+                )
                 return self.scene.set_in_combat()
             logger.error('target_enemy failed, try recheck break out of combat')
             return self.reset_to_false(reason='target enemy failed')
@@ -171,6 +190,7 @@ class CombatCheck(BaseWWTask):
             in_combat = has_target or ((self.config.get('Auto Target') or not isinstance(self,
                                                                                          AutoCombatTask)) and self.check_health_bar())
             if in_combat:
+                self.target_loss_started_at = None
                 if not has_target and not self.target_enemy(wait=True):
                     if not self.target_enemy_error_notified:
                         self.target_enemy_error_notified = True

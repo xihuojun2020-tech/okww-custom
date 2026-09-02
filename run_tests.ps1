@@ -22,7 +22,7 @@ $groups = @{
     "TestLoggingRedaction.py", "TestMainProxyConfig.py",
     "TestObservability.py", "TestReleaseReadiness.py", "TestRuntimeServices.py",
     "TestScheduleSupport.py", "TestSecurityBaseline.py", "TestSensitiveIdentifierScan.py",
-    "TestTaskStatus.py", "TestLogoutCapture.py", "TestDailyTaskStatus.py",
+    "TestTaskStatus.py", "TestLogoutCapture.py", "TestDailyTaskStatus.py", "TestStaminaAccounting.py",
     "TestSequenceRepository.py", "TestTestGroups.py", "TestWaitLogin.py", "TestWin32LoginInput.py"
   )
   integration = @(

@@ -100,7 +100,8 @@ class TestNightmareNestTask(unittest.TestCase):
         world_waits = []
         travel = FakeBox('fast_travel_custom')
 
-        task.wait_until = lambda *args, **kwargs: wait_timeouts.append(kwargs['time_out']) or travel
+        wait_results = iter([travel, False])
+        task.wait_until = lambda *args, **kwargs: wait_timeouts.append(kwargs['time_out']) or next(wait_results)
         task.find_one = lambda name, **kwargs: travel if name == travel.name else None
         task.click = lambda box, **kwargs: clicks.append((box, kwargs))
         task.wait_in_team_and_world = lambda *args, **kwargs: world_waits.append(kwargs) or False
@@ -111,10 +112,35 @@ class TestNightmareNestTask(unittest.TestCase):
 
         self.assertFalse(task._travel_to_nest_or_skip(target))
         self.assertIn(target.cache_key, task._unreachable_nests)
-        self.assertEqual([1], wait_timeouts)
+        self.assertEqual([3, 5], wait_timeouts)
         self.assertEqual([(travel, {'after_sleep': 1})], clicks)
-        self.assertEqual([], world_waits)
+        self.assertEqual([{'time_out': 10, 'raise_if_not_found': False}], world_waits)
         self.assertEqual([{'after_sleep': 1}], backs)
+
+    def test_travel_allows_slow_button_disappearance_before_world_wait(self):
+        task = NightmareNestTask.__new__(NightmareNestTask)
+        task._unreachable_nests = set()
+        travel = FakeBox('gray_teleport')
+        feature_checks = iter([travel, travel, None])
+        wait_calls = []
+        world_waits = []
+
+        def wait_until(callback, **kwargs):
+            wait_calls.append(kwargs['time_out'])
+            if len(wait_calls) == 1:
+                return callback()
+            callback()
+            return callback()
+
+        task.wait_until = wait_until
+        task.find_one = lambda name, **kwargs: next(feature_checks) if name == travel.name else None
+        task.click = lambda *args, **kwargs: None
+        task.wait_in_team_and_world = lambda *args, **kwargs: world_waits.append(kwargs) or True
+
+        self.assertTrue(task._travel_to_nest_or_skip(NestTarget(object(), 'go_nest:48:28')))
+        self.assertNotIn('go_nest:48:28', task._unreachable_nests)
+        self.assertEqual([3, 5], wait_calls)
+        self.assertEqual([{'time_out': 120, 'raise_if_not_found': False}], world_waits)
 
     def test_travel_waits_up_to_120_seconds_for_loading(self):
         task = NightmareNestTask.__new__(NightmareNestTask)
@@ -122,13 +148,56 @@ class TestNightmareNestTask(unittest.TestCase):
         travel = FakeBox('fast_travel_custom')
         world_waits = []
 
-        task.wait_until = lambda *args, **kwargs: travel
+        wait_results = iter([travel, True])
+        task.wait_until = lambda *args, **kwargs: next(wait_results)
         task.find_one = lambda *args, **kwargs: None
         task.click = lambda *args, **kwargs: None
         task.wait_in_team_and_world = lambda *args, **kwargs: world_waits.append(kwargs) or True
 
         self.assertTrue(task._travel_to_nest_or_skip(NestTarget(object(), 'go_nest:36:10')))
         self.assertEqual([{'time_out': 120, 'raise_if_not_found': False}], world_waits)
+
+    def test_open_book_retries_after_restoring_world(self):
+        task = NightmareNestTask.__new__(NightmareNestTask)
+        attempts = []
+        recoveries = []
+
+        def open_book(feature):
+            attempts.append(feature)
+            if len(attempts) == 1:
+                raise RuntimeError('transient book failure')
+            return FakeBox(feature)
+
+        task.openF2Book = open_book
+        task.ensure_main = lambda **kwargs: recoveries.append(kwargs)
+        task.sleep = lambda *args, **kwargs: None
+        task.log_warning = lambda *args, **kwargs: None
+
+        result = task._open_book_with_retry('gray_book_boss')
+
+        self.assertEqual('gray_book_boss', result.name)
+        self.assertEqual(['gray_book_boss', 'gray_book_boss'], attempts)
+        self.assertEqual([{'time_out': 30}], recoveries)
+
+    def test_open_book_stops_after_bounded_retries(self):
+        task = NightmareNestTask.__new__(NightmareNestTask)
+        attempts = []
+        recoveries = []
+
+        def open_book(feature):
+            attempts.append(feature)
+            raise RuntimeError('persistent book failure')
+
+        task.openF2Book = open_book
+        task.ensure_main = lambda **kwargs: recoveries.append(kwargs)
+        task.sleep = lambda *args, **kwargs: None
+        task.log_warning = lambda *args, **kwargs: None
+
+        with self.assertRaisesRegex(RuntimeError, 'persistent book failure'):
+            task._open_book_with_retry('gray_book_boss')
+
+        self.assertEqual(['gray_book_boss'] * 3, attempts)
+        self.assertEqual([{'time_out': 30}] * 2, recoveries)
 
     def test_find_nest_skips_cached_unreachable_row(self):
         task = NightmareNestTask.__new__(NightmareNestTask)

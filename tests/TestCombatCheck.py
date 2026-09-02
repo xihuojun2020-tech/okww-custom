@@ -1,11 +1,13 @@
 import time
 import unittest
+from unittest.mock import patch
 from config import config
 from ok.test.TaskTestCase import TaskTestCase
 from src.char.BaseChar import BaseChar
 from src.Labels import Labels
 from src.char.CharFactory import get_char_by_pos
 from src.task.AutoCombatTask import AutoCombatTask
+from src.combat.CombatCheck import CombatCheck
 from tests.fixture_support import require_fixture
 
 config['debug'] = True
@@ -127,6 +129,75 @@ class TestCombatCheck(TaskTestCase):
 
         self.assertTrue(task.do_check_in_combat(False))
         self.assertEqual(order, ['load_chars', ('has_target', True)])
+
+
+class TestCombatTargetLossGuard(unittest.TestCase):
+
+    @staticmethod
+    def make_task():
+        task = CombatCheck.__new__(CombatCheck)
+        task._in_combat = True
+        task._in_liberation = False
+        task.target_loss_started_at = None
+        task.target_loss_grace_period = 6
+        task.combat_end_condition = None
+        task.check_f_break = lambda: None
+        task.get_current_char = lambda: None
+        task.on_combat_check = lambda: True
+        task.has_target = lambda: False
+        task.target_enemy = lambda wait=True: False
+        task.should_check_monthly_card = lambda: False
+        task.handle_monthly_card = lambda: False
+        task.resets = []
+        task.reset_to_false = lambda reason='': task.resets.append(reason) or False
+
+        class Scene:
+            def in_combat(self):
+                return None
+
+            def set_in_combat(self):
+                return True
+
+        task.scene = Scene()
+        return task
+
+    def test_first_failed_retarget_stays_in_combat_during_grace_period(self):
+        task = self.make_task()
+
+        with patch('src.combat.CombatCheck.time.time', return_value=100):
+            self.assertTrue(task.do_check_in_combat(False))
+
+        self.assertEqual(100, task.target_loss_started_at)
+        self.assertEqual([], task.resets)
+
+    def test_successful_retarget_clears_pending_target_loss(self):
+        task = self.make_task()
+        task.target_loss_started_at = 100
+        task.target_enemy = lambda wait=True: True
+
+        with patch('src.combat.CombatCheck.time.time', return_value=102):
+            self.assertTrue(task.do_check_in_combat(False))
+
+        self.assertIsNone(task.target_loss_started_at)
+        self.assertEqual([], task.resets)
+
+    def test_repeated_failed_retarget_after_grace_period_exits_combat(self):
+        task = self.make_task()
+        task.target_loss_started_at = 100
+
+        with patch('src.combat.CombatCheck.time.time', return_value=107):
+            self.assertFalse(task.do_check_in_combat(False))
+
+        self.assertEqual(['target enemy failed'], task.resets)
+
+    def test_explicit_combat_end_condition_is_immediate(self):
+        task = self.make_task()
+        task.combat_end_condition = lambda: True
+
+        with patch('src.combat.CombatCheck.time.time', return_value=100):
+            self.assertFalse(task.do_check_in_combat(False))
+
+        self.assertEqual(['end condition reached'], task.resets)
 
 
 if __name__ == '__main__':

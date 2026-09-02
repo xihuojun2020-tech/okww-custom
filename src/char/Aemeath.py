@@ -8,6 +8,7 @@ class Aemeath(BaseChar):
     LIBERATION_FORCE_DURATION = 30
     LIB2_PREPARE_WINDOW = 8
     INTRO_LIBERATION_DELAY = 14
+    HEAVY_ACTION_TIMEOUT = 8
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -23,7 +24,11 @@ class Aemeath(BaseChar):
         self.lib2_cast_this_turn = False
         self.must_cast_lib2_this_turn = self.has_all_buff() and self.has_intro
         if not self.must_cast_lib2_this_turn:
+            start = time.time()
             while self.has_long_action():
+                if self.time_elapsed_accounting_for_freeze(start) >= self.HEAVY_ACTION_TIMEOUT:
+                    self.task.log_warning('爱弥斯长动作等待超时，切换角色继续战斗')
+                    break
                 if self.handle_heavy():
                     self.sleep(0.3)
             return self.switch_next_char()
@@ -95,8 +100,10 @@ class Aemeath(BaseChar):
 
     def heavy_wait_highlight_down(self):
         self.task.mouse_down()
-        ret = self.task.wait_until(lambda: not self.has_long_action(), time_out=1.2)
-        self.task.mouse_up()
+        try:
+            ret = self.task.wait_until(lambda: not self.has_long_action(), time_out=1.2)
+        finally:
+            self.task.mouse_up()
         self.sleep(0.01)
         return ret
 

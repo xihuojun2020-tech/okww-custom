@@ -434,6 +434,17 @@ class BaseWWTask(BaseTask):
         self.info_set('back_up_stamina', back_up)
         return current, back_up, current + back_up
 
+    @staticmethod
+    def project_stamina_after_use(current, back_up, used):
+        current = max(int(current), 0)
+        back_up = max(int(back_up), 0)
+        remaining_cost = max(int(used), 0)
+        from_current = min(current, remaining_cost)
+        current -= from_current
+        remaining_cost -= from_current
+        back_up = max(back_up - remaining_cost, 0)
+        return current, back_up, current + back_up
+
     def use_stamina(self, once=60, must_use=0):
         self.sleep(1)
         current, back_up, total = self.get_stamina()
@@ -460,9 +471,9 @@ class BaseWWTask(BaseTask):
             self.back(after_sleep=1)
             self.click(btn, after_sleep=1)
 
-        current -= used
+        current, back_up, total = self.project_stamina_after_use(current, back_up, used)
         must_use -= used
-        total -= used
+        logger.info(f'remaining stamina: current={current} back_up={back_up} total={total}')
         if total < once:
             logger.info(f"current stamina: {current} not enough to continue")
             can_continue = False

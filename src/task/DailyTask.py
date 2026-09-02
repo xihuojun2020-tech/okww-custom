@@ -321,6 +321,12 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
         auto_farm = self._profile_get(AUTO_FARM_NIGHTMARE_NEST, False)
         daily_echo = self._profile_get('Farm Nightmare Nest for Daily Echo', False)
+        verified_id = str(getattr(self, '_verified_profile_id', '') or '')
+        self.log_info(
+            f'本次执行配置：账号={getattr(self, "_verified_profile_name", None) or self.get_active_profile_name()} '
+            f'profile_id={verified_id[:8] or "无"} 自动梦魇={bool(auto_farm)} '
+            f'每日声骸={bool(daily_echo)} 体力用途={self._profile_get("Which to Farm", self.support_tasks[0])}'
+        )
 
         self._publish_daily_stage('每日任务', '正在检查每日奖励和体力进度')
         self.log_info('正在领取每日奖励并检查体力进度...')
@@ -332,6 +338,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 and self._profile_get('Which to Farm', self.support_tasks[0]) != self.support_tasks[0]
         )
 
+        nightmare_error = None
         if need_nightmare:
             try:
                 # 把合并到每日任务模块的梦魇配置同步给 NightmareNestTask
@@ -340,9 +347,6 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                     self._profile_get('Nightmare Which to Farm', ['Tacet Discord Nest']))
                 nightmare_task.config['Tacet Discord Nests to Farm'] = list(
                     self._profile_get('Tacet Discord Nests to Farm', NEST_NAMES))
-                # 劫持 NightmareNestTask.ensure_main 避免梦魇打完关书
-                nightmare_task.ensure_main = lambda *args, **kwargs: None
-
                 if auto_farm:
                     self._publish_daily_stage('刷梦魇巢穴', '正在打开梦魇页面')
                     self.log_info('开始刷梦魇巢穴（打梦魇聚落）', notify=True)
@@ -357,13 +361,10 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             except ConfigIntegrityBlocked:
                 raise
             except Exception as e:
+                nightmare_error = e
                 self.log_error("NightmareNestTask Failed", e)
                 self.screenshot('NightmareNestTask')
                 self.ensure_main(time_out=180)
-            finally:
-                # 还原 ensure_main，防范实例状态污染
-                self.get_task_by_class(NightmareNestTask).__dict__.pop('ensure_main', None)
-
         if need_stamina:
             target = self._profile_get('Which to Farm', self.support_tasks[0])
             stamina_labels = {
@@ -400,6 +401,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self.run_weekly_tasks()
         if self._profile_get(RECORD_AFTER_DAILY, True):
             self.record_progress()
+        if nightmare_error is not None:
+            self._publish_daily_stage('刷梦魇巢穴', '执行失败，账号未标记为完成')
+            raise RuntimeError('梦魇巢穴未完整完成，账号不会标记为今日完成') from nightmare_error
         # 每日任务最后一个环节：自动退登 PC 端（默认开启，取代"完成任务后退出应用"）
         if self._profile_get(LOGOUT_AFTER_DAILY, True):
             try:
@@ -506,6 +510,13 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self._verified_profile_name = profile_name
         self._verified_profile_id = str(profile_id)
         self._verified_profile_snapshot = copy.deepcopy(selected)
+        if self.config is not None and self.config.get(DAILY_PROFILE) != profile_name:
+            switching = getattr(self, '_switching_profile', False)
+            self._switching_profile = True
+            try:
+                self.config[DAILY_PROFILE] = profile_name
+            finally:
+                self._switching_profile = switching
         return copy.deepcopy(selected)
 
     @contextmanager
