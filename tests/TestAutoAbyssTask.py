@@ -2,13 +2,25 @@
 import unittest
 from types import SimpleNamespace
 
+import numpy as np
+
 from src.task.AutoAbyssTask import (
     AVAILABLE,
+    CharacterScanRecord,
     best_template_match,
     COMPLETED,
     LOCKED,
     aggregate_floor_states,
+    character_column_at,
+    character_card_slots,
+    exact_ocr_box,
+    first_available_floor,
+    frame_change_score,
     match_travel_button,
+    merge_character_records,
+    parse_energy_number,
+    parse_ocr_number,
+    scroll_thumb_center,
     tower_click_point,
 )
 
@@ -45,6 +57,80 @@ class TestAutoAbyssTask(unittest.TestCase):
         upper = (30, 220, 80, 80, 0.31)
         lower = (30, 760, 80, 80, 0.28)
         self.assertIs(best_template_match([lower, None, upper]), upper)
+
+    def test_first_available_floor_skips_completed_and_locked(self):
+        self.assertEqual(first_available_floor((COMPLETED, LOCKED, AVAILABLE, AVAILABLE)), 2)
+        self.assertIsNone(first_available_floor((COMPLETED, LOCKED, COMPLETED, LOCKED)))
+
+    def test_exact_ocr_box_never_confuses_challenge_buttons(self):
+        start = SimpleNamespace(name="挑战开始")
+        enter = SimpleNamespace(name="开启挑战")
+        quick = SimpleNamespace(name="快速 编队")
+        self.assertIs(exact_ocr_box([enter, start], "挑战开始"), start)
+        self.assertIs(exact_ocr_box([start, enter], "开启挑战"), enter)
+        self.assertIs(exact_ocr_box([quick], "快速编队"), quick)
+        self.assertIsNone(exact_ocr_box([enter], "挑战开始"))
+
+    def test_character_grid_marks_bottom_row_incomplete(self):
+        slots = character_card_slots()
+        self.assertEqual(len(slots), 21)
+        self.assertEqual(sum(1 for slot in slots if slot[-1]), 14)
+        self.assertTrue(all(slot[-1] for slot in slots[:14]))
+        self.assertTrue(all(not slot[-1] for slot in slots[14:]))
+
+    def test_character_column_uses_card_centres(self):
+        self.assertEqual(character_column_at(0.1527), 0)
+        self.assertEqual(character_column_at(0.4081), 2)
+        self.assertEqual(character_column_at(0.8842), 6)
+        self.assertIsNone(character_column_at(0.99))
+
+    def test_scroll_detection_uses_grid_or_scrollbar_change(self):
+        before = np.zeros((144, 256, 3), dtype=np.uint8)
+        after = before.copy()
+        after[20:90, 30:180] = 255
+        self.assertGreater(frame_change_score(before, after), 0.03)
+
+        frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
+        frame[180:620, 2355:2370] = 220
+        center = scroll_thumb_center(frame)
+        self.assertIsNotNone(center)
+        self.assertAlmostEqual(center, 400 / 1440, places=2)
+
+    def test_parse_ocr_number_accepts_level_and_rejects_out_of_range(self):
+        self.assertEqual(parse_ocr_number("Lv. 90", minimum=1, maximum=100), 90)
+        self.assertEqual(parse_ocr_number("⚡10", minimum=0, maximum=99), 10)
+        self.assertIsNone(parse_ocr_number("Lv. 900", minimum=1, maximum=100))
+        self.assertIsNone(parse_ocr_number("unknown", minimum=0, maximum=99))
+
+    def test_parse_energy_number_repairs_lightning_as_leading_one(self):
+        self.assertEqual(parse_energy_number("10"), 10)
+        self.assertEqual(parse_energy_number("18"), 8)
+        self.assertEqual(parse_energy_number("19"), 9)
+        self.assertEqual(parse_energy_number("110"), 10)
+        self.assertIsNone(parse_energy_number("90"))
+
+    def test_merge_character_records_deduplicates_and_filters_strictly(self):
+        records = [
+            CharacterScanRecord("char_a", "A", 10, 90, 0.70, 1, 0),
+            CharacterScanRecord("char_a", "A", 9, 90, 0.90, 2, 0),
+            CharacterScanRecord("char_zero", "Zero", 0, 90, 0.95, 1, 1),
+            CharacterScanRecord("char_60", "Sixty", 10, 60, 0.95, 1, 2),
+            CharacterScanRecord("char_unknown", "Unknown", None, 90, 0.95, 1, 3),
+        ]
+        merged, available = merge_character_records(records)
+        self.assertEqual(merged["char_a"].energy, 9)
+        self.assertEqual([record.character_id for record in available], ["char_a"])
+
+    def test_clear_character_scan_only_removes_current_account(self):
+        from src.task.AutoAbyssTask import AutoAbyssTask
+
+        task = object.__new__(AutoAbyssTask)
+        task._runtime_status_account = "A3"
+        task._character_scan_results = {"A3": {"available": []}, "A4": {"available": []}}
+        task.info_set = lambda *_args: None
+        self.assertTrue(task.clear_current_character_scan())
+        self.assertNotIn("A3", task._character_scan_results)
+        self.assertIn("A4", task._character_scan_results)
 
 
 if __name__ == "__main__":
