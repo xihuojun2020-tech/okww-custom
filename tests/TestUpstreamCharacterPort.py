@@ -13,6 +13,24 @@ from scripts.port_upstream_character import (
 
 
 class TestUpstreamCharacterPort(unittest.TestCase):
+    def test_qingxiao_provenance_is_pinned_and_runtime_independent(self):
+        data = json.loads(Path("config/upstream_characters.json").read_text(encoding="utf-8"))
+        item = data["Qingxiao"]
+
+        self.assertEqual(
+            item["upstream_commit"],
+            "a24c30f2ec90e56e40287bb76caf7c3a52266d77",
+        )
+        self.assertEqual(item["local_release"], "1.26.00")
+        self.assertEqual(
+            item["labels"],
+            ["char_qingxiao", "qingxiao_e", "qingxiao_h1", "qingxiao_h2"],
+        )
+        self.assertNotIn(
+            "config/upstream_characters.json",
+            Path("config.py").read_text(encoding="utf-8"),
+        )
+
     def test_inspection_separates_self_and_task_calls(self):
         source = """
 from src.Labels import Labels

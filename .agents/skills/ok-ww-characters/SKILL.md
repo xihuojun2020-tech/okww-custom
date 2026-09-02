@@ -52,6 +52,12 @@ When a page such as `https://ww.nanoka.cc/character/1210/` is provided, use it a
 
 Always verify the implementation against this repo's helpers and available labels.
 
+## Upstream Semantic Porting
+
+When importing a character from another OK-WW repository, read the `Upstream Semantic Porting` section in `references/character-patterns.md` before editing. Run `scripts/port_upstream_character.py` against a pinned commit to inventory labels, resources, API gaps, and cross-character references. Treat its output as a review aid: apply the result as a local semantic patch, never as permission to merge or overwrite upstream files wholesale.
+
+Before the port, verify the correct repository and that the current release is already pushed. After the port, update `config/upstream_characters.json`, translations, package assets, version metadata, offline tests, annotated tag, and publishing branch. Do not start the game unless the user separately authorizes live testing.
+
 ## Essential Rules
 
 - Do not add a character class without registering it in `CharFactory.py`.

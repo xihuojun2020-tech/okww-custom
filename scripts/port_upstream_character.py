@@ -289,8 +289,14 @@ def _scan_references(
     needles: tuple[str, ...],
 ) -> list[str]:
     results: list[str] = []
+    routine_files = {"src/Labels.py", "src/char/CharFactory.py"}
     for path in paths:
-        if path == source_path or not path.endswith(".py"):
+        if (
+            path == source_path
+            or path in routine_files
+            or path.startswith("tests/")
+            or not path.endswith(".py")
+        ):
             continue
         text = reader.read_text(ref, path)
         for line_number, line in enumerate(text.splitlines(), start=1):
@@ -338,12 +344,20 @@ def build_report(
     labels = tuple(sorted(set(inspection.labels) | {expected_label}))
     plan = build_coco_port_plan(character, labels, local_coco, upstream_coco)
 
+    source_methods = _class_methods(source)
     base_methods = set()
     for path in ("src/char/BaseChar.py", "src/char/Healer.py"):
         candidate = repository / path
         if candidate.exists():
             base_methods.update(_class_methods(candidate.read_text(encoding="utf-8-sig")))
-    task_methods = _class_methods((repository / "src/task/BaseCombatTask.py").read_text(encoding="utf-8-sig"))
+    task_methods = set()
+    for path in (
+        repository / "src/task/BaseCombatTask.py",
+        repository / "src/task/BaseWWTask.py",
+        repository / ".venv/Lib/site-packages/ok/task/task.py",
+    ):
+        if path.exists():
+            task_methods.update(_class_methods(path.read_text(encoding="utf-8-sig")))
     paths = reader.list_files(ref)
     cross_references = _scan_references(
         reader,
@@ -365,7 +379,7 @@ def build_report(
         },
         "manual_review": {
             "cross_references": cross_references,
-            "missing_base_methods": sorted(set(inspection.self_calls) - base_methods),
+            "missing_base_methods": sorted(set(inspection.self_calls) - source_methods - base_methods),
             "missing_task_methods": sorted(set(inspection.task_calls) - task_methods),
         },
     }

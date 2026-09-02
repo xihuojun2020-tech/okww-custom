@@ -1,0 +1,18 @@
+{
+  "Qingxiao": {
+    "labels": [
+      "char_qingxiao",
+      "qingxiao_e",
+      "qingxiao_h1",
+      "qingxiao_h2"
+    ],
+    "local_customizations": [
+      "preserve_local_denia_default_no",
+      "minimal_healer_switch_lock_port"
+    ],
+    "local_release": "1.26.00",
+    "source_path": "src/char/Qingxiao.py",
+    "upstream_commit": "a24c30f2ec90e56e40287bb76caf7c3a52266d77",
+    "upstream_repository": "ok-oldking/ok-wuthering-waves"
+  }
+}

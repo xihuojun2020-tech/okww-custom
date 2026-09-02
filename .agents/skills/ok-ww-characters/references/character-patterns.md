@@ -189,3 +189,32 @@ Ignore damage multipliers unless timing, state duration, or priority depends on 
 - `CharFactory.py` imports and registers the class.
 - `res_cd`, `echo_cd`, `liberation_cd`, and `ring_index` match the page or current project convention.
 - Existing tests pass. Add screenshot tests when new recognition labels or cooldown checks are introduced.
+
+## Upstream Semantic Porting
+
+Use this workflow only when a character already exists in another OK-WW repository:
+
+1. Verify the destination repository, current branch, clean worktree, and pushed release backup.
+2. Pin one exact upstream commit. Review the character's introduction and later bug-fix commits, but port the final file from the pinned commit.
+3. Make the commit available as a local Git object, then run:
+
+   ```powershell
+   .\.venv\Scripts\python.exe scripts\port_upstream_character.py CharacterName --ref COMMIT
+   ```
+
+4. Review the generated report in three groups:
+   - source, labels, template annotations, and free IDs are mechanical findings;
+   - team references and character-local behavior require semantic review;
+   - missing base/task APIs and shared switching changes are high risk.
+5. Never merge the upstream branch, cherry-pick the complete commit, replace `Labels.py`, replace the full COCO file, or copy a base class wholesale.
+6. Recompute image, category, and annotation IDs from the current local COCO immediately before merging the generated fragment.
+7. Keep each upstream source screenshot on a separate black canvas. State templates at the same HUD coordinates can overlap and would overwrite each other if source screenshots were combined.
+8. Register the class in `CharFactory.py`; automatic consumers must continue using `char_names` instead of a second registry.
+9. Add gettext entries, compile catalogs, include character assets in packaging, and record the pinned source in `config/upstream_characters.json`.
+10. Run import, character, `FeatureSet`, screenshot recognition, release, and package tests offline. A character is incomplete until every referenced label loads a real, non-empty template.
+
+For Qingxiao, the pinned example is:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\port_upstream_character.py Qingxiao --ref a24c30f2ec90e56e40287bb76caf7c3a52266d77
+```
