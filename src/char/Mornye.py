@@ -83,7 +83,7 @@ class Mornye(BaseChar):
         return self.time_elapsed_accounting_for_freeze(self.last_heavy) < 23
 
     def get_switch_priority(self, current_char=None, has_intro=False, target_low_con=False):
-        if has_intro and current_char and current_char.char_name in {'char_aemeath'}:
+        if has_intro and current_char and current_char.char_name in {'char_aemeath', 'char_qingxiao'}:
             return SwitchPriority.MUST
         from src.char.Linnai import Linnai
         if has_intro and current_char and self.task.has_char(Linnai) and current_char.char_name != 'char_linnai':
