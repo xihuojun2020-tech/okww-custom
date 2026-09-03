@@ -52,6 +52,12 @@ class ProfileRecord:
 
 
 @dataclass(frozen=True)
+class ProfileTemplateRecord:
+    revision: str
+    tasks: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
 class SequenceRecord:
     sequence_id: str
     revision: str
@@ -279,6 +285,76 @@ class AccountRepository:
         profile = copy.deepcopy(accounts[profile_id])
         tasks = profile.pop("task_config", {})
         return ProfileRecord(profile_id, self._revision(raw), profile, copy.deepcopy(tasks))
+
+    def load_profile_template(self, fallback_profile_id: str | None = None) -> ProfileTemplateRecord:
+        """Load the shared new-account task template, falling back to one existing account."""
+        raw, accounts, _ = self._load_index()
+        template = raw.get("extensions", {}).get("new_profile_template")
+        if not isinstance(template, Mapping):
+            source = accounts.get(str(fallback_profile_id)) if fallback_profile_id else None
+            source = source or next(iter(accounts.values()), {})
+            template = source.get("task_config", {}) if isinstance(source, Mapping) else {}
+        tasks = copy.deepcopy(dict(template)) if isinstance(template, Mapping) else {}
+        # Login aliases identify an account and must never leak from the template.
+        tasks["备用识别名称"] = "无"
+        tasks["备用识别名称内容"] = ""
+        return ProfileTemplateRecord(self._revision(raw), tasks)
+
+    def publish_profile_template(self, tasks: Mapping[str, Any], *,
+                                 expected_revision: str) -> ProfileTemplateRecord:
+        with self._lock:
+            raw, _, _ = self._load_index()
+            if self._revision(raw) != str(expected_revision):
+                raise ProfileRevisionConflict("新账号模板已被其他操作修改")
+            if not isinstance(tasks, Mapping):
+                raise AccountRepositoryError("新账号模板必须是 JSON 对象")
+            candidate = copy.deepcopy(raw)
+            template = copy.deepcopy(dict(tasks))
+            template["备用识别名称"] = "无"
+            template["备用识别名称内容"] = ""
+            candidate.setdefault("extensions", {})["new_profile_template"] = template
+            self._publish_master(candidate)
+            return self.load_profile_template()
+
+    def create_profile(self, account: Mapping[str, Any], tasks: Mapping[str, Any], *,
+                       sequence_ids: tuple[str, ...] = (), expected_revision: str) -> ProfileRecord:
+        """Create one account and its sequence memberships in one protected publication."""
+        with self._lock:
+            raw, accounts, sequences = self._load_index()
+            if self._revision(raw) != str(expected_revision):
+                raise ProfileRevisionConflict("账号配置已被其他操作修改")
+            if not isinstance(account, Mapping) or not isinstance(tasks, Mapping):
+                raise AccountRepositoryError("新账号配置结构无效")
+            label = str(account.get("display_name") or "").strip()
+            if not label:
+                raise AccountRepositoryError("账号短名不能为空")
+            if any(str(value.get("display_name") or "").casefold() == label.casefold()
+                   for value in accounts.values() if isinstance(value, Mapping)):
+                raise AccountRepositoryError("账号短名已存在")
+            requested_sequences = tuple(str(name).strip() for name in sequence_ids)
+            if len(set(requested_sequences)) != len(requested_sequences):
+                raise AccountRepositoryError("账号序列不能重复")
+            if any(name not in sequences for name in requested_sequences):
+                raise AccountRepositoryError("账号序列不存在")
+            profile_id = str(uuid.uuid4())
+            profile = {
+                **copy.deepcopy(dict(account)),
+                # The repository, not the caller, owns stable account IDs.
+                # Write it after the caller payload so an injected profile_id
+                # can never disagree with the graph key.
+                "profile_id": profile_id,
+                "display_name": label,
+                "task_config": copy.deepcopy(dict(tasks)),
+                "schedule": {},
+                "extensions": {},
+            }
+            candidate = copy.deepcopy(raw)
+            source_key = "accounts" if "accounts" in candidate and "profiles" not in candidate else "profiles"
+            candidate.setdefault(source_key, {})[profile_id] = profile
+            for name in requested_sequences:
+                candidate["sequences"][name].append(profile_id)
+            self._publish_master(candidate)
+            return self.load_profile(profile_id)
 
     def _publish_master(self, raw: Mapping[str, Any]) -> None:
         from . import account_config_bundle as bundle_module
@@ -672,5 +748,5 @@ def get_default_repository() -> AccountRepository | None:
 
 
 __all__ = ["AccountDeletionPreview", "AccountRepository", "AccountRepositoryError", "ProfileRevisionConflict",
-           "ProfileEditScope", "ProfileRecord", "SequenceRecord", "ReadyResult",
+           "ProfileEditScope", "ProfileRecord", "ProfileTemplateRecord", "SequenceRecord", "ReadyResult",
            "set_default_repository", "get_default_repository"]

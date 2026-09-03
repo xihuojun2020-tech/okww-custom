@@ -164,9 +164,12 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 'options': self.get_profile_names(),
                 'last_completed_provider': self.get_profile_last_completed,
             }
-        # 当前执行账号：选择后从该账号开始执行（选 A3 → A3..A10 完成后继续 A1..A2；留空 = 从当前登录账号开始）
+        # 当前执行账号：用户确认当前已登录该账号；从它开始并在整轮结束后登录回它。
         self.default_config[CURRENT_ACCOUNT] = ''
-        self.config_description[CURRENT_ACCOUNT] = '选择从哪个账号开始执行（如选 A3 → A3、A4…A10 完成后继续 A1、A2；留空 = 自动从当前登录账号开始）'
+        self.config_description[CURRENT_ACCOUNT] = (
+            '当前世界中已经登录的账号，也是本轮起点和最终回登账号；'
+            '留空时才退登并自动识别当前账号'
+        )
         self.config_type[CURRENT_ACCOUNT] = {
             'type': 'drop_down',
             'options': [''] + self.get_profile_names(),
@@ -747,9 +750,15 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             labels = MultiAccountDailyTask._done_status_labels(self)
             self.log_info(f'检测到今日已完成账号（断点恢复）: {labels}', notify=True)
 
-        # 记录真实起始账号（全部完成后登录回它）。主界面启动时必须先退登
-        # 识别真实身份，不能用 CURRENT_ACCOUNT 或序列下一个账号冒充。
-        first_account = None
+        # An explicit start account is the user's assertion about the account
+        # already open in the world and remains the final return target.
+        configured_start = (self.config.get(CURRENT_ACCOUNT) or '').strip()
+        first_account = next(
+            (account for account in sequence if self._same_account(account, configured_start)),
+            None,
+        ) if configured_start else None
+        if configured_start and first_account is None:
+            raise Exception(f'当前执行账号 {profile_status_label(configured_start)} 不属于当前序列')
 
         # 第一轮：主界面启动先退登并识别真实账号；登录界面启动则从序列选号。
         try:
@@ -759,55 +768,82 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         except Exception:
             in_main = False
         if in_main:
-            _publish_status_safe(self, stage='账号切换', detail='正在退出当前账号')
-            self._switch_to_login()
-            try:
-                first_account = self._detect_current_account_from_login()
-            except TaskDisabledException:
-                raise
-            except ValueError:
-                raise
-            except Exception as e:
-                self.log_error('无法识别主界面启动时的真实账号', e)
-                first_account = None
-            if not first_account:
-                self.log_error('主界面启动时无法唯一识别真实账号，为防止使用错误方案，停止运行')
-                self.screenshot('multi')
-                raise Exception(self.tr('Cannot identify the current account safely'))
-
-            in_sequence = any(self._same_account(first_account, acc) for acc in sequence)
-            if in_sequence and not self._is_done(first_account):
+            if configured_start:
                 _publish_status_safe(self,
                     account=first_account,
-                    stage='账号切换',
-                    detail=f'正在选择账号 {profile_status_label(first_account)}',
+                    stage='每日任务',
+                    detail=f'正在执行账号 {profile_status_label(first_account)}',
                 )
-                self.log_info(f'主界面启动识别到真实账号 {profile_status_label(first_account)}，重新登录后执行其每日任务', notify=True)
-                self._select_and_login_specific(first_account)
-                self._require_daily_profile(first_account)
-                self.run_task_by_class(DailyTask)
-                self.log_info(f'账号 {profile_status_label(first_account)} 每日任务完成', notify=True)
-                self._mark_done(first_account)
-                self._save_today_progress()
-                self.ensure_main(time_out=100)
-                self._switch_to_login()
-            elif not sequence and not self._is_done(first_account):
-                self.log_info(f'未配置账号序列，执行已识别的真实账号 {profile_status_label(first_account)}', notify=True)
-                self._select_and_login_specific(first_account)
-                self._require_daily_profile(first_account)
-                self.run_task_by_class(DailyTask)
-                self._mark_done(first_account)
-                self._save_today_progress()
-                self.ensure_main(time_out=100)
+                if not self._is_done(first_account):
+                    self.log_info(
+                        f'用户确认当前世界账号为 {profile_status_label(first_account)}，直接执行每日任务',
+                        notify=True,
+                    )
+                    self._require_daily_profile(first_account)
+                    self.run_task_by_class(DailyTask)
+                    self.log_info(f'账号 {profile_status_label(first_account)} 每日任务完成', notify=True)
+                    self._mark_done(first_account)
+                    self._save_today_progress()
+                    self.ensure_main(time_out=100)
+                if self._next_target_account() is None:
+                    self.log_info(
+                        f'序列本轮全部完成，当前已是起始账号 {profile_status_label(first_account)}',
+                        notify=True,
+                    )
+                    self._notify_user(
+                        '多账号每日任务完成',
+                        f'序列本轮全部完成，已登录回 {profile_status_label(first_account)}。',
+                    )
+                    return
+                _publish_status_safe(self, stage='账号切换', detail='正在退出当前账号')
                 self._switch_to_login()
             else:
-                self.log_info(
-                    f'真实起始账号 {profile_status_label(first_account)} 不在当前序列或今日已完成，'
-                    '不运行其每日任务，继续选择序列中的下一个账号'
-                )
-                # 该账号不是本轮序列起点时，清除旧配置值，避免断点配置
-                # 把序列旋转到一个与本次真实启动状态无关的位置。
-                self.config[CURRENT_ACCOUNT] = ''
+                _publish_status_safe(self, stage='账号切换', detail='正在退出当前账号')
+                self._switch_to_login()
+                try:
+                    first_account = self._detect_current_account_from_login()
+                except TaskDisabledException:
+                    raise
+                except ValueError:
+                    raise
+                except Exception as e:
+                    self.log_error('无法识别主界面启动时的真实账号', e)
+                    first_account = None
+                if not first_account:
+                    self.log_error('主界面启动时无法唯一识别真实账号，为防止使用错误方案，停止运行')
+                    self.screenshot('multi')
+                    raise Exception(self.tr('Cannot identify the current account safely'))
+
+                in_sequence = any(self._same_account(first_account, acc) for acc in sequence)
+                if in_sequence and not self._is_done(first_account):
+                    _publish_status_safe(self,
+                        account=first_account,
+                        stage='账号切换',
+                        detail=f'正在选择账号 {profile_status_label(first_account)}',
+                    )
+                    self.log_info(f'主界面启动识别到真实账号 {profile_status_label(first_account)}，重新登录后执行其每日任务', notify=True)
+                    self._select_and_login_specific(first_account)
+                    self._require_daily_profile(first_account)
+                    self.run_task_by_class(DailyTask)
+                    self.log_info(f'账号 {profile_status_label(first_account)} 每日任务完成', notify=True)
+                    self._mark_done(first_account)
+                    self._save_today_progress()
+                    self.ensure_main(time_out=100)
+                    self._switch_to_login()
+                elif not sequence and not self._is_done(first_account):
+                    self.log_info(f'未配置账号序列，执行已识别的真实账号 {profile_status_label(first_account)}', notify=True)
+                    self._select_and_login_specific(first_account)
+                    self._require_daily_profile(first_account)
+                    self.run_task_by_class(DailyTask)
+                    self._mark_done(first_account)
+                    self._save_today_progress()
+                    self.ensure_main(time_out=100)
+                    self._switch_to_login()
+                else:
+                    self.log_info(
+                        f'真实起始账号 {profile_status_label(first_account)} 不在当前序列或今日已完成，'
+                        '不运行其每日任务，继续选择序列中的下一个账号'
+                    )
         else:
             _publish_status_safe(self, stage='账号切换', detail='正在识别当前账号')
             first_target = self._select_and_login_account()
@@ -826,7 +862,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 self.ensure_main(time_out=100)
                 self._switch_to_login()
 
-            if first_target:
+            if first_target and first_account is None:
                 first_account = first_target
             elif first_account is None:
                 try:
@@ -2245,7 +2281,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         return None
 
     def _next_target_account(self):
-        """序列中第一个未完成的账号（从「当前执行账号」开始旋转：选 A3 → A3..A10, A1..A2）；全部完成返回 None。"""
+        """Return the next unfinished account in the fixed rotation selected before the run."""
         sequence = self.get_sequence_accounts()
         if not sequence:
             return None
@@ -2319,7 +2355,6 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         # Repeat the binding at the execution boundary and verify the ID from
         # the same validated profile map used by this task.
         daily_task = getattr(self, 'get_task_by_class', lambda *_: None)(DailyTask)
-        self.config[CURRENT_ACCOUNT] = profile_name
         profile_id = profiles[profile_name].get('profile_id')
         if integrity_service is not None and (not isinstance(profile_id, str) or not profile_id.strip()):
             raise ConfigIntegrityBlocked(

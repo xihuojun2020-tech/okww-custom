@@ -7,13 +7,15 @@ from src.account_field_metadata import (account_field_metadata, localize_account
 class TestAccountFieldMetadata(unittest.TestCase):
     def test_common_fields_have_chinese_help_and_identity_is_read_only(self):
         fields = {field.key: field for field in account_field_metadata({
-            "Which to Farm": "Tacet Suppression", "备用识别名称内容": "hidden",
+            "Which to Farm": "Tacet Suppression", "备用识别名称": "无",
+            "备用识别名称内容": "hidden",
             "Farm Nightmare Nest for Daily Echo": True,
         })}
         self.assertEqual(fields["Which to Farm"].label, "体力用途")
         self.assertTrue(fields["Which to Farm"].help_text)
         self.assertEqual(fields["Farm Nightmare Nest for Daily Echo"].editor_type, "bool")
-        self.assertTrue(fields["备用识别名称内容"].read_only)
+        self.assertFalse(fields["备用识别名称内容"].read_only)
+        self.assertEqual(fields["备用识别名称"].options, ("无", "使用"))
 
     def test_english_storage_values_round_trip_through_chinese_display(self):
         stored = ["Nightmare Purification", "Tacet Discord Nest"]

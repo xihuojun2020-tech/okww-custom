@@ -28,6 +28,19 @@ class TestAccountManagementTabs(unittest.TestCase):
         self.assertIn("上移账号", sequence_source)
         self.assertIn("下移账号", sequence_source)
 
+    def test_account_page_exposes_template_and_new_account_actions(self):
+        source = inspect.getsource(AccountConfigTab)
+        self.assertIn("编辑新账号模板", source)
+        self.assertIn("新建账号配置", source)
+        self.assertIn("ClickOnlyComboBox(self.form_host)", source)
+
+    def test_sequence_page_keeps_only_creation_deletion_and_member_order_actions(self):
+        source = inspect.getsource(SequenceManagementTab)
+        for text in ("新建序列", "删除当前序列", "上移账号", "下移账号"):
+            self.assertIn(text, source)
+        for text in ('QPushButton("复制"', 'QPushButton("重命名"', 'QPushButton("启用/停用"'):
+            self.assertNotIn(text, source)
+
     def test_account_page_exposes_sequence_membership(self):
         source = inspect.getsource(AccountConfigTab)
         self.assertIn("所属序列", source)

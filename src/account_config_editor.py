@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from .account_repository import ProfileEditScope, ProfileRevisionConflict
+from .account_identity import masked_phone
 
 
 class AccountConfigEditorError(RuntimeError):
@@ -37,8 +38,10 @@ LOCKED_IDENTITY_FIELDS = (
 )
 _LOCKED_TASK = {
     "phone", "masked_phone", "nickname", "alternate_login_name", "game_feature_code",
-    "account_aliases", "备用识别名称", "备用识别名称内容", "Account Name", "account_name", "账号名称",
+    "account_aliases", "Account Name", "account_name", "账号名称",
 }
+_ALIAS_ENABLE = "备用识别名称"
+_ALIAS_TEXT = "备用识别名称内容"
 
 
 def _redact(value: Any) -> Any:
@@ -141,17 +144,67 @@ class AccountConfigEditor:
         if confirmed_account_label != label:
             raise AccountLabelMismatch("确认的账号短名不匹配")
         self._validate_locked(draft)
+        alias_enabled = draft.tasks.get(_ALIAS_ENABLE)
+        alias_text = str(draft.tasks.get(_ALIAS_TEXT) or "").strip()
+        if alias_enabled not in (None, "无", "使用"):
+            raise AccountConfigEditorError("备用识别名称必须选择“无”或“使用”")
+        if alias_enabled == "使用" and not alias_text:
+            raise AccountConfigEditorError("启用备用识别名称后必须填写具体名称")
         self.backup_service.backup_profile(draft.profile_id, {
             "profile_id": draft.profile_id, "revision": current.revision,
             "account": copy.deepcopy(dict(current.account)), "tasks": copy.deepcopy(dict(current.tasks)),
             "sequence_ids": tuple(sequence_ids) if sequence_ids is not None else None,
         })
-        payload = {
-            "account": copy.deepcopy(draft.account), "tasks": copy.deepcopy(draft.tasks),
-        }
+        account = copy.deepcopy(draft.account)
+        tasks = copy.deepcopy(draft.tasks)
+        if alias_enabled is not None:
+            tasks[_ALIAS_TEXT] = alias_text
+            account["alternate_login_name"] = alias_text if alias_enabled == "使用" else ""
+        payload = {"account": account, "tasks": tasks}
         if sequence_ids is not None:
             payload["sequence_ids"] = tuple(sequence_ids)
         return self.repository.publish_profile(scope, payload, source="账号配置页面")
+
+    def load_template(self, fallback_profile_id: str | None = None) -> Any:
+        return self.repository.load_profile_template(fallback_profile_id)
+
+    def save_template(self, tasks: Mapping[str, Any], *, expected_revision: str) -> Any:
+        if not isinstance(tasks, Mapping):
+            raise AccountConfigEditorError("新账号模板必须是 JSON 对象")
+        return self.repository.publish_profile_template(tasks, expected_revision=expected_revision)
+
+    def create_profile(self, template: Any, *, display_name: str, phone: str, nickname: str,
+                       game_feature_code: str = "", alias_enabled: bool = False,
+                       alias_text: str = "", sequence_ids: tuple[str, ...] = ()) -> Any:
+        label = str(display_name or "").strip().upper()
+        full_phone = re.sub(r"\s+", "", str(phone or ""))
+        nickname = str(nickname or "").strip()
+        feature_code = str(game_feature_code or "").strip()
+        alias = str(alias_text or "").strip()
+        if not re.fullmatch(r"[A-Z]\d+", label):
+            raise AccountConfigEditorError("账号短名必须为一个字母加数字，例如 A5")
+        if not re.fullmatch(r"1[3-9]\d{9}", full_phone):
+            raise AccountConfigEditorError("完整手机号格式无效")
+        if not nickname:
+            raise AccountConfigEditorError("游戏昵称不能为空")
+        if alias_enabled and not alias:
+            raise AccountConfigEditorError("启用备用识别名称后必须填写具体名称")
+        tasks = copy.deepcopy(dict(template.tasks))
+        tasks[_ALIAS_ENABLE] = "使用" if alias_enabled else "无"
+        tasks[_ALIAS_TEXT] = alias
+        account = {
+            "display_name": label,
+            "phone": full_phone,
+            "masked_phone": masked_phone(full_phone),
+            "nickname": nickname,
+            "alternate_login_name": alias if alias_enabled else "",
+            "game_feature_code": feature_code,
+            "account_aliases": [],
+        }
+        return self.repository.create_profile(
+            account, tasks, sequence_ids=tuple(sequence_ids),
+            expected_revision=str(template.revision),
+        )
 
     def delete_profile(self, scope: ProfileEditScope, *, confirmed_account_label: str) -> Any:
         current = self.repository.load_profile(scope.profile_id)

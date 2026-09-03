@@ -42,13 +42,9 @@ class SequenceManagementTab(CustomTab):
         layout.addWidget(BodyLabel("当前序列包含的账号（上下移动只调整账号顺序）"))
         layout.addWidget(self.members, 1)
         sequence_actions = QHBoxLayout()
-        self.create_button = QPushButton("新建", root)
-        self.copy_button = QPushButton("复制", root)
-        self.rename_button = QPushButton("重命名", root)
-        self.enable_button = QPushButton("启用/停用", root)
+        self.create_button = QPushButton("新建序列", root)
         self.delete_button = QPushButton("删除当前序列", root)
-        for button in (self.create_button, self.copy_button, self.rename_button, self.enable_button,
-                       self.delete_button):
+        for button in (self.create_button, self.delete_button):
             sequence_actions.addWidget(button)
         layout.addLayout(sequence_actions)
         member_actions = QHBoxLayout()
@@ -62,9 +58,6 @@ class SequenceManagementTab(CustomTab):
         self.add_widget(root, stretch=1)
         self.sequences.currentRowChanged.connect(self._show_members)
         self.create_button.clicked.connect(self._create)
-        self.copy_button.clicked.connect(self._copy)
-        self.rename_button.clicked.connect(self._rename)
-        self.enable_button.clicked.connect(self._toggle)
         self.delete_button.clicked.connect(self._delete)
         self.up_button.clicked.connect(lambda: self._move(-1))
         self.down_button.clicked.connect(lambda: self._move(1))
@@ -95,7 +88,7 @@ class SequenceManagementTab(CustomTab):
             return
         self.sequences.clear()
         for item in self._drafts:
-            self.sequences.addItem(f"{item.sequence_id}（{'启用' if item.enabled else '停用'}）")
+            self.sequences.addItem(item.sequence_id)
         row_height = self.sequences.sizeHintForRow(0) if self.sequences.count() else 24
         self.sequences.setFixedHeight(max(32, row_height * self.sequences.count() + 8))
         if self._drafts:
@@ -131,26 +124,6 @@ class SequenceManagementTab(CustomTab):
         name, ok = self._name("新建序列")
         if ok and name.strip():
             self._run_action("新建序列", lambda: self.service.create(name.strip()))
-
-    def _copy(self):
-        item = self._selected()
-        if item:
-            name, ok = self._name("复制序列")
-            if ok and name.strip():
-                self._run_action("复制序列", lambda: self.service.copy(item.sequence_id, name.strip()))
-
-    def _rename(self):
-        item = self._selected()
-        if item:
-            name, ok = self._name("重命名序列")
-            if ok and name.strip():
-                self._run_action("重命名序列", lambda: self.service.rename(item.sequence_id, name.strip()))
-
-    def _toggle(self):
-        item = self._selected()
-        if item:
-            self._run_action("更新序列状态",
-                             lambda: self.service.set_enabled(item.sequence_id, not item.enabled))
 
     def _delete(self):
         item = self._selected()

@@ -28,11 +28,14 @@ _LABELS = {
     "Weekly Garden Check Day": ("周常乐园检查日", "选择自动检查周常乐园的星期。"),
     "Merge Echo on Sunday": ("周日合成声骸", "开启后在周日执行声骸合成。"),
     "Logout After Daily Task": ("每日任务后自动退登", "单账号运行结束后的退登行为；多账号任务会临时接管。"),
+    "备用识别名称": ("使用备用识别名称", "选择“使用”后，下面填写的名称才参与登录账号识别。"),
+    "备用识别名称内容": ("备用识别名称内容", "可填写 U…A 等登录页显示名称；停用时保留但不会用于识别。"),
 }
 _OPTIONS = {
     "Which to Farm": ("Tacet Suppression", "Forgery Challenge", "Simulation Challenge"),
     "Material Selection": ("Resonator EXP", "Weapon EXP", "Shell Credit"),
     "Weekly Garden Check Day": ("无", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"),
+    "备用识别名称": ("无", "使用"),
 }
 _VALUE_LABELS = {
     "Tacet Suppression": "无音区",
@@ -47,7 +50,7 @@ _VALUE_LABELS = {
 _STORAGE_VALUES = {label: value for value, label in _VALUE_LABELS.items()}
 _IDENTITY = {
     "phone", "masked_phone", "nickname", "alternate_login_name", "game_feature_code",
-    "account_aliases", "备用识别名称", "备用识别名称内容", "Account Name", "account_name", "账号名称",
+    "account_aliases", "Account Name", "account_name", "账号名称",
 }
 
 

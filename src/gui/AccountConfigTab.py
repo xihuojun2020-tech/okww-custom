@@ -4,7 +4,8 @@ import json
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
-                               QMessageBox, QPlainTextEdit, QPushButton, QInputDialog,
+                               QMessageBox, QPlainTextEdit, QPushButton, QInputDialog, QDialog,
+                               QDialogButtonBox,
                                QVBoxLayout, QWidget, QLineEdit, QSizePolicy)
 from qfluentwidgets import BodyLabel, FluentIcon
 
@@ -22,6 +23,110 @@ class ClickOnlyComboBox(QComboBox):
 
     def wheelEvent(self, event):
         event.ignore()
+
+
+class AccountTemplateDialog(QDialog):
+    """Edit the shared task-only template with the same field metadata as account editing."""
+
+    def __init__(self, tasks, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("编辑新账号模板")
+        self._tasks = dict(tasks)
+        self._widgets = {}
+        layout = QVBoxLayout(self)
+        layout.addWidget(BodyLabel("模板只复制每日任务设置，不复制账号身份、序列或完成记录。"))
+        form = QFormLayout()
+        for field in account_field_metadata(self._tasks):
+            if field.affects_identity or field.key in ("备用识别名称", "备用识别名称内容"):
+                continue
+            value = self._tasks.get(field.key)
+            if field.editor_type == "bool":
+                widget = QCheckBox(self)
+                widget.setChecked(bool(value))
+            elif field.editor_type == "choice":
+                widget = ClickOnlyComboBox(self)
+                for option, label in zip(field.options, field.option_labels):
+                    widget.addItem(label, option)
+                widget.setCurrentIndex(max(widget.findData(value), 0))
+            else:
+                widget = QLineEdit(self)
+                display = localize_account_value(value)
+                widget.setText(json.dumps(display, ensure_ascii=False)
+                               if isinstance(display, (list, dict)) else str(display))
+            self._widgets[field.key] = widget
+            form.addRow(field.label, widget)
+        layout.addLayout(form)
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel, parent=self)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        self.resize(680, 560)
+
+    def tasks(self):
+        result = dict(self._tasks)
+        for key, widget in self._widgets.items():
+            if isinstance(widget, QCheckBox):
+                result[key] = widget.isChecked()
+            elif isinstance(widget, QComboBox):
+                result[key] = widget.currentData()
+            else:
+                text = widget.text()
+                original = result.get(key)
+                if isinstance(original, int):
+                    result[key] = int(text)
+                elif isinstance(original, float):
+                    result[key] = float(text)
+                elif isinstance(original, (list, dict)):
+                    result[key] = restore_account_value(json.loads(text))
+                else:
+                    result[key] = restore_account_value(text)
+        return result
+
+
+class NewAccountDialog(QDialog):
+    def __init__(self, sequence_ids, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("新建账号配置")
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        self.short_name = QLineEdit(self)
+        self.phone = QLineEdit(self)
+        self.nickname = QLineEdit(self)
+        self.feature_code = QLineEdit(self)
+        self.alias_enable = ClickOnlyComboBox(self)
+        self.alias_enable.addItem("无", False)
+        self.alias_enable.addItem("使用", True)
+        self.alias_text = QLineEdit(self)
+        for label, widget in (("账号短名（例如 A5）", self.short_name), ("完整手机号", self.phone),
+                              ("游戏昵称", self.nickname), ("游戏内特征码", self.feature_code),
+                              ("使用备用识别名称", self.alias_enable),
+                              ("备用识别名称内容", self.alias_text)):
+            form.addRow(label, widget)
+        layout.addLayout(form)
+        group = QGroupBox("加入账号序列", self)
+        group_layout = QVBoxLayout(group)
+        self.sequence_boxes = {}
+        for sequence_id in sequence_ids:
+            box = QCheckBox(sequence_id, group)
+            self.sequence_boxes[sequence_id] = box
+            group_layout.addWidget(box)
+        layout.addWidget(group)
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel, parent=self)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        self.resize(560, 420)
+
+    def values(self):
+        return {
+            "display_name": self.short_name.text(),
+            "phone": self.phone.text(),
+            "nickname": self.nickname.text(),
+            "game_feature_code": self.feature_code.text(),
+            "alias_enabled": bool(self.alias_enable.currentData()),
+            "alias_text": self.alias_text.text(),
+            "sequence_ids": tuple(name for name, box in self.sequence_boxes.items() if box.isChecked()),
+        }
 
 
 class AccountConfigTab(CustomTab):
@@ -80,7 +185,10 @@ class AccountConfigTab(CustomTab):
         self.discard_button = QPushButton("丢弃草稿", root)
         self.delete_button = QPushButton("删除当前账号", root)
         self.rebind_button = QPushButton("重新绑定身份", root)
+        self.template_button = QPushButton("编辑新账号模板", root)
+        self.new_button = QPushButton("新建账号配置", root)
         for button in (self.preview_button, self.save_button, self.discard_button,
+                       self.template_button, self.new_button,
                        self.rebind_button, self.delete_button):
             actions.addWidget(button)
         layout.addLayout(actions)
@@ -93,6 +201,8 @@ class AccountConfigTab(CustomTab):
         self.discard_button.clicked.connect(self._load_selected)
         self.delete_button.clicked.connect(self.delete_account)
         self.rebind_button.clicked.connect(self.rebind_identity)
+        self.template_button.clicked.connect(self.edit_template)
+        self.new_button.clicked.connect(self.create_account)
         self.refresh()
 
     @property
@@ -244,8 +354,7 @@ class AccountConfigTab(CustomTab):
                 widget = QCheckBox(self.form_host)
                 widget.setChecked(bool(value))
             elif field.editor_type == "choice":
-                widget = (ClickOnlyComboBox(self.form_host)
-                          if field.key == "Which to Farm" else QComboBox(self.form_host))
+                widget = ClickOnlyComboBox(self.form_host)
                 for option, option_label in zip(field.options, field.option_labels):
                     widget.addItem(option_label, option)
                 index = widget.findData(value)
@@ -260,6 +369,43 @@ class AccountConfigTab(CustomTab):
             widget.setToolTip(field.help_text)
             self.form_widgets[field.key] = widget
             self.form_layout.addRow(label, widget)
+
+    def edit_template(self):
+        try:
+            template = self.editor.load_template(self.selected_profile_id)
+            dialog = AccountTemplateDialog(template.tasks, self.view)
+            if dialog.exec() != QDialog.Accepted:
+                return None
+            result = self.editor.save_template(dialog.tasks(), expected_revision=str(template.revision))
+            self.status.setText("新账号模板保存成功")
+            return result
+        except Exception as exc:
+            self.status.setText(f"模板保存失败：{sanitize_error(exc)}")
+            return None
+
+    def create_account(self):
+        try:
+            template = self.editor.load_template(self.selected_profile_id)
+            sequence_ids = self.editor.repository.list_sequence_ids()
+            dialog = NewAccountDialog(sequence_ids, self.view)
+            if dialog.exec() != QDialog.Accepted:
+                return None
+            values = dialog.values()
+            answer = QMessageBox.question(
+                self.view, "确认新建账号",
+                f"确认使用新账号模板创建 {str(values['display_name']).strip().upper()}？",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return None
+            result = self.editor.create_profile(template, **values)
+            self.status.setText("新账号创建成功")
+            self.refresh(profile_id=result.profile_id)
+            self.changed.emit(AccountChangeEvent(
+                "profile_created", str(result.revision), (result.profile_id,), values["sequence_ids"]))
+            return result
+        except Exception as exc:
+            self.status.setText(f"新建账号失败：{sanitize_error(exc)}")
+            return None
 
     def preview(self):
         try:
@@ -363,4 +509,4 @@ class AccountConfigTab(CustomTab):
             return None
 
 
-__all__ = ["AccountConfigTab", "ClickOnlyComboBox"]
+__all__ = ["AccountConfigTab", "AccountTemplateDialog", "ClickOnlyComboBox", "NewAccountDialog"]

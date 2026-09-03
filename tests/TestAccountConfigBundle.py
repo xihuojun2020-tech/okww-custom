@@ -89,6 +89,30 @@ class TestAccountConfigBundle(unittest.TestCase):
         self.assertGreaterEqual(imported.account_count, 0)
         self.assertTrue(imported.diff_summary)
 
+    def test_new_profile_template_round_trips_inside_master_extensions(self):
+        template = {**_task_config(), "Which to Farm": "Forgery Challenge"}
+        self.master["extensions"]["new_profile_template"] = template
+        self.service.paths.master.write_text(
+            json.dumps(self.master, ensure_ascii=False), encoding="utf-8")
+        self.service.paths.working.write_text(
+            json.dumps(self.service._rebuild_working(self.master, {}), ensure_ascii=False),
+            encoding="utf-8",
+        )
+        self.service.paths.runtime.write_text(json.dumps({
+            "accepted_master_fingerprint": fingerprint(normalize_master(self.master)),
+            "completed_at": {}, "progress": {},
+        }), encoding="utf-8")
+        bundle = AccountConfigBundleService(self.root, integrity_service=self.service)
+
+        exported = bundle.export_bundle()
+        self.assertEqual(
+            exported["master_config"]["extensions"]["new_profile_template"], template)
+        imported = bundle.import_bundle(exported, confirm=True)
+
+        self.assertTrue(imported.ok)
+        restored = json.loads(self.service.paths.master.read_text(encoding="utf-8"))
+        self.assertEqual(restored["extensions"]["new_profile_template"], template)
+
     def test_export_recursively_redacts_credentials_but_keeps_full_phone_identity(self):
         self.master["extensions"] = {
             "password": "secret-password", "nested": {

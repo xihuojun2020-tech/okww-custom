@@ -748,7 +748,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
 
         linked = FakeTask({'A1': {}}, True)
         self.assertTrue(linked._require_daily_profile('A1'))
-        self.assertEqual(linked.config[CURRENT_ACCOUNT], 'A1')
+        self.assertNotIn(CURRENT_ACCOUNT, linked.config)
 
     def test_dialog_login_click_retries_when_ui_does_not_transition(self):
         class FakeTask:
@@ -921,6 +921,142 @@ class TestMultiAccountDailyTask(unittest.TestCase):
             ['logout', 'detect', 'login:A4', 'profile:A4', 'daily',
              'save', 'ensure_main', 'logout', 'return:A4'],
         )
+
+    def test_explicit_current_account_runs_in_place_then_rotates_and_returns(self):
+        class FakeTask:
+            _run_inner = MultiAccountDailyTask._run_inner
+            _next_target_account = MultiAccountDailyTask._next_target_account
+
+            def __init__(self):
+                self.done_set = set()
+                self.config = {CURRENT_ACCOUNT: 'A3'}
+                self.events = []
+                self.targets = iter(['A4', 'A1', None])
+
+            def get_sequence_accounts(self):
+                return ['A1', 'A3', 'A4']
+
+            def _load_today_progress(self):
+                return []
+
+            def is_main(self, **_kwargs):
+                return True
+
+            def _same_account(self, left, right):
+                return left == right
+
+            def _is_done(self, account):
+                return account in self.done_set
+
+            def _require_daily_profile(self, account):
+                self.events.append(f'profile:{account}')
+
+            def run_task_by_class(self, _task):
+                self.events.append('daily')
+
+            def _mark_done(self, account):
+                self.done_set.add(account)
+
+            def _save_today_progress(self):
+                self.events.append('save')
+
+            def ensure_main(self, **_kwargs):
+                self.events.append('ensure_main')
+
+            def _switch_to_login(self):
+                self.events.append('logout')
+
+            def _select_and_login_account(self):
+                target = next(self.targets)
+                if target:
+                    self.events.append(f'login:{target}')
+                return target
+
+            def _login_back_to(self, account):
+                self.events.append(f'return:{account}')
+
+            def info_set(self, *_args, **_kwargs):
+                pass
+
+            def log_info(self, *_args, **_kwargs):
+                pass
+
+            def log_error(self, *_args, **_kwargs):
+                pass
+
+        task = FakeTask()
+        task._run_inner()
+        self.assertEqual(
+            task.events,
+            ['profile:A3', 'daily', 'save', 'ensure_main', 'logout',
+             'login:A4', 'profile:A4', 'daily', 'save', 'ensure_main', 'logout',
+             'login:A1', 'profile:A1', 'daily', 'save', 'ensure_main', 'logout',
+             'return:A3'],
+        )
+        self.assertEqual(task.config[CURRENT_ACCOUNT], 'A3')
+
+    def test_explicit_current_account_outside_sequence_stops_before_game_state_check(self):
+        class FakeTask:
+            _run_inner = MultiAccountDailyTask._run_inner
+
+            done_set = set()
+            config = {CURRENT_ACCOUNT: 'A4'}
+
+            def get_sequence_accounts(self):
+                return ['A1', 'A3']
+
+            def _load_today_progress(self):
+                return []
+
+            def _same_account(self, left, right):
+                return left == right
+
+            def is_main(self, **_kwargs):
+                raise AssertionError('must fail before inspecting or clicking the game')
+
+            def log_info(self, *_args, **_kwargs):
+                pass
+
+        with self.assertRaisesRegex(Exception, '不属于当前序列'):
+            FakeTask()._run_inner()
+
+    def test_all_done_explicit_start_stays_in_world_without_logout(self):
+        class FakeTask:
+            _run_inner = MultiAccountDailyTask._run_inner
+            _next_target_account = MultiAccountDailyTask._next_target_account
+
+            def __init__(self):
+                self.done_set = set()
+                self.config = {CURRENT_ACCOUNT: 'A3'}
+                self.events = []
+
+            def get_sequence_accounts(self):
+                return ['A1', 'A3']
+
+            def _load_today_progress(self):
+                return ['A1', 'A3']
+
+            def _same_account(self, left, right):
+                return left == right
+
+            def _is_done(self, account):
+                return account in self.done_set
+
+            def is_main(self, **_kwargs):
+                return True
+
+            def _switch_to_login(self):
+                self.events.append('logout')
+
+            def _notify_user(self, *_args):
+                self.events.append('notify')
+
+            def log_info(self, *_args, **_kwargs):
+                pass
+
+        task = FakeTask()
+        task._run_inner()
+        self.assertEqual(task.events, ['notify'])
 
     def test_continuous_sequence_uses_formal_login_flow_and_logs_out_between_accounts(self):
         class FakeTask:

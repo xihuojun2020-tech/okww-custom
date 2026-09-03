@@ -13,6 +13,18 @@ from src.account_identity import (
 
 
 class TestAccountIdentity(unittest.TestCase):
+    def test_backup_login_name_is_used_only_when_enabled(self):
+        profiles = {
+            "id-a3": {
+                "display_name": "A3",
+                "alternate_login_name": "UTEST0003A",
+                "task_config": {"备用识别名称": "无", "备用识别名称内容": "UTEST0003A"},
+            }
+        }
+        self.assertIsNone(resolve_profile_identity("UTEST0003A", profiles))
+        profiles["id-a3"]["task_config"]["备用识别名称"] = "使用"
+        self.assertEqual(resolve_profile_identity("UTEST0003A", profiles), "id-a3")
+
     def setUp(self):
         self.profiles = {
             "【A1-small-19910000005】": {"account_aliases": ["U-A1"]},

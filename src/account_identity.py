@@ -76,14 +76,22 @@ def _profile_values(name: Any, profile: Mapping[str, Any] | None) -> list[str]:
             values.append(str(profile[key]))
     # Feature codes are intentionally excluded from ordinary matching. They
     # become an identity source only when strict_feature_code=True.
-    for key in ("phone", "masked_phone", "nickname", "alternate_login_name"):
+    for key in ("phone", "masked_phone", "nickname"):
         if profile.get(key):
             values.append(str(profile[key]))
     values.extend(split_identity_values(profile.get("account_aliases")))
-    for source in (profile, profile.get("task_config")):
+    task_config = profile.get("task_config") if isinstance(profile.get("task_config"), Mapping) else {}
+    alias_mode = normalize_identity(task_config.get("备用识别名称"))
+    alias_enabled = alias_mode in {"使用", "use", "enabled", "true"}
+    alias_disabled = alias_mode in {"无", "不使用", "disabled", "false"}
+    if not alias_disabled and profile.get("alternate_login_name"):
+        values.append(str(profile["alternate_login_name"]))
+    sources = (profile, task_config) if not alias_disabled else ()
+    for source in sources:
         if isinstance(source, Mapping):
             for key in _ALIAS_FIELDS:
-                values.extend(split_identity_values(source.get(key)))
+                if alias_enabled or not alias_mode:
+                    values.extend(split_identity_values(source.get(key)))
     return values
 
 
@@ -104,11 +112,13 @@ def extract_account_identity(profile_id: str, profile: Mapping[str, Any]) -> Acc
     profile = profile if isinstance(profile, Mapping) else {}
     task_config = profile.get("task_config") if isinstance(profile.get("task_config"), Mapping) else {}
     aliases = split_identity_values(profile.get("account_aliases"))
+    alias_mode = normalize_identity(task_config.get("备用识别名称"))
+    alias_disabled = alias_mode in {"无", "不使用", "disabled", "false"}
     legacy_aliases: list[str] = []
-    for source in (profile, task_config):
+    for source in (() if alias_disabled else (profile, task_config)):
         for key in _ALIAS_FIELDS:
             legacy_aliases.extend(split_identity_values(source.get(key)))
-    alternate = _text_field(profile, "alternate_login_name")
+    alternate = None if alias_disabled else _text_field(profile, "alternate_login_name")
     if alternate is None:
         alternate = next((value for value in [*aliases, *legacy_aliases]
                           if _ALTERNATE_NAME.fullmatch(value)), None)
