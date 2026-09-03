@@ -36,6 +36,7 @@ CHARACTER_COLUMNS = 7
 CHARACTER_COMPLETE_ROWS = 2
 CHARACTER_MATCH_MINIMUM = 6
 CHARACTER_MATCH_MARGIN = 2
+SINGLE_PAGE_SCROLL_THUMB_COVERAGE = 0.80
 
 
 @dataclass(frozen=True)
@@ -151,8 +152,8 @@ def frame_change_score(before, after, region=CHARACTER_GRID):
     return float(np.mean(cv2.absdiff(first, second))) / 255.0
 
 
-def scroll_thumb_center(frame):
-    """Find the bright right-side character-list scrollbar and return normalized centre Y."""
+def _scroll_thumb_geometry(frame):
+    """Return the normalized centre and track coverage of the bright scrollbar thumb."""
     if frame is None or frame.size == 0:
         return None
     height, width = frame.shape[:2]
@@ -164,9 +165,25 @@ def scroll_thumb_center(frame):
     gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
     row_counts = np.count_nonzero(gray >= 155, axis=1)
     rows = np.flatnonzero(row_counts >= max(2, int(crop.shape[1] * 0.15)))
-    if len(rows) < max(6, int(height * 0.02)):
+    if not len(rows):
         return None
-    return float(top + np.median(rows)) / height
+    runs = np.split(rows, np.flatnonzero(np.diff(rows) > 1) + 1)
+    thumb = max(runs, key=len)
+    if len(thumb) < max(6, int(height * 0.02)):
+        return None
+    return float(top + np.median(thumb)) / height, len(thumb) / crop.shape[0]
+
+
+def scroll_thumb_center(frame):
+    """Find the bright right-side character-list scrollbar and return normalized centre Y."""
+    geometry = _scroll_thumb_geometry(frame)
+    return geometry[0] if geometry is not None else None
+
+
+def is_single_page_character_list(frame):
+    """Return whether the scrollbar thumb fills enough of its track to prove there is one page."""
+    geometry = _scroll_thumb_geometry(frame)
+    return geometry is not None and geometry[1] >= SINGLE_PAGE_SCROLL_THUMB_COVERAGE
 
 
 def parse_ocr_number(text, minimum=0, maximum=999):
@@ -222,7 +239,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
         self.name = "🧪 自动深渊：关卡与角色扫描"
         self.description = (
             "扫描逆境深塔三座塔的关卡状态，然后进入残响之塔首个可挑战关卡的快速编队页，"
-            "自动识别两屏角色、体力和等级。不会选择角色或点击开启挑战，不会进入战斗。"
+            "按角色数量自动识别一屏或两屏角色、体力和等级。不会选择角色或点击开启挑战，不会进入战斗。"
         )
         self.group_name = "🧪 测试功能"
         self.group_icon = Icon.DEVELOPER_TOOLS
@@ -393,16 +410,26 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
 
         self._set_status("截取角色", "正在截取角色列表第 1 屏")
         first = self._wait_stable_character_frame()
-        first_records = self._recognize_character_screen(first, 1)
+        return self._scan_character_pages(first)
 
-        self._set_status("滚动角色列表", "正在向下滚动角色列表")
-        second = self._scroll_to_second_character_page(first)
-        self._set_status("截取角色", "正在截取角色列表第 2 屏")
-        second_records = self._recognize_character_screen(second, 2)
-        records = first_records + second_records
+    def _scan_character_pages(self, first):
+        single_page = is_single_page_character_list(first)
+        first_records = self._recognize_character_screen(first, 1, include_incomplete=single_page)
+        last_frame = first
+        if single_page:
+            self._set_status("截取角色", "检测到角色列表仅一页，使用第 1 屏识别结果")
+            self.log_info("角色列表仅一页，无需滚动；已尝试识别底部可见的不完整卡片")
+            records = first_records
+        else:
+            self._set_status("滚动角色列表", "正在向下滚动角色列表")
+            second = self._scroll_to_second_character_page(first)
+            self._set_status("截取角色", "正在截取角色列表第 2 屏")
+            second_records = self._recognize_character_screen(second, 2)
+            records = first_records + second_records
+            last_frame = second
         if not records:
-            self.screenshot("abyss_character_recognition_empty", frame=second)
-            raise Exception("两屏角色列表均未识别到角色头像")
+            self.screenshot("abyss_character_recognition_empty", frame=last_frame)
+            raise Exception("角色列表未识别到角色头像")
         return records
 
     def _wait_exact_text(self, text, region, time_out):
@@ -610,8 +637,9 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
             None,
         )
 
-    def _recognize_character_screen(self, frame, screen_index):
-        self._set_status("识别角色", f"正在识别第 {screen_index}/2 屏角色、体力和等级")
+    def _recognize_character_screen(self, frame, screen_index, include_incomplete=False):
+        total_screens = 1 if include_incomplete else 2
+        self._set_status("识别角色", f"正在识别第 {screen_index}/{total_screens} 屏角色、体力和等级")
         numbers = {
             row: self._read_complete_row_numbers(frame, row)
             for row in range(CHARACTER_COMPLETE_ROWS)
@@ -620,7 +648,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
         unknown = 0
         for slot_index, slot in enumerate(character_card_slots()):
             row, column, _x, _y, _width, _height, complete = slot
-            if not complete:
+            if not complete and not include_incomplete:
                 continue
             avatar = self._slot_crop(frame, slot, (0.02, 0.01, 0.98, 0.78))
             identified = self._identify_character(avatar) if avatar is not None and avatar.size else None
@@ -651,7 +679,8 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
                 screen_index=screen_index,
                 slot_index=slot_index,
             ))
-        self.log_info(f"第 {screen_index} 屏识别角色 {len(records)} 个，未知头像 {unknown} 个，底部不完整卡片 7 个")
+        partial = "，已尝试底部不完整卡片" if include_incomplete else "，底部不完整卡片 7 个"
+        self.log_info(f"第 {screen_index} 屏识别角色 {len(records)} 个，未知头像 {unknown} 个{partial}")
         return records
 
     def _click_period_challenge_icon(self):

@@ -24,6 +24,7 @@ from src.task.AutoAbyssTask import (
     merge_character_records,
     parse_energy_number,
     parse_ocr_number,
+    is_single_page_character_list,
     scroll_thumb_center,
     tower_click_point,
 )
@@ -174,6 +175,72 @@ class TestAutoAbyssTask(unittest.TestCase):
         center = scroll_thumb_center(frame)
         self.assertIsNotNone(center)
         self.assertAlmostEqual(center, 400 / 1440, places=2)
+
+    def test_full_height_scroll_thumb_marks_a_single_page(self):
+        frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
+        frame[180:1170, 2355:2370] = 220
+
+        self.assertTrue(is_single_page_character_list(frame))
+
+        frame[620:1170, 2355:2370] = 0
+        self.assertFalse(is_single_page_character_list(frame))
+
+    def test_single_page_scan_skips_scroll_and_attempts_bottom_row(self):
+        frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
+        frame[180:1170, 2355:2370] = 220
+        expected = [CharacterScanRecord("char_a", "A", 10, 90, 0.9, 1, 0)]
+        calls = []
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task._set_status = lambda *args: calls.append(("status", args))
+        task.log_info = lambda message: calls.append(("log", message))
+        task.screenshot = lambda *args, **kwargs: calls.append(("screenshot", args))
+        task._recognize_character_screen = (
+            lambda current, index, include_incomplete=False:
+            calls.append(("recognize", current is frame, index, include_incomplete)) or expected
+        )
+        task._scroll_to_second_character_page = lambda _first: self.fail("single page must not scroll")
+
+        self.assertEqual(task._scan_character_pages(frame), expected)
+        self.assertIn(("recognize", True, 1, True), calls)
+
+    def test_multi_page_scan_keeps_the_existing_second_screen_flow(self):
+        first = np.zeros((1440, 2560, 3), dtype=np.uint8)
+        first[180:620, 2355:2370] = 220
+        second = first.copy()
+        second[200:500, 300:800] = 255
+        first_record = CharacterScanRecord("char_a", "A", 10, 90, 0.9, 1, 0)
+        second_record = CharacterScanRecord("char_b", "B", 10, 80, 0.9, 2, 0)
+        calls = []
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task._set_status = lambda *args: calls.append(("status", args))
+        task.log_info = lambda message: calls.append(("log", message))
+        task.screenshot = lambda *args, **kwargs: calls.append(("screenshot", args))
+        task._scroll_to_second_character_page = lambda current: second if current is first else None
+        task._recognize_character_screen = (
+            lambda current, index, include_incomplete=False:
+            calls.append(("recognize", current is first, index, include_incomplete))
+            or ([first_record] if current is first else [second_record])
+        )
+
+        self.assertEqual(task._scan_character_pages(first), [first_record, second_record])
+        self.assertIn(("recognize", True, 1, False), calls)
+        self.assertIn(("recognize", False, 2, False), calls)
+
+    def test_multi_page_scroll_failure_remains_fatal(self):
+        frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
+        frame[180:620, 2355:2370] = 220
+        warnings = []
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task.scroll_relative = lambda *args, **kwargs: None
+        task.sleep = lambda *_args: None
+        task.ensure_in_front = lambda: None
+        task._wait_stable_character_frame = lambda: frame.copy()
+        task.log_warning = warnings.append
+        task.screenshot = lambda *args, **kwargs: None
+
+        with self.assertRaisesRegex(Exception, "角色列表滚动未生效"):
+            task._scroll_to_second_character_page(frame)
+        self.assertEqual(len(warnings), 2)
 
     def test_parse_ocr_number_accepts_level_and_rejects_out_of_range(self):
         self.assertEqual(parse_ocr_number("Lv. 90", minimum=1, maximum=100), 90)
