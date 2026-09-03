@@ -37,7 +37,11 @@ FLOOR_ROWS = (
 COMPLETED = "已完成"
 AVAILABLE = "未完成（可挑战）"
 LOCKED = "未解锁"
+UNKNOWN = "状态未知"
 PERIOD_ICON_EDGE_THRESHOLD = 0.24
+TOWER_AVATAR_X = (0.225, 0.282, 0.338)
+TOWER_AVATAR_Y_OFFSET = 0.006
+TOWER_AVATAR_RADIUS = 0.022
 CHARACTER_GRID = (0.070, 0.120, 0.930, 0.840)
 CHARACTER_CARD_X = 0.0785
 CHARACTER_CARD_Y = (0.1285, 0.3750, 0.6220)
@@ -121,6 +125,28 @@ def first_available_floor(states):
     return next((index for index, state in enumerate(states) if state == AVAILABLE), None)
 
 
+def floor_state_sequence_valid(states):
+    """Accept only completed-prefix, optional available floor, then locked suffix."""
+    phase = COMPLETED
+    available_seen = False
+    for state in states:
+        if state == UNKNOWN:
+            return False
+        if state == COMPLETED:
+            if phase != COMPLETED:
+                return False
+        elif state == AVAILABLE:
+            if available_seen or phase == LOCKED:
+                return False
+            available_seen = True
+            phase = AVAILABLE
+        elif state == LOCKED:
+            phase = LOCKED
+        else:
+            return False
+    return bool(states)
+
+
 def tower_order(priority):
     """Return the configured tower order; side-first is the safe default."""
     if priority == CENTER_TOWER_FIRST:
@@ -151,6 +177,84 @@ def exact_ocr_box(boxes, expected):
         (box for box in boxes or () if _normalized_ocr_text(getattr(box, "name", box)) == expected),
         None,
     )
+
+
+def parse_tower_star_total(value):
+    """Parse a tower overview score as reference data, never as sole completion proof."""
+    match = re.search(r"(\d{1,2})\s*[/／]\s*12", str(value or ""))
+    if match is None:
+        return None
+    total = int(match.group(1))
+    return total if 0 <= total <= 12 else None
+
+
+def classify_floor_evidence(locked, avatar_count, reset_visible, challenge_visible, selected):
+    """Combine row evidence conservatively; uncertain rows must never be challenged."""
+    if locked and (avatar_count or reset_visible):
+        return UNKNOWN
+    if reset_visible:
+        return COMPLETED
+    if locked:
+        return LOCKED
+    if avatar_count:
+        return COMPLETED
+    if selected and challenge_visible:
+        return AVAILABLE
+    return UNKNOWN
+
+
+def count_occupied_tower_slots(frame, row_index):
+    """Count portrait-like inner circles without identifying the characters."""
+    if frame is None or frame.size == 0 or not 0 <= row_index < len(FLOOR_ROWS):
+        return 0
+    height, width = frame.shape[:2]
+    row = FLOOR_ROWS[row_index]
+    center_y = int(((row[0] + row[1]) / 2 + TOWER_AVATAR_Y_OFFSET) * height)
+    radius = max(12, round(TOWER_AVATAR_RADIUS * width))
+    occupied = 0
+    for x_norm in TOWER_AVATAR_X:
+        center_x = int(x_norm * width)
+        top, bottom = center_y - radius, center_y + radius
+        left, right = center_x - radius, center_x + radius
+        if top < 0 or left < 0 or bottom > height or right > width:
+            continue
+        crop = frame[top:bottom, left:right]
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        yy, xx = np.ogrid[:gray.shape[0], :gray.shape[1]]
+        inner_radius = min(gray.shape) * 0.36
+        mask = (
+            (xx - gray.shape[1] / 2) ** 2 + (yy - gray.shape[0] / 2) ** 2
+            < inner_radius ** 2
+        )
+        pixels = gray[mask]
+        edges = cv2.Canny(gray, 70, 160)[mask]
+        if pixels.size and float(np.std(pixels)) >= 22 and float(np.mean(edges > 0)) >= 0.10:
+            occupied += 1
+    return occupied
+
+
+def selected_floor_index(frame):
+    """Return the row carrying the bright selected border, or None."""
+    if frame is None or frame.size == 0:
+        return None
+    height, width = frame.shape[:2]
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    thickness = max(2, round(height / 288))
+    scores = []
+    for y1, y2 in FLOOR_ROWS:
+        left, right = int(0.043 * width), int(0.305 * width)
+        top, bottom = int((y1 + 0.009) * height), int((y2 - 0.004) * height)
+        inner_top, inner_bottom = int((y1 + 0.020) * height), int((y2 - 0.020) * height)
+        left_edge, right_edge = int(0.047 * width), int(0.303 * width)
+        border = np.concatenate((
+            gray[top:top + thickness, left:right].ravel(),
+            gray[bottom - thickness:bottom, left:right].ravel(),
+            gray[inner_top:inner_bottom, left_edge:left_edge + thickness].ravel(),
+            gray[inner_top:inner_bottom, right_edge - thickness:right_edge].ravel(),
+        ))
+        scores.append(float(np.mean(border > 170)) if border.size else 0.0)
+    best = int(np.argmax(scores))
+    return best if scores[best] >= 0.15 else None
 
 
 def abyss_result_state(boxes):
@@ -450,10 +554,11 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
 
     def _scan_all_towers(self):
         results = {}
+        star_totals = self._read_tower_star_totals()
         for tower_name in TOWER_NAMES:
             self._set_status("扫描关卡", f"正在扫描 {tower_name}")
             self._open_tower(tower_name)
-            results[tower_name] = self._scan_tower_floors()
+            results[tower_name] = self._scan_tower_floors(tower_name, star_totals.get(tower_name))
             self._return_to_towers()
         return results
 
@@ -462,6 +567,10 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         priority = self.config.get(TOWER_PRIORITY, SIDE_TOWERS_FIRST)
         for tower_name in tower_order(priority):
             states = scan_results[tower_name]
+            if UNKNOWN in states:
+                outcomes[tower_name] = "状态不确定，安全跳过"
+                self._set_status("跳过本塔", f"{tower_name}：完成状态存在冲突，禁止重复挑战")
+                continue
             first_floor = first_available_floor(states)
             if first_floor is None:
                 outcome = "已完成跳过" if states and all(state == COMPLETED for state in states) else "无可挑战关卡"
@@ -609,6 +718,22 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         for tower_name in TOWER_NAMES:
             self.wait_ocr(match=tower_name, time_out=8, raise_if_not_found=True)
 
+    def _read_tower_star_totals(self):
+        """Read n/12 from the overview as conflict-detection reference data."""
+        frame = self.frame
+        boxes = self.ocr(x=0.10, y=0.45, to_x=0.92, to_y=0.72, frame=frame)
+        totals = {}
+        for box in boxes or ():
+            total = parse_tower_star_total(getattr(box, "name", box))
+            if total is None:
+                continue
+            center_x = (box.x + box.width / 2) / self.width
+            tower_index = 0 if center_x < 0.43 else 1 if center_x < 0.71 else 2
+            totals[TOWER_NAMES[tower_index]] = total
+        text = "；".join(f"{tower} {total}/12" for tower, total in totals.items()) or "未识别"
+        self.log_info(f"三塔总星数参考：{text}；该数据不单独决定关卡完成状态")
+        return totals
+
     def _open_tower(self, tower_name):
         title_boxes = self.wait_ocr(match=tower_name, time_out=5, raise_if_not_found=True)
         title = next((box for box in title_boxes if tower_name in str(box.name)), None)
@@ -619,29 +744,107 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         self.click_relative(x, y, after_sleep=2, name=tower_name)
         self.wait_ocr(match="挑战目标", time_out=8, raise_if_not_found=True)
 
-    def _scan_tower_floors(self):
+    def _scan_tower_floors(self, tower_name="当前塔", star_total=None, allow_retry=True):
         frame = self.frame
-        completed = [self._row_matches(frame, row, "completed", 0.70) for row in FLOOR_ROWS]
-        locked = [not done and self._row_matches(frame, row, "locked", 0.68) for done, row in zip(completed, FLOOR_ROWS)]
+        locked = [self._row_matches(frame, row, "locked", 0.68) for row in FLOOR_ROWS]
+        avatar_counts = [count_occupied_tower_slots(frame, index) for index in range(len(FLOOR_ROWS))]
+        selected = selected_floor_index(frame)
+        numbered = [self._row_has_floor_number(frame, row, index) for index, row in enumerate(FLOOR_ROWS)]
         present = [
-            done or blocked or self._row_has_floor_number(frame, row, index)
-            for index, (row, done, blocked) in enumerate(zip(FLOOR_ROWS, completed, locked))
+            blocked or avatar_count > 0 or number_found or selected == index
+            for index, (blocked, avatar_count, number_found) in enumerate(zip(locked, avatar_counts, numbered))
         ]
-        if any(present):
-            last = max(index for index, value in enumerate(present) if value)
-            missing = [index + 1 for index, value in enumerate(present[:last + 1]) if not value]
-            if missing:
-                missing_text = "/".join(str(floor) for floor in missing)
-                self.log_warning(
-                    f"深塔第 {missing_text} 层存在性漏识别；原始结果={present}，"
-                    f"依据后续楼层证据按连续规则补全到第 {last + 1} 层"
-                )
-        states = aggregate_floor_states(completed, locked, present)
-        if not states:
+        if not any(present):
             self.screenshot("abyss_floor_presence_empty", frame=frame)
             raise Exception("未识别到当前塔的关卡行")
+
+        last = max(index for index, value in enumerate(present) if value)
+        missing = [index + 1 for index, value in enumerate(present[:last + 1]) if not value]
+        if missing:
+            missing_text = "/".join(str(floor) for floor in missing)
+            self.log_warning(
+                f"{tower_name}第 {missing_text} 层存在性漏识别；原始结果={present}，"
+                f"依据后续楼层证据按连续规则补全到第 {last + 1} 层"
+            )
+
+        states = []
+        for index in range(last + 1):
+            star_text = f"{star_total}/12" if star_total is not None else "未识别"
+            if locked[index]:
+                state = classify_floor_evidence(True, avatar_counts[index], False, False, False)
+                self.log_info(
+                    f"{tower_name}第 {index + 1} 层证据：存在=True，锁定=True，"
+                    f"头像槽={avatar_counts[index]}，总星数={star_text}，最终状态={state}"
+                )
+            else:
+                state = self._verify_floor_state(tower_name, index, avatar_counts[index], star_total)
+            states.append(state)
+
+        states = tuple(states)
+        star_conflict = star_total == 12 and (len(states) != len(FLOOR_ROWS) or any(
+            state != COMPLETED for state in states
+        ))
+        sequence_conflict = not floor_state_sequence_valid(states)
+        if star_conflict or sequence_conflict:
+            reason = "12/12与逐层结果冲突" if star_conflict else "逐层状态顺序冲突"
+            if allow_retry:
+                self.log_warning(f"{tower_name}{reason}，等待稳定后重新扫描一次")
+                self.sleep(0.5)
+                return self._scan_tower_floors(tower_name, star_total, allow_retry=False)
+            self.screenshot("abyss_floor_state_conflict")
+            self.log_warning(f"{tower_name}{reason}，为避免重复挑战将整座塔标记为状态未知")
+            states = tuple(UNKNOWN for _ in range(max(len(states), len(FLOOR_ROWS) if star_total == 12 else 1)))
+
         self.log_info(f"当前塔扫描结果：{', '.join(states)}")
         return states
+
+    def _verify_floor_state(self, tower_name, floor_index, initial_avatar_count, star_total):
+        row = FLOOR_ROWS[floor_index]
+        star_text = f"{star_total}/12" if star_total is not None else "未识别"
+        avatar_count = initial_avatar_count
+        for attempt in range(2):
+            self.click_relative(
+                0.18,
+                (row[0] + row[1]) / 2,
+                after_sleep=0.35,
+                name=f"扫描{tower_name}第{floor_index + 1}层",
+            )
+            selected = self.wait_until(
+                lambda: selected_floor_index(self.frame) == floor_index,
+                time_out=1.2,
+                raise_if_not_found=False,
+            )
+            current = self.frame
+            avatar_count = max(avatar_count, count_occupied_tower_slots(current, floor_index))
+            reset_visible, challenge_visible = self._read_floor_action_buttons(current) if selected else (False, False)
+            state = classify_floor_evidence(
+                False, avatar_count, reset_visible, challenge_visible, bool(selected)
+            )
+            self.log_info(
+                f"{tower_name}第 {floor_index + 1} 层证据（第{attempt + 1}/2次）：存在=True，"
+                f"锁定=False，头像槽={avatar_count}，选中={bool(selected)}，重置={reset_visible}，"
+                f"挑战开始={challenge_visible}，总星数={star_text}，当前状态={state}"
+            )
+            if reset_visible or state == AVAILABLE:
+                return state
+            if state == COMPLETED and attempt == 1:
+                self.log_warning(
+                    f"{tower_name}第 {floor_index + 1} 层未识别到重置，但检测到 {avatar_count} 个角色头像，"
+                    "按已通关处理"
+                )
+                return COMPLETED
+        return UNKNOWN
+
+    def _read_floor_action_buttons(self, frame):
+        boxes = self.ocr(
+            x=0.42,
+            y=0.80,
+            to_x=0.96,
+            to_y=0.98,
+            match=["重置", "挑战开始"],
+            frame=frame,
+        )
+        return exact_ocr_box(boxes, "重置") is not None, exact_ocr_box(boxes, "挑战开始") is not None
 
     def _row_has_floor_number(self, frame, row, index):
         """Use the large left-side floor number as conservative row-presence evidence."""

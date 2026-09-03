@@ -2,6 +2,7 @@
 import unittest
 from dataclasses import replace
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import cv2
 import numpy as np
@@ -20,12 +21,15 @@ from src.task.AutoAbyssTask import (
     aggregate_floor_states,
     abyss_result_state,
     avatar_template_height,
+    classify_floor_evidence,
     character_column_at,
     character_card_slots,
     character_safe_click,
+    count_occupied_tower_slots,
     exact_ocr_box,
     first_available_floor,
     FLOOR_ROWS,
+    floor_state_sequence_valid,
     frame_change_score,
     match_travel_button,
     merge_character_records,
@@ -33,12 +37,15 @@ from src.task.AutoAbyssTask import (
     parse_energy_number,
     parse_ocr_number,
     parse_selection_number,
+    parse_tower_star_total,
     ocr_resize_scale,
     is_single_page_character_list,
     scroll_thumb_center,
+    selected_floor_index,
     tower_click_point,
     tower_order,
     tower_required_energy,
+    UNKNOWN,
     validate_abyss_resolution,
     validate_selection_state,
 )
@@ -249,6 +256,43 @@ class TestAutoAbyssTask(unittest.TestCase):
             (AVAILABLE, LOCKED, LOCKED, LOCKED),
         )
 
+    def test_tower_star_total_is_reference_only_and_parses_common_slashes(self):
+        self.assertEqual(parse_tower_star_total("12/12"), 12)
+        self.assertEqual(parse_tower_star_total(" 0 ／ 12 "), 0)
+        self.assertIsNone(parse_tower_star_total("11/18"))
+        self.assertIsNone(parse_tower_star_total("20/12"))
+
+    def test_floor_evidence_prefers_reset_and_portraits_without_treating_numbers_as_completion(self):
+        self.assertEqual(classify_floor_evidence(False, 0, True, True, True), COMPLETED)
+        self.assertEqual(classify_floor_evidence(False, 2, False, True, True), COMPLETED)
+        self.assertEqual(classify_floor_evidence(False, 0, False, True, True), AVAILABLE)
+        self.assertEqual(classify_floor_evidence(True, 0, False, False, False), LOCKED)
+        self.assertEqual(classify_floor_evidence(True, 1, False, False, False), "状态未知")
+        self.assertEqual(classify_floor_evidence(False, 0, False, False, False), "状态未知")
+
+    def test_avatar_occupancy_and_selected_border_are_resolution_independent(self):
+        rng = np.random.default_rng(7)
+        for width, height in ((1280, 720), (1920, 1080), (2560, 1440), (3840, 2160)):
+            with self.subTest(width=width, height=height):
+                frame = np.full((height, width, 3), 64, dtype=np.uint8)
+                row_index = 2
+                row = FLOOR_ROWS[row_index]
+                center_x = int(0.225 * width)
+                center_y = int(((row[0] + row[1]) / 2 + 0.006) * height)
+                radius = max(12, round(0.022 * width))
+                noise = rng.integers(0, 256, (radius * 2, radius * 2, 3), dtype=np.uint8)
+                frame[center_y - radius:center_y + radius, center_x - radius:center_x + radius] = noise
+
+                top = int((row[0] + 0.009) * height)
+                bottom = int((row[1] - 0.004) * height)
+                left = int(0.043 * width)
+                right = int(0.305 * width)
+                thickness = max(2, round(height / 288))
+                cv2.rectangle(frame, (left, top), (right, bottom), (230, 230, 230), thickness)
+
+                self.assertEqual(count_occupied_tower_slots(frame, row_index), 1)
+                self.assertEqual(selected_floor_index(frame), row_index)
+
     def test_tower_scan_logs_and_recovers_missing_earlier_presence(self):
         class OfflineAbyssTask(AutoAbyssTask):
             @property
@@ -259,12 +303,107 @@ class TestAutoAbyssTask(unittest.TestCase):
         warnings = []
         task._row_matches = lambda _frame, row, name, _threshold: name == "locked" and row != FLOOR_ROWS[0]
         task._row_has_floor_number = lambda *_args: False
+        task._verify_floor_state = lambda *_args: AVAILABLE
         task.log_warning = warnings.append
         task.log_info = lambda *_args: None
         task.screenshot = lambda *_args, **_kwargs: None
 
         self.assertEqual(task._scan_tower_floors(), (AVAILABLE, LOCKED, LOCKED, LOCKED))
         self.assertTrue(any("第 1 层存在性漏识别" in warning for warning in warnings))
+
+    def test_floor_state_sequence_rejects_conflicts_and_unknowns(self):
+        self.assertTrue(floor_state_sequence_valid((COMPLETED, AVAILABLE, LOCKED, LOCKED)))
+        self.assertTrue(floor_state_sequence_valid((COMPLETED, COMPLETED, COMPLETED, COMPLETED)))
+        self.assertFalse(floor_state_sequence_valid((AVAILABLE, COMPLETED, LOCKED)))
+        self.assertFalse(floor_state_sequence_valid((COMPLETED, AVAILABLE, AVAILABLE)))
+        self.assertFalse(floor_state_sequence_valid((COMPLETED, UNKNOWN)))
+
+    def test_floor_verification_clicks_only_the_floor_row_when_reset_is_visible(self):
+        class OfflineAbyssTask(AutoAbyssTask):
+            @property
+            def frame(self):
+                return np.zeros((720, 1280, 3), dtype=np.uint8)
+
+        clicks = []
+        task = OfflineAbyssTask.__new__(OfflineAbyssTask)
+        task.click_relative = lambda *args, **kwargs: clicks.append((args, kwargs))
+        task.wait_until = lambda *_args, **_kwargs: True
+        task.log_info = lambda *_args: None
+        task.log_warning = lambda *_args: None
+        task._read_floor_action_buttons = lambda _frame: (True, False)
+
+        with patch("src.task.AutoAbyssTask.selected_floor_index", return_value=0), patch(
+            "src.task.AutoAbyssTask.count_occupied_tower_slots", return_value=3
+        ):
+            self.assertEqual(task._verify_floor_state("残响之塔", 0, 3, 12), COMPLETED)
+
+        self.assertEqual(len(clicks), 1)
+        self.assertAlmostEqual(clicks[0][0][0], 0.18)
+        self.assertIn("扫描残响之塔第1层", clicks[0][1]["name"])
+
+    def test_floor_verification_falls_back_to_portraits_after_reset_ocr_retries(self):
+        class OfflineAbyssTask(AutoAbyssTask):
+            @property
+            def frame(self):
+                return np.zeros((720, 1280, 3), dtype=np.uint8)
+
+        warnings = []
+        task = OfflineAbyssTask.__new__(OfflineAbyssTask)
+        task.click_relative = lambda *_args, **_kwargs: None
+        task.wait_until = lambda *_args, **_kwargs: True
+        task.log_info = lambda *_args: None
+        task.log_warning = warnings.append
+        task._read_floor_action_buttons = lambda _frame: (False, False)
+
+        with patch("src.task.AutoAbyssTask.selected_floor_index", return_value=0), patch(
+            "src.task.AutoAbyssTask.count_occupied_tower_slots", return_value=3
+        ):
+            self.assertEqual(task._verify_floor_state("残响之塔", 0, 3, 12), COMPLETED)
+
+        self.assertTrue(any("按已通关处理" in warning for warning in warnings))
+
+    def test_twelve_star_conflict_retries_then_marks_the_whole_tower_unknown(self):
+        class OfflineAbyssTask(AutoAbyssTask):
+            @property
+            def frame(self):
+                return np.zeros((720, 1280, 3), dtype=np.uint8)
+
+        task = OfflineAbyssTask.__new__(OfflineAbyssTask)
+        task._row_matches = lambda *_args: False
+        task._row_has_floor_number = lambda *_args: True
+        task._verify_floor_state = lambda *_args: AVAILABLE
+        task.log_info = lambda *_args: None
+        task.log_warning = lambda *_args: None
+        task.screenshot = lambda *_args, **_kwargs: None
+        task.sleep = lambda *_args: None
+
+        self.assertEqual(
+            task._scan_tower_floors("残响之塔", star_total=12),
+            (UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN),
+        )
+
+    def test_tower_star_totals_map_left_center_and_right(self):
+        class OfflineAbyssTask(AutoAbyssTask):
+            @property
+            def frame(self):
+                return np.zeros((1440, 2560, 3), dtype=np.uint8)
+
+            @property
+            def width(self):
+                return 2560
+
+        task = OfflineAbyssTask.__new__(OfflineAbyssTask)
+        task.ocr = lambda **_kwargs: [
+            SimpleNamespace(name="12/12", x=620, width=40),
+            SimpleNamespace(name="0 / 12", x=1380, width=40),
+            SimpleNamespace(name="6／12", x=2070, width=40),
+        ]
+        task.log_info = lambda *_args: None
+
+        self.assertEqual(
+            task._read_tower_star_totals(),
+            {"残响之塔": 12, "深境之塔": 0, "回音之塔": 6},
+        )
 
     def test_tower_click_uses_title_x_and_diamond_height(self):
         title = SimpleNamespace(x=1000, y=100, width=200, height=40)
@@ -300,10 +439,11 @@ class TestAutoAbyssTask(unittest.TestCase):
         task = OfflineAbyssTask.__new__(OfflineAbyssTask)
         task._row_matches = lambda *_args: False
         task._row_has_floor_number = lambda _frame, _row, index: index < 2
+        task._verify_floor_state = lambda _tower, index, *_args: COMPLETED if index == 0 else AVAILABLE
         task.log_info = lambda *_args: None
         task.screenshot = lambda *_args, **_kwargs: None
 
-        self.assertEqual(task._scan_tower_floors(), (AVAILABLE, AVAILABLE))
+        self.assertEqual(task._scan_tower_floors(), (COMPLETED, AVAILABLE))
 
     def test_abyss_result_state_requires_exact_title_and_button_pair(self):
         box = lambda name: SimpleNamespace(name=name)
@@ -779,6 +919,27 @@ class TestAutoAbyssTask(unittest.TestCase):
         self.assertEqual(outcomes["残响之塔"], "体力或角色不足")
         self.assertEqual(outcomes["回音之塔"], "完成（1层）")
         self.assertEqual(events, [("return",), ("form", "回音之塔")])
+
+    def test_run_towers_never_scans_forms_or_fights_an_unknown_tower(self):
+        scans = {
+            "残响之塔": (UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN),
+            "深境之塔": (COMPLETED,),
+            "回音之塔": (COMPLETED,),
+        }
+        events = []
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task.config = {"Tower Priority": "两侧塔优先"}
+        task._set_status = lambda *args: events.append(("status",) + args)
+        task._enter_and_scan_characters = lambda *_args: events.append("scan")
+        task._plan_and_form_team = lambda *_args, **_kwargs: events.append("form")
+        task._fight_selected_tower = lambda *_args: events.append("fight")
+
+        outcomes = task._run_towers(scans)
+
+        self.assertEqual(outcomes["残响之塔"], "状态不确定，安全跳过")
+        self.assertNotIn("scan", events)
+        self.assertNotIn("form", events)
+        self.assertNotIn("fight", events)
 
     def test_plan_and_form_team_stops_before_clicking_when_under_three(self):
         records = [
