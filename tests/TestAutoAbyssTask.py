@@ -19,11 +19,13 @@ from src.task.AutoAbyssTask import (
     LOCKED,
     aggregate_floor_states,
     abyss_result_state,
+    avatar_template_height,
     character_column_at,
     character_card_slots,
     character_safe_click,
     exact_ocr_box,
     first_available_floor,
+    FLOOR_ROWS,
     frame_change_score,
     match_travel_button,
     merge_character_records,
@@ -31,11 +33,13 @@ from src.task.AutoAbyssTask import (
     parse_energy_number,
     parse_ocr_number,
     parse_selection_number,
+    ocr_resize_scale,
     is_single_page_character_list,
     scroll_thumb_center,
     tower_click_point,
     tower_order,
     tower_required_energy,
+    validate_abyss_resolution,
     validate_selection_state,
 )
 from src.task.abyss_team_planner import ROVER_AERO, ROVER_HAVOC, ROVER_SPECTRO, ROVER_UNKNOWN
@@ -43,7 +47,7 @@ from src.task.BaseCombatTask import CharDeadException
 
 
 class TestAutoAbyssTask(unittest.TestCase):
-    def test_qingxiao_character_scan_at_1440p_and_1080p(self):
+    def test_qingxiao_character_scan_from_720p_through_4k(self):
         class OfflineAbyssTask(AutoAbyssTask):
             @property
             def height(self):
@@ -53,7 +57,9 @@ class TestAutoAbyssTask(unittest.TestCase):
             def width(self):
                 return self._offline_width
 
-        for width, height, selected in ((2560, 1440, False), (1920, 1080, True)):
+        resolutions = ((1280, 720), (1600, 900), (1920, 1080), (2560, 1440), (3840, 2160))
+        for index, (width, height) in enumerate(resolutions):
+            selected = index % 2 == 0
             with self.subTest(width=width, height=height, selected=selected):
                 frame = np.zeros((height, width, 3), dtype=np.uint8)
                 feature_set = FeatureSet(
@@ -89,7 +95,7 @@ class TestAutoAbyssTask(unittest.TestCase):
                 avatar_top = int((y + card_height * 0.01) * height)
                 avatar_right = int((x + card_width * 0.98) * width)
                 avatar_bottom = int((y + card_height * 0.78) * height)
-                target_height = max(96, int(height * 0.105))
+                target_height = avatar_template_height(height)
                 scale = target_height / feature.mat.shape[0]
                 avatar = cv2.resize(feature.mat, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
                 paste_x = avatar_left + (avatar_right - avatar_left - avatar.shape[1]) // 2
@@ -108,7 +114,7 @@ class TestAutoAbyssTask(unittest.TestCase):
                         '1',
                         (int((x + card_width * 0.78) * width), int((y + card_height * 0.18) * height)),
                         cv2.FONT_HERSHEY_SIMPLEX,
-                        0.7,
+                        height / 1200,
                         (40, 190, 255),
                         2,
                     )
@@ -138,8 +144,10 @@ class TestAutoAbyssTask(unittest.TestCase):
         self.assertIsNone(parse_selection_number("10"))
         self.assertIsNone(parse_selection_number("Lv.90"))
 
-    def test_selection_number_reads_white_badge_at_1440p_and_1080p(self):
-        for width, height, expected in ((2560, 1440, 1), (1920, 1080, 3)):
+    def test_selection_number_reads_white_badge_from_720p_through_4k(self):
+        resolutions = ((1280, 720), (1600, 900), (1920, 1080), (2560, 1440), (3840, 2160))
+        for index, (width, height) in enumerate(resolutions):
+            expected = (1, 2, 3)[index % 3]
             with self.subTest(width=width, height=height, expected=expected):
                 frame = np.zeros((height, width, 3), dtype=np.uint8)
                 slot = character_card_slots()[0]
@@ -160,7 +168,7 @@ class TestAutoAbyssTask(unittest.TestCase):
                     str(expected),
                     (int((x + card_width * 0.84) * width), int((y + card_height * 0.17) * height)),
                     cv2.FONT_HERSHEY_SIMPLEX,
-                    1.2 if height == 1440 else 0.9,
+                    height / 1200,
                     (245, 245, 245),
                     max(2, height // 540),
                 )
@@ -170,6 +178,35 @@ class TestAutoAbyssTask(unittest.TestCase):
                 task.ocr = lambda *_args, **_kwargs: [SimpleNamespace(name=str(expected))]
 
                 self.assertEqual(task._read_selection_number(frame, slot), expected)
+
+    def test_supported_16_by_9_resolutions_and_minimum_are_enforced(self):
+        for width, height in (
+            (1280, 720),
+            (1600, 900),
+            (1920, 1080),
+            (2560, 1440),
+            (3840, 2160),
+        ):
+            with self.subTest(width=width, height=height):
+                frame = np.zeros((height, width, 3), dtype=np.uint8)
+                self.assertEqual(validate_abyss_resolution(frame), (width, height))
+
+        with self.assertRaisesRegex(ValueError, "最低分辨率"):
+            validate_abyss_resolution(np.zeros((576, 1024, 3), dtype=np.uint8))
+        with self.assertRaisesRegex(ValueError, "16:9"):
+            validate_abyss_resolution(np.zeros((1200, 1920, 3), dtype=np.uint8))
+        with self.assertRaisesRegex(ValueError, "捕获帧"):
+            validate_abyss_resolution(None)
+
+    def test_avatar_and_local_ocr_scaling_cover_720p_through_4k(self):
+        heights = (720, 900, 1080, 1440, 2160)
+        self.assertEqual([avatar_template_height(height) for height in heights], [76, 94, 113, 151, 227])
+
+        crop_heights = [round(height * 0.07) for height in heights]
+        scales = [ocr_resize_scale(crop_height, 160) for crop_height in crop_heights]
+        self.assertTrue(all(1.0 <= scale <= 4.0 for scale in scales))
+        self.assertEqual(scales, sorted(scales, reverse=True))
+        self.assertAlmostEqual(scales[-1], 160 / crop_heights[-1])
 
     def test_match_travel_button_uses_the_same_card_row(self):
         title = SimpleNamespace(x=100, y=400, width=180, height=40)
@@ -360,6 +397,45 @@ class TestAutoAbyssTask(unittest.TestCase):
         center = scroll_thumb_center(frame)
         self.assertIsNotNone(center)
         self.assertAlmostEqual(center, 400 / 1440, places=2)
+
+    def test_scrollbar_geometry_scales_from_720p_through_4k(self):
+        for width, height in (
+            (1280, 720),
+            (1600, 900),
+            (1920, 1080),
+            (2560, 1440),
+            (3840, 2160),
+        ):
+            with self.subTest(width=width, height=height):
+                frame = np.zeros((height, width, 3), dtype=np.uint8)
+                left, right = int(0.920 * width), int(0.925 * width)
+                top, bottom = int(0.20 * height), int(0.55 * height)
+                frame[top:bottom, left:right] = 220
+                self.assertAlmostEqual(scroll_thumb_center(frame), (top + bottom - 1) / 2 / height, places=2)
+                self.assertFalse(is_single_page_character_list(frame))
+
+    def test_floor_templates_scale_from_720p_through_4k(self):
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        template = task._template("completed")
+        region = (0.340, FLOOR_ROWS[0][0], 0.390, FLOOR_ROWS[0][0] + 0.08)
+        for width, height in (
+            (1280, 720),
+            (1600, 900),
+            (1920, 1080),
+            (2560, 1440),
+            (3840, 2160),
+        ):
+            with self.subTest(width=width, height=height):
+                frame = np.zeros((height, width, 3), dtype=np.uint8)
+                scale = height / 1440
+                interpolation = cv2.INTER_AREA if scale < 1 else cv2.INTER_CUBIC
+                scaled = cv2.resize(template, None, fx=scale, fy=scale, interpolation=interpolation)
+                left = int(region[0] * width)
+                top = int(region[1] * height)
+                frame[top:top + scaled.shape[0], left:left + scaled.shape[1]] = cv2.cvtColor(
+                    scaled, cv2.COLOR_GRAY2BGR
+                )
+                self.assertIsNotNone(task._find_template(frame, region, "completed", 0.99))
 
     def test_full_height_scroll_thumb_marks_a_single_page(self):
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)

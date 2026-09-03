@@ -230,6 +230,34 @@ def _relative_crop(frame, region):
     return frame[int(y1 * height):int(y2 * height), int(x1 * width):int(x2 * width)]
 
 
+def validate_abyss_resolution(frame, minimum=(1280, 720), tolerance=0.02):
+    """Return frame size or reject unsupported input before any game action."""
+    if frame is None or not hasattr(frame, "shape") or len(frame.shape) < 2 or frame.size == 0:
+        raise ValueError("没有可用的游戏捕获帧")
+    height, width = frame.shape[:2]
+    minimum_width, minimum_height = minimum
+    if width < minimum_width or height < minimum_height:
+        raise ValueError(
+            f"自动深渊最低分辨率为 {minimum_width}x{minimum_height}，当前为 {width}x{height}"
+        )
+    aspect = width / height
+    if abs(aspect - 16 / 9) > tolerance:
+        raise ValueError(f"自动深渊仅支持 16:9，当前分辨率为 {width}x{height}（{aspect:.3f}:1）")
+    return width, height
+
+
+def avatar_template_height(screen_height):
+    """Scale character reference portraits with the captured 16:9 frame."""
+    return max(64, round(screen_height * 0.105))
+
+
+def ocr_resize_scale(image_height, target_height, maximum=4.0):
+    """Enlarge small OCR crops without needlessly exploding high-resolution images."""
+    if image_height <= 0 or target_height <= 0 or maximum < 1:
+        raise ValueError("OCR 缩放参数必须为正数且最大倍数不能小于 1")
+    return max(1.0, min(float(maximum), target_height / image_height))
+
+
 def frame_change_score(before, after, region=CHARACTER_GRID):
     """Return normalized mean pixel change in the character grid."""
     first = _relative_crop(before, region)
@@ -388,6 +416,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         WWOneTimeTask.run(self)
         self.log_info("自动深渊开始：先扫描三塔，再按设置逐塔扫描体力、编队和挑战")
         try:
+            self._validate_runtime_resolution()
             self._set_status("进入深塔", "打开 F2 周期挑战")
             self.openF2Book()
             self._open_period_challenge()
@@ -408,6 +437,16 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             self.info_set("Error", message)
             self._set_status("自动深渊失败", message)
             raise
+
+    def _validate_runtime_resolution(self):
+        frame = self.frame
+        try:
+            width, height = validate_abyss_resolution(frame)
+        except ValueError:
+            self.screenshot("abyss_unsupported_resolution", frame=frame)
+            raise
+        self.log_info(f"自动深渊捕获分辨率：{width}x{height}（16:9）")
+        return width, height
 
     def _scan_all_towers(self):
         results = {}
@@ -995,7 +1034,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         if self._character_descriptors is not None:
             return self._character_descriptors
         descriptors = []
-        target_height = max(96, int(self.height * 0.105))
+        target_height = avatar_template_height(self.height)
         seen = set()
         for template_name in char_names:
             try:
@@ -1095,7 +1134,8 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         crop = self._slot_crop(frame, slot, local_region)
         if crop is None or crop.size == 0:
             return None
-        enlarged = cv2.resize(crop, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
+        scale = ocr_resize_scale(crop.shape[0], 160)
+        enlarged = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
         try:
             boxes = self.ocr(0, 0, 1, 1, frame=enlarged)
         except Exception as exc:
@@ -1116,11 +1156,12 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
         yellow = cv2.inRange(hsv, (15, 70, 100), (45, 255, 255))
         yellow = cv2.copyMakeBorder(yellow, 30, 30, 60, 60, cv2.BORDER_CONSTANT, value=0)
+        scale = ocr_resize_scale(yellow.shape[0], 256)
         prepared = cv2.resize(
             cv2.cvtColor(yellow, cv2.COLOR_GRAY2BGR),
             None,
-            fx=3,
-            fy=3,
+            fx=scale,
+            fy=scale,
             interpolation=cv2.INTER_CUBIC,
         )
         try:
@@ -1146,11 +1187,12 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         if np.count_nonzero(mask) < max(8, int(mask.size * 0.002)):
             return None
         mask = cv2.copyMakeBorder(mask, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=0)
+        scale = ocr_resize_scale(mask.shape[0], 256)
         prepared = cv2.resize(
             cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR),
             None,
-            fx=4,
-            fy=4,
+            fx=scale,
+            fy=scale,
             interpolation=cv2.INTER_CUBIC,
         )
         try:
