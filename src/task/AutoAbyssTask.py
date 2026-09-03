@@ -726,25 +726,30 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
     def _select_planned_team(self, plan, records):
         if not plan.executable or len(plan.members) != 3:
             raise Exception("编队计划不足三人，禁止点击角色")
-        for attempt in range(2):
-            failed = None
-            for expected_number, identity in enumerate(plan.members, start=1):
-                record = self._best_record_for_identity(records, identity)
-                if record is None or not self._click_character_record(record, expected_number):
-                    failed = (expected_number, identity)
-                    break
-            if failed is None:
-                final = validate_selection_state(self._selection_records_all_pages())
-                expected = {index: identity for index, identity in enumerate(plan.members, start=1)}
-                if final == expected:
-                    return True
-                failed = (0, f"最终编号 {final}")
+        expected = {}
+        for expected_number, identity in enumerate(plan.members, start=1):
+            expected[expected_number] = identity
+            record = self._best_record_for_identity(records, identity)
+            if record is not None and self._click_character_record(record, expected_number):
+                continue
+            try:
+                observed = validate_selection_state(self._selection_records_all_pages())
+            except Exception as exc:
+                self.screenshot("abyss_character_selection_unknown")
+                raise Exception("角色选择编号状态无法确认，已停止且未重复点击") from exc
+            if observed == expected:
+                continue
             self.log_warning(
-                f"角色选择验证失败，第 {attempt + 1}/2 轮：编号{failed[0]} {failed[1]}"
+                f"角色选择编号状态无法确认：期望{sorted(expected)}，实际{sorted(observed)}"
             )
-            self._clear_all_selection()
-        self.screenshot("abyss_character_select_failed")
-        raise Exception("角色选择编号验证失败，已清理本轮选择")
+            self.screenshot("abyss_character_selection_unknown")
+            raise Exception("角色选择编号状态无法确认，已停止且未重复点击")
+        final = validate_selection_state(self._selection_records_all_pages())
+        if final == expected:
+            return True
+        self.log_warning(f"角色选择最终编号不一致：期望{sorted(expected)}，实际{sorted(final)}")
+        self.screenshot("abyss_character_selection_unknown")
+        raise Exception("角色选择编号状态无法确认，已停止且未重复点击")
 
     def _finish_team_formation(self):
         complete = self._wait_exact_text_or_fail(
@@ -906,11 +911,11 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
         )
 
     def _read_selection_number(self, frame, slot):
-        crop = self._slot_crop(frame, slot, (0.70, 0.00, 1.00, 0.30))
+        crop = self._slot_crop(frame, slot, (0.76, -0.06, 1.06, 0.25))
         if crop is None or crop.size == 0:
             return None
-        hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
-        mask = cv2.inRange(hsv, (0, 80, 140), (179, 255, 255))
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        mask = cv2.inRange(gray, 180, 255)
         if np.count_nonzero(mask) < max(8, int(mask.size * 0.002)):
             return None
         mask = cv2.copyMakeBorder(mask, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=0)

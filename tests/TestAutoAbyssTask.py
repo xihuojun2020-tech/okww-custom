@@ -132,6 +132,39 @@ class TestAutoAbyssTask(unittest.TestCase):
         self.assertIsNone(parse_selection_number("10"))
         self.assertIsNone(parse_selection_number("Lv.90"))
 
+    def test_selection_number_reads_white_badge_at_1440p_and_1080p(self):
+        for width, height, expected in ((2560, 1440, 1), (1920, 1080, 3)):
+            with self.subTest(width=width, height=height, expected=expected):
+                frame = np.zeros((height, width, 3), dtype=np.uint8)
+                slot = character_card_slots()[0]
+                _row, _column, x, y, card_width, card_height, _complete = slot
+                badge_left = int((x + card_width * 0.76) * width)
+                badge_top = int((y - card_height * 0.04) * height)
+                badge_right = int((x + card_width * 1.05) * width)
+                badge_bottom = int((y + card_height * 0.23) * height)
+                cv2.rectangle(
+                    frame,
+                    (badge_left, badge_top),
+                    (badge_right, badge_bottom),
+                    (42, 42, 42),
+                    -1,
+                )
+                cv2.putText(
+                    frame,
+                    str(expected),
+                    (int((x + card_width * 0.84) * width), int((y + card_height * 0.17) * height)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1.2 if height == 1440 else 0.9,
+                    (245, 245, 245),
+                    max(2, height // 540),
+                )
+
+                task = AutoAbyssTask.__new__(AutoAbyssTask)
+                task.log_warning = lambda *_args: None
+                task.ocr = lambda *_args, **_kwargs: [SimpleNamespace(name=str(expected))]
+
+                self.assertEqual(task._read_selection_number(frame, slot), expected)
+
     def test_match_travel_button_uses_the_same_card_row(self):
         title = SimpleNamespace(x=100, y=400, width=180, height=40)
         same_card = SimpleNamespace(x=1200, y=405, width=80, height=30)
@@ -358,12 +391,13 @@ class TestAutoAbyssTask(unittest.TestCase):
             ("show", 1), ("show", 2), ("show", 1),
         ])
 
-    def test_select_planned_team_retries_once_after_cleaning(self):
+    def test_select_planned_team_accepts_delayed_number_without_second_click(self):
         records = [
             CharacterScanRecord("a", "A", 10, 90, .9, 1, 0),
             CharacterScanRecord("b", "B", 10, 90, .9, 1, 1),
             CharacterScanRecord("c", "C", 10, 90, .9, 1, 2),
         ]
+        delayed = [replace(records[0], selection_number=1)]
         final = [replace(record, selection_number=index) for index, record in enumerate(records, start=1)]
         clicks = []
         clears = []
@@ -371,18 +405,43 @@ class TestAutoAbyssTask(unittest.TestCase):
 
         def click_record(record, number):
             clicks.append((record.character_id, number))
-            return len(clicks) > 1
+            return record.character_id != "a"
 
         task._click_character_record = click_record
-        task._selection_records_all_pages = lambda: final
+        scans = [delayed, final]
+        task._selection_records_all_pages = lambda: scans.pop(0)
         task._clear_all_selection = lambda: clears.append(True)
         task.log_warning = lambda *_args: None
         task.screenshot = lambda *_args, **_kwargs: None
         plan = SimpleNamespace(executable=True, members=("a", "b", "c"))
 
         self.assertTrue(task._select_planned_team(plan, records))
-        self.assertEqual(len(clears), 1)
-        self.assertEqual(clicks, [("a", 1), ("a", 1), ("b", 2), ("c", 3)])
+        self.assertEqual(clears, [])
+        self.assertEqual(clicks, [("a", 1), ("b", 2), ("c", 3)])
+
+    def test_select_planned_team_stops_when_number_state_is_unknown(self):
+        records = [
+            CharacterScanRecord("a", "A", 10, 90, .9, 1, 0),
+            CharacterScanRecord("b", "B", 10, 90, .9, 1, 1),
+            CharacterScanRecord("c", "C", 10, 90, .9, 1, 2),
+        ]
+        clicks = []
+        clears = []
+        screenshots = []
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task._click_character_record = lambda record, number: clicks.append((record.character_id, number)) or False
+        task._selection_records_all_pages = lambda: []
+        task._clear_all_selection = lambda: clears.append(True)
+        task.log_warning = lambda *_args: None
+        task.screenshot = lambda name, **_kwargs: screenshots.append(name)
+        plan = SimpleNamespace(executable=True, members=("a", "b", "c"))
+
+        with self.assertRaisesRegex(Exception, "状态无法确认"):
+            task._select_planned_team(plan, records)
+
+        self.assertEqual(clicks, [("a", 1)])
+        self.assertEqual(clears, [])
+        self.assertEqual(screenshots, ["abyss_character_selection_unknown"])
 
     def test_plan_and_form_team_uses_qingxiao_core_then_verina(self):
         records = [
