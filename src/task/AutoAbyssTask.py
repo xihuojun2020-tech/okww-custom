@@ -134,6 +134,32 @@ def character_card_slots():
     )
 
 
+def character_safe_click(slot):
+    """Return a card-body click point away from element, selection, energy and level labels."""
+    _row, _column, x, y, width, height, _complete = slot
+    return x + width * 0.50, y + height * 0.35
+
+
+def validate_selection_state(records):
+    """Return number-to-identity mapping or reject contradictory selection markers."""
+    number_to_identity = {}
+    identity_to_number = {}
+    for record in records:
+        number = getattr(record, "selection_number", None)
+        if number is None:
+            continue
+        identity = effective_character_id(record)
+        existing_identity = number_to_identity.get(number)
+        if existing_identity is not None and existing_identity != identity:
+            raise ValueError(f"选择编号 {number} 同时对应 {existing_identity} 和 {identity}")
+        existing_number = identity_to_number.get(identity)
+        if existing_number is not None and existing_number != number:
+            raise ValueError(f"角色 {identity} 同时对应选择编号 {existing_number} 和 {number}")
+        number_to_identity[number] = identity
+        identity_to_number[identity] = number
+    return number_to_identity
+
+
 def character_column_at(x_norm):
     """Map an OCR result centre to its character-card column."""
     first_center = CHARACTER_CARD_X + CHARACTER_CARD_WIDTH / 2
@@ -459,6 +485,8 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
         first_records = self._recognize_character_screen(first, 1, include_incomplete=single_page)
         last_frame = first
         if single_page:
+            self._character_page_count = 1
+            self._character_page_index = 1
             self._set_status("截取角色", "检测到角色列表仅一页，使用第 1 屏识别结果")
             self.log_info("角色列表仅一页，无需滚动；已尝试识别底部可见的不完整卡片")
             records = first_records
@@ -467,6 +495,8 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
             second = self._scroll_to_second_character_page(first)
             self._set_status("截取角色", "正在截取角色列表第 2 屏")
             second_records = self._recognize_character_screen(second, 2)
+            self._character_page_count = 2
+            self._character_page_index = 2
             records = first_records + second_records
             last_frame = second
         if not records:
@@ -532,6 +562,139 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
             self.log_warning(f"角色列表第 {attempt} 次滚动未检测到有效变化")
         self.screenshot("abyss_character_scroll_failed", frame=first)
         raise Exception("角色列表滚动未生效，已停止以避免重复识别第一屏")
+
+    def _show_character_page(self, page_index):
+        page_count = getattr(self, "_character_page_count", 1)
+        if not 1 <= page_index <= page_count:
+            raise ValueError(f"角色列表页码超出范围：{page_index}/{page_count}")
+        if getattr(self, "_character_page_index", 1) == page_index:
+            return self._wait_stable_character_frame()
+        before = self._wait_stable_character_frame()
+        before_thumb = scroll_thumb_center(before)
+        amount = 10 if page_index == 1 else -10
+        for attempt in range(2):
+            if attempt:
+                self.ensure_in_front()
+            self.scroll_relative(0.50, 0.50, amount)
+            self.sleep(0.6)
+            after = self._wait_stable_character_frame()
+            after_thumb = scroll_thumb_center(after)
+            grid_changed = frame_change_score(before, after) >= 0.035
+            thumb_changed = (
+                before_thumb is not None
+                and after_thumb is not None
+                and abs(before_thumb - after_thumb) >= 0.015
+            )
+            if grid_changed or thumb_changed:
+                self._character_page_index = page_index
+                return after
+            self.log_warning(f"角色列表切换到第 {page_index} 页第 {attempt + 1} 次未检测到变化")
+        self.screenshot(f"abyss_character_page_{page_index}_failed", frame=before)
+        raise Exception(f"角色列表无法切换到第 {page_index} 页")
+
+    @staticmethod
+    def _record_sort_key(record):
+        slot = character_card_slots()[record.slot_index]
+        return not slot[-1], -record.confidence, record.screen_index, record.slot_index
+
+    def _best_record_for_identity(self, records, identity):
+        candidates = [record for record in records if effective_character_id(record) == identity]
+        return min(candidates, key=self._record_sort_key, default=None)
+
+    def _verify_record_identity(self, frame, record):
+        slot = character_card_slots()[record.slot_index]
+        avatar = self._slot_crop(frame, slot, (0.02, 0.01, 0.98, 0.78))
+        identified = self._identify_character(avatar) if avatar is not None and avatar.size else None
+        if identified is None or identified[0] != record.character_id:
+            return False
+        if record.character_id not in ROVER_CHARACTER_IDS:
+            return True
+        element_crop = self._slot_crop(frame, slot, (0.02, 0.02, 0.28, 0.28))
+        rover_form, _confidence = classify_rover_element_crop(element_crop)
+        return rover_form == effective_character_id(record)
+
+    def _wait_selection_number(self, record, expected):
+        slot = character_card_slots()[record.slot_index]
+        return bool(self.wait_until(
+            lambda: self._read_selection_number(self.frame, slot) == expected,
+            time_out=2,
+            raise_if_not_found=False,
+        ))
+
+    def _selection_records_all_pages(self):
+        records = []
+        for page_index in range(1, getattr(self, "_character_page_count", 1) + 1):
+            frame = self._show_character_page(page_index)
+            records.extend(self._recognize_character_screen(
+                frame,
+                page_index,
+                include_incomplete=getattr(self, "_character_page_count", 1) == 1,
+            ))
+        return records
+
+    def _click_character_record(self, record, expected_number):
+        frame = self._show_character_page(record.screen_index)
+        if not self._verify_record_identity(frame, record):
+            self.log_warning(
+                f"点击前角色身份复核失败：第{record.screen_index}屏槽位{record.slot_index}"
+            )
+            return False
+        x, y = character_safe_click(character_card_slots()[record.slot_index])
+        self.click_relative(x, y, after_sleep=0.35, name=record.display_name)
+        return self._wait_selection_number(record, expected_number)
+
+    def _clear_all_selection(self):
+        records = self._selection_records_all_pages()
+        try:
+            selected = validate_selection_state(records)
+        except ValueError:
+            self.screenshot("abyss_character_selection_conflict")
+            raise
+        for number, identity in sorted(selected.items()):
+            candidates = [
+                record for record in records
+                if effective_character_id(record) == identity and record.selection_number == number
+            ]
+            record = min(candidates, key=self._record_sort_key, default=None)
+            if record is None:
+                continue
+            frame = self._show_character_page(record.screen_index)
+            if not self._verify_record_identity(frame, record):
+                self.screenshot("abyss_character_selection_clear_failed", frame=frame)
+                raise Exception(f"清理选择编号 {number} 前角色身份复核失败")
+            x, y = character_safe_click(character_card_slots()[record.slot_index])
+            self.click_relative(x, y, after_sleep=0.35, name=f"取消{record.display_name}")
+            if not self._wait_selection_number(record, None):
+                self.screenshot("abyss_character_selection_clear_failed")
+                raise Exception(f"角色选择编号 {number} 未能清除")
+        remaining = validate_selection_state(self._selection_records_all_pages())
+        if remaining:
+            self.screenshot("abyss_character_selection_clear_failed")
+            raise Exception(f"快速编队仍有未清除选择编号：{sorted(remaining)}")
+        return True
+
+    def _select_planned_team(self, plan, records):
+        if not plan.executable or len(plan.members) != 3:
+            raise Exception("编队计划不足三人，禁止点击角色")
+        for attempt in range(2):
+            failed = None
+            for expected_number, identity in enumerate(plan.members, start=1):
+                record = self._best_record_for_identity(records, identity)
+                if record is None or not self._click_character_record(record, expected_number):
+                    failed = (expected_number, identity)
+                    break
+            if failed is None:
+                final = validate_selection_state(self._selection_records_all_pages())
+                expected = {index: identity for index, identity in enumerate(plan.members, start=1)}
+                if final == expected:
+                    return True
+                failed = (0, f"最终编号 {final}")
+            self.log_warning(
+                f"角色选择验证失败，第 {attempt + 1}/2 轮：编号{failed[0]} {failed[1]}"
+            )
+            self._clear_all_selection()
+        self.screenshot("abyss_character_select_failed")
+        raise Exception("角色选择编号验证失败，已清理本轮选择")
 
     def _character_template_descriptors(self):
         if self._character_descriptors is not None:

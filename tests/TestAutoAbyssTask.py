@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import unittest
+from dataclasses import replace
 from types import SimpleNamespace
 
 import cv2
@@ -17,6 +18,7 @@ from src.task.AutoAbyssTask import (
     aggregate_floor_states,
     character_column_at,
     character_card_slots,
+    character_safe_click,
     exact_ocr_box,
     first_available_floor,
     frame_change_score,
@@ -29,6 +31,7 @@ from src.task.AutoAbyssTask import (
     is_single_page_character_list,
     scroll_thumb_center,
     tower_click_point,
+    validate_selection_state,
 )
 from src.task.abyss_team_planner import ROVER_AERO, ROVER_HAVOC, ROVER_SPECTRO, ROVER_UNKNOWN
 
@@ -289,6 +292,97 @@ class TestAutoAbyssTask(unittest.TestCase):
         merged, available = merge_character_records(records)
         self.assertEqual(merged["char_a"].energy, 9)
         self.assertEqual([record.character_id for record in available], ["char_a"])
+
+    def test_selection_state_allows_overlap_but_rejects_conflicts(self):
+        same = [
+            CharacterScanRecord("a", "A", 10, 90, .9, 1, 0, selection_number=1),
+            CharacterScanRecord("a", "A", 10, 90, .8, 2, 7, selection_number=1),
+        ]
+        self.assertEqual(validate_selection_state(same), {1: "a"})
+        with self.assertRaisesRegex(ValueError, "编号 1"):
+            validate_selection_state(same + [
+                CharacterScanRecord("b", "B", 10, 90, .9, 1, 1, selection_number=1),
+            ])
+        with self.assertRaisesRegex(ValueError, "角色 a"):
+            validate_selection_state(same + [replace(same[0], selection_number=2)])
+
+    def test_character_safe_click_avoids_card_labels(self):
+        slot = character_card_slots()[0]
+        _row, _column, x0, y0, width, height, _complete = slot
+        x, y = character_safe_click(slot)
+        self.assertAlmostEqual(x, x0 + width * 0.50)
+        self.assertAlmostEqual(y, y0 + height * 0.35)
+
+    def test_clear_all_selection_clicks_existing_numbers_before_rescan(self):
+        selected = [
+            CharacterScanRecord("a", "A", 10, 90, .9, 1, 0, selection_number=1),
+            CharacterScanRecord("b", "B", 10, 90, .9, 2, 1, selection_number=2),
+        ]
+        scans = [selected, [replace(item, selection_number=None) for item in selected]]
+        clicks = []
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task._selection_records_all_pages = lambda: scans.pop(0)
+        task._show_character_page = lambda _page: np.zeros((100, 100, 3), dtype=np.uint8)
+        task._verify_record_identity = lambda _frame, _record: True
+        task.click_relative = lambda x, y, **kwargs: clicks.append((x, y, kwargs["name"]))
+        task._wait_selection_number = lambda _record, expected: expected is None
+        task.screenshot = lambda *_args, **_kwargs: None
+
+        self.assertTrue(task._clear_all_selection())
+        self.assertEqual([click[-1] for click in clicks], ["取消A", "取消B"])
+
+    def test_select_planned_team_keeps_slot_order_across_pages(self):
+        records = [
+            CharacterScanRecord("a", "A", 10, 90, .9, 1, 0),
+            CharacterScanRecord("b", "B", 10, 90, .9, 2, 1),
+            CharacterScanRecord("c", "C", 10, 90, .9, 1, 2),
+        ]
+        final = [replace(record, selection_number=index) for index, record in enumerate(records, start=1)]
+        events = []
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task._show_character_page = lambda page: events.append(("show", page)) or np.zeros((100, 100, 3), dtype=np.uint8)
+        task._verify_record_identity = lambda _frame, _record: True
+        task.click_relative = lambda _x, _y, **kwargs: events.append(("click", kwargs["name"]))
+        task._wait_selection_number = lambda record, expected: events.append(("expect", record.character_id, expected)) or True
+        task._selection_records_all_pages = lambda: final
+        task._clear_all_selection = lambda: events.append(("clear",))
+        task.log_warning = lambda *_args: None
+        task.screenshot = lambda *_args, **_kwargs: None
+        plan = SimpleNamespace(executable=True, members=("a", "b", "c"))
+
+        self.assertTrue(task._select_planned_team(plan, records))
+        self.assertEqual([event for event in events if event[0] == "expect"], [
+            ("expect", "a", 1), ("expect", "b", 2), ("expect", "c", 3),
+        ])
+        self.assertEqual([event for event in events if event[0] == "show"], [
+            ("show", 1), ("show", 2), ("show", 1),
+        ])
+
+    def test_select_planned_team_retries_once_after_cleaning(self):
+        records = [
+            CharacterScanRecord("a", "A", 10, 90, .9, 1, 0),
+            CharacterScanRecord("b", "B", 10, 90, .9, 1, 1),
+            CharacterScanRecord("c", "C", 10, 90, .9, 1, 2),
+        ]
+        final = [replace(record, selection_number=index) for index, record in enumerate(records, start=1)]
+        clicks = []
+        clears = []
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+
+        def click_record(record, number):
+            clicks.append((record.character_id, number))
+            return len(clicks) > 1
+
+        task._click_character_record = click_record
+        task._selection_records_all_pages = lambda: final
+        task._clear_all_selection = lambda: clears.append(True)
+        task.log_warning = lambda *_args: None
+        task.screenshot = lambda *_args, **_kwargs: None
+        plan = SimpleNamespace(executable=True, members=("a", "b", "c"))
+
+        self.assertTrue(task._select_planned_team(plan, records))
+        self.assertEqual(len(clears), 1)
+        self.assertEqual(clicks, [("a", 1), ("a", 1), ("b", 2), ("c", 3)])
 
     def test_clear_character_scan_only_removes_current_account(self):
         from src.task.AutoAbyssTask import AutoAbyssTask
