@@ -101,8 +101,8 @@ def aggregate_floor_states(completed, locked, present=None):
     if not any(present):
         return ()
     last = max(index for index, value in enumerate(present) if value)
-    if not all(present[:last + 1]):
-        raise ValueError("深塔关卡存在性识别不连续")
+    # Tower floors always form a prefix starting at floor 1.  A later lock,
+    # completion mark, or floor number therefore also proves every earlier row exists.
     return states[:last + 1]
 
 
@@ -627,11 +627,16 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             done or blocked or self._row_has_floor_number(frame, row, index)
             for index, (row, done, blocked) in enumerate(zip(FLOOR_ROWS, completed, locked))
         ]
-        try:
-            states = aggregate_floor_states(completed, locked, present)
-        except ValueError:
-            self.screenshot("abyss_floor_presence_discontinuous", frame=frame)
-            raise
+        if any(present):
+            last = max(index for index, value in enumerate(present) if value)
+            missing = [index + 1 for index, value in enumerate(present[:last + 1]) if not value]
+            if missing:
+                missing_text = "/".join(str(floor) for floor in missing)
+                self.log_warning(
+                    f"深塔第 {missing_text} 层存在性漏识别；原始结果={present}，"
+                    f"依据后续楼层证据按连续规则补全到第 {last + 1} 层"
+                )
+        states = aggregate_floor_states(completed, locked, present)
         if not states:
             self.screenshot("abyss_floor_presence_empty", frame=frame)
             raise Exception("未识别到当前塔的关卡行")

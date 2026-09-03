@@ -240,12 +240,31 @@ class TestAutoAbyssTask(unittest.TestCase):
             ),
             (COMPLETED, AVAILABLE),
         )
-        with self.assertRaisesRegex(ValueError, "不连续"):
+        self.assertEqual(
             aggregate_floor_states(
                 [False, False, False, False],
-                [False, False, False, False],
-                [True, False, True, False],
-            )
+                [False, True, True, True],
+                [False, True, True, True],
+            ),
+            (AVAILABLE, LOCKED, LOCKED, LOCKED),
+        )
+
+    def test_tower_scan_logs_and_recovers_missing_earlier_presence(self):
+        class OfflineAbyssTask(AutoAbyssTask):
+            @property
+            def frame(self):
+                return np.zeros((1440, 2560, 3), dtype=np.uint8)
+
+        task = OfflineAbyssTask.__new__(OfflineAbyssTask)
+        warnings = []
+        task._row_matches = lambda _frame, row, name, _threshold: name == "locked" and row != FLOOR_ROWS[0]
+        task._row_has_floor_number = lambda *_args: False
+        task.log_warning = warnings.append
+        task.log_info = lambda *_args: None
+        task.screenshot = lambda *_args, **_kwargs: None
+
+        self.assertEqual(task._scan_tower_floors(), (AVAILABLE, LOCKED, LOCKED, LOCKED))
+        self.assertTrue(any("第 1 层存在性漏识别" in warning for warning in warnings))
 
     def test_tower_click_uses_title_x_and_diamond_height(self):
         title = SimpleNamespace(x=1000, y=100, width=200, height=40)
