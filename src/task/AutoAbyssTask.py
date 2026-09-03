@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Scan Adversity Tower floors and the available character list without combat."""
+"""Scan, form teams for, and automatically challenge Adversity Tower floors."""
 from dataclasses import dataclass
 from pathlib import Path
 import re
@@ -19,12 +19,15 @@ from src.task.abyss_team_planner import (
     effective_character_id,
     plan_team,
 )
-from src.task.BaseWWTask import BaseWWTask
+from src.task.BaseCombatTask import BaseCombatTask, CharDeadException
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task_status import publish_task_status
 
 
 TOWER_NAMES = ("残响之塔", "深境之塔", "回音之塔")
+SIDE_TOWERS_FIRST = "两侧塔优先"
+CENTER_TOWER_FIRST = "中间塔优先"
+TOWER_PRIORITY = "Tower Priority"
 FLOOR_ROWS = (
     (0.145, 0.275),
     (0.285, 0.415),
@@ -46,6 +49,10 @@ CHARACTER_COMPLETE_ROWS = 2
 CHARACTER_MATCH_MINIMUM = 6
 CHARACTER_MATCH_MARGIN = 2
 SINGLE_PAGE_SCROLL_THUMB_COVERAGE = 0.80
+
+
+class AbyssTeamUnavailable(Exception):
+    """The current account cannot form a team that covers this tower's remaining cost."""
 
 
 @dataclass(frozen=True)
@@ -82,12 +89,21 @@ def match_travel_button(title_box, travel_boxes, vertical_tolerance=None):
     return min(candidates, key=lambda box: abs(_center_y(box) - title_y), default=None)
 
 
-def aggregate_floor_states(completed, locked):
+def aggregate_floor_states(completed, locked, present=None):
     """Convert per-floor template hits into user-facing, mutually exclusive states."""
-    return tuple(
+    states = tuple(
         COMPLETED if completed_hit else LOCKED if locked_hit else AVAILABLE
         for completed_hit, locked_hit in zip(completed, locked)
     )
+    if present is None:
+        return states
+    present = tuple(bool(value) for value in present)
+    if not any(present):
+        return ()
+    last = max(index for index, value in enumerate(present) if value)
+    if not all(present[:last + 1]):
+        raise ValueError("深塔关卡存在性识别不连续")
+    return states[:last + 1]
 
 
 def tower_click_point(title_box, screen_width):
@@ -105,6 +121,25 @@ def first_available_floor(states):
     return next((index for index, state in enumerate(states) if state == AVAILABLE), None)
 
 
+def tower_order(priority):
+    """Return the configured tower order; side-first is the safe default."""
+    if priority == CENTER_TOWER_FIRST:
+        return (TOWER_NAMES[1], TOWER_NAMES[0], TOWER_NAMES[2])
+    return (TOWER_NAMES[0], TOWER_NAMES[2], TOWER_NAMES[1])
+
+
+def tower_required_energy(tower_name, states):
+    """Return per-character energy needed to clear every remaining floor in a tower."""
+    start = first_available_floor(states)
+    if start is None:
+        return 0
+    return sum(
+        5 if tower_name == TOWER_NAMES[1] else index + 1
+        for index, state in enumerate(states)
+        if index >= start and state != COMPLETED
+    )
+
+
 def _normalized_ocr_text(value):
     return re.sub(r"\s+", "", str(value or "")).strip()
 
@@ -116,6 +151,20 @@ def exact_ocr_box(boxes, expected):
         (box for box in boxes or () if _normalized_ocr_text(getattr(box, "name", box)) == expected),
         None,
     )
+
+
+def abyss_result_state(boxes):
+    """Classify only complete, internally consistent abyss result text."""
+    success = exact_ocr_box(boxes, "挑战成功") is not None
+    failed = exact_ocr_box(boxes, "挑战失败") is not None
+    back = exact_ocr_box(boxes, "返回深塔") is not None
+    if success and back and exact_ocr_box(boxes, "继续挑战") is not None:
+        return "continue"
+    if success and back and exact_ocr_box(boxes, "再次挑战") is not None:
+        return "tower_complete"
+    if failed and back and exact_ocr_box(boxes, "再次挑战") is not None:
+        return "failed"
+    return None
 
 
 def character_card_slots():
@@ -292,8 +341,8 @@ def merge_character_records(records):
     return merged, available
 
 
-class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
-    """Scan tower floors and form one verified team without starting combat."""
+class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
+    """Scan and automatically challenge every available Adversity Tower floor."""
 
     navigation_section = "tests"
     _ASSET_DIR = Path("assets/images")
@@ -307,16 +356,19 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.name = "🧪 自动深渊：扫描与自动编队"
+        self.name = "🧪 自动深渊"
         self.description = (
-            "扫描逆境深塔三座塔的关卡状态，然后进入残响之塔首个可挑战关卡的快速编队页，"
-            "识别角色、体力和等级后选择三名角色并点击完成，停在编辑队伍页。"
-            "不会点击开启挑战，不会进入战斗。"
+            "扫描逆境深塔三座塔的关卡状态，按设置的顺序逐塔重新识别角色体力、自动编队并战斗。"
+            "成功后继续下一层，失败时跳过当前塔剩余关卡。"
         )
         self.group_name = "🧪 测试功能"
         self.group_icon = Icon.DEVELOPER_TOOLS
-        self.default_config = {}
+        self.default_config = {TOWER_PRIORITY: SIDE_TOWERS_FIRST}
         self.config_type = {
+            TOWER_PRIORITY: {
+                "type": "drop_down",
+                "options": [SIDE_TOWERS_FIRST, CENTER_TOWER_FIRST],
+            },
             "清空当前账号识别结果": {
                 "type": "button",
                 "text": "清空识别结果",
@@ -324,6 +376,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
             },
         }
         self.config_description = {
+            TOWER_PRIORITY: "两侧塔优先：残响→回音→深境；中间塔优先：深境→残响→回音",
             "清空当前账号识别结果": "只清空本次运行内存中的角色结果，关闭程序后也会自动清除",
         }
         self._character_scan_results = {}
@@ -333,7 +386,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
 
     def run(self):
         WWOneTimeTask.run(self)
-        self.log_info("安全边界：自动选择一支三人队并点击完成，不点击开启挑战，不进入战斗")
+        self.log_info("自动深渊开始：先扫描三塔，再按设置逐塔扫描体力、编队和挑战")
         try:
             self._set_status("进入深塔", "打开 F2 周期挑战")
             self.openF2Book()
@@ -341,23 +394,59 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
             self._select_adversity_tower()
             self._open_adversity_tower()
 
-            results = {}
-            for tower_name in TOWER_NAMES:
-                self._set_status("扫描关卡", f"正在扫描 {tower_name}")
-                self._open_tower(tower_name)
-                results[tower_name] = self._scan_tower_floors()
-                self._return_to_towers()
-
+            results = self._scan_all_towers()
             summary = "；".join(f"{tower}: {', '.join(states)}" for tower, states in results.items())
             self.info_set("扫描结果", summary)
             self.log_info(f"深塔关卡扫描完成：{summary}", notify=True)
-            records = self._enter_and_scan_characters(results[TOWER_NAMES[0]])
-            self._plan_and_form_team(records)
+            outcomes = self._run_towers(results)
+            outcome_text = "；".join(f"{tower}: {result}" for tower, result in outcomes.items())
+            self.info_set("挑战结果", outcome_text)
+            self._set_status("自动深渊完成", outcome_text)
+            self.log_info(f"自动深渊三塔流程完成：{outcome_text}", notify=True)
         except Exception as exc:
             message = str(exc)
             self.info_set("Error", message)
             self._set_status("自动深渊失败", message)
             raise
+
+    def _scan_all_towers(self):
+        results = {}
+        for tower_name in TOWER_NAMES:
+            self._set_status("扫描关卡", f"正在扫描 {tower_name}")
+            self._open_tower(tower_name)
+            results[tower_name] = self._scan_tower_floors()
+            self._return_to_towers()
+        return results
+
+    def _run_towers(self, scan_results):
+        outcomes = {}
+        priority = self.config.get(TOWER_PRIORITY, SIDE_TOWERS_FIRST)
+        for tower_name in tower_order(priority):
+            states = scan_results[tower_name]
+            first_floor = first_available_floor(states)
+            if first_floor is None:
+                outcome = "已完成跳过" if states and all(state == COMPLETED for state in states) else "无可挑战关卡"
+                outcomes[tower_name] = outcome
+                self._set_status("跳过本塔", f"{tower_name}：{outcome}")
+                continue
+
+            required_energy = tower_required_energy(tower_name, states)
+            self._set_status(
+                "扫描角色体力",
+                f"{tower_name}剩余关卡要求每名角色至少 {required_energy} 点体力",
+            )
+            records = self._enter_and_scan_characters(tower_name, states)
+            try:
+                self._plan_and_form_team(records, minimum_energy=required_energy)
+            except AbyssTeamUnavailable as exc:
+                outcomes[tower_name] = "体力或角色不足"
+                self._set_status("跳过本塔", f"{tower_name}：{exc}")
+                self._return_from_team_to_towers()
+                continue
+
+            result, cleared = self._fight_selected_tower(tower_name, first_floor)
+            outcomes[tower_name] = f"{result}（{cleared}层）"
+        return outcomes
 
     def _set_status(self, stage, detail):
         self.info_set("状态", detail)
@@ -390,33 +479,39 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
             parts.append("为补齐队伍拆用了另一两人核心")
         return "；".join(parts)
 
-    def _plan_and_form_team(self, records):
+    def _plan_and_form_team(self, records, minimum_energy=1):
         merged, available = merge_character_records(records)
         self._character_scan_results[self._current_scan_key()] = {
             "all": merged,
             "available": available,
         }
+        eligible = [record for record in available if record.energy >= minimum_energy]
         display = "；".join(
-            f"{record.display_name}（体力{record.energy}，Lv.{record.level}）" for record in available
+            f"{record.display_name}（体力{record.energy}，Lv.{record.level}）" for record in eligible
         ) or "无"
         self.info_set("可用角色", display)
-        self._set_status("识别完成", f"已识别 {len(available)} 名体力大于0且等级大于60的角色")
+        self._set_status(
+            "识别完成",
+            f"已识别 {len(eligible)} 名体力不少于{minimum_energy}且等级大于60的角色",
+        )
         self.log_info(f"角色识别完成：{display}", notify=True)
 
-        plan = plan_team(available)
+        plan = plan_team(available, minimum_energy=minimum_energy)
         plan_text = self._format_team_plan(plan, merged.values())
         self.info_set("编队计划", plan_text)
         if not plan.executable:
             self._set_status("无法组成三人队", plan_text)
-            raise Exception(f"可用角色不足三人：{plan_text}")
+            raise AbyssTeamUnavailable(
+                f"体力不少于{minimum_energy}且等级大于60的可用角色不足三人：{plan_text}"
+            )
         self._set_status("清理已有编队", "正在检查并清除快速编队页已有的 1/2/3")
         self._clear_all_selection()
         self._set_status("选择编队", plan_text)
         self._select_planned_team(plan, records)
         self._set_status("确认编队", "三个选择编号验证成功，正在点击完成")
         self._finish_team_formation()
-        self._set_status("编队完成", f"{plan_text}；已停在编辑队伍页")
-        self.log_info(f"自动深渊编队完成：{plan_text}；未点击开启挑战", notify=True)
+        self._set_status("编队完成", f"{plan_text}；准备开启挑战")
+        self.log_info(f"自动深渊编队完成：{plan_text}", notify=True)
         return plan
 
     def _current_scan_key(self):
@@ -489,24 +584,156 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
         frame = self.frame
         completed = [self._row_matches(frame, row, "completed", 0.70) for row in FLOOR_ROWS]
         locked = [not done and self._row_matches(frame, row, "locked", 0.68) for done, row in zip(completed, FLOOR_ROWS)]
-        states = aggregate_floor_states(completed, locked)
+        present = [
+            done or blocked or self._row_has_floor_number(frame, row, index)
+            for index, (row, done, blocked) in enumerate(zip(FLOOR_ROWS, completed, locked))
+        ]
+        try:
+            states = aggregate_floor_states(completed, locked, present)
+        except ValueError:
+            self.screenshot("abyss_floor_presence_discontinuous", frame=frame)
+            raise
+        if not states:
+            self.screenshot("abyss_floor_presence_empty", frame=frame)
+            raise Exception("未识别到当前塔的关卡行")
         self.log_info(f"当前塔扫描结果：{', '.join(states)}")
         return states
+
+    def _row_has_floor_number(self, frame, row, index):
+        """Use the large left-side floor number as conservative row-presence evidence."""
+        boxes = self.ocr(
+            x=0.045,
+            y=row[0],
+            to_x=0.145,
+            to_y=row[1],
+            match=str(index + 1),
+            frame=frame,
+        )
+        return exact_ocr_box(boxes, str(index + 1)) is not None
+
+    def revive_action(self):
+        """Close a death popup but never teleport away from Adversity Tower."""
+        self.close_revive_popup()
+        return False
+
+    def _click_start_challenge(self):
+        button = self._wait_exact_text_or_fail(
+            "开启挑战", (0.75, 0.82, 0.98, 0.98), 8, "未找到编辑队伍页右下角的开启挑战"
+        )
+        self.click_box(button, after_sleep=1)
+        return True
+
+    def _prepare_challenge_map(self, tower_name, floor_number):
+        self._set_status("进入挑战地图", f"{tower_name}第 {floor_number} 层正在加载")
+        self._wait_exact_text_or_fail(
+            "环境特性", (0.02, 0.18, 0.34, 0.58), 120, "加载后未识别到环境特性提示"
+        )
+        self.send_key("esc", after_sleep=1)
+        if not self.wait_in_team_and_world(time_out=120, raise_if_not_found=False):
+            self.screenshot("abyss_challenge_world_not_ready")
+            raise Exception("关闭环境特性提示后未进入挑战地图")
+
+    def _run_floor_combat(self, tower_name, floor_number):
+        self._set_status("准备战斗", f"{tower_name}第 {floor_number} 层正在寻找开启挑战装置")
+        if not self.walk_until_f(time_out=12, target_text="开启挑战", raise_if_not_found=False):
+            self.screenshot("abyss_start_device_not_found")
+            raise Exception("挑战地图中未找到开启挑战装置")
+        self.pick_f()
+        self._set_status("自动战斗", f"正在挑战 {tower_name}第 {floor_number} 层")
+        try:
+            self.combat_once(target=True)
+        except CharDeadException:
+            self.log_warning(f"{tower_name}第 {floor_number} 层角色死亡，等待深塔失败结算")
+
+    def _wait_abyss_result(self):
+        result = {"value": None}
+
+        def read_result():
+            boxes = self.ocr(
+                x=0.20,
+                y=0.06,
+                to_x=0.82,
+                to_y=0.96,
+                match=["挑战成功", "挑战失败", "返回深塔", "继续挑战", "再次挑战"],
+            )
+            state = abyss_result_state(boxes)
+            if state is None:
+                return False
+            button_text = "继续挑战" if state == "continue" else "返回深塔"
+            button = exact_ocr_box(boxes, button_text)
+            if button is None:
+                return False
+            result["value"] = state, button
+            return True
+
+        if not self.wait_until(read_result, time_out=30, raise_if_not_found=False):
+            self.screenshot("abyss_result_not_recognized")
+            raise Exception("战斗结束后未能完整识别深塔结算页")
+        return result["value"]
+
+    def _fight_selected_tower(self, tower_name, first_floor_index):
+        """Fight at most four floors; continuing reuses the already formed team."""
+        self._click_start_challenge()
+        cleared = 0
+        for floor_index in range(first_floor_index, len(FLOOR_ROWS)):
+            floor_number = floor_index + 1
+            self._prepare_challenge_map(tower_name, floor_number)
+            self._run_floor_combat(tower_name, floor_number)
+            state, button = self._wait_abyss_result()
+            if state == "continue":
+                cleared += 1
+                self._set_status("挑战成功", f"{tower_name}第 {floor_number} 层完成，继续下一层")
+                self.click_box(button, after_sleep=1)
+                continue
+            if state == "tower_complete":
+                cleared += 1
+                self._set_status("本塔完成", f"{tower_name}已完成，返回三塔页面")
+                self.click_box(button, after_sleep=2)
+                self._wait_for_tower_screen()
+                return "完成", cleared
+            if state == "failed":
+                self._set_status("挑战失败", f"{tower_name}第 {floor_number} 层失败，跳过本塔剩余关卡")
+                self.click_box(button, after_sleep=2)
+                self._wait_for_tower_screen()
+                return "失败", cleared
+            raise Exception(f"未知深塔结算状态：{state}")
+        self.screenshot("abyss_continue_past_last_floor")
+        raise Exception(f"{tower_name}在第四层后仍显示继续挑战")
 
     def _return_to_towers(self):
         self.send_key("esc", after_sleep=2)
         self._wait_for_tower_screen()
 
-    def _enter_and_scan_characters(self, resonance_states):
-        floor_index = first_available_floor(resonance_states)
-        if floor_index is None:
-            raise Exception("残响之塔没有未完成且已解锁的可挑战关卡")
+    def _tower_screen_visible(self):
+        boxes = self.ocr(match=list(TOWER_NAMES))
+        return all(exact_ocr_box(boxes, tower_name) is not None for tower_name in TOWER_NAMES)
 
-        self._set_status("选择残响之塔", "正在重新打开残响之塔")
-        self._open_tower(TOWER_NAMES[0])
+    def _return_from_team_to_towers(self):
+        """Back out of quick formation/edit/floor pages without guessing a click target."""
+        for _attempt in range(4):
+            if self._tower_screen_visible():
+                return True
+            self.send_key("esc", after_sleep=1)
+            if self.wait_until(self._tower_screen_visible, time_out=2, raise_if_not_found=False):
+                return True
+        self.screenshot("abyss_return_to_towers_failed")
+        raise Exception("体力或角色不足后未能安全返回三塔页面")
+
+    def _enter_and_scan_characters(self, tower_name, tower_states):
+        floor_index = first_available_floor(tower_states)
+        if floor_index is None:
+            raise Exception(f"{tower_name}没有未完成且已解锁的可挑战关卡")
+
+        self._set_status("选择深塔", f"正在打开{tower_name}")
+        self._open_tower(tower_name)
         row = FLOOR_ROWS[floor_index]
-        self._set_status("选择未完成关卡", f"正在选择残响之塔第 {floor_index + 1} 层")
-        self.click_relative(0.18, (row[0] + row[1]) / 2, after_sleep=1, name=f"残响之塔第{floor_index + 1}层")
+        self._set_status("选择未完成关卡", f"正在选择{tower_name}第 {floor_index + 1} 层")
+        self.click_relative(
+            0.18,
+            (row[0] + row[1]) / 2,
+            after_sleep=1,
+            name=f"{tower_name}第{floor_index + 1}层",
+        )
 
         self._set_status("进入编辑队伍", "正在确认并点击挑战开始")
         challenge_start = self._wait_exact_text("挑战开始", (0.70, 0.80, 0.96, 0.98), 8)

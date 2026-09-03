@@ -5,6 +5,7 @@ from src.gui.navigation_sections import ACTIVITIES, TESTS, classify_task
 from src.task.EventTask import EventTask
 from src.task.TestAccountSwitchTask import TestAccountSwitchTask
 from src.task.AutoAbyssTask import AutoAbyssTask
+from src.task.BaseCombatTask import BaseCombatTask
 
 
 class TestTaskNavigationClassification(unittest.TestCase):
@@ -14,9 +15,12 @@ class TestTaskNavigationClassification(unittest.TestCase):
         self.assertEqual(classify_task(object.__new__(TestAccountSwitchTask)), TESTS)
         self.assertEqual(classify_task(object.__new__(AutoAbyssTask)), TESTS)
         self.assertIn("多账号每日任务", inspect.getsource(TestAccountSwitchTask.__init__))
-        self.assertIn("不会进入战斗", inspect.getsource(AutoAbyssTask.__init__))
-        self.assertIn("不会点击开启挑战", inspect.getsource(AutoAbyssTask.__init__))
-        self.assertNotIn("AutoCombatTask", inspect.getsource(AutoAbyssTask))
+        self.assertTrue(issubclass(AutoAbyssTask, BaseCombatTask))
+        self.assertIn("逐塔重新识别角色体力", inspect.getsource(AutoAbyssTask.__init__))
+        self.assertIn("combat_once", inspect.getsource(AutoAbyssTask._run_floor_combat))
+        abyss = object.__new__(AutoAbyssTask)
+        abyss.close_revive_popup = lambda: True
+        self.assertFalse(abyss.revive_action())
 
 
 if __name__ == "__main__":

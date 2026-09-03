@@ -13,7 +13,7 @@ class TestReleaseReadiness(unittest.TestCase):
         changelog = Path("更新日志.md").read_text(encoding="utf-8")
         about = Path("custom_ok/ok/gui/about/AboutTab.py").read_text(encoding="utf-8")
         self.assertRegex(version, r"^[0-9]+\.[0-9]{2}\.[0-9]{2}$")
-        self.assertEqual(version, "1.27.01")
+        self.assertEqual(version, "1.28.00")
         self.assertIn(version, changelog)
         self.assertIn(f"V{version}", about)
         for theme in ("Qingxiao", "清宵", "port_upstream_character"):
@@ -26,6 +26,9 @@ class TestReleaseReadiness(unittest.TestCase):
             self.assertIn(theme, changelog)
             self.assertIn(theme, about)
         for theme in ("白色 1/2/3", "不重复点击"):
+            self.assertIn(theme, changelog)
+            self.assertIn(theme, about)
+        for theme in ("两侧塔优先", "中间塔优先", "环境特性", "继续挑战", "传送复活"):
             self.assertIn(theme, changelog)
             self.assertIn(theme, about)
 

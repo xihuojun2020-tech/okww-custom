@@ -142,10 +142,15 @@ def _best_substitute(pool, missing_id):
     return min(candidates, key=_substitute_key, default=None)
 
 
-def plan_team(records: Iterable[object]) -> TeamPlan:
+def plan_team(records: Iterable[object], minimum_energy: int = 1) -> TeamPlan:
     available = {}
     for record in records:
-        if record.energy is None or record.level is None or record.energy <= 0 or record.level <= 60:
+        if (
+            record.energy is None
+            or record.level is None
+            or record.energy < minimum_energy
+            or record.level <= 60
+        ):
             continue
         identity = effective_character_id(record)
         old = available.get(identity)

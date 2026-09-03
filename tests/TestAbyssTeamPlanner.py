@@ -94,6 +94,22 @@ class TestAbyssTeamPlanner(unittest.TestCase):
         self.assertFalse(plan.executable)
         self.assertEqual(len(plan.members), 2)
 
+    def test_minimum_energy_filters_team_for_remaining_tower_cost(self):
+        plan = plan_team([
+            record(Labels.char_qingxiao, energy=9),
+            record(Labels.char_denia, energy=10),
+            record(Labels.char_chisa, energy=10),
+            record(Labels.char_galbrena, energy=10),
+            record(Labels.char_chouyuan, energy=10),
+            record(Labels.char_shorekeeper, energy=10),
+        ], minimum_energy=10)
+
+        self.assertTrue(plan.complete)
+        self.assertEqual(
+            plan.members,
+            (Labels.char_galbrena, Labels.char_chouyuan, Labels.char_shorekeeper),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
