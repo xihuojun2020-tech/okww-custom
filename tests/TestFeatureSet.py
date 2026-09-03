@@ -6,9 +6,31 @@ import numpy as np
 from ok.feature.Box import Box
 from ok.feature.Feature import Feature
 from ok.feature.FeatureSet import FeatureSet
+from src.Labels import Labels
 
 
 class TestFeatureSet(unittest.TestCase):
+    def test_qingxiao_templates_are_loadable(self):
+        feature_set = FeatureSet(
+            False,
+            'assets/coco_annotations.json',
+            0.002,
+            0.002,
+            default_threshold=0.7,
+        )
+        frame = np.zeros((2160, 3840, 3), dtype=np.uint8)
+
+        for label in (
+            Labels.char_qingxiao,
+            Labels.qingxiao_e,
+            Labels.qingxiao_h1,
+            Labels.qingxiao_h2,
+        ):
+            feature = feature_set.get_feature_by_name(frame, label)
+            self.assertIsNotNone(feature, label)
+            self.assertIsNotNone(feature.mat, label)
+            self.assertGreater(feature.mat.size, 0, label)
+
     def test_logout_power_icon_template_keeps_game_resolution_scale(self):
         frame = cv2.imread('assets/images/logout_power_icon.png')
         self.assertEqual((1440, 2560), frame.shape[:2])

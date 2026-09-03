@@ -2,10 +2,14 @@
 import unittest
 from types import SimpleNamespace
 
+import cv2
 import numpy as np
+from ok.feature.FeatureSet import FeatureSet
 
+from src.Labels import Labels
 from src.task.AutoAbyssTask import (
     AVAILABLE,
+    AutoAbyssTask,
     CharacterScanRecord,
     best_template_match,
     COMPLETED,
@@ -26,6 +30,81 @@ from src.task.AutoAbyssTask import (
 
 
 class TestAutoAbyssTask(unittest.TestCase):
+    def test_qingxiao_character_scan_at_1440p_and_1080p(self):
+        class OfflineAbyssTask(AutoAbyssTask):
+            @property
+            def height(self):
+                return self._offline_height
+
+            @property
+            def width(self):
+                return self._offline_width
+
+        for width, height, selected in ((2560, 1440, False), (1920, 1080, True)):
+            with self.subTest(width=width, height=height, selected=selected):
+                frame = np.zeros((height, width, 3), dtype=np.uint8)
+                feature_set = FeatureSet(
+                    False,
+                    'assets/coco_annotations.json',
+                    0.002,
+                    0.002,
+                    default_threshold=0.7,
+                )
+                feature = feature_set.get_feature_by_name(frame, Labels.char_qingxiao)
+                self.assertIsNotNone(feature)
+
+                task = OfflineAbyssTask.__new__(OfflineAbyssTask)
+                task._offline_height = height
+                task._offline_width = width
+                task._avatar_orb = cv2.ORB_create(nfeatures=300, edgeThreshold=5, fastThreshold=5)
+                task._avatar_matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
+                task._character_descriptors = None
+                task.get_feature_by_name = lambda name: feature if name == Labels.char_qingxiao else None
+                task._set_status = lambda *_args: None
+                task.log_info = lambda *_args: None
+                task.tr = lambda value: value
+                task._read_complete_row_numbers = lambda _frame, row: (
+                    {0: {'energy': 10, 'level': 90}} if row == 0 else {}
+                )
+
+                slot = character_card_slots()[0]
+                _row, _column, x, y, card_width, card_height, _complete = slot
+                avatar_left = int((x + card_width * 0.02) * width)
+                avatar_top = int((y + card_height * 0.01) * height)
+                avatar_right = int((x + card_width * 0.98) * width)
+                avatar_bottom = int((y + card_height * 0.78) * height)
+                target_height = max(96, int(height * 0.105))
+                scale = target_height / feature.mat.shape[0]
+                avatar = cv2.resize(feature.mat, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+                paste_x = avatar_left + (avatar_right - avatar_left - avatar.shape[1]) // 2
+                paste_y = avatar_top + (avatar_bottom - avatar_top - avatar.shape[0]) // 2
+                frame[paste_y:paste_y + avatar.shape[0], paste_x:paste_x + avatar.shape[1]] = avatar
+                if selected:
+                    cv2.rectangle(
+                        frame,
+                        (avatar_left, avatar_top),
+                        (avatar_right - 1, avatar_bottom - 1),
+                        (40, 190, 255),
+                        max(2, height // 540),
+                    )
+                    cv2.putText(
+                        frame,
+                        '1',
+                        (avatar_left + 8, avatar_top + 24),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.7,
+                        (40, 190, 255),
+                        2,
+                    )
+
+                records = task._recognize_character_screen(frame, 1)
+
+                self.assertEqual(len(records), 1)
+                self.assertEqual(records[0].character_id, Labels.char_qingxiao)
+                self.assertEqual(records[0].energy, 10)
+                self.assertEqual(records[0].level, 90)
+                self.assertTrue(records[0].available)
+
     def test_match_travel_button_uses_the_same_card_row(self):
         title = SimpleNamespace(x=100, y=400, width=180, height=40)
         same_card = SimpleNamespace(x=1200, y=405, width=80, height=30)
