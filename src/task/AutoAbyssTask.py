@@ -10,6 +10,14 @@ import numpy as np
 from qfluentwidgets import FluentIcon as Icon
 
 from src.char.CharFactory import char_dict, char_names
+from src.task.abyss_team_planner import (
+    ROVER_AERO,
+    ROVER_CHARACTER_IDS,
+    ROVER_HAVOC,
+    ROVER_SPECTRO,
+    ROVER_UNKNOWN,
+    effective_character_id,
+)
 from src.task.BaseWWTask import BaseWWTask
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task_status import publish_task_status
@@ -48,6 +56,9 @@ class CharacterScanRecord:
     confidence: float
     screen_index: int
     slot_index: int
+    rover_form: str | None = None
+    rover_confidence: float = 0.0
+    selection_number: int | None = None
 
     @property
     def available(self):
@@ -205,18 +216,49 @@ def parse_energy_number(text):
     return None
 
 
+def parse_selection_number(text):
+    """Only accept an isolated quick-formation selection number."""
+    normalized = _normalized_ocr_text(text)
+    return int(normalized) if normalized in {"1", "2", "3"} else None
+
+
+def classify_rover_element_crop(crop):
+    """Classify the Rover's element icon conservatively from its dominant HSV hue."""
+    if crop is None or crop.size == 0:
+        return ROVER_UNKNOWN, 0.0
+    hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+    valid = (hsv[:, :, 1] >= 70) & (hsv[:, :, 2] >= 70)
+    valid_count = int(np.count_nonzero(valid))
+    if valid_count < crop.shape[0] * crop.shape[1] * 0.035:
+        return ROVER_UNKNOWN, 0.0
+    hue = hsv[:, :, 0]
+    counts = {
+        ROVER_SPECTRO: int(np.count_nonzero(valid & (hue >= 15) & (hue <= 42))),
+        ROVER_AERO: int(np.count_nonzero(valid & (hue >= 43) & (hue <= 95))),
+        ROVER_HAVOC: int(np.count_nonzero(valid & (hue >= 125) & (hue <= 165))),
+    }
+    ranked = sorted(counts.items(), key=lambda item: item[1], reverse=True)
+    form, count = ranked[0]
+    confidence = count / valid_count
+    runner_up = ranked[1][1] / valid_count
+    if confidence < 0.55 or confidence - runner_up < 0.15:
+        return ROVER_UNKNOWN, confidence
+    return form, confidence
+
+
 def merge_character_records(records):
     """Deduplicate two screens and return both all recognized and strictly usable characters."""
     merged = {}
     for record in records:
-        old = merged.get(record.character_id)
+        identity = effective_character_id(record)
+        old = merged.get(identity)
         quality = (record.energy is not None, record.level is not None, record.confidence)
         old_quality = (
             (old.energy is not None, old.level is not None, old.confidence)
             if old is not None else (False, False, -1)
         )
         if old is None or quality > old_quality:
-            merged[record.character_id] = record
+            merged[identity] = record
     available = sorted((record for record in merged.values() if record.available), key=lambda item: item.display_name)
     return merged, available
 
@@ -637,6 +679,34 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
             None,
         )
 
+    def _read_selection_number(self, frame, slot):
+        crop = self._slot_crop(frame, slot, (0.70, 0.00, 1.00, 0.30))
+        if crop is None or crop.size == 0:
+            return None
+        hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+        mask = cv2.inRange(hsv, (0, 80, 140), (179, 255, 255))
+        mask = cv2.copyMakeBorder(mask, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=0)
+        prepared = cv2.resize(
+            cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR),
+            None,
+            fx=4,
+            fy=4,
+            interpolation=cv2.INTER_CUBIC,
+        )
+        try:
+            boxes = self.ocr(0, 0, 1, 1, frame=prepared)
+        except Exception as exc:
+            self.log_warning(f"角色选择编号 OCR 失败：{exc}")
+            return None
+        return next(
+            (
+                value
+                for box in boxes or ()
+                if (value := parse_selection_number(str(getattr(box, "name", box)))) is not None
+            ),
+            None,
+        )
+
     def _recognize_character_screen(self, frame, screen_index, include_incomplete=False):
         total_screens = 1 if include_incomplete else 2
         self._set_status("识别角色", f"正在识别第 {screen_index}/{total_screens} 屏角色、体力和等级")
@@ -646,6 +716,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
         }
         records = []
         unknown = 0
+        selected = []
         for slot_index, slot in enumerate(character_card_slots()):
             row, column, _x, _y, _width, _height, complete = slot
             if not complete and not include_incomplete:
@@ -658,6 +729,23 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
             character_id, confidence = identified
             info = char_dict.get(character_id, {})
             display_name = getattr(info.get("cls"), "__name__", character_id)
+            rover_form = None
+            rover_confidence = 0.0
+            if character_id in ROVER_CHARACTER_IDS:
+                element_crop = self._slot_crop(frame, slot, (0.02, 0.02, 0.28, 0.28))
+                rover_form, rover_confidence = classify_rover_element_crop(element_crop)
+                self.log_info(
+                    f"主角元素形态：第{screen_index}屏槽位{slot_index} "
+                    f"{rover_form} 置信度{rover_confidence:.2f}"
+                )
+                if rover_form == ROVER_UNKNOWN:
+                    self.log_warning(
+                        f"主角元素形态不确定：第{screen_index}屏槽位{slot_index}，"
+                        f"置信度{rover_confidence:.2f}"
+                    )
+                    self.screenshot(
+                        f"abyss_rover_form_unknown_p{screen_index}_s{slot_index}", frame=frame
+                    )
             value = numbers.get(row, {}).get(column, {})
             energy = value.get("energy")
             level = value.get("level")
@@ -670,6 +758,9 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
                     (0.22, 0.78, 1.00, 1.00),
                     lambda text: parse_ocr_number(text, minimum=1, maximum=100),
                 )
+            selection_number = self._read_selection_number(frame, slot)
+            if selection_number is not None:
+                selected.append(f"{selection_number}:{self.tr(display_name)}")
             records.append(CharacterScanRecord(
                 character_id=character_id,
                 display_name=self.tr(display_name),
@@ -678,9 +769,16 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
                 confidence=confidence,
                 screen_index=screen_index,
                 slot_index=slot_index,
+                rover_form=rover_form,
+                rover_confidence=rover_confidence,
+                selection_number=selection_number,
             ))
         partial = "，已尝试底部不完整卡片" if include_incomplete else "，底部不完整卡片 7 个"
-        self.log_info(f"第 {screen_index} 屏识别角色 {len(records)} 个，未知头像 {unknown} 个{partial}")
+        selection_text = f"，选择标记 {', '.join(selected)}" if selected else "，无选择标记"
+        self.log_info(
+            f"第 {screen_index} 屏识别角色 {len(records)} 个，未知头像 {unknown} 个"
+            f"{partial}{selection_text}"
+        )
         return records
 
     def _click_period_challenge_icon(self):

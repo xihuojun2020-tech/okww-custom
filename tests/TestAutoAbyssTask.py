@@ -22,12 +22,15 @@ from src.task.AutoAbyssTask import (
     frame_change_score,
     match_travel_button,
     merge_character_records,
+    classify_rover_element_crop,
     parse_energy_number,
     parse_ocr_number,
+    parse_selection_number,
     is_single_page_character_list,
     scroll_thumb_center,
     tower_click_point,
 )
+from src.task.abyss_team_planner import ROVER_AERO, ROVER_HAVOC, ROVER_SPECTRO, ROVER_UNKNOWN
 
 
 class TestAutoAbyssTask(unittest.TestCase):
@@ -63,7 +66,10 @@ class TestAutoAbyssTask(unittest.TestCase):
                 task.get_feature_by_name = lambda name: feature if name == Labels.char_qingxiao else None
                 task._set_status = lambda *_args: None
                 task.log_info = lambda *_args: None
+                task.log_warning = lambda *_args: None
+                task.screenshot = lambda *_args, **_kwargs: None
                 task.tr = lambda value: value
+                task.ocr = lambda *_args, **_kwargs: [SimpleNamespace(name="1")] if selected else []
                 task._read_complete_row_numbers = lambda _frame, row: (
                     {0: {'energy': 10, 'level': 90}} if row == 0 else {}
                 )
@@ -91,7 +97,7 @@ class TestAutoAbyssTask(unittest.TestCase):
                     cv2.putText(
                         frame,
                         '1',
-                        (avatar_left + 8, avatar_top + 24),
+                        (int((x + card_width * 0.78) * width), int((y + card_height * 0.18) * height)),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.7,
                         (40, 190, 255),
@@ -105,6 +111,23 @@ class TestAutoAbyssTask(unittest.TestCase):
                 self.assertEqual(records[0].energy, 10)
                 self.assertEqual(records[0].level, 90)
                 self.assertTrue(records[0].available)
+                self.assertEqual(records[0].selection_number, 1 if selected else None)
+
+    def test_rover_element_colour_classifier_is_strict(self):
+        def solid_hsv(hue, saturation=220, value=220):
+            hsv = np.full((80, 80, 3), (hue, saturation, value), dtype=np.uint8)
+            return cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+
+        self.assertEqual(classify_rover_element_crop(solid_hsv(28))[0], ROVER_SPECTRO)
+        self.assertEqual(classify_rover_element_crop(solid_hsv(65))[0], ROVER_AERO)
+        self.assertEqual(classify_rover_element_crop(solid_hsv(145))[0], ROVER_HAVOC)
+        self.assertEqual(classify_rover_element_crop(solid_hsv(0, saturation=0))[0], ROVER_UNKNOWN)
+
+    def test_selection_number_accepts_only_one_two_three(self):
+        self.assertEqual(parse_selection_number("1"), 1)
+        self.assertEqual(parse_selection_number(" 3 "), 3)
+        self.assertIsNone(parse_selection_number("10"))
+        self.assertIsNone(parse_selection_number("Lv.90"))
 
     def test_match_travel_button_uses_the_same_card_row(self):
         title = SimpleNamespace(x=100, y=400, width=180, height=40)
