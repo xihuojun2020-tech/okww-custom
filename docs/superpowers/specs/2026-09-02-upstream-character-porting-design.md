@@ -121,7 +121,7 @@
 - 向莫宁加入 `char_qingxiao` 兼容。
 - 以最小字段和过滤逻辑同步治疗角色满协奏切出后的16秒锁定，不整体覆盖上游公共函数。
 - 不引入达妮娅对所有其他主输出统一返回 `SwitchPriority.NO + 1` 的上游全局行为。
-- gettext 增加 `Qingxiao` 到“清宵”的翻译。
+- gettext 在全部现有 locale 中增加 `Qingxiao`，分别使用简中/繁中/日文“清宵”、韩文“칭샤오”和西文“Qingxiao”，并编译对应 MO 文件。
 - 清宵注册后自动进入 `char_names`，供战斗识别和自动深渊复用。
 
 资源采用三个独立文件：`assets/images/characters/qingxiao_source_34.png`、`qingxiao_source_7.png`、`qingxiao_source_6.png`。每个文件对应一张上游源图，因此 `qingxiao_h1` 与 `qingxiao_h2` 的重叠HUD坐标不会发生覆盖。上游分类ID不得照搬；合入时必须以当前本地最大ID为基准重新计算。用户提供的2560×1440截图用于离线验证：快速编队未选中态、选中态、体力10/等级90和战斗HUD头像。截图原件不提交，只允许将不含UID和性能覆盖层的最小角色卡或头像裁剪保存为测试夹具。

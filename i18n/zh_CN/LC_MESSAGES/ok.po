@@ -1611,3 +1611,6 @@ msgstr "裂斩云渊-武器及技能材料：长刃"
 
 msgid "碎蚀云渊-武器及技能材料：臂铠"
 msgstr "碎蚀云渊-武器及技能材料：臂铠"
+
+msgid "Qingxiao"
+msgstr "清宵"

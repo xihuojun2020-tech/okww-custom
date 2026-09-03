@@ -532,7 +532,7 @@ Expected: FAIL on old version, missing package directory, and missing release te
 
 - [ ] **Step 3: Synchronize gettext catalogs**
 
-Add `msgid "Qingxiao"` with `msgstr "清宵"` to simplified Chinese. Do not invent translations for the other locale catalogs; gettext falls back to the English class name there. Compile the changed simplified-Chinese PO to MO with the repository gettext helper or Babel already installed in `.venv`; do not hand-edit the binary MO file.
+Discover every `i18n/*/LC_MESSAGES/ok.po` catalog and add `msgid "Qingxiao"` to each one. Use `清宵` for zh_CN, zh_TW, and ja_JP, `칭샤오` for ko_KR, and `Qingxiao` for es_ES. Compile every changed PO to MO with the repository gettext helper; do not hand-edit binary MO files.
 
 - [ ] **Step 4: Package the entire future character asset directory**
 
