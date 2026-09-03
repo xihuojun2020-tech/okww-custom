@@ -14,6 +14,9 @@ logger = Logger.get_logger(__name__)
 
 
 class CombatCheck(BaseWWTask):
+    TARGET_GONE_END_REASON = 'enemy_defeated_or_target_gone'
+    EXPLICIT_END_REASON = 'explicit_end_condition'
+    EXPECTED_COMBAT_END_REASONS = frozenset((TARGET_GONE_END_REASON, EXPLICIT_END_REASON))
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -61,6 +64,9 @@ class CombatCheck(BaseWWTask):
         self.out_of_combat_reason = reason
         self.do_reset_to_false()
         return False
+
+    def is_expected_combat_end(self):
+        return self.out_of_combat_reason in self.EXPECTED_COMBAT_END_REASONS
 
     def do_reset_to_false(self):
         self.cds = {}
@@ -160,7 +166,9 @@ class CombatCheck(BaseWWTask):
                 self.target_loss_started_at = None
                 return self.scene.set_in_combat()
             if self.combat_end_condition is not None and self.combat_end_condition():
-                return self.reset_to_false(reason='end condition reached')
+                return self.reset_to_false(reason=self.EXPLICIT_END_REASON)
+            if self.target_loss_started_at is None:
+                self.target_loss_started_at = time.time()
             if self.target_enemy(wait=True):
                 logger.debug(f'retarget enemy succeeded')
                 self.target_loss_started_at = None
@@ -168,18 +176,15 @@ class CombatCheck(BaseWWTask):
             if self.should_check_monthly_card() and self.handle_monthly_card():
                 self.target_loss_started_at = None
                 return self.scene.set_in_combat()
-            now = time.time()
-            if self.target_loss_started_at is None:
-                self.target_loss_started_at = now
-            target_lost_for = now - self.target_loss_started_at
+            target_lost_for = time.time() - self.target_loss_started_at
             if target_lost_for < self.target_loss_grace_period:
-                logger.info(
+                logger.debug(
                     f'target still missing, keep combat during grace period '
                     f'{target_lost_for:.1f}/{self.target_loss_grace_period}s'
                 )
                 return self.scene.set_in_combat()
-            logger.error('target_enemy failed, try recheck break out of combat')
-            return self.reset_to_false(reason='target enemy failed')
+            logger.debug('target absent after grace period, end combat')
+            return self.reset_to_false(reason=self.TARGET_GONE_END_REASON)
         else:
             from src.task.AutoCombatTask import AutoCombatTask
             chars_loaded = self.load_chars()
@@ -191,6 +196,7 @@ class CombatCheck(BaseWWTask):
                                                                                          AutoCombatTask)) and self.check_health_bar())
             if in_combat:
                 self.target_loss_started_at = None
+                self.out_of_combat_reason = ''
                 if not has_target and not self.target_enemy(wait=True):
                     if not self.target_enemy_error_notified:
                         self.target_enemy_error_notified = True
@@ -321,7 +327,7 @@ class CombatCheck(BaseWWTask):
             if self.has_target():
                 return True
             else:
-                logger.info(f'target lost try retarget {self.target_enemy_time_out}')
+                logger.debug(f'target lost try retarget {self.target_enemy_time_out}')
                 start = time.time()
                 while time.time() - start < self.target_enemy_time_out:
                     self.middle_click(interval=0.2)

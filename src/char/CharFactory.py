@@ -200,9 +200,10 @@ def get_char_by_pos(task, box, index, old_char):
                                                 ring_index=info.get('ring_index', -1),
                                                 char_type=_get_char_type(task, info),
                                                 buff_time=_get_buff_time(task, info)), info)
-    task.log_info(f'could not find char {index} {info} {highest_confidence}')
     if old_char:
+        task.log_debug(f'could not refresh known char {index}; keeping {old_char}')
         return old_char
+    task.log_info(f'could not find char {index} {info} {highest_confidence}')
     if task.debug:
         task.screenshot(f'could not find char {index}')
     return BaseChar(task, index, char_name=name)

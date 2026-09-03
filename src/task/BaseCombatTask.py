@@ -317,16 +317,22 @@ class BaseCombatTask(CombatCheck):
         self.wait_in_team_and_world(time_out=20)
         self.sleep(2)
 
-    def raise_not_in_combat(self, message):
+    def raise_not_in_combat(self, message, expected=False):
         """抛出未在战斗状态的异常。
 
         Args:
             message (str): 异常信息。
-            exception_type (Exception, optional): 要抛出的异常类型。默认为 NotInCombatException。
+            expected (bool): 是否为目标消失或显式结束条件触发的正常战斗收尾。
         """
         exception_type = None
+        revive_confirm = self.find_one('revive_confirm_hcenter_vcenter', threshold=0.8) if expected else \
+            self.wait_feature('revive_confirm_hcenter_vcenter', threshold=0.8, time_out=2)
+        if expected and not revive_confirm:
+            logger.debug(f'expected combat end: {self.out_of_combat_reason or message}')
+            raise NotInCombatException(message)
+
         logger.error(message)
-        if self.wait_feature('revive_confirm_hcenter_vcenter', threshold=0.8, time_out=2):
+        if revive_confirm:
             self.log_info('raise_not_in_combat char dead')
             if self.reset_to_false(reason=message):
                 logger.error(f'reset to false failed: {message}')
@@ -801,7 +807,7 @@ class BaseCombatTask(CombatCheck):
         if self._in_combat:
             self.next_frame()
             if not self.in_combat():
-                self.raise_not_in_combat('sleep check not in combat')
+                self.raise_not_in_combat('sleep check not in combat', expected=self.is_expected_combat_end())
 
     def check_combat(self):
         """检查当前是否处于战斗状态, 如果不是则抛出异常。"""
@@ -810,7 +816,7 @@ class BaseCombatTask(CombatCheck):
         if self._in_combat and not self.in_combat():
             # if self.debug:
             #     self.screenshot('not_in_combat_calling_check_combat')
-            self.raise_not_in_combat('combat check not in combat')
+            self.raise_not_in_combat('combat check not in combat', expected=self.is_expected_combat_end())
 
     def set_key(self, key, box):
         best = self.find_best_match_in_box(box, ['t', 'e', 'r', 'q'], threshold=0.7)

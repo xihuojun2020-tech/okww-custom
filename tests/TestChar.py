@@ -703,6 +703,35 @@ class TestChar(TaskTestCase):
             (Labels.char_linnai, Labels.char_linnai2),
         )
 
+    def test_factory_logs_known_character_transient_miss_as_debug(self):
+        class Task:
+            debug = False
+
+            def __init__(self):
+                self.info_logs = []
+                self.debug_logs = []
+
+            def find_one(self, *args, **kwargs):
+                return None
+
+            def find_best_match_in_box(self, *args, **kwargs):
+                return None
+
+            def log_info(self, message):
+                self.info_logs.append(message)
+
+            def log_debug(self, message):
+                self.debug_logs.append(message)
+
+        task = Task()
+        old_char = Linnai(task, 1, char_name=Labels.char_linnai, confidence=0.99)
+
+        result = get_char_by_pos(task, None, 1, old_char)
+
+        self.assertIs(result, old_char)
+        self.assertEqual([], task.info_logs)
+        self.assertEqual(1, len(task.debug_logs))
+
     def test_auto_combat_warms_char_features_only_once(self):
         task = AutoCombatTask.__new__(AutoCombatTask)
         task.char_features_warmed_up = False

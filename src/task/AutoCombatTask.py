@@ -55,6 +55,7 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
             self.use_liberation = True
         combat_start = time.time()
         switched_to_healer = False
+        combat_failed = False
         while self.in_combat():
             ret = True
             try:
@@ -63,12 +64,16 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
                     switched_to_healer = True
                 self.get_current_char().perform()
             except CharDeadException:
+                combat_failed = True
                 self.log_error(f'Characters dead', notify=True)
                 break
             except NotInCombatException as e:
-                logger.info(f'auto_combat_task_out_of_combat {int(time.time() - combat_start)} {e}')
+                logger.debug(f'auto_combat_task_out_of_combat {e}')
                 break
         if ret:
+            if not combat_failed:
+                reason = getattr(self, 'out_of_combat_reason', '') or 'combat_state_cleared'
+                logger.info(f'combat ended normally duration={int(time.time() - combat_start)}s reason={reason}')
             self.combat_end()
             self.switch_healer()
         return ret
