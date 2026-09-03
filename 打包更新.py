@@ -3,7 +3,7 @@
 
 只打包「功能更新」文件：
   - 项目代码：src/、config.py、main.py、fix_venv.py、启动okww.bat
-  - 功能资源：COCO 特征定义、退登电源图标、版本说明与更新日志
+  - 功能资源：COCO 特征定义、角色模板、退登电源图标、版本说明与更新日志
   - 翻译：i18n/（po + mo）
   - 框架修改：.venv/Lib/site-packages/ok/gui/MainWindow.py、
     .venv/Lib/site-packages/ok/notification/windows_messenger.py（不含 .bak）
@@ -34,6 +34,7 @@ SYNC_ITEMS = [
     'fix_venv.py',
     '启动okww.bat',
     'assets/coco_annotations.json',
+    'assets/images/characters',
     'assets/images/logout_power_icon.png',
     'assets/images/abyss_period_challenge_icon.png',
     'assets/images/abyss_period_challenge_selected.png',

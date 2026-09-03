@@ -13,9 +13,12 @@ class TestReleaseReadiness(unittest.TestCase):
         changelog = Path("更新日志.md").read_text(encoding="utf-8")
         about = Path("custom_ok/ok/gui/about/AboutTab.py").read_text(encoding="utf-8")
         self.assertRegex(version, r"^[0-9]+\.[0-9]{2}\.[0-9]{2}$")
-        self.assertEqual(version, "1.25.00")
+        self.assertEqual(version, "1.26.00")
         self.assertIn(version, changelog)
         self.assertIn(f"V{version}", about)
+        for theme in ("Qingxiao", "清宵", "port_upstream_character"):
+            self.assertIn(theme, changelog)
+            self.assertIn(theme, about)
         for theme in ("Foreground BitBlt", "WGC", "点击连接", "SendInput"):
             self.assertIn(theme, changelog)
             self.assertIn(theme, about)
@@ -62,6 +65,7 @@ class TestReleaseReadiness(unittest.TestCase):
         sync_items = runpy.run_path("打包更新.py")["SYNC_ITEMS"]
         for required in (
             "assets/coco_annotations.json",
+            "assets/images/characters",
             "assets/images/logout_power_icon.png",
             "assets/images/abyss_period_challenge_icon.png",
             "assets/images/abyss_period_challenge_selected.png",
