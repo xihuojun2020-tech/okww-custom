@@ -384,6 +384,70 @@ class TestAutoAbyssTask(unittest.TestCase):
         self.assertEqual(len(clears), 1)
         self.assertEqual(clicks, [("a", 1), ("a", 1), ("b", 2), ("c", 3)])
 
+    def test_plan_and_form_team_uses_qingxiao_core_then_verina(self):
+        records = [
+            CharacterScanRecord(Labels.char_qingxiao, "清宵", 10, 90, .9, 1, 0),
+            CharacterScanRecord(Labels.char_denia, "达妮娅", 10, 90, .9, 1, 1),
+            CharacterScanRecord(Labels.char_verina, "维里奈", 8, 90, .9, 1, 2),
+        ]
+        info = {}
+        statuses = []
+        actions = []
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task._character_scan_results = {}
+        task._runtime_status_account = "A3"
+        task.info_set = lambda key, value: info.__setitem__(key, value)
+        task._set_status = lambda stage, detail: statuses.append((stage, detail))
+        task.log_info = lambda *_args, **_kwargs: None
+        task._clear_all_selection = lambda: actions.append("clear")
+        task._select_planned_team = lambda plan, source: actions.append(("select", plan.members, source))
+        task._finish_team_formation = lambda: actions.append("finish")
+
+        plan = task._plan_and_form_team(records)
+
+        self.assertEqual(plan.members, (Labels.char_qingxiao, Labels.char_denia, Labels.char_verina))
+        self.assertIn("清宵", info["编队计划"])
+        self.assertIn("达妮娅", info["编队计划"])
+        self.assertIn("维里奈替补千咲", info["编队计划"])
+        self.assertEqual(actions[0], "clear")
+        self.assertEqual(actions[1][0], "select")
+        self.assertEqual(actions[2], "finish")
+        self.assertEqual(statuses[-1][0], "编队完成")
+
+    def test_plan_and_form_team_stops_before_clicking_when_under_three(self):
+        records = [
+            CharacterScanRecord(Labels.char_qingxiao, "清宵", 10, 90, .9, 1, 0),
+            CharacterScanRecord(Labels.char_denia, "达妮娅", 10, 90, .9, 1, 1),
+        ]
+        statuses = []
+        actions = []
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task._character_scan_results = {}
+        task.info_set = lambda *_args: None
+        task._set_status = lambda stage, detail: statuses.append((stage, detail))
+        task.log_info = lambda *_args, **_kwargs: None
+        task._clear_all_selection = lambda: actions.append("clear")
+        task._select_planned_team = lambda *_args: actions.append("select")
+        task._finish_team_formation = lambda: actions.append("finish")
+
+        with self.assertRaisesRegex(Exception, "可用角色不足三人"):
+            task._plan_and_form_team(records)
+
+        self.assertEqual(actions, [])
+        self.assertEqual(statuses[-1][0], "无法组成三人队")
+
+    def test_finish_team_formation_clicks_only_complete(self):
+        requested = []
+        clicked = []
+        boxes = {text: SimpleNamespace(name=text) for text in ("完成", "编辑队伍", "开启挑战")}
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task._wait_exact_text_or_fail = lambda text, *_args: requested.append(text) or boxes[text]
+        task.click_box = lambda box, **_kwargs: clicked.append(box.name)
+
+        self.assertTrue(task._finish_team_formation())
+        self.assertEqual(requested, ["完成", "编辑队伍", "开启挑战"])
+        self.assertEqual(clicked, ["完成"])
+
     def test_clear_character_scan_only_removes_current_account(self):
         from src.task.AutoAbyssTask import AutoAbyssTask
 

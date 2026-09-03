@@ -17,6 +17,7 @@ from src.task.abyss_team_planner import (
     ROVER_SPECTRO,
     ROVER_UNKNOWN,
     effective_character_id,
+    plan_team,
 )
 from src.task.BaseWWTask import BaseWWTask
 from src.task.WWOneTimeTask import WWOneTimeTask
@@ -148,6 +149,8 @@ def validate_selection_state(records):
         number = getattr(record, "selection_number", None)
         if number is None:
             continue
+        if number not in (1, 2, 3):
+            raise ValueError(f"非法角色选择编号：{number}")
         identity = effective_character_id(record)
         existing_identity = number_to_identity.get(number)
         if existing_identity is not None and existing_identity != identity:
@@ -290,7 +293,7 @@ def merge_character_records(records):
 
 
 class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
-    """Scan the tower floors, then open quick formation and scan usable characters."""
+    """Scan tower floors and form one verified team without starting combat."""
 
     navigation_section = "tests"
     _ASSET_DIR = Path("assets/images")
@@ -304,10 +307,11 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.name = "🧪 自动深渊：关卡与角色扫描"
+        self.name = "🧪 自动深渊：扫描与自动编队"
         self.description = (
             "扫描逆境深塔三座塔的关卡状态，然后进入残响之塔首个可挑战关卡的快速编队页，"
-            "按角色数量自动识别一屏或两屏角色、体力和等级。不会选择角色或点击开启挑战，不会进入战斗。"
+            "识别角色、体力和等级后选择三名角色并点击完成，停在编辑队伍页。"
+            "不会点击开启挑战，不会进入战斗。"
         )
         self.group_name = "🧪 测试功能"
         self.group_icon = Icon.DEVELOPER_TOOLS
@@ -329,7 +333,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
 
     def run(self):
         WWOneTimeTask.run(self)
-        self.log_info("安全边界：只进入角色列表，不选择角色、不点击开启挑战、不进入战斗")
+        self.log_info("安全边界：自动选择一支三人队并点击完成，不点击开启挑战，不进入战斗")
         try:
             self._set_status("进入深塔", "打开 F2 周期挑战")
             self.openF2Book()
@@ -348,17 +352,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
             self.info_set("扫描结果", summary)
             self.log_info(f"深塔关卡扫描完成：{summary}", notify=True)
             records = self._enter_and_scan_characters(results[TOWER_NAMES[0]])
-            merged, available = merge_character_records(records)
-            self._character_scan_results[self._current_scan_key()] = {
-                "all": merged,
-                "available": available,
-            }
-            display = "；".join(
-                f"{record.display_name}（体力{record.energy}，Lv.{record.level}）" for record in available
-            ) or "无"
-            self.info_set("可用角色", display)
-            self._set_status("识别完成", f"已识别 {len(available)} 名体力大于0且等级大于60的角色")
-            self.log_info(f"角色识别完成：{display}", notify=True)
+            self._plan_and_form_team(records)
         except Exception as exc:
             message = str(exc)
             self.info_set("Error", message)
@@ -368,6 +362,62 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
     def _set_status(self, stage, detail):
         self.info_set("状态", detail)
         publish_task_status(self, stage=stage, detail=detail)
+
+    @staticmethod
+    def _identity_display_names(plan, records):
+        names = {effective_character_id(record): record.display_name for record in records}
+        names.update({
+            ROVER_SPECTRO: "光主",
+            ROVER_AERO: "风主",
+            ROVER_HAVOC: "暗主",
+            ROVER_UNKNOWN: "主角（形态未知）",
+        })
+        for identity, display_name in zip(plan.preset.members, plan.preset.display_names):
+            names.setdefault(identity, display_name)
+        return names
+
+    def _format_team_plan(self, plan, records):
+        names = self._identity_display_names(plan, records)
+        members = " / ".join(names.get(identity, identity) for identity in plan.members) or "无"
+        matched = "完整命中" if plan.complete else f"命中{len(plan.matched)}/3"
+        parts = [f"第{plan.preset.queue}队列", matched, members]
+        if plan.substitutions:
+            parts.append("、".join(
+                f"{names.get(replacement, replacement)}替补{names.get(missing, missing)}"
+                for missing, replacement in plan.substitutions
+            ))
+        if plan.broke_two_member_core:
+            parts.append("为补齐队伍拆用了另一两人核心")
+        return "；".join(parts)
+
+    def _plan_and_form_team(self, records):
+        merged, available = merge_character_records(records)
+        self._character_scan_results[self._current_scan_key()] = {
+            "all": merged,
+            "available": available,
+        }
+        display = "；".join(
+            f"{record.display_name}（体力{record.energy}，Lv.{record.level}）" for record in available
+        ) or "无"
+        self.info_set("可用角色", display)
+        self._set_status("识别完成", f"已识别 {len(available)} 名体力大于0且等级大于60的角色")
+        self.log_info(f"角色识别完成：{display}", notify=True)
+
+        plan = plan_team(available)
+        plan_text = self._format_team_plan(plan, merged.values())
+        self.info_set("编队计划", plan_text)
+        if not plan.executable:
+            self._set_status("无法组成三人队", plan_text)
+            raise Exception(f"可用角色不足三人：{plan_text}")
+        self._set_status("清理已有编队", "正在检查并清除快速编队页已有的 1/2/3")
+        self._clear_all_selection()
+        self._set_status("选择编队", plan_text)
+        self._select_planned_team(plan, records)
+        self._set_status("确认编队", "三个选择编号验证成功，正在点击完成")
+        self._finish_team_formation()
+        self._set_status("编队完成", f"{plan_text}；已停在编辑队伍页")
+        self.log_info(f"自动深渊编队完成：{plan_text}；未点击开启挑战", notify=True)
+        return plan
 
     def _current_scan_key(self):
         return str(getattr(self, "_runtime_status_account", None) or "当前账号")
@@ -696,6 +746,19 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
         self.screenshot("abyss_character_select_failed")
         raise Exception("角色选择编号验证失败，已清理本轮选择")
 
+    def _finish_team_formation(self):
+        complete = self._wait_exact_text_or_fail(
+            "完成", (0.76, 0.84, 0.97, 0.99), 6, "未找到快速编队页面右下角的完成按钮"
+        )
+        self.click_box(complete, after_sleep=1)
+        self._wait_exact_text_or_fail(
+            "编辑队伍", (0.01, 0.01, 0.22, 0.16), 8, "完成后未返回编辑队伍页"
+        )
+        self._wait_exact_text_or_fail(
+            "开启挑战", (0.75, 0.82, 0.98, 0.98), 4, "编辑队伍页面结构异常"
+        )
+        return True
+
     def _character_template_descriptors(self):
         if self._character_descriptors is not None:
             return self._character_descriptors
@@ -848,6 +911,8 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
             return None
         hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
         mask = cv2.inRange(hsv, (0, 80, 140), (179, 255, 255))
+        if np.count_nonzero(mask) < max(8, int(mask.size * 0.002)):
+            return None
         mask = cv2.copyMakeBorder(mask, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=0)
         prepared = cv2.resize(
             cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR),
@@ -884,9 +949,17 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
             row, column, _x, _y, _width, _height, complete = slot
             if not complete and not include_incomplete:
                 continue
+            selection_number = self._read_selection_number(frame, slot)
             avatar = self._slot_crop(frame, slot, (0.02, 0.01, 0.98, 0.78))
             identified = self._identify_character(avatar) if avatar is not None and avatar.size else None
             if identified is None:
+                if selection_number is not None:
+                    self.screenshot(
+                        f"abyss_selected_character_unknown_p{screen_index}_s{slot_index}", frame=frame
+                    )
+                    raise Exception(
+                        f"第{screen_index}屏槽位{slot_index}存在选择编号 {selection_number}，但角色身份无法确认"
+                    )
                 unknown += 1
                 continue
             character_id, confidence = identified
@@ -921,7 +994,6 @@ class AutoAbyssTask(WWOneTimeTask, BaseWWTask):
                     (0.22, 0.78, 1.00, 1.00),
                     lambda text: parse_ocr_number(text, minimum=1, maximum=100),
                 )
-            selection_number = self._read_selection_number(frame, slot)
             if selection_number is not None:
                 selected.append(f"{selection_number}:{self.tr(display_name)}")
             records.append(CharacterScanRecord(

@@ -15,6 +15,7 @@ class TestTaskNavigationClassification(unittest.TestCase):
         self.assertEqual(classify_task(object.__new__(AutoAbyssTask)), TESTS)
         self.assertIn("多账号每日任务", inspect.getsource(TestAccountSwitchTask.__init__))
         self.assertIn("不会进入战斗", inspect.getsource(AutoAbyssTask.__init__))
+        self.assertIn("不会点击开启挑战", inspect.getsource(AutoAbyssTask.__init__))
         self.assertNotIn("AutoCombatTask", inspect.getsource(AutoAbyssTask))
 
 
