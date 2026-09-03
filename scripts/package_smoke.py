@@ -8,10 +8,11 @@ from pathlib import Path, PurePosixPath
 
 
 FORBIDDEN_PARTS = {
-    "working", "configs", "logs", "账号备份", "config_bundle_transactions",
+    "working", "logs", "账号备份", "config_bundle_transactions",
     "config_integrity_incidents",
 }
 FORBIDDEN_PARTS_LOWER = {part.lower() for part in FORBIDDEN_PARTS}
+ALLOWED_CONFIG_PATHS = {"configs/notification.json"}
 
 
 def inspect_distribution(dist: Path) -> tuple[Path, ...]:
@@ -23,9 +24,13 @@ def inspect_distribution(dist: Path) -> tuple[Path, ...]:
     for archive in (path for path in assets if path.suffix.lower() == ".zip"):
         with zipfile.ZipFile(archive) as package:
             for name in package.namelist():
-                parts = {part.lower() for part in PurePosixPath(name.replace("\\", "/")).parts}
+                path = PurePosixPath(name.replace("\\", "/"))
+                parts = {part.lower() for part in path.parts}
                 if parts & FORBIDDEN_PARTS_LOWER:
                     raise ValueError(f"压缩包包含本地运行数据目录：{archive.name}")
+                normalized = path.as_posix().lower()
+                if path.parts and path.parts[0].lower() == "configs" and normalized not in ALLOWED_CONFIG_PATHS:
+                    raise ValueError(f"压缩包包含未授权配置：{archive.name}:{name}")
     return assets
 
 

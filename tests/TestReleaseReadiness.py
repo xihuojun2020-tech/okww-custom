@@ -106,6 +106,21 @@ class TestReleaseReadiness(unittest.TestCase):
             with self.assertRaises(ValueError):
                 inspect_distribution(Path(temp))
 
+    def test_package_smoke_allows_notification_but_rejects_other_configs(self):
+        from scripts.package_smoke import inspect_distribution
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            allowed = root / "allowed.zip"
+            with zipfile.ZipFile(allowed, "w") as package:
+                package.writestr("configs/Notification.json", "{}")
+            self.assertEqual(inspect_distribution(root), (allowed,))
+
+            forbidden = root / "forbidden.zip"
+            with zipfile.ZipFile(forbidden, "w") as package:
+                package.writestr("configs/profile.json", "{}")
+            with self.assertRaises(ValueError):
+                inspect_distribution(root)
+
 
 if __name__ == "__main__":
     unittest.main()
