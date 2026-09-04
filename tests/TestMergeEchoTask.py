@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime
 from unittest.mock import Mock, call, patch
 
 from config import key_config_option
@@ -8,6 +9,7 @@ from src.task.DailyTask import (
     AUTO_FARM_NIGHTMARE_NEST,
     MERGE_ECHO_ON_SUNDAY,
     DailyTask,
+    weekly_garden_check_due,
 )
 from src.task.FarmEchoTask import FarmEchoTask
 from src.task.MergeEchoTask import FULL_BATCH_PATTERN, MergeEchoTask
@@ -157,6 +159,83 @@ class TestMergeEchoTask(unittest.TestCase):
 
 
 class TestDailyMergeEchoTask(unittest.TestCase):
+
+    def test_weekly_garden_retries_after_selected_day_until_recorded(self):
+        monday = datetime(2026, 8, 31, 12, 0, 0)
+        wednesday = datetime(2026, 9, 2, 12, 0, 0)
+
+        self.assertTrue(weekly_garden_check_due('Monday', None, monday))
+        self.assertTrue(weekly_garden_check_due('Monday', None, wednesday))
+        self.assertFalse(weekly_garden_check_due(
+            'Monday', '2026-09-01 20:00:00', wednesday))
+        self.assertTrue(weekly_garden_check_due(
+            'Monday', '2026-08-30 20:00:00', wednesday))
+
+    def test_weekly_garden_without_selected_day_starts_on_sunday(self):
+        saturday = datetime(2026, 9, 5, 12, 0, 0)
+        sunday = datetime(2026, 9, 6, 12, 0, 0)
+
+        self.assertFalse(weekly_garden_check_due('无', None, saturday))
+        self.assertTrue(weekly_garden_check_due('无', None, sunday))
+
+    def test_weekly_garden_current_week_record_skips_opening_page(self):
+        daily_task = DailyTask.__new__(DailyTask)
+        daily_task._profile_get = Mock(return_value='Monday')
+        daily_task.get_last_completed = Mock(return_value='2026-09-01 20:00:00')
+        daily_task.get_task_by_class = Mock()
+        daily_task.info_set = Mock()
+        daily_task.log_info = Mock()
+
+        with patch('src.task.DailyTask.datetime') as fake_datetime:
+            fake_datetime.now.return_value = datetime(2026, 9, 2, 12, 0, 0)
+            fake_datetime.fromisoformat.side_effect = datetime.fromisoformat
+            daily_task.check_weekly_garden()
+
+        daily_task.get_task_by_class.assert_not_called()
+
+    def test_weekly_garden_late_check_records_confirmed_completion(self):
+        daily_task = DailyTask.__new__(DailyTask)
+        daily_task._verified_profile_id = 'profile-a3'
+        daily_task._profile_get = Mock(return_value='Monday')
+        daily_task.get_last_completed = Mock(return_value=None)
+        garden_task = Mock()
+        garden_task.is_weekly_garden_completed.return_value = True
+        daily_task.get_task_by_class = Mock(return_value=garden_task)
+        daily_task.record_last_completed = Mock()
+        daily_task.info_set = Mock()
+        daily_task.log_info = Mock()
+
+        with patch('src.task.DailyTask.datetime') as fake_datetime:
+            fake_datetime.now.return_value = datetime(2026, 9, 2, 12, 0, 0)
+            daily_task.check_weekly_garden()
+
+        garden_task.open_garden_weekly_page.assert_called_once_with()
+        daily_task.record_last_completed.assert_called_once_with(
+            'Weekly Garden', profile_id='profile-a3')
+
+    def test_weekly_garden_failure_keeps_the_account_due_for_next_run(self):
+        daily_task = DailyTask.__new__(DailyTask)
+        daily_task._verified_profile_id = 'profile-a3'
+        daily_task._profile_get = Mock(return_value='Monday')
+        daily_task.get_last_completed = Mock(return_value=None)
+        garden_task = Mock()
+        garden_task.is_weekly_garden_completed.return_value = False
+        daily_task.get_task_by_class = Mock(return_value=garden_task)
+        daily_task.run_task_by_class = Mock(side_effect=RuntimeError('failed'))
+        daily_task.record_last_completed = Mock()
+        daily_task.info_set = Mock()
+        daily_task.log_info = Mock()
+        daily_task.log_error = Mock()
+        daily_task.screenshot = Mock()
+        daily_task.ensure_main = Mock()
+
+        with patch('src.task.DailyTask.datetime') as fake_datetime:
+            fake_datetime.now.return_value = datetime(2026, 9, 2, 12, 0, 0)
+            daily_task.check_weekly_garden()
+
+        daily_task.record_last_completed.assert_not_called()
+        self.assertTrue(weekly_garden_check_due(
+            'Monday', None, datetime(2026, 9, 3, 12, 0, 0)))
 
     def test_daily_uses_current_weekly_and_nightmare_metadata(self):
         executor = Mock()

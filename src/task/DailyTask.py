@@ -4,7 +4,7 @@ import copy
 import importlib
 import inspect
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from PySide6.QtCore import QThread
 from PySide6.QtWidgets import QApplication
@@ -63,6 +63,24 @@ ACCOUNT_CONFIG_VERSION = 1
 
 # 每周乐园检查日（周一~周日），随账号方案切换
 WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+
+def weekly_garden_check_due(check_day, last_completed, now=None):
+    """Return whether this account still needs its weekly garden check."""
+    now = now or datetime.now()
+    selected_day = str(check_day or '无').strip()
+    scheduled_weekday = WEEKDAYS.index(selected_day) if selected_day in WEEKDAYS else 6
+    if now.weekday() < scheduled_weekday:
+        return False
+    if not last_completed:
+        return True
+    try:
+        completed_date = datetime.fromisoformat(
+            str(last_completed).strip().replace('Z', '+00:00')).date()
+    except (TypeError, ValueError):
+        return True
+    week_start = now.date() - timedelta(days=now.weekday())
+    return not (week_start <= completed_date <= now.date())
 
 # 每日任务卡片上的只读展示键：显示各子任务上次完成时间（数据存于方案文件中，不参与配置保存）
 LC_TACET = 'Last Completed - Tacet Suppression'
@@ -1468,7 +1486,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         return True
 
     def run_weekly_tasks(self):
-        # 每周乐园：所选日期 + 每周日（必跑）
+        # 每周乐园：从所选日期开始补检；“无”则从周日开始。
         self.check_weekly_garden()
         # 声骸融合：每周日运行一次
         if self._profile_get(MERGE_ECHO_ON_SUNDAY) and WEEKDAYS[datetime.now().weekday()] == WEEKDAYS[6]:
@@ -1477,15 +1495,17 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
     def check_weekly_garden(self):
         self.info_set('current task', 'check weekly garden')
         self.log_info('正在检查每周乐园...')
-        # 运行规则：每周日固定检查一次；此外可在所选的一天（周一~周六）检查。
-        # 所选日检查到未完成时运行；若运行一半被关闭（未确认完成），下次启动到检查日会再次检查。
+        # 所选日期是本周最早检查日；之后会持续补检，直到账号写入本周完成记录。
+        # “无”保持旧行为，以周日作为最早检查日。
         check_day = (self._profile_get(GARDEN_CHECK_DAY) or '无').strip()
-        today = WEEKDAYS[datetime.now().weekday()]
-        if today == WEEKDAYS[6]:
-            self.log_info('今天是周日，每周乐园强制检查')
-        elif today != check_day:
-            self.log_info(f'今天是 {today}，乐园检查日为 {check_day}，跳过')
+        now = datetime.now()
+        today = WEEKDAYS[now.weekday()]
+        last_completed = self.get_last_completed('Weekly Garden')
+        if not weekly_garden_check_due(check_day, last_completed, now):
+            self.log_info(f'今天是 {today}，乐园检查日为 {check_day}，本周无需检查')
             return
+        if today != check_day:
+            self.log_info(f'乐园检查日为 {check_day}，本周尚无完成记录，继续补检')
         try:
             garden_task = self.get_task_by_class(GardenTask)
             garden_task.open_garden_weekly_page()
