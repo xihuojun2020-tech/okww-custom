@@ -197,84 +197,26 @@ def _exit_cleanup():
 
 def _set_owned_git_proxy(git_config, proxy):
     """Change only http.proxy, preserving every other repository setting."""
-    import subprocess
+    from auto_proxy import set_git_proxy
 
-    command = ['git', 'config', '--file', os.fspath(git_config)]
-    if proxy:
-        result = subprocess.run(
-            [*command, '--replace-all', 'http.proxy', f'http://{proxy}'],
-            check=False, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError('failed to update repository proxy')
-    else:
-        result = subprocess.run(
-            [*command, '--unset-all', 'http.proxy'],
-            check=False, capture_output=True, text=True)
-        if result.returncode not in (0, 5):
-            raise RuntimeError('failed to remove repository proxy')
+    set_git_proxy(git_config, proxy)
     return proxy
 
 
 def _setup_proxy():
-    """联网代理自愈：探测可用代理并写入 repo/.git/config 的 [http] proxy。
-
-    即使直接双击 okww-custom.exe（未经过「启动okww.bat」），okww 启动后也会把代理
-    配置写进 repo 本地 git 配置 → 下次 PyAppify fetch 稳定走代理，不再直连超时。
-    无可用代理时移除代理配置（回退直连）。
-    """
+    """Verify GitHub routing and repair the packaged repository for next fetch."""
     try:
-        base = os.path.dirname(os.path.abspath(__file__))  # working 目录
-        git_config = os.path.join(base, '..', 'repo', '.git', 'config')
-        if not os.path.isfile(git_config):
-            return
-        import socket as _socket
+        from auto_proxy import configure_repo_proxy, find_bootstrap_log, find_packaged_git_config
 
-        def _port_open(host, port, timeout=0.4):
-            try:
-                with _socket.create_connection((host, port), timeout=timeout):
-                    return True
-            except Exception:
-                return False
-
-        def _find_proxy():
-            candidates = []
-            # 系统代理（注册表）
-            try:
-                import winreg
-                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                                     r'Software\Microsoft\Windows\CurrentVersion\Internet Settings')
-                enable, _ = winreg.QueryValueEx(key, 'ProxyEnable')
-                server, _ = winreg.QueryValueEx(key, 'ProxyServer')
-                winreg.CloseKey(key)
-                if enable and server:
-                    candidates.append(server.strip())
-            except Exception:
-                pass
-            # 常见代理端口
-            for p in (7890, 10809, 1080, 7897):
-                candidates.append(f'127.0.0.1:{p}')
-            seen = set()
-            for c in candidates:
-                if c in seen:
-                    continue
-                seen.add(c)
-                host, _, port = c.rpartition(':')
-                try:
-                    port = int(port)
-                except ValueError:
-                    continue
-                if _port_open(host or '127.0.0.1', port):
-                    return f'{host or "127.0.0.1"}:{port}'
-            return None
-
-        proxy = _find_proxy()
-        result = _set_owned_git_proxy(git_config, proxy)
-        if result:
-            print(f'[okww] 代理已配置: {result}（git fetch 将走代理）')
-        else:
-            print('[okww] 未发现可用代理，已回退直连')
-    except Exception:
-        pass
+        base = os.path.dirname(os.path.abspath(__file__))
+        git_config = find_packaged_git_config(base)
+        if git_config:
+            configure_repo_proxy(
+                git_config,
+                log_path=find_bootstrap_log(base),
+            )
+    except Exception as error:
+        print(f'[okww] 代理自愈失败: {error}')
 
 
 def _report_startup_error(error, traceback_text=None):

@@ -8,8 +8,9 @@
 """
 import json
 import os
-import socket
 import urllib.request
+
+from auto_proxy import find_working_proxy
 
 UPSTREAM_REPO = 'ok-oldking/ok-wuthering-waves'
 CHECK_FILE = None  # 由 _init 设置
@@ -46,37 +47,8 @@ def _save_record(record):
 
 
 def _detect_proxy():
-    """探测可用代理（系统代理 + 常见端口），返回 'host:port' 或 None。"""
-    candidates = []
-    try:
-        import winreg
-        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                             r'Software\Microsoft\Windows\CurrentVersion\Internet Settings')
-        enable, _ = winreg.QueryValueEx(key, 'ProxyEnable')
-        server, _ = winreg.QueryValueEx(key, 'ProxyServer')
-        winreg.CloseKey(key)
-        if enable and server:
-            candidates.append(server.strip())
-    except Exception:
-        pass
-    for p in (7890, 10809, 1080, 7897):
-        candidates.append(f'127.0.0.1:{p}')
-    seen = set()
-    for c in candidates:
-        if c in seen:
-            continue
-        seen.add(c)
-        host, _, port = c.rpartition(':')
-        try:
-            port = int(port)
-        except ValueError:
-            continue
-        try:
-            with socket.create_connection((host or '127.0.0.1', port), timeout=0.4):
-                return f'{host or "127.0.0.1"}:{port}'
-        except Exception:
-            continue
-    return None
+    """Return only a proxy that has passed a real GitHub request."""
+    return find_working_proxy()
 
 
 def _parse_commit(data):
