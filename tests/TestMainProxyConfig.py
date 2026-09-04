@@ -74,7 +74,7 @@ class TestMainProxyConfig(unittest.TestCase):
 
     def test_working_copy_resolves_outer_package_state(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             app = root / "data/apps/okww-custom"
             working = app / "working"
             config = app / "repo/.git/config"
