@@ -114,14 +114,16 @@ def find_working_proxy(
 
 
 def set_git_proxy(git_config: str | os.PathLike[str], proxy: str | None) -> None:
-    """Change only proxy in the unqualified [http] section, atomically."""
+    """Set the canonical http.proxy and remove stale legacy https.proxy."""
     path = Path(git_config)
     lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
     output: list[str] = []
     in_http = False
+    in_proxy_section = False
     found_http = False
     wrote_proxy = False
     section_re = re.compile(r"^\s*\[\s*http\s*]\s*$", re.IGNORECASE)
+    legacy_https_re = re.compile(r"^\s*\[\s*https\s*]\s*$", re.IGNORECASE)
     proxy_re = re.compile(r"^\s*proxy\s*=", re.IGNORECASE)
 
     for line in lines:
@@ -131,11 +133,12 @@ def set_git_proxy(git_config: str | os.PathLike[str], proxy: str | None) -> None
                 output.append(f"\tproxy = http://{proxy}\n")
                 wrote_proxy = True
             in_http = bool(section_re.match(stripped))
+            in_proxy_section = in_http or bool(legacy_https_re.match(stripped))
             found_http = found_http or in_http
             output.append(line)
             continue
-        if in_http and proxy_re.match(line):
-            if proxy and not wrote_proxy:
+        if in_proxy_section and proxy_re.match(line):
+            if in_http and proxy and not wrote_proxy:
                 output.append(f"\tproxy = http://{proxy}\n")
                 wrote_proxy = True
             continue

@@ -50,18 +50,29 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
         self.openF2Book('gray_book_boss')
         return self.get_stamina()
 
-    def farm_domain_with_recovery_loop(self, must_use, teleport_into_domain_once, max_recovery_retries=3):
+    def farm_domain_with_recovery_loop(self, must_use, teleport_into_domain_once,
+                                       activity_ready=None, stamina_budget=0, max_recovery_retries=3):
         """包装副本刷取循环：死亡恢复后自动从 F2 重新进入，并限制重试次数。"""
         recovery_retries = 0
+        allow_backup = activity_ready is None
+        backup_policy_decided = activity_ready is None
         while True:
-            current, _, total = self.open_F2_book_and_get_stamina()
-            if total < self.stamina_once or total < must_use or (must_use == 0 and current < self.stamina_once):
+            current, back_up, total = self.open_F2_book_and_get_stamina()
+            if not backup_policy_decided:
+                allow_backup = self.should_use_backup_stamina(
+                    activity_ready, current, back_up, stamina_budget)
+                backup_policy_decided = True
+                self.log_info(
+                    f'每日体力策略：current={current}, backup={back_up}, budget={stamina_budget}, '
+                    f'allow_backup={allow_backup}')
+            available = total if allow_backup else current
+            if available < self.stamina_once:
                 self.log_info('not enough stamina', notify=True)
                 self.back()
                 return
             teleport_into_domain_once()
             self.sleep(1)
-            finished, must_use = self.farm_in_domain(must_use=must_use)
+            finished, must_use = self.farm_in_domain(must_use=must_use, allow_backup=allow_backup)
             if finished:
                 return
             recovery_retries += 1
@@ -73,7 +84,7 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
             self.log_info('farm_domain: death recovered, re-enter from F2 book')
             self.sleep(1)
 
-    def farm_in_domain(self, must_use=0):
+    def farm_in_domain(self, must_use=0, allow_backup=True):
         """刷本循环；返回 (是否整段正常结束, 剩余 must_use)。
 
         第二项在死亡提前退出时仍会带上本局内已扣过的额度，供外层恢复循环继续传参。
@@ -93,7 +104,8 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
                 self.log_info('farm_in_domain: death recovered, exiting domain')
                 self.make_sure_in_world()
                 return False, must_use
-            can_continue, used = self.use_stamina(once=self.stamina_once, must_use=must_use)
+            can_continue, used = self.use_stamina(
+                once=self.stamina_once, must_use=must_use, allow_backup=allow_backup)
             self.info_incr('used stamina', used)
             must_use -= used
             self.sleep(4)

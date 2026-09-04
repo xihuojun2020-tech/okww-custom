@@ -74,20 +74,33 @@ class TestScheduleSupport(unittest.TestCase):
 
     def test_multi_account_returns_to_main_before_switching_to_login(self):
         run_node = _class_function("src/task/MultiAccountDailyTask.py", "MultiAccountDailyTask", "_run_inner")
+        daily_node = _class_function(
+            "src/task/MultiAccountDailyTask.py",
+            "MultiAccountDailyTask",
+            "_run_daily_account",
+        )
+
+        daily_calls = [
+            node for node in ast.walk(daily_node)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "self"
+            and node.func.attr == "run_task_by_class"
+        ]
+        self.assertTrue(daily_calls)
 
         calls = [
             node for node in ast.walk(run_node)
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
-            and isinstance(node.func.value, ast.Name)
-            and node.func.value.id == "self"
-            and node.func.attr in {"run_task_by_class", "ensure_main", "_switch_to_login"}
+            and node.func.attr in {"_run_daily_account", "ensure_main", "_switch_to_login"}
         ]
 
         call_names = [node.func.attr for node in sorted(calls, key=lambda call: call.lineno)]
         daily_indexes = [
             index for index, name in enumerate(call_names)
-            if name == "run_task_by_class"
+            if name == "_run_daily_account"
         ]
         self.assertTrue(daily_indexes)
         for daily_index in daily_indexes:
@@ -105,13 +118,11 @@ class TestScheduleSupport(unittest.TestCase):
             node for node in ast.walk(while_node)
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
-            and isinstance(node.func.value, ast.Name)
-            and node.func.value.id == "self"
-            and node.func.attr in {"run_task_by_class", "ensure_main", "_switch_to_login"}
+            and node.func.attr in {"_run_daily_account", "ensure_main", "_switch_to_login"}
         ]
 
         call_names = [node.func.attr for node in sorted(calls, key=lambda call: call.lineno)]
-        daily_index = call_names.index("run_task_by_class")
+        daily_index = call_names.index("_run_daily_account")
 
         self.assertIn("ensure_main", call_names[daily_index + 1:])
         self.assertIn("_switch_to_login", call_names[daily_index + 1:])

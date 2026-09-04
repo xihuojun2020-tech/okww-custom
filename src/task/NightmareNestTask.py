@@ -27,6 +27,8 @@ class NestTarget:
     cache_key: str
     display_name: str = '未知目标'
     ordinal: int = 0
+    current: int = 0
+    total: int = 0
 
 
 class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
@@ -47,6 +49,9 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
         self._capture_success = False
         self._capture_mode = False
         self._unreachable_nests = set()
+        self._nest_progress = {}
+        self._nest_stagnation = {}
+        self._incomplete_targets = {}
         self.default_config.update({'Which to Farm': ['Nightmare Purification', 'Tacet Discord Nest']})
         self.config_type['Which to Farm'] = {'type': "multi_selection",
                                              'options': ['Nightmare Purification', 'Tacet Discord Nest']}
@@ -65,12 +70,14 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
         self._capture_mode = False
         self._capture_success = False
         self._unreachable_nests.clear()
+        self._reset_progress_tracking()
         WWOneTimeTask.run(self)
         self.ensure_main(time_out=30)
         self._init_queue()
         self.log_info('opened gray_book_boss')
         while nest := self.get_nest_to_go():
             self.combat_nest(nest)
+        self._assert_selected_targets_complete()
         self.ensure_main(time_out=30)
 
     def run_capture_mode(self):
@@ -78,6 +85,7 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
         self._capture_mode = True
         self._capture_success = False
         self._unreachable_nests.clear()
+        self._reset_progress_tracking()
         WWOneTimeTask.run(self)
         self.ensure_main(time_out=30)
         self._init_queue()
@@ -266,25 +274,29 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
                 expected_total = NEST_TOTAL_BY_POSITION[nest_index - 1]
                 if int(denominator) != expected_total:
                     self.log_info(f'warning: {nest_name} expected {expected_total} monsters but got {denominator}')
-                if numerator != denominator and numerator == '0':
+                current = int(numerator)
+                total = int(denominator)
+                action_name = self.queues[0].__name__ if self.queues else 'unknown'
+                display_name = (
+                    nest_name
+                    if action_name == 'go_nest'
+                    else f'梦魇拔除第 {nest_index} 项'
+                )
+                cache_key = self._make_nest_cache_key(count_box, denominator)
+                if current < total:
                     if nest_name not in farm_nests:
+                        self._clear_target_progress(cache_key)
                         self.log_info(f'skip tacet discord nest {nest_name} (not selected to farm)')
                         continue
-                    cache_key = self._make_nest_cache_key(count_box, denominator)
+                    self._record_target_progress(cache_key, display_name, current, total)
                     if cache_key in self._unreachable_nests:
                         self.log_info(f'skip cached unreachable nightmare nest: {cache_key}')
                         continue
-                    self.log_info(f'{count_box} is not complete')
+                    self.log_info(f'{count_box} is not complete ({current}/{total})')
                     count_box.x = self.width_of_screen(0.9)
                     count_box.y -= count_box.height * 0.9
                     count_box.height = 1
                     count_box.width = 1
-                    action_name = self.queues[0].__name__ if self.queues else 'unknown'
-                    display_name = (
-                        nest_name
-                        if action_name == 'go_nest'
-                        else f'梦魇拔除第 {nest_index} 项'
-                    )
                     publish_task_status(
                         self,
                         stage='刷梦魇巢穴',
@@ -295,7 +307,41 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
                         cache_key,
                         display_name=display_name,
                         ordinal=nest_index,
+                        current=current,
+                        total=total,
                     )
+                self._clear_target_progress(cache_key)
+
+    def _reset_progress_tracking(self):
+        self._nest_progress = {}
+        self._nest_stagnation = {}
+        self._incomplete_targets = {}
+
+    def _record_target_progress(self, cache_key, display_name, current, total):
+        progress = getattr(self, '_nest_progress', None)
+        if progress is None:
+            self._reset_progress_tracking()
+            progress = self._nest_progress
+        previous = progress.get(cache_key)
+        if previous is None or current > previous:
+            self._nest_stagnation[cache_key] = 0
+        else:
+            self._nest_stagnation[cache_key] = self._nest_stagnation.get(cache_key, 0) + 1
+        progress[cache_key] = current
+        self._incomplete_targets[cache_key] = (display_name, current, total)
+        if self._nest_stagnation[cache_key] >= 3:
+            raise RuntimeError(f'{display_name} 连续 3 次执行后进度未增长（{current}/{total}）')
+
+    def _clear_target_progress(self, cache_key):
+        getattr(self, '_incomplete_targets', {}).pop(cache_key, None)
+        getattr(self, '_nest_stagnation', {}).pop(cache_key, None)
+
+    def _assert_selected_targets_complete(self):
+        incomplete = list(getattr(self, '_incomplete_targets', {}).values())
+        if not incomplete:
+            return
+        detail = '、'.join(f'{name} {current}/{total}' for name, current, total in incomplete)
+        raise RuntimeError(f'所选梦魇巢穴仍未完成：{detail}')
 
     def _make_nest_cache_key(self, count_box, denominator):
         action_name = self.queues[0].__name__ if self.queues else 'unknown'

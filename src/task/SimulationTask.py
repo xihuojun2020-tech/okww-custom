@@ -30,11 +30,9 @@ class SimulationTask(DomainTask):
         self.make_sure_in_world()
         self.farm_simulation()
 
-    def farm_simulation(self, daily=False, used_stamina=0, config=None):
-        if daily:
-            must_use = 180 - used_stamina
-        else:
-            must_use = 0
+    def farm_simulation(self, daily=False, used_stamina=0, config=None, activity_ready=False):
+        del used_stamina
+        must_use = self.daily_stamina_budget(activity_ready, self.stamina_once) if daily else 0
         if config is None:
             config = self.config
         selection = config.get('Material Selection', 'Shell Credit')
@@ -42,7 +40,11 @@ class SimulationTask(DomainTask):
         def teleport_once():
             self.teleport_into_domain(selection)
 
-        self.farm_domain_with_recovery_loop(must_use, teleport_once)
+        self.farm_domain_with_recovery_loop(
+            must_use, teleport_once,
+            activity_ready=activity_ready if daily else None,
+            stamina_budget=must_use,
+        )
 
     def teleport_into_domain(self, selection):
         self.open_boss_book('moni')

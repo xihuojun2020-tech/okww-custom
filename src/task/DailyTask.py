@@ -31,10 +31,15 @@ from src.runtime.account_runtime_bootstrap import (
     initialize_account_runtime,
     require_account_runtime_for_task,
 )
+from src.runtime.game_runtime_errors import FrameUnavailable, GameProcessLost
 from src.account_identity import short_profile_name
 from src.task_status import publish_task_status
 
 logger = Logger.get_logger(__name__)
+
+
+class DailyActivityIncomplete(RuntimeError):
+    pass
 
 CHECK_WEEKLY_GARDEN = 'Check Weekly Garden'
 AUTO_FARM_NIGHTMARE_NEST = 'Auto Farm all Nightmare Nest'
@@ -349,7 +354,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self._publish_daily_stage('每日任务', '正在检查每日奖励和体力进度')
         self.log_info('正在领取每日奖励并检查体力进度...')
         used_stamina, daily_reward_ready = self.open_daily()
-        need_stamina = not daily_reward_ready and used_stamina < 180
+        # 活跃度满后仍清理现有体力；是否允许备用体力由子任务按本轮预算决定。
+        need_stamina = True
         need_nightmare = auto_farm or (
                 daily_echo
                 and not daily_reward_ready
@@ -357,7 +363,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         )
 
         nightmare_error = None
+        nightmare_attempted = False
         if need_nightmare:
+            nightmare_attempted = True
             try:
                 # 把合并到每日任务模块的梦魇配置同步给 NightmareNestTask
                 nightmare_task = self.get_task_by_class(NightmareNestTask)
@@ -378,6 +386,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 raise
             except ConfigIntegrityBlocked:
                 raise
+            except (GameProcessLost, FrameUnavailable):
+                raise
             except Exception as e:
                 nightmare_error = e
                 self.log_error("NightmareNestTask Failed", e)
@@ -394,15 +404,45 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             self.log_info(f'开始清体力（打 {target}）', notify=True)
             if target == self.support_tasks[0]:
                 self.get_task_by_class(TacetTask).farm_tacet(daily=True, used_stamina=used_stamina,
-                                                             config=profile_runtime_config)
+                                                             config=profile_runtime_config,
+                                                             activity_ready=daily_reward_ready)
             elif target == self.support_tasks[1]:
                 self.get_task_by_class(ForgeryTask).farm_forgery(daily=True, used_stamina=used_stamina,
-                                                                 config=profile_runtime_config)
+                                                                 config=profile_runtime_config,
+                                                                 activity_ready=daily_reward_ready)
             else:
                 self.get_task_by_class(SimulationTask).farm_simulation(daily=True, used_stamina=used_stamina,
-                                                                       config=profile_runtime_config)
+                                                                       config=profile_runtime_config,
+                                                                       activity_ready=daily_reward_ready)
             self.sleep(4)
             self.record_last_completed(target, profile_id=getattr(self, '_verified_profile_id', None))
+
+        _, daily_reward_ready = self.open_daily()
+        if not daily_reward_ready and daily_echo and not nightmare_attempted and nightmare_error is None:
+            self._publish_daily_stage('补充活跃度', '体力任务不足，尝试获取每日声骸')
+            self.log_info('体力刷取后活跃度仍未满，尝试每日声骸任务', notify=True)
+            try:
+                nightmare_task = self.get_task_by_class(NightmareNestTask)
+                nightmare_task.config['Which to Farm'] = list(
+                    self._profile_get('Nightmare Which to Farm', ['Tacet Discord Nest']))
+                nightmare_task.config['Tacet Discord Nests to Farm'] = list(
+                    self._profile_get('Tacet Discord Nests to Farm', NEST_NAMES))
+                nightmare_task.run_capture_mode()
+                nightmare_attempted = True
+                self.record_last_completed(
+                    'Nightmare Nest', profile_id=getattr(self, '_verified_profile_id', None))
+                _, daily_reward_ready = self.open_daily()
+            except (TaskDisabledException, ConfigIntegrityBlocked, GameProcessLost, FrameUnavailable):
+                raise
+            except Exception as error:
+                nightmare_error = error
+                self.log_error('补充活跃度的每日声骸任务失败', error)
+
+        if not daily_reward_ready:
+            message = '体力及当前可执行项目不足，活跃度仍未刷满；账号不会标记为完成'
+            self._publish_daily_stage('每日任务', message)
+            self._notify_incomplete_daily_activity(message)
+            raise DailyActivityIncomplete(message)
 
         self._publish_daily_stage('每日任务', '正在领取每日奖励')
         self.log_info('正在领取每日任务奖励...')
@@ -435,6 +475,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             self.record_last_completed('Daily Task', profile_id=getattr(self, '_verified_profile_id', None))
         except ConfigIntegrityBlocked:
             raise
+
+    def _notify_incomplete_daily_activity(self, message):
+        self.log_warning(message, notify=True)
 
     def _publish_daily_stage(self, stage, detail=''):
         account = getattr(self, '_runtime_status_account', None)

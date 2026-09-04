@@ -46,13 +46,13 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
         self.wait_in_team_and_world(esc=True)
         self.farm_tacet()
 
-    def farm_tacet(self, daily=False, used_stamina=0, config=None):
+    def farm_tacet(self, daily=False, used_stamina=0, config=None, activity_ready=False):
         if config is None:
             config = self.config
-        if daily:
-            must_use = 180 - used_stamina
-        else:
-            must_use = 0
+        del used_stamina
+        must_use = self.daily_stamina_budget(activity_ready, self.stamina_once) if daily else 0
+        allow_backup = not daily
+        backup_policy_decided = not daily
         self.info_incr('used stamina', 0)
         while True:
             self.sleep(1)
@@ -61,7 +61,15 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
             if current == -1:
                 self.click_relative(0.04, 0.4, after_sleep=1)
                 current, back_up, total = self.get_stamina()
-            if total < self.stamina_once:
+            if not backup_policy_decided:
+                allow_backup = self.should_use_backup_stamina(
+                    activity_ready, current, back_up, must_use)
+                backup_policy_decided = True
+                self.log_info(
+                    f'每日体力策略：current={current}, backup={back_up}, budget={must_use}, '
+                    f'allow_backup={allow_backup}')
+            available = total if allow_backup else current
+            if available < self.stamina_once:
                 return self.not_enough_stamina()
 
             self.open_boss_book('wuyin')
@@ -78,7 +86,8 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
                     self.esc_cancel()
                     self.log_info('is not claim treasure, restart challenge')
                     continue
-                can_continue, used = self.use_stamina(once=self.stamina_once, must_use=must_use)
+                can_continue, used = self.use_stamina(
+                    once=self.stamina_once, must_use=must_use, allow_backup=allow_backup)
                 self.info_incr('used stamina', used)
                 self.sleep(4)
                 if not can_continue:

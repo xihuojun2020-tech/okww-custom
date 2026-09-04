@@ -18,8 +18,8 @@ class TestDomainRecoveryLoop(unittest.TestCase):
     def test_method_has_retry_parameter_with_default(self):
         args = self.method_node.args.args
         self.assertEqual(args[-1].arg, "max_recovery_retries")
-        self.assertEqual(len(self.method_node.args.defaults), 1)
-        default_value = self.method_node.args.defaults[0]
+        self.assertEqual(len(self.method_node.args.defaults), 3)
+        default_value = self.method_node.args.defaults[-1]
         self.assertIsInstance(default_value, ast.Constant)
         self.assertEqual(default_value.value, 3)
 

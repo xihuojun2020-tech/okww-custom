@@ -46,6 +46,7 @@ from src.runtime.task_run_coordinator import TaskRunCoordinator
 from src.runtime.account_selection_service import AccountSelectionService
 from src.runtime.account_verification_service import AccountVerificationService
 from src.runtime.login_flow_service import LoginFlowService
+from src.runtime.game_runtime_errors import FrameUnavailable, GameProcessLost
 from src.runtime.account_runtime_bootstrap import (
     initialize_account_runtime,
     require_account_runtime_for_task,
@@ -134,6 +135,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         self.description = "按序列逐账号运行每日任务（支持断点续跑）"
         self.add_exit_after_config()
         self.done_set = set()
+        self.failed_accounts = {}
+        self._game_restart_attempted = False
         self.all_accounts = set()
         self.support_schedule_task = True
         self._profile_cache = {}  # 方案名 → 方案内容（含手机号/别名），用于登录账号识别
@@ -674,6 +677,23 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         except Exception as e:
             logger.error('save progress failed', e)
 
+    def _save_failed_accounts(self):
+        failures = dict(getattr(self, 'failed_accounts', {}) or {})
+        if self.integrity_service is not None:
+            try:
+                self.integrity_service.set_progress(f'multi_account_failures:{self._today()}', failures)
+            except Exception as error:
+                logger.error('save account failures failed', error)
+            return
+        try:
+            data = read_json_file(PROGRESS_FILE) or {}
+            if not isinstance(data, dict):
+                data = {}
+            data[f'failures:{self._today()}'] = failures
+            write_json_file(PROGRESS_FILE, data)
+        except Exception as error:
+            logger.error('save account failures failed', error)
+
     # ==================== 提醒预留模块 ====================
 
     def _notify_user(self, title, message):
@@ -695,6 +715,11 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             self.integrity_service.guard_task_start()
         WWOneTimeTask.run(self)
         self.done_set.clear()
+        if not hasattr(self, 'failed_accounts'):
+            self.failed_accounts = {}
+        else:
+            self.failed_accounts.clear()
+        self._game_restart_attempted = False
         self.all_accounts.clear()
         # 把本任务勾选的序列账号同步到统一归属数据（多账号任务为归属编辑入口，每日任务联动读取）
         self._sync_local_to_sequences()
@@ -769,6 +794,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             in_main = False
         if in_main:
             if configured_start:
+                account_failure_recovered = False
                 _publish_status_safe(self,
                     account=first_account,
                     stage='每日任务',
@@ -779,24 +805,29 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                         f'用户确认当前世界账号为 {profile_status_label(first_account)}，直接执行每日任务',
                         notify=True,
                     )
-                    self._require_daily_profile(first_account)
-                    self.run_task_by_class(DailyTask)
-                    self.log_info(f'账号 {profile_status_label(first_account)} 每日任务完成', notify=True)
-                    self._mark_done(first_account)
-                    self._save_today_progress()
-                    self.ensure_main(time_out=100)
+                    success, error = MultiAccountDailyTask._run_daily_account(self, first_account)
+                    if success:
+                        self.ensure_main(time_out=100)
+                    else:
+                        MultiAccountDailyTask._prepare_login_after_account_failure(
+                            self, first_account, error)
+                        account_failure_recovered = True
                 if self._next_target_account() is None:
-                    self.log_info(
-                        f'序列本轮全部完成，当前已是起始账号 {profile_status_label(first_account)}',
-                        notify=True,
-                    )
-                    self._notify_user(
-                        '多账号每日任务完成',
-                        f'序列本轮全部完成，已登录回 {profile_status_label(first_account)}。',
-                    )
+                    if self._is_done(first_account):
+                        self.log_info(
+                            f'序列本轮全部完成，当前已是起始账号 {profile_status_label(first_account)}',
+                            notify=True,
+                        )
+                        self._notify_user(
+                            '多账号每日任务完成',
+                            f'序列本轮全部完成，已登录回 {profile_status_label(first_account)}。',
+                        )
+                    else:
+                        self._login_back_to(first_account)
                     return
-                _publish_status_safe(self, stage='账号切换', detail='正在退出当前账号')
-                self._switch_to_login()
+                if not account_failure_recovered:
+                    _publish_status_safe(self, stage='账号切换', detail='正在退出当前账号')
+                    self._switch_to_login()
             else:
                 _publish_status_safe(self, stage='账号切换', detail='正在退出当前账号')
                 self._switch_to_login()
@@ -823,22 +854,23 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     )
                     self.log_info(f'主界面启动识别到真实账号 {profile_status_label(first_account)}，重新登录后执行其每日任务', notify=True)
                     self._select_and_login_specific(first_account)
-                    self._require_daily_profile(first_account)
-                    self.run_task_by_class(DailyTask)
-                    self.log_info(f'账号 {profile_status_label(first_account)} 每日任务完成', notify=True)
-                    self._mark_done(first_account)
-                    self._save_today_progress()
-                    self.ensure_main(time_out=100)
-                    self._switch_to_login()
+                    success, error = MultiAccountDailyTask._run_daily_account(self, first_account)
+                    if success:
+                        self.ensure_main(time_out=100)
+                        self._switch_to_login()
+                    else:
+                        MultiAccountDailyTask._prepare_login_after_account_failure(
+                            self, first_account, error)
                 elif not sequence and not self._is_done(first_account):
                     self.log_info(f'未配置账号序列，执行已识别的真实账号 {profile_status_label(first_account)}', notify=True)
                     self._select_and_login_specific(first_account)
-                    self._require_daily_profile(first_account)
-                    self.run_task_by_class(DailyTask)
-                    self._mark_done(first_account)
-                    self._save_today_progress()
-                    self.ensure_main(time_out=100)
-                    self._switch_to_login()
+                    success, error = MultiAccountDailyTask._run_daily_account(self, first_account)
+                    if success:
+                        self.ensure_main(time_out=100)
+                        self._switch_to_login()
+                    else:
+                        MultiAccountDailyTask._prepare_login_after_account_failure(
+                            self, first_account, error)
                 else:
                     self.log_info(
                         f'真实起始账号 {profile_status_label(first_account)} 不在当前序列或今日已完成，'
@@ -854,13 +886,13 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     detail=f'正在执行账号 {profile_status_label(first_target)}',
                 )
                 self.log_info(f'从登录界面选择下一个未完成账号：{profile_status_label(first_target)}，开始执行每日任务', notify=True)
-                self._require_daily_profile(first_target)
-                self.run_task_by_class(DailyTask)
-                self.log_info(f'账号 {profile_status_label(first_target)} 每日任务完成', notify=True)
-                self._mark_done(first_target)
-                self._save_today_progress()
-                self.ensure_main(time_out=100)
-                self._switch_to_login()
+                success, error = MultiAccountDailyTask._run_daily_account(self, first_target)
+                if success:
+                    self.ensure_main(time_out=100)
+                    self._switch_to_login()
+                else:
+                    MultiAccountDailyTask._prepare_login_after_account_failure(
+                        self, first_target, error)
 
             if first_target and first_account is None:
                 first_account = first_target
@@ -888,13 +920,13 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 detail=f'正在执行账号 {profile_status_label(next_account)}',
             )
             self.log_info(f'开始执行账号 {profile_status_label(next_account)} 的每日任务', notify=True)
-            self._require_daily_profile(next_account)
-            self.run_task_by_class(DailyTask)
-            self.log_info(f'账号 {profile_status_label(next_account)} 每日任务完成', notify=True)
-            self._mark_done(next_account)
-            self._save_today_progress()
-            self.ensure_main(time_out=100)
-            self._switch_to_login()
+            success, error = MultiAccountDailyTask._run_daily_account(self, next_account)
+            if success:
+                self.ensure_main(time_out=100)
+                self._switch_to_login()
+            else:
+                MultiAccountDailyTask._prepare_login_after_account_failure(
+                    self, next_account, error)
 
         # 全部账号完成：登录回起始账号（不重复执行其每日任务），并提醒
         self._login_back_to(first_account)
@@ -1329,6 +1361,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             except TaskDisabledException:
                 # 停止任务必须立即终止等待；不能被闪烁容错逻辑吞掉后继续 OCR。
                 raise
+            except (GameProcessLost, FrameUnavailable):
+                raise
             except Exception as e:
                 if 'launcher' in str(e).lower() or '启动器' in str(e):
                     raise
@@ -1662,6 +1696,104 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             except Exception:
                 pass
         return False
+
+    def _failure_key(self, account):
+        if getattr(self, 'integrity_service', None) is not None:
+            return self._profile_id_for(account)
+        return account
+
+    def _is_failed(self, account):
+        return self._failure_key(account) in (getattr(self, 'failed_accounts', {}) or {})
+
+    def _mark_failed(self, account, error):
+        stage = ''
+        info = getattr(self, 'info', None)
+        if isinstance(info, dict):
+            stage = str(info.get('current task') or '')
+        reason = f'{type(error).__name__}: {error}'
+        self.failed_accounts[self._failure_key(account)] = {
+            'account': profile_status_label(account),
+            'stage': stage,
+            'reason': reason,
+        }
+        self._save_failed_accounts()
+        self.info_set('Failed', [item['account'] for item in self.failed_accounts.values()])
+        _publish_status_safe(
+            self, account=account, stage='执行失败', detail=reason,
+        )
+
+    def _run_daily_account(self, account):
+        """Run one account atomically; only successful accounts enter done_set."""
+        try:
+            self._require_daily_profile(account)
+            self.run_task_by_class(DailyTask)
+        except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked):
+            raise
+        except Exception as error:
+            self._mark_failed(account, error)
+            self.log_error(f'账号 {profile_status_label(account)} 每日任务失败，保留断点并跳过', error)
+            try:
+                self.screenshot(f'multi_account_{profile_status_label(account)}_failed')
+            except Exception:
+                pass
+            return False, error
+        self.log_info(f'账号 {profile_status_label(account)} 每日任务完成', notify=True)
+        self._mark_done(account)
+        self._save_today_progress()
+        return True, None
+
+    def _game_window_available(self):
+        try:
+            hwnd = getattr(self, 'hwnd', None)
+            connected = getattr(self.executor, 'connected', None)
+            return bool(hwnd is not None and getattr(hwnd, 'exists', False)
+                        and (not callable(connected) or connected()))
+        except Exception:
+            return False
+
+    def _restart_game_once(self):
+        if getattr(self, '_game_restart_attempted', False):
+            return False
+        self._game_restart_attempted = True
+        self.log_warning('检测到游戏窗口丢失，尝试受控启动游戏一次', notify=True)
+        _publish_status_safe(self, stage='恢复游戏', detail='正在尝试启动游戏（仅一次）')
+        try:
+            device_manager = self.executor.device_manager
+            device_manager.do_refresh(True)
+            self.start_device()
+            device_manager.do_start()
+            if self.executor.next_frame(time_out=30) is None:
+                raise FrameUnavailable('游戏启动后仍无法取得截图')
+            if self.is_main(esc=False):
+                self._switch_to_login()
+            else:
+                self._wait_login_screen_stable(time_out=120)
+            return True
+        except TaskDisabledException:
+            raise
+        except Exception as error:
+            self.log_error('受控启动游戏失败', error)
+            self._notify_user('多账号任务已停止', '游戏窗口已丢失，自动启动一次仍失败，请手动处理。')
+            return False
+
+    def _prepare_login_after_account_failure(self, account, error):
+        if self._game_window_available():
+            try:
+                if self.do_find_account_drop_down() is not None:
+                    return True
+                self.ensure_main(time_out=100)
+                self._switch_to_login()
+                return True
+            except TaskDisabledException:
+                raise
+            except Exception as recovery_error:
+                self.log_error(
+                    f'账号 {profile_status_label(account)} 失败后恢复登录界面失败', recovery_error)
+        if self._restart_game_once():
+            return True
+        if isinstance(error, (GameProcessLost, FrameUnavailable)):
+            raise error
+        raise GameProcessLost('游戏窗口不可用，无法继续后续账号') from error
 
     def _profile_id_for(self, profile_name):
         profile = (self._load_profiles() or {}).get(profile_name) or {}
@@ -2292,7 +2424,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     sequence = sequence[i:] + sequence[:i]
                     break
         for acc in sequence:
-            if not self._is_done(acc):
+            failed = getattr(self, '_is_failed', None)
+            if not self._is_done(acc) and not (callable(failed) and failed(acc)):
                 return acc
         return None
 
@@ -2551,12 +2684,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             if not delivered:
                 return False
 
-        expanded = self.wait_until(
-            self._account_list_expanded,
-            time_out=10,
-            settle_time=1,
-            raise_if_not_found=False,
-        )
+        expanded = MultiAccountDailyTask._wait_account_list_expanded(self)
         record_stage = getattr(self, '_evidence_stage', None)
         if callable(record_stage):
             record_stage(
@@ -2568,6 +2696,19 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             self.screenshot('multi')
             return False
         return True
+
+    def _wait_account_list_expanded(self, time_out=10, consecutive=2):
+        state = {'matches': 0}
+
+        def observe():
+            if self._account_list_expanded():
+                state['matches'] += 1
+                return state['matches'] >= consecutive
+            state['matches'] = 0
+            return False
+
+        return bool(self.wait_until(
+            observe, time_out=time_out, settle_time=0, raise_if_not_found=False))
 
     def _wait_for_account_selection_stable(self, target, time_out=20, consecutive=2):
         """等待点击账号后的登录界面稳定显示目标账号。
@@ -2889,25 +3030,31 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         return switch(target) if callable(switch) else MultiAccountDailyTask.switch_to_account(self, target)
 
     def _login_back_to(self, first_account):
-        """全部完成后登录回起始账号，并提醒用户本轮结束。"""
-        self.log_info(f'全部账号每日任务已完成，准备登录回起始账号 {profile_status_label(first_account)}', notify=True)
+        """After all accounts are handled, return to the starting account and summarize failures."""
+        failures = list((getattr(self, 'failed_accounts', {}) or {}).values())
+        self.log_info(f'账号序列已处理完成，准备登录回起始账号 {profile_status_label(first_account)}', notify=True)
+        title = '多账号每日任务部分失败' if failures else '多账号每日任务完成'
+        failure_text = ''
+        if failures:
+            failure_text = '；失败账号：' + '、'.join(item['account'] for item in failures)
         if not first_account:
-            self._notify_user('多账号每日任务完成', '本轮全部账号已完成')
+            self._notify_user(title, f'本轮账号已处理完成{failure_text}')
             return
         try:
             self._select_and_login_specific(first_account)
             self.log_info(f'已登录回起始账号: {profile_status_label(first_account)}', notify=True)
             self._notify_user(
-                '多账号每日任务完成',
-                f'序列本轮全部完成，已登录回 {profile_status_label(first_account)}。可退出游戏进程切换下一个序列。',
+                title,
+                f'序列本轮已处理完成，已登录回 {profile_status_label(first_account)}{failure_text}。',
             )
         except TaskDisabledException:
             raise
         except Exception as e:
             self.log_error('登录回起始账号失败，请手动登录', e)
             self._notify_user(
-                '多账号每日任务完成（需手动处理）',
-                f'序列本轮已完成，但登录回起始账号 {profile_status_label(first_account)} 失败，请手动登录。',
+                f'{title}（需手动处理）',
+                f'序列本轮已处理完成，但登录回起始账号 {profile_status_label(first_account)} 失败'
+                f'{failure_text}，请手动登录。',
             )
 
     def _select_and_login_specific(self, profile_name):

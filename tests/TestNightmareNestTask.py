@@ -229,6 +229,38 @@ class TestNightmareNestTask(unittest.TestCase):
         self.assertEqual(1800, target.box.x)
         self.assertEqual(1, len(ocr_calls))
 
+    def test_find_nest_keeps_partially_completed_row(self):
+        task = NightmareNestTask.__new__(NightmareNestTask)
+        task.config = {}
+        task.count_re = re.compile(r"(\d{1,2})/(\d{1,2})")
+        task.queues = [task.go_nest]
+        task._unreachable_nests = set()
+        task.log_info = lambda *args, **kwargs: None
+        task.height_of_screen = lambda value: 1000 * value
+        task.width_of_screen = lambda value: 2000 * value
+        task.ocr = lambda *args, **kwargs: [FakeBox('3/41', y=200)]
+
+        target = task.find_nest()
+
+        self.assertIsInstance(target, NestTarget)
+        self.assertEqual((3, 41), (target.current, target.total))
+
+    def test_incomplete_selected_target_prevents_success(self):
+        task = NightmareNestTask.__new__(NightmareNestTask)
+        task._incomplete_targets = {'go_nest:41:10': ('落渊南丘残象聚落', 3, 41)}
+
+        with self.assertRaisesRegex(RuntimeError, '3/41'):
+            task._assert_selected_targets_complete()
+
+    def test_unchanged_progress_three_times_stops_retry_loop(self):
+        task = NightmareNestTask.__new__(NightmareNestTask)
+        task._reset_progress_tracking()
+        for _ in range(3):
+            task._record_target_progress('go_nest:41:10', '落渊南丘残象聚落', 3, 41)
+
+        with self.assertRaisesRegex(RuntimeError, '连续 3 次'):
+            task._record_target_progress('go_nest:41:10', '落渊南丘残象聚落', 3, 41)
+
     def test_cache_key_ignores_small_ocr_position_jitter(self):
         task = NightmareNestTask.__new__(NightmareNestTask)
         task.queues = [lambda: None]

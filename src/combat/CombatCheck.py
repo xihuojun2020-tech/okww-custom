@@ -8,6 +8,7 @@ from ok import find_color_rectangles, get_mask_in_color_range, is_pure_black
 from src import text_white_color
 from src.Labels import Labels
 from src.char.Roccia import Roccia
+from src.runtime.game_runtime_errors import FrameUnavailable, GameProcessLost
 from src.task.BaseWWTask import BaseWWTask
 
 logger = Logger.get_logger(__name__)
@@ -146,14 +147,15 @@ class CombatCheck(BaseWWTask):
         return self.find_one('boss_break_shield') or self.find_one('boss_break_lock')
 
     def do_check_in_combat(self, target):
+        if getattr(self, '_executor', None) is not None:
+            self.require_game_frame()
         if self.in_liberation:
             return True
         if self._in_combat:
             scene_in_combat = self.scene.in_combat()
-            if scene_in_combat is not None:
-                if scene_in_combat:
-                    self.target_loss_started_at = None
-                return scene_in_combat
+            if scene_in_combat is True:
+                self.target_loss_started_at = None
+                return True
             self.check_f_break()
             if current_char := self.get_current_char():
                 if current_char.skip_combat_check():
@@ -161,7 +163,7 @@ class CombatCheck(BaseWWTask):
             if not self.on_combat_check():
                 self.log_info('on_combat_check failed')
                 return self.reset_to_false(reason='on_combat_check failed')
-            if self.has_target():
+            if self.has_target() or self.check_health_bar():
                 self.last_in_realm_not_combat = 0
                 self.target_loss_started_at = None
                 return self.scene.set_in_combat()
@@ -212,6 +214,8 @@ class CombatCheck(BaseWWTask):
         self.in_sleep_check = True
         try:
             return self.do_check_in_combat(target)
+        except (GameProcessLost, FrameUnavailable):
+            raise
         except Exception as e:
             logger.error(f'do_check_in_combat:', e)
         finally:

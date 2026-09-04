@@ -1020,6 +1020,95 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         with self.assertRaisesRegex(Exception, '不属于当前序列'):
             FakeTask()._run_inner()
 
+    def test_failed_account_is_recorded_not_marked_done_and_next_account_is_selected(self):
+        class FakeTask:
+            integrity_service = None
+            info = {'current task': 'combat'}
+
+            def __init__(self):
+                self.done_set = set()
+                self.failed_accounts = {}
+                self.config = {}
+
+            def _require_daily_profile(self, account):
+                self.current = account
+
+            def run_task_by_class(self, _task):
+                raise RuntimeError('boom')
+
+            def _mark_failed(self, account, error):
+                MultiAccountDailyTask._mark_failed(self, account, error)
+
+            _failure_key = MultiAccountDailyTask._failure_key
+            _is_failed = MultiAccountDailyTask._is_failed
+            _next_target_account = MultiAccountDailyTask._next_target_account
+
+            def _save_failed_accounts(self):
+                pass
+
+            def info_set(self, *_args, **_kwargs):
+                pass
+
+            def log_error(self, *_args, **_kwargs):
+                pass
+
+            def screenshot(self, *_args, **_kwargs):
+                pass
+
+            def get_sequence_accounts(self):
+                return ['A3', 'A4']
+
+            def _same_account(self, left, right):
+                return left == right
+
+            def _is_done(self, account):
+                return account in self.done_set
+
+        task = FakeTask()
+        success, error = MultiAccountDailyTask._run_daily_account(task, 'A3')
+
+        self.assertFalse(success)
+        self.assertIsInstance(error, RuntimeError)
+        self.assertNotIn('A3', task.done_set)
+        self.assertEqual('A4', task._next_target_account())
+
+    def test_game_restart_is_attempted_only_once_per_run(self):
+        class DeviceManager:
+            def do_refresh(self, _force):
+                pass
+
+        class Executor:
+            device_manager = DeviceManager()
+
+        class FakeTask:
+            executor = Executor()
+
+            def __init__(self):
+                self._game_restart_attempted = False
+                self.starts = 0
+
+            def log_warning(self, *_args, **_kwargs):
+                pass
+
+            def log_error(self, *_args, **_kwargs):
+                pass
+
+            def _notify_user(self, *_args, **_kwargs):
+                pass
+
+            def _publish_status(self, **_kwargs):
+                pass
+
+            def start_device(self):
+                self.starts += 1
+                raise RuntimeError('startup failed')
+
+        task = FakeTask()
+
+        self.assertFalse(MultiAccountDailyTask._restart_game_once(task))
+        self.assertFalse(MultiAccountDailyTask._restart_game_once(task))
+        self.assertEqual(1, task.starts)
+
     def test_all_done_explicit_start_stays_in_world_without_logout(self):
         class FakeTask:
             _run_inner = MultiAccountDailyTask._run_inner
@@ -2343,7 +2432,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
 
             def __init__(self):
                 self._login_in_dialog = False
-                self.expanded = iter((False, True))
+                self.expanded = iter((False, True, True))
                 self.clicks = []
 
             @staticmethod
@@ -2375,7 +2464,10 @@ class TestMultiAccountDailyTask(unittest.TestCase):
 
             @staticmethod
             def wait_until(callback, **_kwargs):
-                return callback()
+                for _ in range(3):
+                    if callback():
+                        return True
+                return False
 
             @staticmethod
             def sleep(_seconds):

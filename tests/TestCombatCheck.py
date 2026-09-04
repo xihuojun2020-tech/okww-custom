@@ -146,6 +146,7 @@ class TestCombatTargetLossGuard(unittest.TestCase):
         task.get_current_char = lambda: None
         task.on_combat_check = lambda: True
         task.has_target = lambda: False
+        task.check_health_bar = lambda: False
         task.target_enemy = lambda wait=True: False
         task.should_check_monthly_card = lambda: False
         task.handle_monthly_card = lambda: False
@@ -197,6 +198,16 @@ class TestCombatTargetLossGuard(unittest.TestCase):
         with patch('src.combat.CombatCheck.time.time', return_value=102):
             self.assertTrue(task.do_check_in_combat(False))
 
+        self.assertIsNone(task.target_loss_started_at)
+        self.assertEqual([], task.resets)
+
+    def test_scene_false_does_not_end_combat_while_enemy_health_bar_exists(self):
+        task = self.make_task()
+        task.scene._in_combat = False
+        task.scene.in_combat = lambda: False
+        task.check_health_bar = lambda: True
+
+        self.assertTrue(task.do_check_in_combat(False))
         self.assertIsNone(task.target_loss_started_at)
         self.assertEqual([], task.resets)
 

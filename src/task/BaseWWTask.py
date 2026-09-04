@@ -12,6 +12,7 @@ import cv2
 
 from src.Labels import Labels
 from src.scene.WWScene import WWScene
+from src.runtime.game_runtime_errors import FrameUnavailable, GameProcessLost
 from src.win32_login_input import send_input_click
 
 logger = Logger.get_logger(__name__)
@@ -48,6 +49,31 @@ class BaseWWTask(BaseTask):
         self.key_config = self.get_global_config('Game Hotkey')  # 游戏热键配置
         self.next_monthly_card_start = 0
         self.scene: WWScene | None = None
+
+    def require_game_frame(self):
+        """Return a current frame and distinguish capture loss from missing assets."""
+        nullable_frame = getattr(self.executor, 'nullable_frame', None)
+        if getattr(self.executor, 'debug', False) and callable(nullable_frame):
+            debug_frame = nullable_frame()
+            if debug_frame is not None:
+                return debug_frame
+        hwnd = getattr(self, 'hwnd', None)
+        connected = getattr(self.executor, 'connected', None)
+        if (hwnd is not None and not getattr(hwnd, 'exists', False)) or (
+                callable(connected) and not connected()):
+            raise GameProcessLost('游戏进程或目标窗口已断开')
+        frame = self.executor.frame
+        if frame is not None:
+            return frame
+        raise FrameUnavailable('游戏窗口存在，但当前无法取得截图')
+
+    def get_box_by_name(self, name):
+        if isinstance(name, Box) or name in {
+                'full_screen', 'right', 'bottom_right', 'top_right', 'left',
+                'bottom_left', 'top_left', 'bottom', 'top'}:
+            return super().get_box_by_name(name)
+        self.require_game_frame()
+        return super().get_box_by_name(name)
 
     @property
     def logged_in(self):
@@ -445,14 +471,27 @@ class BaseWWTask(BaseTask):
         back_up = max(back_up - remaining_cost, 0)
         return current, back_up, current + back_up
 
-    def use_stamina(self, once=60, must_use=0):
+    @staticmethod
+    def daily_stamina_budget(activity_ready, once):
+        if activity_ready:
+            return 0
+        return 200 if int(once) == 40 else 180
+
+    @staticmethod
+    def should_use_backup_stamina(activity_ready, current, back_up, budget):
+        if activity_ready or int(current) >= int(budget):
+            return False
+        return int(current) + int(back_up) >= int(budget)
+
+    def use_stamina(self, once=60, must_use=0, allow_backup=True):
         self.sleep(1)
         current, back_up, total = self.get_stamina()
-        if current >= once * 2:
+        requested_before = must_use
+        if current >= once * 2 and (must_use <= 0 or must_use >= once * 2):
             used = once * 2
             use_double = True
             logger.info(f"当前体力大于等于双倍, {current} >= {once * 2}")
-        elif must_use > once and total >= once * 2:
+        elif allow_backup and must_use > once and total >= once * 2:
             used = once * 2
             use_double = True
             logger.info(f"当前加备用大于日常剩余所需, 使用双倍, {must_use} >= {once} and {total} >= {once * 2}")
@@ -466,6 +505,10 @@ class BaseWWTask(BaseTask):
             btn = self.click_dialog_left_button()
         if self.wait_feature('gem_add_stamina', horizontal_variance=0.4, vertical_variance=0.05,
                              time_out=2, settle_time=0.5):  # 看是否需要使用备用体力
+            if not allow_backup:
+                self.log_info('本轮策略禁止使用备用体力，停止刷取')
+                self.back(after_sleep=1)
+                return False, 0
             self.click_relative(0.70, 0.71, hcenter=True, after_sleep=1)  # 点击确认
             self.click_relative(0.70, 0.71, hcenter=True, after_sleep=1)
             self.back(after_sleep=1)
@@ -474,12 +517,12 @@ class BaseWWTask(BaseTask):
         current, back_up, total = self.project_stamina_after_use(current, back_up, used)
         must_use -= used
         logger.info(f'remaining stamina: current={current} back_up={back_up} total={total}')
-        if total < once:
+        if requested_before > 0 and must_use <= 0:
+            can_continue = False
+            logger.info('daily stamina budget completed')
+        elif (current if not allow_backup else total) < once:
             logger.info(f"current stamina: {current} not enough to continue")
             can_continue = False
-        elif must_use <= 0 and current < once:
-            can_continue = False
-            logger.info(f"current stamina: {current} must_use completed, no need to use back_up")
         else:
             can_continue = True
         return can_continue, used

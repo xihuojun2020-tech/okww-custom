@@ -20,6 +20,7 @@ class TestMainProxyConfig(unittest.TestCase):
             config = Path(temp) / "config"
             config.write_text(
                 "[http]\n\tsslVerify = false\n\tproxy = http://old:1\n"
+                "[https]\n\tproxy = http://legacy:2\n"
                 "[http \"https://example.invalid\"]\n\textraHeader = X-Test: yes\n"
                 "[core]\n\tbare = false\n",
                 encoding="utf-8",
@@ -31,12 +32,14 @@ class TestMainProxyConfig(unittest.TestCase):
             self.assertIn("extraHeader = X-Test: yes", text)
             self.assertIn("proxy = http://127.0.0.1:7890", text)
             self.assertNotIn("proxy = http://old:1", text)
+            self.assertNotIn("proxy = http://legacy:2", text)
 
     def test_proxy_removal_preserves_other_http_keys_and_sections(self):
         with tempfile.TemporaryDirectory() as temp:
             config = Path(temp) / "config"
             config.write_text(
                 "[http]\n\tsslVerify = false\n\tproxy = http://old:1\n"
+                "[https]\n\tproxy = http://legacy:2\n"
                 "[http \"https://example.invalid\"]\n\textraHeader = X-Test: yes\n",
                 encoding="utf-8",
             )
