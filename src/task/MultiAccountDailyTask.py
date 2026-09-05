@@ -1111,6 +1111,10 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         last_meaningful_state = None
         check_count = 0
         action_counts = {'confirm': 0, 'setting': 0, 'main': 0}
+        # Once the world state is confirmed, do not run the expensive login OCR
+        # while the ESC menu is transitioning.  Login probing is re-enabled only
+        # after the logout confirmation click has been delivered.
+        login_probe_allowed = True
         active_capture = getattr(self, '_active_account_switch_capture', None)
         session_factory = getattr(self, '_create_logout_capture_session', None)
         session_context = (
@@ -1119,11 +1123,36 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             else (session_factory() if callable(session_factory) else nullcontext(None))
         )
         with _activated_account_switch_capture(self, session_context) as capture_session:
+          def observe_logout_state():
+            try:
+                if capture_session is not None:
+                    return self._logout_state(
+                        capture_session, allow_login_probe=login_probe_allowed)
+                return self._logout_state(allow_login_probe=login_probe_allowed)
+            except TypeError as error:
+                # Keep focused legacy test doubles and older task subclasses
+                # compatible while the production method gains the gate.
+                if 'allow_login_probe' not in str(error):
+                    raise
+                return (
+                    self._logout_state(capture_session)
+                    if capture_session is not None else self._logout_state()
+                )
+
           while time.monotonic() < deadline:
             check_count += 1
-            state = (
-                self._logout_state(capture_session)
-                if capture_session is not None else self._logout_state()
+            state_started = time.monotonic()
+            state = observe_logout_state()
+            state_elapsed = time.monotonic() - state_started
+            sample_meta = getattr(self, '_logout_last_sample_meta', None) or {}
+            self.log_info(
+                '退登状态识别耗时 %.3fs：状态=%s，截图=%s，句柄=%s，尺寸=%s' % (
+                    state_elapsed,
+                    state,
+                    sample_meta.get('source', 'none'),
+                    sample_meta.get('hwnd', 'none'),
+                    sample_meta.get('size', 'none'),
+                )
             )
             if state in ('confirm', 'setting', 'main') and state != last_meaningful_state:
                 # Retry budgets are consecutive-input budgets per observable
@@ -1161,6 +1190,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     ) if confirm_box is not None else False
                     if confirmed is not False:
                         action_counts[state] += 1
+                        login_probe_allowed = True
                     if confirmed is False:
                         self.log_warning('确认退登按钮本次未成功投递，继续检查确认框状态')
                     self.sleep(1)
@@ -1171,7 +1201,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                         break
                     self.log_info('已在 ESC 设置页，直接点击退登入口，不发送 ESC')
                     finder = getattr(self, '_find_logout_button_target', None)
-                    observed = finder(capture_session) if callable(finder) else None
+                    observed = getattr(self, '_logout_button_target', None)
+                    if not isinstance(observed, ObservedBox):
+                        observed = finder(capture_session) if callable(finder) else None
                     logout_box = observed.box if isinstance(observed, ObservedBox) else (
                         self._find_logout_button_box() if not callable(finder) else None
                     )
@@ -1184,12 +1216,17 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     ) if logout_box is not None else False
                     if delivered is not False:
                         action_counts[state] += 1
+                    self._logout_button_target = None
                     continue
                 if state == 'main':
                     if action_counts[state] >= 3:
                         self.log_warning('游戏主界面连续 3 次未进入设置页，停止重复发送 ESC')
                         break
                     self.log_info('当前为游戏主界面，发送 ESC 打开设置页')
+                    # From this point on, an unknown frame is part of the
+                    # post-ESC transition; never spend the logout deadline on
+                    # login-page OCR until a confirmation click has happened.
+                    login_probe_allowed = False
                     delivered = self.send_key('esc', after_sleep=1)
                     if delivered is not False:
                         action_counts[state] += 1
@@ -2074,7 +2111,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             )
         return delivered
 
-    def _logout_state(self, capture_session=None):
+    def _logout_state(self, capture_session=None, *, allow_login_probe=True):
         """Return the currently observable logout state without sending input.
 
         ``confirm`` is deliberately checked before ``setting`` and ``main``.  A
@@ -2084,9 +2121,18 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         """
         self._logout_confirm_box = None
         self._logout_confirm_target = None
+        self._logout_button_target = None
         capture_helper = getattr(self, '_capture_logout_main_sample', None)
         sample = capture_helper(capture_session) if callable(capture_helper) else None
         frame = sample.frame if sample is not None else None
+        self._logout_last_sample_meta = {
+            'source': getattr(sample, 'source', 'none') if sample is not None else 'none',
+            'hwnd': getattr(sample, 'hwnd', 'none') if sample is not None else 'none',
+            'size': (
+                tuple(frame.shape[:2])
+                if frame is not None and getattr(frame, 'shape', None) else 'none'
+            ),
+        }
 
         def observe(method, *args, **kwargs):
             if frame is not None:
@@ -2139,6 +2185,20 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 self._logout_confirm_target = ObservedBox(confirm, sample)
             return 'confirm'
 
+        # The power icon is a direct, stable indication of the ESC menu and is
+        # also the safest click target.  Keep it bound to this exact frame so the
+        # action phase does not need to capture/OCR the screen a second time.
+        power_icon = None
+        try:
+            power_icon = observe(self.find_one, 'logout_power_icon', threshold=0.6)
+        except TaskDisabledException:
+            raise
+        except Exception:
+            power_icon = None
+        if power_icon is not None and sample is not None:
+            self._logout_button_target = ObservedBox(power_icon, sample)
+            return 'setting'
+
         setting = None
         try:
             setting = observe(self.find_one, 'esc_setting', threshold=0.6)
@@ -2171,12 +2231,18 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         except Exception:
             pass
 
-        # Full-monitor login OCR is the expensive fallback.  The normal logout
-        # path resolves through the small return-login ROI or existing visual
-        # features before account text is considered.
+        # Full-monitor login OCR is the expensive fallback.  Never invoke it
+        # while the logout transition has not yet reached the confirmation click:
+        # a transient post-ESC frame must be retried cheaply instead of blocking
+        # the whole 45-second logout window.
+        if not allow_login_probe:
+            return 'unknown'
         try:
             try:
-                login_hit = self.do_find_account_drop_down(prefer_dialog=True)
+                login_hit = self.do_find_account_drop_down(
+                    main_frame=sample.frame if sample is not None else None,
+                    prefer_dialog=True,
+                )
             except TypeError:
                 login_hit = self.do_find_account_drop_down()
             if login_hit is not None:

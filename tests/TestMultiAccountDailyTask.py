@@ -2411,6 +2411,48 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         self.assertEqual('setting', FakeTask()._logout_state(object()))
         self.assertEqual([], login_checks)
 
+    def test_logout_state_accepts_power_icon_as_setting_and_binds_frame(self):
+        frame = type('Frame', (), {'shape': (100, 200, 3)})()
+        sample = CaptureSample(frame, (100, 200), 77, 'foreground_bitblt', 1.0)
+        power = Box(4, 88, 8, 12, name='logout_power_icon')
+
+        class FakeTask:
+            _logout_state = MultiAccountDailyTask._logout_state
+            _capture_logout_main_sample = lambda self, _session: sample
+            ocr = staticmethod(lambda *_args, **_kwargs: [])
+            in_team_and_world = staticmethod(lambda **_kwargs: False)
+            wait_feature = staticmethod(lambda *_args, **_kwargs: None)
+
+            @staticmethod
+            def find_one(name, **_kwargs):
+                return power if name == 'logout_power_icon' else None
+
+        task = FakeTask()
+        self.assertEqual('setting', task._logout_state(object(), allow_login_probe=False))
+        self.assertIs(task._logout_button_target.sample, sample)
+        self.assertIs(task._logout_button_target.box, power)
+
+    def test_logout_state_skips_login_ocr_before_logout_confirmation(self):
+        frame = type('Frame', (), {'shape': (100, 200, 3)})()
+        sample = CaptureSample(frame, (100, 200), 77, 'foreground_bitblt', 1.0)
+        login_calls = []
+
+        class FakeTask:
+            _logout_state = MultiAccountDailyTask._logout_state
+            _capture_logout_main_sample = lambda self, _session: sample
+            ocr = staticmethod(lambda *_args, **_kwargs: [])
+            find_one = staticmethod(lambda *_args, **_kwargs: None)
+            wait_feature = staticmethod(lambda *_args, **_kwargs: None)
+            in_team_and_world = staticmethod(lambda **_kwargs: False)
+
+            @staticmethod
+            def do_find_account_drop_down(**_kwargs):
+                login_calls.append(True)
+                return object()
+
+        self.assertEqual('unknown', FakeTask()._logout_state(object(), allow_login_probe=False))
+        self.assertEqual([], login_calls)
+
     def test_logout_state_checks_login_after_local_visual_states_miss(self):
         frame = object()
         sample = CaptureSample(frame, (100, 200), 77, 'foreground_bitblt', 1.0)
@@ -2430,7 +2472,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
                 return object()
 
         self.assertEqual('login', FakeTask()._logout_state(object()))
-        self.assertEqual([{'prefer_dialog': True}], calls)
+        self.assertEqual([{'main_frame': frame, 'prefer_dialog': True}], calls)
 
     def test_click_main_login_box_targets_the_main_hwnd(self):
         class FakeTask:
@@ -2656,7 +2698,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
                 return True
 
         self.assertEqual('main', FakeTask()._logout_state(object()))
-        self.assertEqual([frame, frame, frame], observed_frames)
+        self.assertEqual([frame, frame, frame, frame], observed_frames)
 
     def test_logout_click_uses_the_observed_frame_origin(self):
         box = AccountBox('确认', x=10, y=20, width=30, height=10)
