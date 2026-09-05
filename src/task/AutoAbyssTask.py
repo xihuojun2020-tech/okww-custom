@@ -889,9 +889,26 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         return False
 
     def _click_start_challenge(self):
-        button = self._wait_exact_text_or_fail(
-            "开启挑战", (0.75, 0.82, 0.98, 0.98), 8, "未找到编辑队伍页右下角的开启挑战"
-        )
+        entry = {"button": None, "loading": False}
+
+        def read_floor_entry():
+            boxes = self.ocr(match=["编辑队伍", "开启挑战", "环境特性"])
+            if exact_ocr_box(boxes, "环境特性") is not None:
+                entry["loading"] = True
+                return True
+            button = exact_ocr_box(boxes, "开启挑战")
+            if exact_ocr_box(boxes, "编辑队伍") is not None and button is not None:
+                entry["button"] = button
+                return True
+            return False
+
+        if not self.wait_until(read_floor_entry, time_out=120, raise_if_not_found=False):
+            self.screenshot("abyss_floor_entry_not_recognized")
+            raise Exception("未识别到编辑队伍页或环境特性提示")
+        if entry["loading"]:
+            self.log_info("已进入关卡加载阶段，跳过重复点击开启挑战")
+            return False
+        button = entry["button"]
         self.click_box(button, after_sleep=1)
         return True
 
@@ -945,11 +962,12 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
 
     def _fight_selected_tower(self, tower_name, first_floor_index, team_energy=None):
         """Fight until the tower ends or the current team cannot afford the next floor."""
-        self._click_start_challenge()
         cleared = 0
         remaining_energy = team_energy
         for floor_index in range(first_floor_index, len(FLOOR_ROWS)):
             floor_number = floor_index + 1
+            self._set_status("开启挑战", f"正在确认并进入{tower_name}第 {floor_number} 层")
+            self._click_start_challenge()
             self._prepare_challenge_map(tower_name, floor_number)
             self._run_floor_combat(tower_name, floor_number)
             state, button = self._wait_abyss_result()

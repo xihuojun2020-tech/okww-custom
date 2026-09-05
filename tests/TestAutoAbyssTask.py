@@ -513,13 +513,41 @@ class TestAutoAbyssTask(unittest.TestCase):
         task._set_status = lambda *_args: None
 
         self.assertEqual(task._fight_selected_tower("残响之塔", 1), ("完成", 2))
-        self.assertEqual(events.count("start"), 1)
+        self.assertEqual(events.count("start"), 2)
+        self.assertLess(events.index("start"), events.index(("map", "残响之塔", 2)))
+        second_start = events.index("start", events.index("start") + 1)
+        self.assertLess(second_start, events.index(("map", "残响之塔", 3)))
         self.assertEqual(
             [event for event in events if isinstance(event, tuple) and event[0] == "combat"],
             [("combat", "残响之塔", 2), ("combat", "残响之塔", 3)],
         )
         self.assertIn(("click", "继续挑战"), events)
         self.assertEqual(events[-2:], [("click", "返回深塔"), "tower_screen"])
+
+    def test_click_start_challenge_skips_click_when_floor_is_already_loading(self):
+        events = []
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task.ocr = lambda **_kwargs: [SimpleNamespace(name="环境特性")]
+        task.wait_until = lambda condition, **_kwargs: condition()
+        task.click_box = lambda *_args, **_kwargs: events.append("click")
+        task.log_info = lambda message, **_kwargs: events.append(message)
+        task.screenshot = lambda *_args, **_kwargs: events.append("screenshot")
+
+        self.assertFalse(task._click_start_challenge())
+        self.assertNotIn("click", events)
+        self.assertNotIn("screenshot", events)
+
+    def test_click_start_challenge_requires_team_page_and_clicks_its_button(self):
+        events = []
+        button = SimpleNamespace(name="开启挑战")
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task.ocr = lambda **_kwargs: [SimpleNamespace(name="编辑队伍"), button]
+        task.wait_until = lambda condition, **_kwargs: condition()
+        task.click_box = lambda box, **_kwargs: events.append(box)
+        task.screenshot = lambda *_args, **_kwargs: events.append("screenshot")
+
+        self.assertTrue(task._click_start_challenge())
+        self.assertEqual(events, [button])
 
     def test_fight_selected_tower_failure_returns_and_skips_remaining_floors(self):
         events = []
