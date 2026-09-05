@@ -892,12 +892,38 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         entry = {"button": None, "loading": False}
 
         def read_floor_entry():
-            boxes = self.ocr(match=["编辑队伍", "开启挑战", "环境特性"])
-            if exact_ocr_box(boxes, "环境特性") is not None:
+            frame = self.frame
+            environment = self.ocr(
+                x=0.02,
+                y=0.18,
+                to_x=0.34,
+                to_y=0.58,
+                match="环境特性",
+                frame=frame,
+            )
+            if exact_ocr_box(environment, "环境特性") is not None:
                 entry["loading"] = True
                 return True
-            button = exact_ocr_box(boxes, "开启挑战")
-            if exact_ocr_box(boxes, "编辑队伍") is not None and button is not None:
+            title = self.ocr(
+                x=0.01,
+                y=0.01,
+                to_x=0.22,
+                to_y=0.16,
+                match="编辑队伍",
+                frame=frame,
+            )
+            if exact_ocr_box(title, "编辑队伍") is None:
+                return False
+            buttons = self.ocr(
+                x=0.75,
+                y=0.82,
+                to_x=0.98,
+                to_y=0.98,
+                match="开启挑战",
+                frame=frame,
+            )
+            button = exact_ocr_box(buttons, "开启挑战")
+            if button is not None:
                 entry["button"] = button
                 return True
             return False
