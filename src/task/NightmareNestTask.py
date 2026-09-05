@@ -3,7 +3,7 @@ import cv2
 from dataclasses import dataclass
 
 from ok import Logger, TaskDisabledException
-from src.task.BaseCombatTask import BaseCombatTask, CharRevivedException
+from src.task.BaseCombatTask import BaseCombatTask, CharDeadException, CharRevivedException
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task_status import publish_task_status
 
@@ -139,6 +139,15 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
                                              raise_if_not_found=False)
             except CharRevivedException:
                 self.log_info('nightmare nest: death recovered, re-enter from F2 book')
+                return
+            except CharDeadException:
+                self.log_warning('nightmare nest: revive failed, restore world and retry from F2 book')
+                publish_task_status(
+                    self,
+                    stage='刷梦魇巢穴',
+                    detail=f'{target_name} · 角色阵亡，正在恢复后重试',
+                )
+                self.ensure_main(time_out=180)
                 return
             captured_early = False
             if self._capture_mode:

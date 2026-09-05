@@ -1,6 +1,7 @@
 import unittest
 import re
 
+from src.task.BaseCombatTask import CharDeadException
 from src.task.NightmareNestTask import NestTarget, NightmareNestTask
 
 
@@ -90,6 +91,28 @@ class TestNightmareNestTask(unittest.TestCase):
         task.wait_combat = lambda **kwargs: self.fail('capture mode should leave after obtaining an echo')
 
         self.assertFalse(task._should_continue_combat_after_pickup())
+
+    def test_combat_nest_recovers_to_world_after_failed_revive(self):
+        task = NightmareNestTask.__new__(NightmareNestTask)
+        task._capture_mode = False
+        task._capture_success = False
+        recoveries = []
+
+        task.click = lambda *args, **kwargs: None
+        task.wait_feature = lambda *args, **kwargs: FakeBox('fast_travel_custom')
+        task._travel_to_nest_or_skip = lambda nest: True
+        task.sleep = lambda *args, **kwargs: None
+        task.find_f_with_text = lambda: False
+        task.run_until = lambda *args, **kwargs: None
+        task.combat_once = lambda **kwargs: (_ for _ in ()).throw(CharDeadException('dead'))
+        task.ensure_main = lambda **kwargs: recoveries.append(kwargs)
+        task.log_info = lambda *args, **kwargs: None
+        task.log_warning = lambda *args, **kwargs: None
+
+        task.combat_nest(NestTarget(FakeBox('nest'), 'go_nest:24:45',
+                                    display_name='陷足流川残象聚落', current=20, total=24))
+
+        self.assertEqual([{'time_out': 180}], recoveries)
 
     def test_unreachable_nest_is_cached_when_travel_does_not_enter_world(self):
         task = NightmareNestTask.__new__(NightmareNestTask)
