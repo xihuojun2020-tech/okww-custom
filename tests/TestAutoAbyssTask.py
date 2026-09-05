@@ -26,6 +26,7 @@ from src.task.AutoAbyssTask import (
     character_card_slots,
     character_safe_click,
     count_occupied_tower_slots,
+    energy_digit_count,
     exact_ocr_box,
     first_available_floor,
     floor_energy_cost,
@@ -846,6 +847,53 @@ class TestAutoAbyssTask(unittest.TestCase):
         self.assertEqual(parse_energy_number("19"), 9)
         self.assertEqual(parse_energy_number("110"), 10)
         self.assertIsNone(parse_energy_number("90"))
+
+    def test_energy_digit_shape_disambiguates_zero_and_ten(self):
+        zero = cv2.imread("tests/images/abyss_energy_0.png")
+        ten = cv2.imread("tests/images/abyss_energy_10.png")
+
+        for scale in (0.5, 0.75, 1.0, 1.5):
+            interpolation = cv2.INTER_AREA if scale < 1 else cv2.INTER_CUBIC
+            with self.subTest(scale=scale):
+                scaled_zero = cv2.resize(zero, None, fx=scale, fy=scale, interpolation=interpolation)
+                scaled_ten = cv2.resize(ten, None, fx=scale, fy=scale, interpolation=interpolation)
+                self.assertEqual(energy_digit_count(scaled_zero), 1)
+                self.assertEqual(energy_digit_count(scaled_ten), 2)
+        self.assertEqual(parse_energy_number("10", digit_count=1), 0)
+        self.assertEqual(parse_energy_number("10", digit_count=2), 10)
+        self.assertIsNone(parse_energy_number("10", digit_count=0))
+
+    def test_slot_energy_ocr_uses_visual_digit_count(self):
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task.ocr = lambda *_args, **_kwargs: [SimpleNamespace(name="10")]
+        corrections = []
+        task.log_info = corrections.append
+        task.log_warning = lambda *_args: None
+        slot = character_card_slots()[0]
+        _row, _column, x, y, width, height, _complete = slot
+
+        for image_name, expected in (("abyss_energy_0.png", 0), ("abyss_energy_10.png", 10)):
+            with self.subTest(image=image_name):
+                frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
+                crop = cv2.imread(f"tests/images/{image_name}")
+                left = int((x + width * 0.50) * frame.shape[1])
+                top = int((y + height * 0.52) * frame.shape[0])
+                frame[top:top + crop.shape[0], left:left + crop.shape[1]] = crop
+
+                self.assertEqual(task._read_slot_energy(frame, slot), expected)
+        self.assertTrue(any("结果=0" in message for message in corrections))
+
+    def test_slot_energy_unknown_shape_is_unavailable_and_saved(self):
+        saved = []
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task.ocr = lambda *_args, **_kwargs: self.fail("ambiguous shape must not reach OCR")
+        task.log_warning = lambda *_args: None
+        task.screenshot = lambda name, **kwargs: saved.append((name, kwargs.get("frame")))
+
+        self.assertIsNone(
+            task._read_slot_energy(np.zeros((1440, 2560, 3), dtype=np.uint8), character_card_slots()[0])
+        )
+        self.assertEqual(saved[0][0], "abyss_energy_ambiguous")
 
     def test_merge_character_records_deduplicates_and_filters_strictly(self):
         records = [

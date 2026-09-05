@@ -415,9 +415,37 @@ def parse_ocr_number(text, minimum=0, maximum=999):
     return next((value for value in reversed(values) if minimum <= value <= maximum), None)
 
 
-def parse_energy_number(text):
+def energy_digit_count(crop):
+    """Count the one or two yellow digits after the lightning glyph."""
+    if crop is None or crop.size == 0:
+        return None
+    hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+    yellow = cv2.inRange(hsv, (15, 70, 100), (45, 255, 255))
+    height, width = yellow.shape[:2]
+    _count, _labels, stats, _centroids = cv2.connectedComponentsWithStats(yellow)
+    glyphs = [
+        stat
+        for stat in stats[1:]
+        if height * 0.25 <= stat[cv2.CC_STAT_TOP] <= height * 0.60
+        and height * 0.20 <= stat[cv2.CC_STAT_HEIGHT] <= height * 0.55
+        and stat[cv2.CC_STAT_AREA] >= height * width * 0.008
+    ]
+    digits = len(glyphs) - 1
+    return digits if digits in (1, 2) else None
+
+
+def parse_energy_number(text, digit_count=None):
     """Parse 0..10 energy and repair the lightning glyph when OCR reads it as a leading 1."""
-    values = [int(value) for value in re.findall(r"\d+", str(text or "").replace(",", ""))]
+    digit_groups = re.findall(r"\d+", str(text or "").replace(",", ""))
+    if digit_count is not None:
+        if digit_count not in (1, 2):
+            return None
+        digits = "".join(digit_groups)
+        if len(digits) < digit_count:
+            return None
+        value = int(digits[-digit_count:])
+        return value if 0 <= value <= 10 else None
+    values = [int(value) for value in digit_groups]
     for value in reversed(values):
         if 0 <= value <= 10:
             return value
@@ -1476,9 +1504,26 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                 if 1 <= number <= 100:
                     values[column]["level"] = number
             elif 0.58 <= local_y < 0.82:
-                number = parse_energy_number(text)
+                slot = character_card_slots()[row * CHARACTER_COLUMNS + column]
+                energy_crop = self._slot_crop(frame, slot, (0.50, 0.52, 1.00, 0.84))
+                digit_count = energy_digit_count(energy_crop)
+                number = parse_energy_number(text, digit_count=digit_count) if digit_count else None
                 if number is None:
+                    if re.search(r"\d", text):
+                        self.log_warning(
+                            f"角色第 {row + 1} 行第 {column + 1} 列体力 OCR 无法确认："
+                            f"原始={text!r}，数字轮廓={digit_count}"
+                        )
+                        self.screenshot(
+                            f"abyss_energy_ambiguous_r{row + 1}_c{column + 1}",
+                            frame=energy_crop,
+                        )
                     continue
+                if parse_energy_number(text) != number:
+                    self.log_info(
+                        f"角色第 {row + 1} 行第 {column + 1} 列体力 OCR 修正："
+                        f"原始={text!r}，数字轮廓={digit_count}，结果={number}"
+                    )
                 values[column]["energy"] = number
         return values
 
@@ -1499,8 +1544,29 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         )
 
     def _read_slot_energy(self, frame, slot):
-        value = self._read_slot_number(frame, slot, (0.58, 0.55, 1.00, 0.82), parse_energy_number)
+        energy_crop = self._slot_crop(frame, slot, (0.50, 0.52, 1.00, 0.84))
+        digit_count = energy_digit_count(energy_crop)
+        if digit_count is None:
+            self.log_warning("角色体力数字轮廓无法确认，按不可用处理")
+            self.screenshot("abyss_energy_ambiguous", frame=energy_crop)
+            return None
+        raw_texts = []
+
+        def parse_confirmed_energy(text):
+            raw_texts.append(text)
+            return parse_energy_number(text, digit_count=digit_count)
+
+        value = self._read_slot_number(
+            frame,
+            slot,
+            (0.58, 0.55, 1.00, 0.82),
+            parse_confirmed_energy,
+        )
         if value is not None:
+            if any(parse_energy_number(text) != value for text in raw_texts):
+                self.log_info(
+                    f"角色体力 OCR 修正：原始={raw_texts!r}，数字轮廓={digit_count}，结果={value}"
+                )
             return value
         crop = self._slot_crop(frame, slot, (0.67, 0.52, 1.00, 0.84))
         if crop is None or crop.size == 0:
@@ -1525,7 +1591,12 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             (
                 value
                 for box in boxes or ()
-                if (value := parse_energy_number(str(getattr(box, "name", box)))) is not None
+                if (
+                    value := parse_energy_number(
+                        str(getattr(box, "name", box)),
+                        digit_count=digit_count,
+                    )
+                ) is not None
             ),
             None,
         )
