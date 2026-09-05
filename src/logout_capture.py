@@ -118,14 +118,48 @@ class AccountSwitchCaptureSession:
         self.window_pid = window_pid
         self.last_reason = ""
         self.closed = False
+        self.trusted_pids = set()
+
+    def _window_handles(self):
+        """Return the current trusted game/login window handles."""
+        handles = [
+            getattr(self.hwnd_window, "top_hwnd", 0),
+            getattr(self.hwnd_window, "hwnd", 0),
+        ]
+        for item in getattr(self.hwnd_window, "hwnds", None) or []:
+            handles.append(item[0] if isinstance(item, (tuple, list)) else item)
+        return tuple(dict.fromkeys(int(hwnd or 0) for hwnd in handles if hwnd))
+
+    def _refresh_trusted_pids(self):
+        for hwnd in self._window_handles():
+            pid = int(self.window_pid(hwnd) or 0)
+            if pid:
+                self.trusted_pids.add(pid)
+        return self.trusted_pids
+
+    def pid_for(self, hwnd):
+        return int(self.window_pid(int(hwnd or 0)) or 0)
+
+    def is_trusted_hwnd(self, hwnd):
+        pid = self.pid_for(hwnd)
+        return bool(pid and pid in self._refresh_trusted_pids())
+
+    def preferred_hwnd(self):
+        self._refresh_trusted_pids()
+        foreground = int(self.foreground_hwnd() or 0)
+        if self.is_trusted_hwnd(foreground):
+            return foreground
+        for hwnd in self._window_handles():
+            if self.is_trusted_hwnd(hwnd):
+                return hwnd
+        return 0
 
     def capture_main(self):
         if self.closed:
             self.last_reason = "capture-session-closed"
             return None
-        target_pid = int(self.window_pid(int(self.hwnd_window.hwnd)) or 0)
         foreground = int(self.foreground_hwnd() or 0)
-        if not target_pid or not foreground or int(self.window_pid(foreground) or 0) != target_pid:
+        if not foreground or not self.is_trusted_hwnd(foreground):
             self.last_reason = "foreground-process-mismatch"
             return None
         try:
@@ -151,7 +185,7 @@ class AccountSwitchCaptureSession:
         else:
             origin = monitor_rect
         foreground = int(self.foreground_hwnd() or 0)
-        if not foreground or int(self.window_pid(foreground) or 0) != target_pid:
+        if not foreground or not self.is_trusted_hwnd(foreground):
             self.last_reason = "foreground-process-changed-after-capture"
             return None
         if not origin:
@@ -161,7 +195,7 @@ class AccountSwitchCaptureSession:
         return CaptureSample(
             frame=frame,
             origin=(int(origin[0]), int(origin[1])),
-            hwnd=int(self.hwnd_window.hwnd),
+            hwnd=foreground,
             source="foreground_monitor_bitblt",
             captured_at=time.monotonic(),
         )

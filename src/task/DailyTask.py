@@ -1780,7 +1780,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 if not DAILY_POINTS_RE.fullmatch(text):
                     continue
                 value = int(text)
-                if 0 <= value <= 100:
+                if 0 <= value <= 180:
                     candidates.append(value)
             if attempt + 1 < attempts:
                 self.next_frame()

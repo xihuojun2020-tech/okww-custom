@@ -58,6 +58,32 @@ class TestDailyActivityFlow(unittest.TestCase):
         self.assertEqual(100, DailyTask.get_total_daily_points(task))
         self.assertEqual(('total daily points', 100), task.info)
 
+    def test_daily_points_accept_completed_values_up_to_180(self):
+        responses = iter([
+            [SimpleNamespace(name='110', confidence=0.9)],
+            [SimpleNamespace(name='120', confidence=0.9)],
+            [SimpleNamespace(name='180', confidence=0.9),
+             SimpleNamespace(name='181', confidence=0.9)],
+        ])
+
+        class FakeTask:
+            def ocr(self, *_args, **_kwargs):
+                return next(responses)
+
+            def next_frame(self):
+                pass
+
+            def log_info(self, *_args, **_kwargs):
+                pass
+
+            def info_set(self, key, value):
+                self.info = (key, value)
+
+        task = FakeTask()
+
+        self.assertEqual(180, DailyTask.get_total_daily_points(task))
+        self.assertEqual(('total daily points', 180), task.info)
+
     def test_unknown_activity_disables_backup_for_stamina_policy(self):
         policy = DailyTask._stamina_policy_activity_ready
 

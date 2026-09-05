@@ -2054,8 +2054,8 @@ class TestMultiAccountDailyTask(unittest.TestCase):
                 return account
 
             @staticmethod
-            def wait_until(callback, **_kwargs):
-                return callback()
+            def wait_until(*_args, **_kwargs):
+                raise AssertionError('strong login evidence must be returned without a second OCR phase')
 
             @staticmethod
             def sleep(_seconds):
@@ -2189,6 +2189,45 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         send.assert_called_once_with(77, 9001, (300, 400))
         self.assertEqual(task.sleeps, [0.25])
         self.assertIs(task._last_login_click_delivery, delivered)
+
+    def test_screen_click_routes_trusted_composite_window_pid(self):
+        class Session:
+            @staticmethod
+            def is_trusted_hwnd(hwnd):
+                return hwnd == 88
+
+            @staticmethod
+            def pid_for(hwnd):
+                return 901 if hwnd == 88 else 0
+
+        class Executor:
+            @staticmethod
+            def check_enabled():
+                return True
+
+        class FakeTask:
+            _screen_click = MultiAccountDailyTask._screen_click
+            _account_window_identity = MultiAccountDailyTask._account_window_identity
+            _active_account_switch_capture = Session()
+            executor = Executor()
+
+            @staticmethod
+            def _main_window_identity():
+                return 77, 900
+
+            @staticmethod
+            def sleep(_seconds):
+                pass
+
+            @staticmethod
+            def log_warning(*_args, **_kwargs):
+                pass
+
+        delivered = LoginClickDelivery(True, 'delivered', 88, 88, 88, 901, (300, 400))
+        with patch('src.task.MultiAccountDailyTask.send_input_click', return_value=delivered) as send:
+            self.assertTrue(FakeTask()._screen_click(300, 400, target_hwnd=88))
+
+        send.assert_called_once_with(88, 901, (300, 400))
 
     def test_bring_account_window_to_front_routes_explicit_dialog_hwnd(self):
         class FakeTask:
@@ -2493,6 +2532,26 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         self.assertTrue(task._open_account_list())
         self.assertEqual(task.clicks, [(300, 400, 10)])
 
+    def test_open_account_list_accepts_existing_strong_expanded_frame(self):
+        class FakeTask:
+            _open_account_list = MultiAccountDailyTask._open_account_list
+            _active_account_switch_capture = object()
+            _login_in_dialog = False
+
+            @staticmethod
+            def _account_list_expanded():
+                return True
+
+            @staticmethod
+            def log_info(*_args, **_kwargs):
+                pass
+
+            @staticmethod
+            def wait_until(*_args, **_kwargs):
+                raise AssertionError('an already expanded list must not be revalidated')
+
+        self.assertTrue(FakeTask()._open_account_list())
+
     def test_dialog_login_uses_dialog_bitblt_origin_and_target_hwnd(self):
         class FakeTask:
             _dialog_click_login = MultiAccountDailyTask._dialog_click_login
@@ -2792,7 +2851,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
     def test_main_login_click_uses_foreground_sample_origin(self):
         frame = object()
         box = AccountBox('登录', x=10, y=20, width=30, height=10)
-        sample = CaptureSample(frame, (100, 200), 77, 'foreground_bitblt', 1.0)
+        sample = CaptureSample(frame, (100, 200), 88, 'foreground_bitblt', 1.0)
         clicks = []
 
         class FakeTask:
@@ -2843,7 +2902,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
                 pass
 
         self.assertTrue(FakeTask()._main_login_screen_click())
-        self.assertEqual([(125, 225, 77)], clicks)
+        self.assertEqual([(125, 225, 88)], clicks)
 
     def test_login_sendinput_retry_uses_a_fresh_ocr_frame(self):
         class FakeTask:

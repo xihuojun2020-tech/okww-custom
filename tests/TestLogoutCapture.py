@@ -13,6 +13,11 @@ class FakeHwndWindow:
     def is_foreground(self):
         return True
 
+
+class CompositeHwndWindow(FakeHwndWindow):
+    top_hwnd = 88
+    hwnds = [(88,), (77,)]
+
 class FakeCapture:
     def __init__(self, hwnd_window, frame, origin=(-1920, 0)):
         self.hwnd_window = hwnd_window
@@ -61,7 +66,7 @@ class TestLogoutCapture(unittest.TestCase):
 
         self.assertIs(frame, sample.frame)
         self.assertEqual((-1920, 0), sample.origin)
-        self.assertEqual(77, sample.hwnd)
+        self.assertEqual(88, sample.hwnd)
         self.assertEqual("foreground_monitor_bitblt", sample.source)
         session.close()
         session.close()
@@ -90,6 +95,39 @@ class TestLogoutCapture(unittest.TestCase):
 
         self.assertIsNone(session.capture_main())
         self.assertEqual("foreground-process-mismatch", session.last_reason)
+
+    def test_trusted_composite_login_process_is_accepted(self):
+        frame = np.zeros((100, 200, 3), dtype=np.uint8)
+        frame[20:40, 30:60] = 255
+        session = LogoutCaptureSession(
+            CompositeHwndWindow(), threading.Event(),
+            capture_factory=lambda hwnd: FakeCapture(hwnd, frame),
+            foreground_hwnd=lambda: 88,
+            window_pid=lambda hwnd: {77: 900, 88: 901}.get(hwnd, 0),
+        )
+
+        sample = session.capture_main()
+
+        self.assertIsNotNone(sample)
+        self.assertEqual(88, sample.hwnd)
+
+    def test_recently_trusted_composite_process_survives_handle_refresh(self):
+        frame = np.zeros((100, 200, 3), dtype=np.uint8)
+        frame[20:40, 30:60] = 255
+        window = CompositeHwndWindow()
+        session = LogoutCaptureSession(
+            window, threading.Event(),
+            capture_factory=lambda hwnd: FakeCapture(hwnd, frame),
+            foreground_hwnd=lambda: 88,
+            window_pid=lambda hwnd: {77: 900, 88: 901}.get(hwnd, 0),
+        )
+
+        self.assertIsNotNone(session.capture_main())
+        window.top_hwnd = 77
+        window.hwnds = [(77,)]
+
+        self.assertIsNotNone(session.capture_main())
+        self.assertEqual(88, session.capture_main().hwnd)
 
     def test_monitor_frame_must_match_reported_monitor_size(self):
         frame = np.zeros((100, 200, 3), dtype=np.uint8)
