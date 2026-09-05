@@ -28,6 +28,7 @@ from src.task.AutoAbyssTask import (
     count_occupied_tower_slots,
     exact_ocr_box,
     first_available_floor,
+    floor_energy_cost,
     FLOOR_ROWS,
     floor_state_sequence_valid,
     frame_change_score,
@@ -293,6 +294,21 @@ class TestAutoAbyssTask(unittest.TestCase):
                 self.assertEqual(count_occupied_tower_slots(frame, row_index), 1)
                 self.assertEqual(selected_floor_index(frame), row_index)
 
+    def test_selected_border_accepts_realistic_partial_highlight(self):
+        frame = np.full((1440, 2560, 3), 48, dtype=np.uint8)
+        row_index = 2
+        row = FLOOR_ROWS[row_index]
+        top = int((row[0] + 0.009) * 1440)
+        bottom = int((row[1] - 0.004) * 1440)
+        left = int(0.043 * 2560)
+        right = int(0.305 * 2560)
+        segment = int((right - left) * 0.16)
+        thickness = max(2, round(1440 / 288))
+        cv2.line(frame, (left, top), (left + segment, top), (210, 210, 210), thickness)
+        cv2.line(frame, (right - segment, bottom), (right, bottom), (210, 210, 210), thickness)
+
+        self.assertEqual(selected_floor_index(frame), row_index)
+
     def test_tower_scan_logs_and_recovers_missing_earlier_presence(self):
         class OfflineAbyssTask(AutoAbyssTask):
             @property
@@ -362,6 +378,24 @@ class TestAutoAbyssTask(unittest.TestCase):
 
         self.assertTrue(any("按已通关处理" in warning for warning in warnings))
 
+    def test_floor_verification_uses_challenge_button_when_border_detection_misses(self):
+        class OfflineAbyssTask(AutoAbyssTask):
+            @property
+            def frame(self):
+                return np.zeros((1440, 2560, 3), dtype=np.uint8)
+
+        task = OfflineAbyssTask.__new__(OfflineAbyssTask)
+        task.click_relative = lambda *_args, **_kwargs: None
+        task.wait_until = lambda *_args, **_kwargs: False
+        task.log_info = lambda *_args: None
+        task.log_warning = lambda *_args: None
+        task._read_floor_action_buttons = lambda _frame: (False, True)
+
+        with patch("src.task.AutoAbyssTask.selected_floor_index", return_value=None), patch(
+            "src.task.AutoAbyssTask.count_occupied_tower_slots", return_value=0
+        ):
+            self.assertEqual(task._verify_floor_state("残响之塔", 2, 0, 6), AVAILABLE)
+
     def test_twelve_star_conflict_retries_then_marks_the_whole_tower_unknown(self):
         class OfflineAbyssTask(AutoAbyssTask):
             @property
@@ -423,12 +457,14 @@ class TestAutoAbyssTask(unittest.TestCase):
         self.assertEqual(tower_order("中间塔优先"), ("深境之塔", "残响之塔", "回音之塔"))
         self.assertEqual(
             tower_required_energy("残响之塔", (COMPLETED, AVAILABLE, LOCKED, LOCKED)),
-            9,
+            2,
         )
         self.assertEqual(
-            tower_required_energy("深境之塔", (COMPLETED, AVAILABLE)),
+            tower_required_energy("深境之塔", (AVAILABLE, LOCKED, LOCKED, LOCKED)),
             5,
         )
+        self.assertEqual(floor_energy_cost("残响之塔", 2), 3)
+        self.assertEqual(floor_energy_cost("深境之塔", 2), 5)
 
     def test_tower_scan_uses_large_floor_numbers_to_trim_missing_rows(self):
         class OfflineAbyssTask(AutoAbyssTask):
@@ -498,6 +534,22 @@ class TestAutoAbyssTask(unittest.TestCase):
 
         self.assertEqual(task._fight_selected_tower("深境之塔", 0), ("失败", 0))
         self.assertEqual(events.count(("combat", "深境之塔", 1)), 1)
+        self.assertEqual(events[-2:], [("click", "返回深塔"), "tower_screen"])
+
+    def test_fight_selected_tower_returns_to_reform_when_next_floor_exceeds_team_energy(self):
+        events = []
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task._click_start_challenge = lambda: events.append("start")
+        task._prepare_challenge_map = lambda tower, floor: events.append(("map", tower, floor))
+        task._run_floor_combat = lambda tower, floor: events.append(("combat", tower, floor))
+        task._wait_abyss_result = lambda: ("continue", SimpleNamespace(name="继续挑战"))
+        task._wait_exact_text = lambda *_args: SimpleNamespace(name="返回深塔")
+        task.click_box = lambda box, **_kwargs: events.append(("click", box.name))
+        task._wait_for_tower_screen = lambda: events.append("tower_screen")
+        task._set_status = lambda *args: events.append(("status",) + args)
+
+        self.assertEqual(task._fight_selected_tower("深境之塔", 0, 5), ("需要重新编队", 1))
+        self.assertNotIn(("click", "继续挑战"), events)
         self.assertEqual(events[-2:], [("click", "返回深塔"), "tower_screen"])
 
     def test_floor_combat_treats_character_death_as_a_result_page_path(self):
@@ -876,8 +928,9 @@ class TestAutoAbyssTask(unittest.TestCase):
             lambda records, minimum_energy: events.append(("form", records[0], minimum_energy))
         )
         task._fight_selected_tower = (
-            lambda tower, floor: events.append(("fight", tower, floor)) or ("完成", 1)
+            lambda tower, floor, energy: events.append(("fight", tower, floor, energy)) or ("完成", 1)
         )
+        task._planned_team_energy = lambda *_args: 10
 
         outcomes = task._run_towers(scans)
 
@@ -890,8 +943,37 @@ class TestAutoAbyssTask(unittest.TestCase):
                 ("scan_characters", "回音之塔", (COMPLETED, AVAILABLE)),
             ],
         )
-        self.assertIn(("form", "残响之塔", 3), events)
+        self.assertIn(("form", "残响之塔", 1), events)
         self.assertIn(("form", "回音之塔", 2), events)
+
+    def test_run_towers_reforms_center_team_after_two_floors(self):
+        scans = {
+            "残响之塔": (COMPLETED,),
+            "深境之塔": (AVAILABLE, LOCKED, LOCKED, LOCKED),
+            "回音之塔": (COMPLETED,),
+        }
+        events = []
+        fights = iter((("需要重新编队", 2), ("完成", 2)))
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task.config = {"Tower Priority": CENTER_TOWER_FIRST}
+        task._set_status = lambda *_args: None
+        task._enter_and_scan_characters = (
+            lambda tower, states: events.append(("scan", tower, states)) or [tower]
+        )
+        task._plan_and_form_team = (
+            lambda records, minimum_energy: events.append(("form", minimum_energy))
+            or SimpleNamespace(members=("a", "b", "c"))
+        )
+        task._planned_team_energy = lambda *_args: 10
+        task._fight_selected_tower = (
+            lambda tower, floor, energy: events.append(("fight", floor, energy)) or next(fights)
+        )
+
+        outcomes = task._run_towers(scans)
+
+        self.assertEqual(outcomes["深境之塔"], "完成（4层）")
+        self.assertEqual([event for event in events if event[0] == "form"], [("form", 5), ("form", 5)])
+        self.assertEqual([event for event in events if event[0] == "fight"], [("fight", 0, 10), ("fight", 2, 10)])
 
     def test_run_towers_returns_safely_and_continues_after_team_shortage(self):
         scans = {
@@ -912,7 +994,8 @@ class TestAutoAbyssTask(unittest.TestCase):
 
         task._plan_and_form_team = form
         task._return_from_team_to_towers = lambda: events.append(("return",))
-        task._fight_selected_tower = lambda tower, _floor: ("完成", 1)
+        task._planned_team_energy = lambda *_args: 10
+        task._fight_selected_tower = lambda tower, _floor, _energy: ("完成", 1)
 
         outcomes = task._run_towers(scans)
 

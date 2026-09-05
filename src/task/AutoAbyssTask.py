@@ -155,15 +155,16 @@ def tower_order(priority):
 
 
 def tower_required_energy(tower_name, states):
-    """Return per-character energy needed to clear every remaining floor in a tower."""
+    """Return per-character energy needed for the next unlocked unfinished floor."""
     start = first_available_floor(states)
     if start is None:
         return 0
-    return sum(
-        5 if tower_name == TOWER_NAMES[1] else index + 1
-        for index, state in enumerate(states)
-        if index >= start and state != COMPLETED
-    )
+    return floor_energy_cost(tower_name, start)
+
+
+def floor_energy_cost(tower_name, floor_index):
+    """Return the per-character energy cost of one zero-based tower floor."""
+    return 5 if tower_name == TOWER_NAMES[1] else floor_index + 1
 
 
 def _normalized_ocr_text(value):
@@ -190,7 +191,7 @@ def parse_tower_star_total(value):
 
 def classify_floor_evidence(locked, avatar_count, reset_visible, challenge_visible, selected):
     """Combine row evidence conservatively; uncertain rows must never be challenged."""
-    if locked and (avatar_count or reset_visible):
+    if locked and (avatar_count or reset_visible or challenge_visible):
         return UNKNOWN
     if reset_visible:
         return COMPLETED
@@ -198,7 +199,7 @@ def classify_floor_evidence(locked, avatar_count, reset_visible, challenge_visib
         return LOCKED
     if avatar_count:
         return COMPLETED
-    if selected and challenge_visible:
+    if challenge_visible:
         return AVAILABLE
     return UNKNOWN
 
@@ -254,7 +255,8 @@ def selected_floor_index(frame):
         ))
         scores.append(float(np.mean(border > 170)) if border.size else 0.0)
     best = int(np.argmax(scores))
-    return best if scores[best] >= 0.15 else None
+    runner_up = max((score for index, score in enumerate(scores) if index != best), default=0.0)
+    return best if scores[best] >= 0.09 and scores[best] - runner_up >= 0.015 else None
 
 
 def abyss_result_state(boxes):
@@ -578,22 +580,38 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                 self._set_status("跳过本塔", f"{tower_name}：{outcome}")
                 continue
 
-            required_energy = tower_required_energy(tower_name, states)
-            self._set_status(
-                "扫描角色体力",
-                f"{tower_name}剩余关卡要求每名角色至少 {required_energy} 点体力",
-            )
-            records = self._enter_and_scan_characters(tower_name, states)
-            try:
-                self._plan_and_form_team(records, minimum_energy=required_energy)
-            except AbyssTeamUnavailable as exc:
-                outcomes[tower_name] = "体力或角色不足"
-                self._set_status("跳过本塔", f"{tower_name}：{exc}")
-                self._return_from_team_to_towers()
-                continue
+            current_floor = first_floor
+            current_states = states
+            total_cleared = 0
+            while True:
+                required_energy = tower_required_energy(tower_name, current_states)
+                self._set_status(
+                    "扫描角色体力",
+                    f"{tower_name}第 {current_floor + 1} 层要求每名角色至少 {required_energy} 点体力",
+                )
+                records = self._enter_and_scan_characters(tower_name, current_states)
+                try:
+                    plan = self._plan_and_form_team(records, minimum_energy=required_energy)
+                    team_energy = self._planned_team_energy(plan, records)
+                except AbyssTeamUnavailable as exc:
+                    outcomes[tower_name] = (
+                        f"完成{total_cleared}层后体力或角色不足" if total_cleared else "体力或角色不足"
+                    )
+                    self._set_status("跳过本塔", f"{tower_name}：{exc}")
+                    self._return_from_team_to_towers()
+                    break
 
-            result, cleared = self._fight_selected_tower(tower_name, first_floor)
-            outcomes[tower_name] = f"{result}（{cleared}层）"
+                result, cleared = self._fight_selected_tower(tower_name, current_floor, team_energy)
+                total_cleared += cleared
+                if result != "需要重新编队":
+                    outcomes[tower_name] = f"{result}（{total_cleared}层）"
+                    break
+
+                current_floor += cleared
+                current_states = tuple(
+                    COMPLETED if index < current_floor else AVAILABLE if index == current_floor else LOCKED
+                    for index in range(max(len(states), current_floor + 1))
+                )
         return outcomes
 
     def _set_status(self, stage, detail):
@@ -661,6 +679,13 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         self._set_status("编队完成", f"{plan_text}；准备开启挑战")
         self.log_info(f"自动深渊编队完成：{plan_text}", notify=True)
         return plan
+
+    def _planned_team_energy(self, plan, records):
+        selected = [self._best_record_for_identity(records, identity) for identity in plan.members]
+        energies = [record.energy for record in selected if record is not None and record.energy is not None]
+        if len(energies) != len(plan.members):
+            raise AbyssTeamUnavailable("已选队伍的体力记录不完整")
+        return min(energies)
 
     def _current_scan_key(self):
         return str(getattr(self, "_runtime_status_account", None) or "当前账号")
@@ -816,7 +841,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             )
             current = self.frame
             avatar_count = max(avatar_count, count_occupied_tower_slots(current, floor_index))
-            reset_visible, challenge_visible = self._read_floor_action_buttons(current) if selected else (False, False)
+            reset_visible, challenge_visible = self._read_floor_action_buttons(current)
             state = classify_floor_evidence(
                 False, avatar_count, reset_visible, challenge_visible, bool(selected)
             )
@@ -918,10 +943,11 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             raise Exception("战斗结束后未能完整识别深塔结算页")
         return result["value"]
 
-    def _fight_selected_tower(self, tower_name, first_floor_index):
-        """Fight at most four floors; continuing reuses the already formed team."""
+    def _fight_selected_tower(self, tower_name, first_floor_index, team_energy=None):
+        """Fight until the tower ends or the current team cannot afford the next floor."""
         self._click_start_challenge()
         cleared = 0
+        remaining_energy = team_energy
         for floor_index in range(first_floor_index, len(FLOOR_ROWS)):
             floor_number = floor_index + 1
             self._prepare_challenge_map(tower_name, floor_number)
@@ -929,6 +955,24 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             state, button = self._wait_abyss_result()
             if state == "continue":
                 cleared += 1
+                if floor_index + 1 >= len(FLOOR_ROWS):
+                    self.screenshot("abyss_continue_past_last_floor")
+                    raise Exception(f"{tower_name}在第四层后仍显示继续挑战")
+                if remaining_energy is not None:
+                    remaining_energy -= floor_energy_cost(tower_name, floor_index)
+                next_cost = floor_energy_cost(tower_name, floor_index + 1)
+                if remaining_energy is not None and remaining_energy < next_cost:
+                    self._set_status(
+                        "重新编队",
+                        f"{tower_name}第 {floor_number} 层完成，当前队伍剩余体力不足下一层",
+                    )
+                    back = self._wait_exact_text("返回深塔", (0.20, 0.06, 0.82, 0.96), 3)
+                    if back is None:
+                        self.screenshot("abyss_reform_return_not_found")
+                        raise Exception("需要重新编队，但结算页未找到返回深塔")
+                    self.click_box(back, after_sleep=2)
+                    self._wait_for_tower_screen()
+                    return "需要重新编队", cleared
                 self._set_status("挑战成功", f"{tower_name}第 {floor_number} 层完成，继续下一层")
                 self.click_box(button, after_sleep=1)
                 continue
