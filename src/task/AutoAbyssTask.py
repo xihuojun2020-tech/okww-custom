@@ -1090,9 +1090,12 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
 
         self._set_status("截取角色", "正在截取角色列表第 1 屏")
         first = self._wait_stable_character_frame()
-        return self._scan_character_pages(first)
+        return self._scan_character_pages(
+            first,
+            minimum_energy=floor_energy_cost(tower_name, floor_index),
+        )
 
-    def _scan_character_pages(self, first):
+    def _scan_character_pages(self, first, minimum_energy=1):
         single_page = is_single_page_character_list(first)
         first_records = self._recognize_character_screen(first, 1, include_incomplete=single_page)
         last_frame = first
@@ -1105,12 +1108,29 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         else:
             self._set_status("滚动角色列表", "正在向下滚动角色列表")
             second = self._scroll_to_second_character_page(first)
-            self._set_status("截取角色", "正在截取角色列表第 2 屏")
-            second_records = self._recognize_character_screen(second, 2)
-            self._character_page_count = 2
-            self._character_page_index = 2
-            records = first_records + second_records
-            last_frame = second
+            if second is None:
+                usable_ids = {
+                    effective_character_id(record)
+                    for record in first_records
+                    if record.available and record.energy >= minimum_energy
+                }
+                if len(usable_ids) < 3:
+                    raise Exception(
+                        f"角色列表滚动未生效，第一屏不足三名体力不低于 {minimum_energy} 的可用角色"
+                    )
+                self._character_page_count = 1
+                self._character_page_index = 1
+                self.log_warning(
+                    f"角色列表滚动未生效；第一屏有 {len(usable_ids)} 名可用角色，继续尝试编队"
+                )
+                records = first_records
+            else:
+                self._set_status("截取角色", "正在截取角色列表第 2 屏")
+                second_records = self._recognize_character_screen(second, 2)
+                self._character_page_count = 2
+                self._character_page_index = 2
+                records = first_records + second_records
+                last_frame = second
         if not records:
             self.screenshot("abyss_character_recognition_empty", frame=last_frame)
             raise Exception("角色列表未识别到角色头像")
@@ -1159,21 +1179,57 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
     def _scroll_to_second_character_page(self, first):
         first_thumb = scroll_thumb_center(first)
         for attempt, amount in enumerate((-6, -10), start=1):
-            if attempt > 1:
-                self.ensure_in_front()
+            self.ensure_in_front()
+            self.sleep(0.2)
             self.scroll_relative(0.50, 0.50, amount)
             self.sleep(0.6)
             second = self._wait_stable_character_frame()
             second_thumb = scroll_thumb_center(second)
-            grid_changed = frame_change_score(first, second) >= 0.035
+            change_score = frame_change_score(first, second)
+            thumb_delta = (
+                abs(first_thumb - second_thumb)
+                if first_thumb is not None and second_thumb is not None
+                else None
+            )
+            grid_changed = change_score >= 0.035
             thumb_changed = (
-                first_thumb is not None and second_thumb is not None and abs(first_thumb - second_thumb) >= 0.015
+                thumb_delta is not None and thumb_delta >= 0.015
+            )
+            self.log_info(
+                f"角色列表第 {attempt} 次滚轮：网格变化={change_score:.4f}，"
+                f"滚动条位移={thumb_delta:.4f}" if thumb_delta is not None else
+                f"角色列表第 {attempt} 次滚轮：网格变化={change_score:.4f}，滚动条位移=不可用"
             )
             if grid_changed or thumb_changed:
                 return second
+            self.screenshot(f"abyss_character_scroll_wheel_{attempt}_before", frame=first)
+            self.screenshot(f"abyss_character_scroll_wheel_{attempt}_after", frame=second)
             self.log_warning(f"角色列表第 {attempt} 次滚动未检测到有效变化")
-        self.screenshot("abyss_character_scroll_failed", frame=first)
-        raise Exception("角色列表滚动未生效，已停止以避免重复识别第一屏")
+
+        self.ensure_in_front()
+        self.sleep(0.2)
+        drag_start = first_thumb if first_thumb is not None else 0.35
+        drag_target = min(0.78, drag_start + 0.35)
+        self.swipe_relative(0.925, drag_start, 0.925, drag_target, duration=0.5, settle_time=0.3)
+        dragged = self._wait_stable_character_frame()
+        dragged_thumb = scroll_thumb_center(dragged)
+        drag_score = frame_change_score(first, dragged)
+        drag_delta = (
+            abs(first_thumb - dragged_thumb)
+            if first_thumb is not None and dragged_thumb is not None
+            else None
+        )
+        self.log_info(
+            f"角色列表拖动滚动条：网格变化={drag_score:.4f}，滚动条位移={drag_delta:.4f}"
+            if drag_delta is not None else
+            f"角色列表拖动滚动条：网格变化={drag_score:.4f}，滚动条位移=不可用"
+        )
+        if drag_score >= 0.035 or (drag_delta is not None and drag_delta >= 0.015):
+            return dragged
+        self.screenshot("abyss_character_scroll_drag_before", frame=first)
+        self.screenshot("abyss_character_scroll_drag_after", frame=dragged)
+        self.log_warning("角色列表拖动滚动条后仍未检测到有效变化")
+        return None
 
     def _show_character_page(self, page_index):
         page_count = getattr(self, "_character_page_count", 1)

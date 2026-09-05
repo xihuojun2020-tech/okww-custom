@@ -770,21 +770,69 @@ class TestAutoAbyssTask(unittest.TestCase):
         self.assertIn(("recognize", True, 1, False), calls)
         self.assertIn(("recognize", False, 2, False), calls)
 
-    def test_multi_page_scroll_failure_remains_fatal(self):
+    def test_multi_page_scroll_uses_scrollbar_drag_after_wheel_failures(self):
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
         frame[180:620, 2355:2370] = 220
+        changed = frame.copy()
+        changed[250:900, 300:1800] = 180
+        frames = iter((frame.copy(), frame.copy(), changed))
+        events = []
         warnings = []
         task = AutoAbyssTask.__new__(AutoAbyssTask)
-        task.scroll_relative = lambda *args, **kwargs: None
+        task.scroll_relative = lambda *args, **kwargs: events.append(("wheel", args))
+        task.swipe_relative = lambda *args, **kwargs: events.append(("drag", args, kwargs))
         task.sleep = lambda *_args: None
-        task.ensure_in_front = lambda: None
-        task._wait_stable_character_frame = lambda: frame.copy()
+        task.ensure_in_front = lambda: events.append(("front",))
+        task._wait_stable_character_frame = lambda: next(frames)
+        task.log_info = lambda message: events.append(("log", message))
         task.log_warning = warnings.append
-        task.screenshot = lambda *args, **kwargs: None
+        task.screenshot = lambda name, **kwargs: events.append(("screenshot", name, kwargs.get("frame")))
 
-        with self.assertRaisesRegex(Exception, "角色列表滚动未生效"):
-            task._scroll_to_second_character_page(frame)
+        self.assertIs(task._scroll_to_second_character_page(frame), changed)
+        self.assertEqual(sum(event[0] == "front" for event in events), 3)
+        self.assertEqual(sum(event[0] == "wheel" for event in events), 2)
+        self.assertEqual(sum(event[0] == "drag" for event in events), 1)
         self.assertEqual(len(warnings), 2)
+        self.assertEqual(sum(event[0] == "screenshot" for event in events), 4)
+
+    def test_multi_page_scroll_failure_uses_sufficient_first_screen_records(self):
+        frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
+        frame[180:620, 2355:2370] = 220
+        records = [
+            CharacterScanRecord(f"char_{index}", str(index), energy, 90, 0.9, 1, index)
+            for index, energy in enumerate((5, 6, 10))
+        ]
+        warnings = []
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task._set_status = lambda *_args: None
+        task.log_info = lambda *_args: None
+        task.log_warning = warnings.append
+        task.screenshot = lambda *_args, **_kwargs: None
+        task._recognize_character_screen = lambda *_args, **_kwargs: records
+        task._scroll_to_second_character_page = lambda _first: None
+
+        self.assertEqual(task._scan_character_pages(frame, minimum_energy=5), records)
+        self.assertEqual(task._character_page_count, 1)
+        self.assertTrue(any("第一屏" in warning for warning in warnings))
+
+    def test_multi_page_scroll_failure_stops_when_first_screen_cannot_form_team(self):
+        frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
+        frame[180:620, 2355:2370] = 220
+        records = [
+            CharacterScanRecord("char_a", "A", 5, 90, 0.9, 1, 0),
+            CharacterScanRecord("char_b", "B", 4, 90, 0.9, 1, 1),
+            CharacterScanRecord("char_c", "C", 10, 60, 0.9, 1, 2),
+        ]
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task._set_status = lambda *_args: None
+        task.log_info = lambda *_args: None
+        task.log_warning = lambda *_args: None
+        task.screenshot = lambda *_args, **_kwargs: None
+        task._recognize_character_screen = lambda *_args, **_kwargs: records
+        task._scroll_to_second_character_page = lambda _first: None
+
+        with self.assertRaisesRegex(Exception, "第一屏不足三名"):
+            task._scan_character_pages(frame, minimum_energy=5)
 
     def test_parse_ocr_number_accepts_level_and_rejects_out_of_range(self):
         self.assertEqual(parse_ocr_number("Lv. 90", minimum=1, maximum=100), 90)
