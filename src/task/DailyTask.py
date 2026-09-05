@@ -11,7 +11,6 @@ from PySide6.QtWidgets import QApplication
 
 from ok import Logger, TaskDisabledException
 from ok.util.file import get_relative_path, read_json_file, write_json_file
-from src.task.BaseWWTask import number_re
 from src.task.ForgeryTask import ForgeryTask
 from src.task.GardenTask import GardenTask
 from src.task.MergeEchoTask import MergeEchoTask
@@ -40,6 +39,14 @@ logger = Logger.get_logger(__name__)
 
 class DailyActivityIncomplete(RuntimeError):
     pass
+
+
+class DailyActivityDetectionError(RuntimeError):
+    pass
+
+
+DAILY_POINTS_RE = re.compile(r'^\s*\d{1,3}\s*$')
+DAILY_CLAIM_RE = re.compile(r'领取|領取|Claim', re.IGNORECASE)
 
 CHECK_WEEKLY_GARDEN = 'Check Weekly Garden'
 AUTO_FARM_NIGHTMARE_NEST = 'Auto Farm all Nightmare Nest'
@@ -354,11 +361,14 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self._publish_daily_stage('每日任务', '正在检查每日奖励和体力进度')
         self.log_info('正在领取每日奖励并检查体力进度...')
         used_stamina, daily_reward_ready = self.open_daily()
+        if daily_reward_ready is None:
+            _, daily_reward_ready = self._claim_and_recheck_daily_activity()
+        stamina_activity_ready = self._stamina_policy_activity_ready(daily_reward_ready)
         # 活跃度满后仍清理现有体力；是否允许备用体力由子任务按本轮预算决定。
         need_stamina = True
         need_nightmare = auto_farm or (
                 daily_echo
-                and not daily_reward_ready
+                and daily_reward_ready is False
                 and self._profile_get('Which to Farm', self.support_tasks[0]) != self.support_tasks[0]
         )
 
@@ -405,20 +415,22 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             if target == self.support_tasks[0]:
                 self.get_task_by_class(TacetTask).farm_tacet(daily=True, used_stamina=used_stamina,
                                                              config=profile_runtime_config,
-                                                             activity_ready=daily_reward_ready)
+                                                             activity_ready=stamina_activity_ready)
             elif target == self.support_tasks[1]:
                 self.get_task_by_class(ForgeryTask).farm_forgery(daily=True, used_stamina=used_stamina,
                                                                  config=profile_runtime_config,
-                                                                 activity_ready=daily_reward_ready)
+                                                                 activity_ready=stamina_activity_ready)
             else:
                 self.get_task_by_class(SimulationTask).farm_simulation(daily=True, used_stamina=used_stamina,
                                                                        config=profile_runtime_config,
-                                                                       activity_ready=daily_reward_ready)
+                                                                       activity_ready=stamina_activity_ready)
             self.sleep(4)
             self.record_last_completed(target, profile_id=getattr(self, '_verified_profile_id', None))
 
         _, daily_reward_ready = self.open_daily()
-        if not daily_reward_ready and daily_echo and not nightmare_attempted and nightmare_error is None:
+        if daily_reward_ready is None:
+            _, daily_reward_ready = self._claim_and_recheck_daily_activity()
+        if daily_reward_ready is False and daily_echo and not nightmare_attempted and nightmare_error is None:
             self._publish_daily_stage('补充活跃度', '体力任务不足，尝试获取每日声骸')
             self.log_info('体力刷取后活跃度仍未满，尝试每日声骸任务', notify=True)
             try:
@@ -438,15 +450,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 nightmare_error = error
                 self.log_error('补充活跃度的每日声骸任务失败', error)
 
-        if not daily_reward_ready:
-            message = '体力及当前可执行项目不足，活跃度仍未刷满；账号不会标记为完成'
-            self._publish_daily_stage('每日任务', message)
-            self._notify_incomplete_daily_activity(message)
-            raise DailyActivityIncomplete(message)
-
-        self._publish_daily_stage('每日任务', '正在领取每日奖励')
-        self.log_info('正在领取每日任务奖励...')
-        self.claim_daily()
+        self._finish_daily_rewards(daily_reward_ready)
 
         self._publish_daily_stage('每日任务', '正在领取邮件')
         self.claim_mail()
@@ -478,6 +482,38 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _notify_incomplete_daily_activity(self, message):
         self.log_warning(message, notify=True)
+
+    @staticmethod
+    def _stamina_policy_activity_ready(activity_ready):
+        """OCR 未知时按已满处理备用体力，但仍会清理现有体力。"""
+        return activity_ready is not False
+
+    def _finish_daily_rewards(self, daily_reward_ready):
+        """先领取所有已达成奖励，再决定账号能否标记完成。"""
+        self._publish_daily_stage('每日任务', '正在领取每日奖励')
+        self.log_info('正在领取每日任务奖励...')
+        self.claim_daily()
+
+        if daily_reward_ready is not True:
+            _, daily_reward_ready = self.open_daily()
+        if daily_reward_ready is None:
+            message = '每日奖励已尝试领取，但活跃度数值仍无法识别；账号不会标记为完成'
+            self._publish_daily_stage('每日任务', message)
+            self._notify_incomplete_daily_activity(message)
+            raise DailyActivityDetectionError(message)
+        if not daily_reward_ready:
+            message = '已领取当前可领取奖励，但活跃度仍未刷满；账号不会标记为完成'
+            self._publish_daily_stage('每日任务', message)
+            self._notify_incomplete_daily_activity(message)
+            raise DailyActivityIncomplete(message)
+        return True
+
+    def _claim_and_recheck_daily_activity(self):
+        """领取按钮可能覆盖活跃度数值；先领取再获取一组新状态。"""
+        self._publish_daily_stage('每日任务', '活跃度识别不清，正在先领取并复查')
+        self.log_info('活跃度 OCR 未得到有效数值，先领取当前奖励再复查')
+        self.claim_daily()
+        return self.open_daily()
 
     def _publish_daily_stage(self, stage, detail=''):
         account = getattr(self, '_runtime_status_account', None)
@@ -1728,20 +1764,34 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         else:
             current = 0
         self.info_set('current daily progress', current)
-        return current, self.get_total_daily_points() >= 100
+        points = self.get_total_daily_points()
+        return current, None if points is None else points >= 100
         # 请注意：如果任务【累计消耗180点结晶波片】已完成，current 也可能为 0，因为翻页后也有可能识别不到已用体力。
 
-    def get_total_daily_points(self):
-        points_boxes = self.ocr(0.19, 0.8, 0.30, 0.93, match=number_re)
-        if points_boxes:
-            try:
-                points = int(re.sub(r'\D', '', points_boxes[0].name))
-            except Exception:
-                points = 0
-        else:
-            points = 0
+    def get_total_daily_points(self, attempts=3):
+        attempts = max(int(attempts), 1)
+        candidates = []
+        raw_candidates = []
+        for attempt in range(attempts):
+            points_boxes = self.ocr(0.19, 0.8, 0.30, 0.93, match=DAILY_POINTS_RE) or []
+            for box in points_boxes:
+                text = str(getattr(box, 'name', '')).strip()
+                raw_candidates.append(text)
+                if not DAILY_POINTS_RE.fullmatch(text):
+                    continue
+                value = int(text)
+                if 0 <= value <= 100:
+                    candidates.append(value)
+            if attempt + 1 < attempts:
+                self.next_frame()
+        points = max(candidates) if candidates else None
+        self.log_info(f'每日活跃度 OCR 候选={raw_candidates or "无"} 结果={points}')
         self.info_set('total daily points', points)
         return points
+
+    def _find_daily_claim_button(self):
+        buttons = self.ocr(0.82, 0.80, 0.99, 0.96, match=DAILY_CLAIM_RE) or []
+        return max(buttons, key=lambda box: getattr(box, 'confidence', 0), default=None)
 
     def claim_daily(self):
         self.info_set('current task', 'claim daily')
@@ -1750,8 +1800,18 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             self.log_info('no_boss_proceed, click claim')
             # Click [Guidebook] in [Terminal] interface
             self.click(0.885, 0.250, after_sleep=2)
-        self.log_info(f'claim daily reward via  coordinate')
-        self.click(0.930, 0.882, after_sleep=1)
+        claim_button = self._find_daily_claim_button()
+        if claim_button is not None:
+            self.log_info(f'claim daily reward via OCR {claim_button.name}')
+            self.click(claim_button, after_sleep=1)
+            self.next_frame()
+            retry_button = self._find_daily_claim_button()
+            if retry_button is not None:
+                self.log_info('每日奖励按钮仍存在，重试一次')
+                self.click(retry_button, after_sleep=1)
+        else:
+            self.log_info('claim daily reward via coordinate fallback')
+            self.click(0.930, 0.882, after_sleep=1)
         self.ensure_main(time_out=10)
 
     def claim_mail(self):
