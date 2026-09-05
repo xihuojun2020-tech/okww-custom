@@ -53,6 +53,7 @@ CHARACTER_COMPLETE_ROWS = 2
 CHARACTER_MATCH_MINIMUM = 6
 CHARACTER_MATCH_MARGIN = 2
 SINGLE_PAGE_SCROLL_THUMB_COVERAGE = 0.80
+SELECTION_MARKER_REGION = (0.00, 0.00, 1.00, 0.70)
 
 
 class AbyssTeamUnavailable(Exception):
@@ -294,6 +295,17 @@ def character_safe_click(slot):
     """Return a card-body click point away from element, selection, energy and level labels."""
     _row, _column, x, y, width, height, _complete = slot
     return x + width * 0.50, y + height * 0.35
+
+
+def selection_marker_present(crop):
+    """Detect the gold side border that appears only on a selected character card."""
+    if crop is None or crop.size == 0:
+        return False
+    hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+    gold = cv2.inRange(hsv, (15, 70, 120), (45, 255, 255))
+    edge_width = max(2, int(gold.shape[1] * 0.04))
+    edges = np.hstack((gold[:, :edge_width], gold[:, -edge_width:]))
+    return float(np.count_nonzero(edges)) / edges.size >= 0.15
 
 
 def validate_selection_state(records):
@@ -699,10 +711,10 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                 f"体力不少于{minimum_energy}且等级大于60的可用角色不足三人：{plan_text}"
             )
         self._set_status("清理已有编队", "正在检查并清除快速编队页已有的 1/2/3")
-        self._clear_all_selection()
+        self._clear_all_selection(records)
         self._set_status("选择编队", plan_text)
         self._select_planned_team(plan, records)
-        self._set_status("确认编队", "三个选择编号验证成功，正在点击完成")
+        self._set_status("确认编队", "三个角色选择标记验证成功，正在点击完成")
         self._finish_team_formation()
         self._set_status("编队完成", f"{plan_text}；准备开启挑战")
         self.log_info(f"自动深渊编队完成：{plan_text}", notify=True)
@@ -1309,10 +1321,14 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         rover_form, _confidence = classify_rover_element_crop(element_crop)
         return rover_form == effective_character_id(record)
 
-    def _wait_selection_number(self, record, expected):
+    def _selection_marker_present(self, frame, record):
         slot = character_card_slots()[record.slot_index]
+        crop = self._slot_crop(frame, slot, SELECTION_MARKER_REGION)
+        return selection_marker_present(crop)
+
+    def _wait_selection_marker(self, record, expected):
         return bool(self.wait_until(
-            lambda: self._read_selection_number(self.frame, slot) == expected,
+            lambda: self._selection_marker_present(self.frame, record) is expected,
             time_out=2,
             raise_if_not_found=False,
         ))
@@ -1328,6 +1344,19 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             ))
         return records
 
+    def _selection_marker_locations_all_pages(self):
+        locations = []
+        page_count = getattr(self, "_character_page_count", 1)
+        for page_index in range(1, page_count + 1):
+            frame = self._show_character_page(page_index)
+            for slot_index, slot in enumerate(character_card_slots()):
+                if not slot[-1] and page_count != 1:
+                    continue
+                crop = self._slot_crop(frame, slot, SELECTION_MARKER_REGION)
+                if selection_marker_present(crop):
+                    locations.append((page_index, slot_index))
+        return locations
+
     def _click_character_record(self, record, expected_number):
         frame = self._show_character_page(record.screen_index)
         if not self._verify_record_identity(frame, record):
@@ -1337,65 +1366,74 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             return False
         x, y = character_safe_click(character_card_slots()[record.slot_index])
         self.click_relative(x, y, after_sleep=0.35, name=record.display_name)
-        return self._wait_selection_number(record, expected_number)
+        return self._wait_selection_marker(record, True)
 
-    def _clear_all_selection(self):
-        records = self._selection_records_all_pages()
-        try:
-            selected = validate_selection_state(records)
-        except ValueError:
-            self.screenshot("abyss_character_selection_conflict")
-            raise
-        for number, identity in sorted(selected.items()):
-            candidates = [
-                record for record in records
-                if effective_character_id(record) == identity and record.selection_number == number
-            ]
-            record = min(candidates, key=self._record_sort_key, default=None)
-            if record is None:
-                continue
+    def _clear_all_selection(self, records=None):
+        records = list(records) if records is not None else self._selection_records_all_pages()
+        selected = {}
+        for page_index in range(1, getattr(self, "_character_page_count", 1) + 1):
+            frame = self._show_character_page(page_index)
+            for record in (item for item in records if item.screen_index == page_index):
+                if not self._selection_marker_present(frame, record):
+                    continue
+                identity = effective_character_id(record)
+                previous = selected.get(identity)
+                if previous is None or self._record_sort_key(record) < self._record_sort_key(previous):
+                    selected[identity] = record
+        for number, record in enumerate(selected.values(), start=1):
             frame = self._show_character_page(record.screen_index)
             if not self._verify_record_identity(frame, record):
                 self.screenshot("abyss_character_selection_clear_failed", frame=frame)
-                raise Exception(f"清理选择编号 {number} 前角色身份复核失败")
+                raise Exception(f"清理第 {number} 个已有角色前身份复核失败")
             x, y = character_safe_click(character_card_slots()[record.slot_index])
             self.click_relative(x, y, after_sleep=0.35, name=f"取消{record.display_name}")
-            if not self._wait_selection_number(record, None):
+            if not self._wait_selection_marker(record, False):
                 self.screenshot("abyss_character_selection_clear_failed")
-                raise Exception(f"角色选择编号 {number} 未能清除")
-        remaining = validate_selection_state(self._selection_records_all_pages())
+                raise Exception(f"第 {number} 个已有角色选择标记未能清除")
+        remaining = self._selection_marker_locations_all_pages()
         if remaining:
             self.screenshot("abyss_character_selection_clear_failed")
-            raise Exception(f"快速编队仍有未清除选择编号：{sorted(remaining)}")
+            raise Exception(f"快速编队仍有未清除选择标记：{remaining}")
         return True
 
     def _select_planned_team(self, plan, records):
         if not plan.executable or len(plan.members) != 3:
             raise Exception("编队计划不足三人，禁止点击角色")
-        expected = {}
         for expected_number, identity in enumerate(plan.members, start=1):
-            expected[expected_number] = identity
             record = self._best_record_for_identity(records, identity)
             if record is not None and self._click_character_record(record, expected_number):
+                self.log_info(
+                    f"局部确认 {record.display_name} 已出现选择标记，按点击顺序记为 {expected_number}"
+                )
                 continue
-            try:
-                observed = validate_selection_state(self._selection_records_all_pages())
-            except Exception as exc:
-                self.screenshot("abyss_character_selection_unknown")
-                raise Exception("角色选择编号状态无法确认，已停止且未重复点击") from exc
-            if observed == expected:
-                continue
+            observed = self._selection_marker_locations_all_pages()
+            self.log_warning(f"角色选择失败后的全页局部标记诊断：{observed}")
             self.log_warning(
-                f"角色选择编号状态无法确认：期望{sorted(expected)}，实际{sorted(observed)}"
+                f"{getattr(record, 'display_name', identity)} 未出现选择标记，已停止且未重复点击"
             )
             self.screenshot("abyss_character_selection_unknown")
-            raise Exception("角色选择编号状态无法确认，已停止且未重复点击")
-        final = validate_selection_state(self._selection_records_all_pages())
-        if final == expected:
+            raise Exception("角色选择状态无法确认，已停止且未重复点击")
+        if self._verify_planned_selection_markers(plan, records):
             return True
-        self.log_warning(f"角色选择最终编号不一致：期望{sorted(expected)}，实际{sorted(final)}")
+        self.log_warning("角色选择最终局部标记确认失败")
         self.screenshot("abyss_character_selection_unknown")
-        raise Exception("角色选择编号状态无法确认，已停止且未重复点击")
+        raise Exception("角色选择状态无法确认，已停止且未重复点击")
+
+    def _verify_planned_selection_markers(self, plan, records):
+        """Revisit only the three chosen cards and confirm their selection borders remain visible."""
+        for expected_number, identity in enumerate(plan.members, start=1):
+            record = self._best_record_for_identity(records, identity)
+            if record is None:
+                return False
+            frame = self._show_character_page(record.screen_index)
+            if not self._verify_record_identity(frame, record):
+                return False
+            if not self._selection_marker_present(frame, record):
+                return False
+            self.log_info(
+                f"最终局部确认 {record.display_name} 选择标记存在，按点击顺序为 {expected_number}"
+            )
+        return True
 
     def _finish_team_formation(self):
         complete = self._wait_exact_text_or_fail(
@@ -1641,22 +1679,13 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         }
         records = []
         unknown = 0
-        selected = []
         for slot_index, slot in enumerate(character_card_slots()):
             row, column, _x, _y, _width, _height, complete = slot
             if not complete and not include_incomplete:
                 continue
-            selection_number = self._read_selection_number(frame, slot)
             avatar = self._slot_crop(frame, slot, (0.02, 0.01, 0.98, 0.78))
             identified = self._identify_character(avatar) if avatar is not None and avatar.size else None
             if identified is None:
-                if selection_number is not None:
-                    self.screenshot(
-                        f"abyss_selected_character_unknown_p{screen_index}_s{slot_index}", frame=frame
-                    )
-                    raise Exception(
-                        f"第{screen_index}屏槽位{slot_index}存在选择编号 {selection_number}，但角色身份无法确认"
-                    )
                 unknown += 1
                 continue
             character_id, confidence = identified
@@ -1691,8 +1720,6 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                     (0.22, 0.78, 1.00, 1.00),
                     lambda text: parse_ocr_number(text, minimum=1, maximum=100),
                 )
-            if selection_number is not None:
-                selected.append(f"{selection_number}:{self.tr(display_name)}")
             records.append(CharacterScanRecord(
                 character_id=character_id,
                 display_name=self.tr(display_name),
@@ -1703,13 +1730,11 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                 slot_index=slot_index,
                 rover_form=rover_form,
                 rover_confidence=rover_confidence,
-                selection_number=selection_number,
             ))
         partial = "，已尝试底部不完整卡片" if include_incomplete else "，底部不完整卡片 7 个"
-        selection_text = f"，选择标记 {', '.join(selected)}" if selected else "，无选择标记"
         self.log_info(
             f"第 {screen_index} 屏识别角色 {len(records)} 个，未知头像 {unknown} 个"
-            f"{partial}{selection_text}"
+            f"{partial}"
         )
         return records
 

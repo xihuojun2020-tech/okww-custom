@@ -41,6 +41,8 @@ from src.task.AutoAbyssTask import (
     parse_selection_number,
     parse_tower_star_total,
     ocr_resize_scale,
+    SELECTION_MARKER_REGION,
+    selection_marker_present,
     is_single_page_character_list,
     scroll_thumb_center,
     selected_floor_index,
@@ -135,7 +137,6 @@ class TestAutoAbyssTask(unittest.TestCase):
                 self.assertEqual(records[0].energy, 10)
                 self.assertEqual(records[0].level, 90)
                 self.assertTrue(records[0].available)
-                self.assertEqual(records[0].selection_number, 1 if selected else None)
 
     def test_rover_element_colour_classifier_is_strict(self):
         def solid_hsv(hue, saturation=220, value=220):
@@ -187,6 +188,34 @@ class TestAutoAbyssTask(unittest.TestCase):
                 task.ocr = lambda *_args, **_kwargs: [SimpleNamespace(name=str(expected))]
 
                 self.assertEqual(task._read_selection_number(frame, slot), expected)
+
+    def test_selection_marker_detects_gold_card_edges_from_720p_through_4k(self):
+        for width, height in ((1280, 720), (1600, 900), (1920, 1080), (2560, 1440), (3840, 2160)):
+            with self.subTest(width=width, height=height):
+                frame = np.zeros((height, width, 3), dtype=np.uint8)
+                slot = character_card_slots()[7]
+                _row, _column, x, y, card_width, card_height, _complete = slot
+                cv2.rectangle(
+                    frame,
+                    (int(x * width), int(y * height)),
+                    (int((x + card_width) * width), int((y + card_height * 0.70) * height)),
+                    (40, 190, 255),
+                    max(2, height // 540),
+                )
+                crop = AutoAbyssTask._slot_crop(frame, slot, SELECTION_MARKER_REGION)
+                self.assertTrue(selection_marker_present(crop))
+
+    def test_selection_marker_rejects_empty_local_crop(self):
+        self.assertFalse(selection_marker_present(np.zeros((80, 80, 3), dtype=np.uint8)))
+
+    def test_selection_marker_roi_matches_real_2560x1440_failure_frame(self):
+        frame = cv2.imread("tests/images/abyss_selection_markers_123.png")
+        detected = [
+            index
+            for index, slot in enumerate(character_card_slots())
+            if selection_marker_present(AutoAbyssTask._slot_crop(frame, slot, SELECTION_MARKER_REGION))
+        ]
+        self.assertEqual(detected, [9, 10, 12])
 
     def test_supported_16_by_9_resolutions_and_minimum_are_enforced(self):
         for width, height in (
@@ -927,22 +956,26 @@ class TestAutoAbyssTask(unittest.TestCase):
         self.assertAlmostEqual(x, x0 + width * 0.50)
         self.assertAlmostEqual(y, y0 + height * 0.35)
 
-    def test_clear_all_selection_clicks_existing_numbers_before_rescan(self):
+    def test_clear_all_selection_reuses_scan_and_checks_only_marker_regions(self):
         selected = [
-            CharacterScanRecord("a", "A", 10, 90, .9, 1, 0, selection_number=1),
-            CharacterScanRecord("b", "B", 10, 90, .9, 2, 1, selection_number=2),
+            CharacterScanRecord("a", "A", 10, 90, .9, 1, 0),
+            CharacterScanRecord("b", "B", 10, 90, .9, 2, 1),
         ]
-        scans = [selected, [replace(item, selection_number=None) for item in selected]]
         clicks = []
         task = AutoAbyssTask.__new__(AutoAbyssTask)
-        task._selection_records_all_pages = lambda: scans.pop(0)
+        task._character_page_count = 2
+        task._selection_records_all_pages = lambda: (_ for _ in ()).throw(
+            AssertionError("the existing character scan must be reused")
+        )
+        task._selection_marker_locations_all_pages = lambda: []
         task._show_character_page = lambda _page: np.zeros((100, 100, 3), dtype=np.uint8)
+        task._selection_marker_present = lambda _frame, _record: True
         task._verify_record_identity = lambda _frame, _record: True
         task.click_relative = lambda x, y, **kwargs: clicks.append((x, y, kwargs["name"]))
-        task._wait_selection_number = lambda _record, expected: expected is None
+        task._wait_selection_marker = lambda _record, expected: expected is False
         task.screenshot = lambda *_args, **_kwargs: None
 
-        self.assertTrue(task._clear_all_selection())
+        self.assertTrue(task._clear_all_selection(selected))
         self.assertEqual([click[-1] for click in clicks], ["取消A", "取消B"])
 
     def test_select_planned_team_keeps_slot_order_across_pages(self):
@@ -951,54 +984,64 @@ class TestAutoAbyssTask(unittest.TestCase):
             CharacterScanRecord("b", "B", 10, 90, .9, 2, 1),
             CharacterScanRecord("c", "C", 10, 90, .9, 1, 2),
         ]
-        final = [replace(record, selection_number=index) for index, record in enumerate(records, start=1)]
         events = []
         task = AutoAbyssTask.__new__(AutoAbyssTask)
         task._show_character_page = lambda page: events.append(("show", page)) or np.zeros((100, 100, 3), dtype=np.uint8)
         task._verify_record_identity = lambda _frame, _record: True
         task.click_relative = lambda _x, _y, **kwargs: events.append(("click", kwargs["name"]))
-        task._wait_selection_number = lambda record, expected: events.append(("expect", record.character_id, expected)) or True
-        task._selection_records_all_pages = lambda: final
-        task._clear_all_selection = lambda: events.append(("clear",))
+        task._wait_selection_marker = lambda record, expected: events.append(("expect", record.character_id, expected)) or True
+        task._verify_planned_selection_markers = lambda *_args: events.append(("final-local",)) or True
+        task._clear_all_selection = lambda _records=None: events.append(("clear",))
         task.log_warning = lambda *_args: None
+        task.log_info = lambda *_args: None
         task.screenshot = lambda *_args, **_kwargs: None
         plan = SimpleNamespace(executable=True, members=("a", "b", "c"))
 
         self.assertTrue(task._select_planned_team(plan, records))
         self.assertEqual([event for event in events if event[0] == "expect"], [
-            ("expect", "a", 1), ("expect", "b", 2), ("expect", "c", 3),
+            ("expect", "a", True), ("expect", "b", True), ("expect", "c", True),
         ])
         self.assertEqual([event for event in events if event[0] == "show"], [
             ("show", 1), ("show", 2), ("show", 1),
         ])
 
-    def test_select_planned_team_accepts_delayed_number_without_second_click(self):
+    def test_select_planned_team_does_not_rescan_all_pages_after_local_success(self):
         records = [
             CharacterScanRecord("a", "A", 10, 90, .9, 1, 0),
             CharacterScanRecord("b", "B", 10, 90, .9, 1, 1),
             CharacterScanRecord("c", "C", 10, 90, .9, 1, 2),
         ]
-        delayed = [replace(records[0], selection_number=1)]
-        final = [replace(record, selection_number=index) for index, record in enumerate(records, start=1)]
         clicks = []
-        clears = []
         task = AutoAbyssTask.__new__(AutoAbyssTask)
-
-        def click_record(record, number):
-            clicks.append((record.character_id, number))
-            return record.character_id != "a"
-
-        task._click_character_record = click_record
-        scans = [delayed, final]
-        task._selection_records_all_pages = lambda: scans.pop(0)
-        task._clear_all_selection = lambda: clears.append(True)
+        task._click_character_record = lambda record, number: clicks.append((record.character_id, number)) or True
+        task._verify_planned_selection_markers = lambda *_args: True
+        task._selection_records_all_pages = lambda: (_ for _ in ()).throw(
+            AssertionError("successful local validation must not rescan all pages")
+        )
         task.log_warning = lambda *_args: None
+        task.log_info = lambda *_args: None
         task.screenshot = lambda *_args, **_kwargs: None
         plan = SimpleNamespace(executable=True, members=("a", "b", "c"))
 
         self.assertTrue(task._select_planned_team(plan, records))
-        self.assertEqual(clears, [])
         self.assertEqual(clicks, [("a", 1), ("b", 2), ("c", 3)])
+
+    def test_final_selection_validation_checks_only_three_local_markers(self):
+        records = [
+            CharacterScanRecord("a", "A", 10, 90, .9, 1, 0),
+            CharacterScanRecord("b", "B", 10, 90, .9, 2, 1),
+            CharacterScanRecord("c", "C", 10, 90, .9, 1, 2),
+        ]
+        seen = []
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task._show_character_page = lambda page: np.full((10, 10, 3), page, dtype=np.uint8)
+        task._verify_record_identity = lambda _frame, _record: True
+        task._selection_marker_present = lambda _frame, record: seen.append(record.character_id) or True
+        task.log_info = lambda *_args: None
+        plan = SimpleNamespace(members=("a", "b", "c"))
+
+        self.assertTrue(task._verify_planned_selection_markers(plan, records))
+        self.assertEqual(seen, ["a", "b", "c"])
 
     def test_select_planned_team_stops_when_number_state_is_unknown(self):
         records = [
@@ -1011,8 +1054,8 @@ class TestAutoAbyssTask(unittest.TestCase):
         screenshots = []
         task = AutoAbyssTask.__new__(AutoAbyssTask)
         task._click_character_record = lambda record, number: clicks.append((record.character_id, number)) or False
-        task._selection_records_all_pages = lambda: []
-        task._clear_all_selection = lambda: clears.append(True)
+        task._selection_marker_locations_all_pages = lambda: []
+        task._clear_all_selection = lambda _records=None: clears.append(True)
         task.log_warning = lambda *_args: None
         task.screenshot = lambda name, **_kwargs: screenshots.append(name)
         plan = SimpleNamespace(executable=True, members=("a", "b", "c"))
@@ -1039,7 +1082,7 @@ class TestAutoAbyssTask(unittest.TestCase):
         task.info_set = lambda key, value: info.__setitem__(key, value)
         task._set_status = lambda stage, detail: statuses.append((stage, detail))
         task.log_info = lambda *_args, **_kwargs: None
-        task._clear_all_selection = lambda: actions.append("clear")
+        task._clear_all_selection = lambda _records=None: actions.append("clear")
         task._select_planned_team = lambda plan, source: actions.append(("select", plan.members, source))
         task._finish_team_formation = lambda: actions.append("finish")
 
@@ -1068,7 +1111,7 @@ class TestAutoAbyssTask(unittest.TestCase):
         task.info_set = lambda *_args: None
         task._set_status = lambda *_args: None
         task.log_info = lambda *_args, **_kwargs: None
-        task._clear_all_selection = lambda: None
+        task._clear_all_selection = lambda _records=None: None
         task._select_planned_team = lambda *_args: None
         task._finish_team_formation = lambda: None
 
@@ -1204,7 +1247,7 @@ class TestAutoAbyssTask(unittest.TestCase):
         task.info_set = lambda *_args: None
         task._set_status = lambda stage, detail: statuses.append((stage, detail))
         task.log_info = lambda *_args, **_kwargs: None
-        task._clear_all_selection = lambda: actions.append("clear")
+        task._clear_all_selection = lambda _records=None: actions.append("clear")
         task._select_planned_team = lambda *_args: actions.append("select")
         task._finish_team_formation = lambda: actions.append("finish")
 
