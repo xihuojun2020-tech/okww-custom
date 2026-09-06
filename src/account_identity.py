@@ -35,6 +35,10 @@ class AccountIdentity:
 
 def normalize_identity(value: Any) -> str:
     text = unicodedata.normalize("NFKC", str("" if value is None else value))
+    # OCR occasionally drops one or more mask asterisks (e.g. 166***3179).
+    # Canonicalize any 3+ asterisk phone mask before matching so a noisy
+    # login-list read still resolves to the configured masked phone.
+    text = re.sub(r"(?<=\d)\*{3,}(?=\d)", "****", text)
     return " ".join(text.split()).casefold()
 
 

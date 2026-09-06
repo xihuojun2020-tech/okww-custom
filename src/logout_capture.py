@@ -132,13 +132,38 @@ class AccountSwitchCaptureSession:
 
     def _refresh_trusted_pids(self):
         for hwnd in self._window_handles():
-            pid = int(self.window_pid(hwnd) or 0)
+            try:
+                pid = int(self.window_pid(hwnd) or 0)
+            except Exception:
+                pid = 0
             if pid:
                 self.trusted_pids.add(pid)
         return self.trusted_pids
 
+    def _refresh_window_snapshot(self):
+        """Refresh handles when the loginer replaced its top-level window.
+
+        The PC login flow can swap the game surface for an independent login
+        dialog without changing the capture session object.  HwndWindow polls
+        this transition in its own thread, but BitBlt may sample in the small
+        interval before that poll.  Refresh only on an untrusted foreground so
+        the normal capture path keeps its low overhead.
+        """
+        refresh = getattr(self.hwnd_window, "do_update_window_size", None)
+        if not callable(refresh):
+            return False
+        try:
+            refresh()
+            self._refresh_trusted_pids()
+            return True
+        except Exception:
+            return False
+
     def pid_for(self, hwnd):
-        return int(self.window_pid(int(hwnd or 0)) or 0)
+        try:
+            return int(self.window_pid(int(hwnd or 0)) or 0)
+        except Exception:
+            return 0
 
     def is_trusted_hwnd(self, hwnd):
         pid = self.pid_for(hwnd)
@@ -160,8 +185,14 @@ class AccountSwitchCaptureSession:
             return None
         foreground = int(self.foreground_hwnd() or 0)
         if not foreground or not self.is_trusted_hwnd(foreground):
-            self.last_reason = "foreground-process-mismatch"
-            return None
+            # A newly-created login dialog may not be present in HwndWindow's
+            # handle snapshot yet.  One bounded refresh closes that race while
+            # retaining the same-process PID allow-list safety check.
+            self._refresh_window_snapshot()
+            foreground = int(self.foreground_hwnd() or 0)
+            if not foreground or not self.is_trusted_hwnd(foreground):
+                self.last_reason = "foreground-process-mismatch"
+                return None
         try:
             frame, monitor_rect = self.capture.get_frame()
         except Exception as error:
@@ -186,8 +217,11 @@ class AccountSwitchCaptureSession:
             origin = monitor_rect
         foreground = int(self.foreground_hwnd() or 0)
         if not foreground or not self.is_trusted_hwnd(foreground):
-            self.last_reason = "foreground-process-changed-after-capture"
-            return None
+            self._refresh_window_snapshot()
+            foreground = int(self.foreground_hwnd() or 0)
+            if not foreground or not self.is_trusted_hwnd(foreground):
+                self.last_reason = "foreground-process-changed-after-capture"
+                return None
         if not origin:
             self.last_reason = "missing-capture-origin"
             return None

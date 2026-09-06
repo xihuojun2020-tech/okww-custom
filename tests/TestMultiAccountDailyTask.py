@@ -2107,6 +2107,10 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         task = _fake_login_task(main_texts=['199****0014', 'UTEST1002A', '登入'])
         self.assertTrue(MultiAccountDailyTask._account_list_expanded(task))
 
+    def test_account_list_expansion_accepts_noisy_masked_phone_ocr(self):
+        task = _fake_login_task(main_texts=['199***0014', 'UTEST1002A', '登入'])
+        self.assertTrue(MultiAccountDailyTask._account_list_expanded(task))
+
     def test_account_list_expanded_false_with_single_entry(self):
         task = _fake_login_task(main_texts=['199****0014', '登入'])
         self.assertFalse(MultiAccountDailyTask._account_list_expanded(task))

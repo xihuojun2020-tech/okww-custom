@@ -164,6 +164,24 @@ class TestWin32LoginInput(unittest.TestCase):
         self.assertEqual(result.hit_hwnd, 20)
         self.assertEqual(api.foreground, 20)
 
+    def test_click_accepts_combo_list_row_outside_selector_rect(self):
+        api = _ready_api()
+        api.add_window(
+            20,
+            pid=99,
+            rect=(100, 720, 500, 900),
+            root=20,
+            class_name="ComboLBox",
+        )
+        api.hit = 20
+        api.foreground = 20
+
+        result = send_input_click(10, 99, (250, 750), api=api)
+
+        self.assertTrue(result.delivered)
+        self.assertEqual(result.reason, "delivered")
+        self.assertEqual(result.hit_hwnd, 20)
+
     def test_click_rejects_target_pid_mismatch(self):
         api = _ready_api()
 

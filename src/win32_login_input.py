@@ -340,15 +340,6 @@ def send_input_click(
     if reason:
         return _delivery(False, reason, target_hwnd, front.foreground_hwnd, 0,
                          expected_pid, point)
-    try:
-        target_rect = api.window_rect(target_hwnd)
-    except Exception:
-        return _delivery(False, "target-rect-unavailable", target_hwnd, front.foreground_hwnd, 0,
-                         expected_pid, point)
-    if not _contains(target_rect, point):
-        return _delivery(False, "point-outside-target", target_hwnd, front.foreground_hwnd, 0,
-                         expected_pid, point)
-
     hit_hwnd = int(api.window_from_point(point) or 0)
     if not hit_hwnd or not api.is_window(hit_hwnd):
         return _delivery(False, "point-no-window", target_hwnd, front.foreground_hwnd, hit_hwnd,
@@ -357,9 +348,23 @@ def send_input_click(
     if hit_pid != expected_pid:
         return _delivery(False, "point-pid-mismatch", target_hwnd, front.foreground_hwnd, hit_hwnd,
                          expected_pid, point)
-    if (not _same_window_tree(api, target_hwnd, hit_hwnd)
-            and api.window_class(hit_hwnd) != "ComboLBox"):
+    hit_is_combo_popup = api.window_class(hit_hwnd) == "ComboLBox"
+    if not _same_window_tree(api, target_hwnd, hit_hwnd) and not hit_is_combo_popup:
         return _delivery(False, "point-target-mismatch", target_hwnd, front.foreground_hwnd, hit_hwnd,
+                         expected_pid, point)
+
+    # A native combo dropdown is a top-level popup.  Its list rows can be
+    # outside the selector/#32770 rectangle even though WindowFromPoint has
+    # already proved that the point is in the same-process ComboLBox.  Check
+    # the parent bounds only for ordinary child controls; otherwise the old
+    # ordering rejected every valid row as ``point-outside-target``.
+    try:
+        target_rect = api.window_rect(target_hwnd)
+    except Exception:
+        return _delivery(False, "target-rect-unavailable", target_hwnd, front.foreground_hwnd, hit_hwnd,
+                         expected_pid, point)
+    if not _contains(target_rect, point) and not hit_is_combo_popup:
+        return _delivery(False, "point-outside-target", target_hwnd, front.foreground_hwnd, hit_hwnd,
                          expected_pid, point)
 
     try:

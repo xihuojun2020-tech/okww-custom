@@ -76,6 +76,13 @@ class TestAccountIdentity(unittest.TestCase):
         self.assertIsNone(match_profile_identity("FC-A1", profiles))
         self.assertEqual("A1", match_profile_identity("FC-A1", profiles, strict_feature_code=True))
 
+    def test_masked_phone_ocr_with_dropped_asterisk_still_matches(self):
+        self.assertEqual("199****0005", normalize_identity("199***0005"))
+        self.assertEqual(
+            "【A1-small-19910000005】",
+            resolve_profile_identity("199***0005", self.profiles),
+        )
+
     def test_fullwidth_login_identity_matches_ascii_profile(self):
         profiles = {"A3": {"alternate_login_name": "UTEST0003A"}}
 

@@ -18,6 +18,20 @@ class CompositeHwndWindow(FakeHwndWindow):
     top_hwnd = 88
     hwnds = [(88,), (77,)]
 
+
+class RefreshingHwndWindow(FakeHwndWindow):
+    """Simulate the login dialog receiving a new top-level HWND/PID."""
+    top_hwnd = 77
+    hwnds = [(77,)]
+
+    def __init__(self):
+        self.refreshed = 0
+
+    def do_update_window_size(self):
+        self.refreshed += 1
+        self.top_hwnd = 99
+        self.hwnds = [(99,), (77,)]
+
 class FakeCapture:
     def __init__(self, hwnd_window, frame, origin=(-1920, 0)):
         self.hwnd_window = hwnd_window
@@ -95,6 +109,24 @@ class TestLogoutCapture(unittest.TestCase):
 
         self.assertIsNone(session.capture_main())
         self.assertEqual("foreground-process-mismatch", session.last_reason)
+
+    def test_untrusted_foreground_refreshes_replaced_login_handle_once(self):
+        frame = np.zeros((100, 200, 3), dtype=np.uint8)
+        frame[20:40, 30:60] = 255
+        window = RefreshingHwndWindow()
+        session = LogoutCaptureSession(
+            window, threading.Event(),
+            capture_factory=lambda hwnd: FakeCapture(hwnd, frame),
+            foreground_hwnd=lambda: 99,
+            window_pid=lambda hwnd: {77: 900, 99: 901}.get(hwnd, 0),
+        )
+
+        sample = session.capture_main()
+
+        self.assertIsNotNone(sample)
+        self.assertEqual(99, sample.hwnd)
+        self.assertEqual(1, window.refreshed)
+        self.assertIn(901, session.trusted_pids)
 
     def test_trusted_composite_login_process_is_accepted(self):
         frame = np.zeros((100, 200, 3), dtype=np.uint8)
