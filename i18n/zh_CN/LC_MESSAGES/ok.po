@@ -1620,3 +1620,13 @@ msgstr "当前序列账号"
 
 msgid "当前序列包含的账号；请在序列管理页面修改"
 msgstr "当前序列包含的账号；请在序列管理页面修改"
+
+msgid ""
+"Your computer's local time when the monthly card will popup, hour in (0-23),"
+" 0 means midnight"
+msgstr "月卡弹出时的电脑本机时间，小时范围 0–23，0 表示午夜"
+
+msgid ""
+"Saved. Character code will apply after the next team rebuild or task "
+"restart."
+msgstr "已保存。角色代码将在下次重建队伍或重启任务后生效。"

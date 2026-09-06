@@ -1269,14 +1269,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _config_backup_service(self):
         from src.config_backup import ConfigBackupService
-        backup_dir = os.path.join(os.getcwd(), 'configs_backup')
-        try:
-            from ok import og
-            value = og.executor.global_config.get_config('Config Backup') or {}
-            backup_dir = value.get('Config Backup Directory') or backup_dir
-        except Exception:
-            pass
-        return ConfigBackupService(get_relative_path('configs'), backup_dir)
+        from src.storage import get_config_backup_dir
+        return ConfigBackupService(get_relative_path('configs'), get_config_backup_dir())
 
     def verify_backup(self, *args):
         """Verify a user-selected complete backup without changing config."""
@@ -1355,7 +1349,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             from PySide6.QtWidgets import QFileDialog
             from ok import og
             parent = getattr(og, 'main_window', None)
-            return QFileDialog.getExistingDirectory(parent, '选择配置备份目录') or None
+            return QFileDialog.getExistingDirectory(
+                parent, '选择配置备份目录', str(self._config_backup_service().backup_dir)) or None
         except Exception:
             return None
 

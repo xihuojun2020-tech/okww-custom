@@ -9,6 +9,41 @@
 未设置时各功能使用各自的默认位置（程序目录）。
 """
 import os
+from pathlib import Path
+
+
+def resolve_config_backup_dir(root, *, warehouse_root='', legacy_backup_dir='') -> Path:
+    """Resolve backup settings without reading configuration or creating files."""
+    root = Path(root).resolve()
+    warehouse_root = str(warehouse_root or '').strip()
+    legacy_backup_dir = str(legacy_backup_dir or '').strip()
+    candidate = (Path(warehouse_root) / 'ok仓库' / '配置备份' if warehouse_root else
+                 Path(legacy_backup_dir) if legacy_backup_dir else root / 'configs_backup')
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    candidate = candidate.resolve()
+    config = root / 'configs'
+    if candidate == config or config in candidate.parents:
+        return root / 'configs_backup'
+    return candidate
+
+
+def get_config_backup_dir(root=None) -> Path:
+    """Shared settings adapter for startup, maintenance and task restore UI."""
+    values = {}
+    try:
+        from ok import og
+        global_config = og.executor.global_config
+    except AttributeError:
+        global_config = None
+    for section, key in (('数据仓库文件夹', '数据仓库文件夹'), ('Config Backup', 'Config Backup Directory')):
+        try:
+            values[key] = (global_config.get_config(section) or {}).get(key, '')
+        except (AttributeError, KeyError):
+            values[key] = ''
+    return resolve_config_backup_dir(
+        root or os.getcwd(), warehouse_root=values['数据仓库文件夹'],
+        legacy_backup_dir=values['Config Backup Directory'])
 
 
 def get_ok_warehouse():

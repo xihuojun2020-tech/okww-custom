@@ -148,7 +148,9 @@ def _load_custom_char_class_from_file(char_cls, path):
         raise RuntimeError(f"Cannot load custom char module: {path}")
 
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    # Source is user-editable and may change twice within one second at the
+    # same size. Python's timestamp-based .pyc validation cannot detect that.
+    exec(compile(path.read_bytes(), str(path), 'exec'), module.__dict__)
     custom_cls = getattr(module, char_cls.__name__, None)
     if custom_cls is None:
         raise RuntimeError(f"Custom code must define class {char_cls.__name__}")

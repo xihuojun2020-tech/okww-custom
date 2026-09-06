@@ -40,12 +40,26 @@ processed_feature = False
 WIDE_MODE_UI_SCALE = 0.75
 
 
+def normalize_monthly_hour(value):
+    if type(value) is not int:
+        raise ValueError('Monthly Card Time 必须是整数 0–23（0 表示午夜）')
+    if value == 24:
+        return 0
+    if not 0 <= value <= 23:
+        raise ValueError('Monthly Card Time 必须在 0–23 范围内（0 表示午夜）')
+    return value
+
+
 class BaseWWTask(BaseTask):
     map_zoomed = False
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.monthly_card_config = self.get_global_config('Monthly Card Config')
+        if self.monthly_card_config.get('Monthly Card Time') == 24:
+            # Persist the legacy midnight value before the bounded GUI editor
+            # can clamp 24 to 23 and change the user's intended schedule.
+            self.monthly_card_config['Monthly Card Time'] = 0
         self.char_config = self.get_global_config('Character Config')
         self.key_config = self.get_global_config('Game Hotkey')  # 游戏热键配置
         self.next_monthly_card_start = 0
@@ -131,13 +145,11 @@ class BaseWWTask(BaseTask):
     def set_check_monthly_card(self, next_day=False):
         if self.monthly_card_config.get('Check Monthly Card'):
             now = datetime.now()
-            hour = self.monthly_card_config.get('Monthly Card Time')
-            # Calculate the next 4 o'clock in the morning
-            next_four_am = now.replace(hour=hour, minute=0, second=0, microsecond=0)
-            if now >= next_four_am or next_day:
-                next_four_am += timedelta(days=1)
-            next_monthly_card_start_date_time = next_four_am - timedelta(seconds=30)
-            # Subtract 1 minute from the next 4 o'clock in the morning
+            hour = normalize_monthly_hour(self.monthly_card_config.get('Monthly Card Time'))
+            next_popup = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+            if now >= next_popup or next_day:
+                next_popup += timedelta(days=1)
+            next_monthly_card_start_date_time = next_popup - timedelta(seconds=30)
             self.next_monthly_card_start = next_monthly_card_start_date_time.timestamp()
             logger.info('set next monthly card start time to {}'.format(next_monthly_card_start_date_time))
         else:

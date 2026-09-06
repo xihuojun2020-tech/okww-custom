@@ -6,11 +6,12 @@ import copy
 import hashlib
 import json
 import os
+import re
 import shutil
 import uuid
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 
 from .config_integrity import _atomic_write_json_unchecked, atomic_write_json, canonical_json
@@ -45,9 +46,10 @@ class AccountPublishService:
     """Write a complete bundle then atomically advance the active pointer."""
 
     def __init__(self, root: os.PathLike | str, *, program_version: str = "development",
-                 fail_after_bundle_write: bool = False):
+                 fail_after_bundle_write: bool = False, config_dir=None):
         base = Path(root).resolve()
-        self.config_dir = base / "configs" if base.name.casefold() != "configs" else base
+        self.config_dir = (Path(config_dir).resolve() if config_dir is not None else
+                           base / "configs" if base.name.casefold() != "configs" else base)
         self.root = self.config_dir / "published"
         self.bundles_dir = self.root / "bundles"
         self.active_path = self.root / "active.json"
@@ -116,6 +118,10 @@ class AccountPublishService:
         if manifest.get("revision") != revision:
             raise ValueError("bundle revision mismatch")
         for relative, expected in manifest.get("files", {}).items():
+            parts = PurePosixPath(relative).parts
+            if (not parts or PurePosixPath(relative).is_absolute() or '..' in parts or
+                    '\\' in relative or ':' in relative):
+                raise ValueError("unsafe bundle file path")
             path = bundle_dir / relative
             if not path.is_file() or _file_digest(path) != expected.get("sha256"):
                 raise ValueError(f"bundle file mismatch: {relative}")
@@ -268,6 +274,8 @@ class AccountPublishService:
             raise FileNotFoundError("active account bundle is missing")
         pointer = json.loads(self.active_path.read_text(encoding="utf-8"))
         revision = str(pointer.get("revision") or "")
+        if not re.fullmatch(r'[0-9a-f]{64}', revision):
+            raise ValueError("invalid active bundle revision")
         bundle_dir = self.bundles_dir / revision
         manifest_path = bundle_dir / "manifest.json"
         manifest = self._validate_bundle_dir(bundle_dir, revision)

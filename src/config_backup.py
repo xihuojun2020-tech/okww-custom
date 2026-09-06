@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import shutil
 import tempfile
@@ -17,11 +18,12 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Callable, Iterable, Optional
 
 
 MANIFEST_NAME = "manifest.json"
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -62,12 +64,14 @@ class ConfigBackupService:
     def __init__(self, config_dir, backup_dir, *, app_version="", daily_limit=30,
                  transaction_limit=20, total_limit_bytes=2 * 1024 ** 3,
                  harden_permissions=True):
-        self.config_dir = Path(config_dir)
-        self.backup_dir = Path(backup_dir)
+        from .secure_backup import validate_restore_path
+        from .account_change_lock import get_account_change_lock
+        self.backup_dir, self.config_dir = validate_restore_path(backup_dir, config_dir)
+        self._lock = get_account_change_lock(self.config_dir)
         self.app_version = app_version
-        self.daily_limit = int(daily_limit)
-        self.transaction_limit = int(transaction_limit)
-        self.total_limit_bytes = int(total_limit_bytes)
+        self.daily_limit = max(0, int(daily_limit))
+        self.transaction_limit = max(0, int(transaction_limit))
+        self.total_limit_bytes = max(0, int(total_limit_bytes))
         self.harden_permissions = bool(harden_permissions)
         self._permissions_hardened = False
         # A process can terminate between the two directory renames during
@@ -108,12 +112,26 @@ class ConfigBackupService:
         path = Path(snapshot_path)
         try:
             manifest = self._read_manifest(path)
+            if not isinstance(manifest, dict) or not isinstance(manifest.get('files'), list):
+                raise ValueError('invalid snapshot manifest shape')
             if manifest.get("complete") is not True:
                 return VerificationResult(False, error="snapshot is not complete")
-            expected = {str(item["path"]): item for item in manifest.get("files", [])}
+            expected = {}
+            canonical_names = set()
+            for item in manifest['files']:
+                if not isinstance(item, dict) or not isinstance(item.get('path'), str):
+                    raise ValueError('invalid snapshot file entry')
+                name = item['path']
+                parts = PurePosixPath(name).parts
+                if (not parts or PurePosixPath(name).is_absolute() or '..' in parts or
+                        '\\' in name or ':' in name or PurePosixPath(name).as_posix() != name or
+                        name.casefold() in canonical_names or name == MANIFEST_NAME):
+                    raise ValueError('unsafe or duplicate snapshot file path')
+                canonical_names.add(name.casefold())
+                expected[name] = item
             root_manifest = path / MANIFEST_NAME
-            actual = {p.relative_to(path).as_posix() for p in path.rglob("*")
-                      if p.is_file() and p != root_manifest}
+            actual = {p.relative_to(path).as_posix() for p in self._tree_files(path)
+                      if p != root_manifest}
             missing = sorted(set(expected) - actual)
             extra = sorted(actual - set(expected))
             differences = []
@@ -141,28 +159,21 @@ class ConfigBackupService:
         if not master_path.is_file():
             # Backups created by releases before the master-config feature
             # remain restorable, but the UI makes that absence explicit.
+            if (Path(snapshot_path) / 'published' / 'active.json').exists():
+                summary.ok = False
+                summary.error = 'active graph exists without master configuration'
             return summary
         summary.master_config_present = True
         try:
-            from .config_integrity import ConfigIntegrityService, ConfigPaths
-
             tree = Path(snapshot_path)
-            paths = ConfigPaths(
-                root=tree,
-                config_dir=tree,
-                master=tree / "account_master_config.json",
-                working=tree / "daily_profiles.json",
-                runtime=tree / "account_runtime_state.json",
-                incidents=tree.parent / ".backup-preflight-incidents",
-                multi_account_task=tree / "MultiAccountDailyTask.json",
-            )
-            integrity_service = ConfigIntegrityService(paths=paths)
+            integrity_service = self._tree_integrity(tree)
             integrity = integrity_service.check(record_incident=False, resolve_incidents=False)
             if not integrity.ok or not integrity.master:
                 summary.ok = False
                 summary.error = "invalid account configuration in snapshot: " + "; ".join(
                     integrity.errors or [integrity_service.describe(integrity)])
                 return summary
+            self._validate_active_tree(tree, integrity.master)
             profiles = integrity.master.get("profiles", {})
             sequences = integrity.master.get("sequences", {})
             summary.account_count = len(profiles)
@@ -179,190 +190,239 @@ class ConfigBackupService:
     summarize_restore = preflight_restore
 
     def restore(self, snapshot_path, *, confirmed=False, create_rollback=True):
-        """Restore a verified snapshot by swapping complete directories.
-
-        The previous tree is retained as a transaction snapshot before the
-        swap.  If staging or the swap fails, the original directory is put
-        back and the exception is re-raised for the caller to enter safe mode.
-        """
+        """Copy across volumes, then commit by renaming only on the target volume."""
         if not confirmed:
             raise PermissionError("restore requires explicit confirmation")
-        summary = self.preflight_restore(snapshot_path)
-        if not summary.ok:
-            raise ValueError(summary.error or "snapshot verification failed")
-        from .secure_backup import validate_restore_path
-        validate_restore_path(snapshot_path, self.config_dir, self.backup_dir.parent)
-        if create_rollback:
-            self.create_transaction_snapshot()
-        source = Path(snapshot_path)
-        staging = Path(tempfile.mkdtemp(prefix=".restore-", dir=str(self.backup_dir)))
-        old = self.config_dir.with_name(self.config_dir.name + f".rollback-{uuid.uuid4().hex}")
-        journal = {
-            "version": 1,
-            "phase": "prepared",
-            "config_dir": str(self.config_dir),
-            "staging": str(staging),
-            "old": str(old),
-            "source": str(source),
-        }
-        try:
-            self._copy_tree(source, staging, exclude_manifest=True)
-            # Re-verify the staged bytes against the source manifest before
-            # touching the live directory.  This closes the check/copy race
-            # and catches a short write or source mutation during staging.
-            shutil.copy2(source / MANIFEST_NAME, staging / MANIFEST_NAME)
-            staged_verification = self.verify_snapshot(staging)
-            if not staged_verification.ok:
-                raise RuntimeError(staged_verification.error or "staged restore verification failed")
-            (staging / MANIFEST_NAME).unlink()
-            journal["phase"] = "verified"
-            self._write_restore_journal(journal)
-            if self.config_dir.exists():
-                os.replace(str(self.config_dir), str(old))
-            os.replace(str(staging), str(self.config_dir))
-            journal["phase"] = "activated"
-            self._write_restore_journal(journal)
-            # The preflight above already verified the account integrity
-            # graph.  Re-run it at the final path after replacement so a
-            # failed or raced restore rolls back before the old tree is lost.
-            if summary.master_config_present and not self._account_tree_valid(self.config_dir):
-                raise RuntimeError("restored account configuration failed final integrity check")
-            shutil.rmtree(old, ignore_errors=True)
-            journal["phase"] = "mirrored"
-            self._write_restore_journal(journal)
-            self._clear_restore_journal()
-        except Exception:
-            # Roll back synchronously whenever the previous tree exists.  The
-            # journal remains only if rollback itself cannot be completed,
-            # allowing the next startup to recover it.
+        from .account_config_bundle import AccountConfigBundleService
+        from .secure_backup import validate_restore_path, harden_directory_permissions
+        with self._lock:
+            AccountConfigBundleService.require_idle_executor()
+            self.recover_pending_restore()
+            source, _ = validate_restore_path(
+                snapshot_path, self.config_dir, source_root=self.backup_dir,
+                target_dir=self.config_dir)
+            # Retain this exact manifest, closing a source+manifest copy race.
+            manifest_bytes = (source / MANIFEST_NAME).read_bytes()
+            summary = self.preflight_restore(source)
+            if not summary.ok:
+                raise ValueError(summary.error or "snapshot verification failed")
+            self.config_dir.parent.mkdir(parents=True, exist_ok=True)
+            staging = Path(tempfile.mkdtemp(prefix=".restore-", dir=self.config_dir.parent))
+            old = self.config_dir.with_name(self.config_dir.name + f".rollback-{uuid.uuid4().hex}")
+            journal = {"version": 2, "phase": "prepared", "config_dir": str(self.config_dir),
+                       "staging": str(staging), "old": str(old), "source": str(source),
+                       "had_config": self.config_dir.exists()}
+            committed = False
             try:
-                if old.exists():
-                    if self.config_dir.exists():
-                        if staging.exists():
-                            shutil.rmtree(staging)
-                        os.replace(str(self.config_dir), str(staging))
-                    os.replace(str(old), str(self.config_dir))
-                    shutil.rmtree(staging, ignore_errors=True)
-                    self._clear_restore_journal()
-                elif self.config_dir.exists():
-                    shutil.rmtree(staging, ignore_errors=True)
-                    self._clear_restore_journal()
+                if self.harden_permissions:
+                    harden_directory_permissions(staging)
+                self._write_restore_journal(journal)
+                # A pending journal protects both the source and the rollback
+                # snapshot from retention, including another cleanup instance.
+                if create_rollback and self.config_dir.exists():
+                    self.create_transaction_snapshot()
+                self._copy_tree(source, staging, exclude_manifest=True)
+                (staging / MANIFEST_NAME).write_bytes(manifest_bytes)
+                checked = self.preflight_restore(staging)
+                if not checked.ok:
+                    raise RuntimeError(checked.error or "staged restore verification failed")
+                (staging / MANIFEST_NAME).unlink()
+                journal['phase'] = 'verified'
+                self._write_restore_journal(journal)
+                if self.config_dir.exists():
+                    os.replace(self.config_dir, old)
+                os.replace(staging, self.config_dir)
+                self._recover_account_tree()
+                if not self._account_tree_valid(self.config_dir):
+                    raise RuntimeError("restored account configuration failed final integrity check")
+                # Only this durable marker commits the directory transaction.
+                journal['phase'] = 'activated'
+                self._write_restore_journal(journal)
+                committed = True
             except Exception:
-                pass
-            raise
-        return summary
+                try:
+                    self.recover_pending_restore()
+                except Exception as recovery_error:
+                    logger.error('restore rollback pending: %s', recovery_error)
+                if not self.restore_journal_path.exists() and staging.exists():
+                    shutil.rmtree(staging)
+                raise
+            finally:
+                if committed:
+                    try:
+                        self.recover_pending_restore()
+                    except Exception as maintenance_error:
+                        # Configuration committed successfully; keep the journal
+                        # and old directory for the next cleanup/startup retry.
+                        logger.warning('restore committed; cleanup pending: %s', maintenance_error)
+            return summary
 
     def rollback(self, snapshot_path, *, confirmed=False):
         return self.restore(snapshot_path, confirmed=confirmed, create_rollback=False)
 
     @property
     def restore_journal_path(self):
-        return self.backup_dir / ".restore-journal.json"
+        # Outside configs, so startup can discover it even after configs was
+        # renamed and the warehouse setting is temporarily unavailable.
+        return self.config_dir.parent / f'.{self.config_dir.name}-restore' / 'journal.json'
+
+    def _pending_restore_journal(self):
+        if self.restore_journal_path.exists():
+            return self.restore_journal_path
+        legacy = self.backup_dir / '.restore-journal.json'
+        return legacy if legacy.exists() else None
 
     def recover_pending_restore(self):
-        """Complete or undo an interrupted directory swap, if one exists."""
-        journal_path = self.restore_journal_path
-        if not journal_path.is_file():
-            return False
-        try:
-            journal = json.loads(journal_path.read_text(encoding="utf-8"))
-            config = Path(journal["config_dir"])
-            staging = Path(journal["staging"])
-            old = Path(journal["old"])
-            expected_config = self.config_dir.resolve()
-            expected_backup = self.backup_dir.resolve()
-            if config.resolve() != expected_config:
-                raise RuntimeError("restore journal targets another config directory")
-            if staging.resolve().parent != expected_backup or not staging.name.startswith(".restore-"):
-                raise RuntimeError("restore journal has an unsafe staging path")
-            if old.resolve().parent != expected_config.parent or not old.name.startswith(
-                    expected_config.name + ".rollback-"):
-                raise RuntimeError("restore journal has an unsafe rollback path")
-            phase = journal.get("phase")
-            if phase in {"prepared", "verified"}:
-                # No directory rename was committed.  Keep the live config
-                # and discard only the staged copy.
-                if not config.exists() and old.exists():
-                    os.replace(str(old), str(config))
-                else:
-                    shutil.rmtree(staging, ignore_errors=True)
-            elif phase == "old_moved":
-                if not config.exists() and staging.exists():
-                    os.replace(str(staging), str(config))
-                elif not config.exists() and old.exists():
-                    os.replace(str(old), str(config))
-                if config.exists() and old.exists() and not self._account_tree_valid(config):
-                    os.replace(str(config), str(staging))
-                    os.replace(str(old), str(config))
-                if config.exists():
-                    shutil.rmtree(old, ignore_errors=True)
-                    shutil.rmtree(staging, ignore_errors=True)
-            elif phase in {"new_moved", "activated", "mirrored"}:
-                if not config.exists() and old.exists():
-                    os.replace(str(old), str(config))
-                elif config.exists() and old.exists() and not self._account_tree_valid(config):
+        """Roll back uncommitted swaps; finish cleanup after a durable commit.
+
+        Invalid journals raise and retain evidence instead of allowing a new
+        restore to overwrite the only recovery record.
+        """
+        from .secure_backup import validate_restore_path
+        with self._lock:
+            journal_path = self._pending_restore_journal()
+            if journal_path is None:
+                return False
+            validate_restore_path(journal_path, self.config_dir)
+            journal = json.loads(journal_path.read_text(encoding='utf-8'))
+            config = Path(journal['config_dir'])
+            staging = Path(journal['staging'])
+            old = Path(journal['old'])
+            if config != self.config_dir:
+                raise RuntimeError('restore journal targets another config directory')
+            allowed_parent = self.backup_dir if journal.get('version') == 1 else config.parent
+            validate_restore_path(staging, config)
+            validate_restore_path(old, config)
+            if staging.parent != allowed_parent or not staging.name.startswith('.restore-'):
+                raise RuntimeError('restore journal has an unsafe staging path')
+            if old.parent != config.parent or not old.name.startswith(config.name + '.rollback-'):
+                raise RuntimeError('restore journal has an unsafe rollback path')
+            phase = journal.get('phase')
+            if phase not in {'prepared', 'verified', 'old_moved', 'new_moved', 'activated', 'mirrored'}:
+                raise RuntimeError('unknown restore journal phase')
+            committed = phase in {'new_moved', 'activated', 'mirrored'}
+            if committed and config.exists():
+                if not self._account_tree_valid(config):
+                    if not old.exists():
+                        raise RuntimeError('committed restore is invalid and rollback directory is missing')
+                    committed = False
+            else:
+                committed = False
+            if not committed:
+                if old.exists():
                     if staging.exists():
                         shutil.rmtree(staging)
-                    os.replace(str(config), str(staging))
-                    os.replace(str(old), str(config))
-                if config.exists():
-                    shutil.rmtree(old, ignore_errors=True)
-                    shutil.rmtree(staging, ignore_errors=True)
-            else:
-                raise RuntimeError(f"unknown restore journal phase: {phase}")
-            if not config.exists():
-                raise RuntimeError("restore journal could not recover config directory")
-            self._clear_restore_journal()
+                    if config.exists():
+                        # Legacy staging might be across volumes; use a new,
+                        # target-sibling discard path and persist it first.
+                        if staging.parent != config.parent:
+                            staging = config.parent / f'.restore-{uuid.uuid4().hex}'
+                            journal.update(version=2, staging=str(staging))
+                            self._write_restore_journal(journal)
+                        os.replace(config, staging)
+                    os.replace(old, config)
+                elif not config.exists() and journal.get('had_config', True):
+                    raise RuntimeError('restore journal could not recover config directory')
+                elif not journal.get('had_config', True) and config.exists():
+                    os.replace(config, staging)
+            for path in (old, staging):
+                if path.exists():
+                    shutil.rmtree(path)
+                    if path.exists():
+                        raise OSError('restore cleanup made no progress')
+            journal_path.unlink(missing_ok=True)
+            self.restore_journal_path.unlink(missing_ok=True)
             return True
-        except Exception:
-            # Leave the journal for a later startup; silently deleting it
-            # would make an interrupted restore unrecoverable.
-            return False
 
     def _write_restore_journal(self, journal):
-        self.backup_dir.mkdir(parents=True, exist_ok=True)
-        temp = self.restore_journal_path.with_name(f".{self.restore_journal_path.name}.{uuid.uuid4().hex}.tmp")
-        temp.write_text(json.dumps(journal, ensure_ascii=False, sort_keys=True), encoding="utf-8")
-        os.replace(str(temp), str(self.restore_journal_path))
+        from .config_integrity import _atomic_write_json_unchecked
+        from .secure_backup import harden_directory_permissions, validate_restore_path
+        validate_restore_path(self.restore_journal_path, self.config_dir)
+        if self.harden_permissions:
+            harden_directory_permissions(self.restore_journal_path.parent)
+        _atomic_write_json_unchecked(self.restore_journal_path, journal)
 
-    def _clear_restore_journal(self):
-        try:
-            self.restore_journal_path.unlink()
-        except FileNotFoundError:
-            pass
+    def _recover_account_tree(self):
+        if (self.config_dir / 'account_master_config.json').exists():
+            from .account_config_bundle import AccountConfigBundleService
+            AccountConfigBundleService(
+                integrity_service=self._tree_integrity(self.config_dir)).recover_incomplete_transactions()
 
     @staticmethod
-    def _account_tree_valid(config_dir):
-        """Validate the protected account graph when the snapshot contains it."""
+    def _tree_integrity(tree):
+        from .config_integrity import ConfigIntegrityService, ConfigPaths
+        tree = Path(tree)
+        return ConfigIntegrityService(paths=ConfigPaths(
+            root=tree.parent, config_dir=tree, master=tree / 'account_master_config.json',
+            working=tree / 'daily_profiles.json', runtime=tree / 'account_runtime_state.json',
+            incidents=tree.parent / '.backup-preflight-incidents',
+            multi_account_task=tree / 'MultiAccountDailyTask.json'))
+
+    @staticmethod
+    def _validate_active_tree(tree, master):
+        from .account_publish_service import AccountPublishService
+        from .config_integrity import normalize_master
+        publisher = AccountPublishService(tree, config_dir=tree)
+        if not publisher.active_path.exists():
+            return  # Supported legacy snapshots without an active graph.
+        active = publisher.load_active()
+        published = json.loads((active.bundle_dir / 'account_master_config.json').read_text(encoding='utf-8'))
+        if normalize_master(published) != master:
+            raise ValueError('active graph differs from legacy account configuration')
+
+    @classmethod
+    def _account_tree_valid(cls, config_dir):
         config_dir = Path(config_dir)
-        if not (config_dir / "account_master_config.json").is_file():
-            return True
+        if not (config_dir / 'account_master_config.json').is_file():
+            return not (config_dir / 'published' / 'active.json').exists()
         try:
-            from .config_integrity import ConfigIntegrityService
-            return ConfigIntegrityService(config_dir).check(
-                record_incident=False, resolve_incidents=False).ok
+            integrity = cls._tree_integrity(config_dir).check(
+                record_incident=False, resolve_incidents=False)
+            if not integrity.ok:
+                return False
+            cls._validate_active_tree(config_dir, integrity.master)
+            return True
         except Exception:
             return False
 
-    def cleanup(self):
-        """Apply count and shared-capacity retention without partial deletion."""
-        daily = self._snapshots("daily")
-        transactions = self._snapshots("transaction")
-        for item in sorted(daily, key=self._snapshot_sort_key)[:-self.daily_limit or None]:
-            shutil.rmtree(item, ignore_errors=True)
-        transactions = self._snapshots("transaction")
-        for item in sorted(transactions, key=self._snapshot_sort_key)[:-self.transaction_limit or None]:
-            shutil.rmtree(item, ignore_errors=True)
-        # Capacity policy intentionally evicts daily snapshots first, then
-        # transactions, and always removes a whole snapshot directory.
-        while self._snapshot_size(self._snapshots("daily") + self._snapshots("transaction")) > self.total_limit_bytes:
-            daily = sorted(self._snapshots("daily"), key=self._snapshot_sort_key)
-            candidates = daily or sorted(self._snapshots("transaction"), key=self._snapshot_sort_key)
-            if not candidates:
-                break
-            shutil.rmtree(candidates[0], ignore_errors=True)
+    def cleanup(self, *, protected=()):
+        """Bound retention work and stop visibly when deletion makes no progress."""
+        with self._lock:
+            if self._pending_restore_journal() is not None:
+                return
+            protected = set(protected)
+            for kind, limit in (('daily', self.daily_limit), ('transaction', self.transaction_limit)):
+                snapshots = sorted(self._snapshots(kind), key=self._snapshot_sort_key)
+                excess = max(0, len(snapshots) - limit)
+                candidates = [path for path in snapshots if path not in protected]
+                for item in candidates[:excess]:
+                    if not self._delete_snapshot(item):
+                        return
+            while True:
+                daily = sorted(self._snapshots('daily'), key=self._snapshot_sort_key)
+                transactions = sorted(self._snapshots('transaction'), key=self._snapshot_sort_key)
+                if self._snapshot_size(daily + transactions) <= self.total_limit_bytes:
+                    return
+                candidates = [path for path in daily + transactions if path not in protected]
+                if not candidates or not self._delete_snapshot(candidates[0]):
+                    return
+
+    @staticmethod
+    def _delete_snapshot(path):
+        try:
+            shutil.rmtree(path)
+            if path.exists():
+                raise OSError('directory still exists')
+            return True
+        except OSError as error:
+            logger.warning('backup cleanup stopped for %s: %s', path.name, error)
+            return False
 
     def _create_snapshot(self, kind, *, now=None, copy_hook=None):
+        with self._lock:
+            return self._create_snapshot_locked(kind, now=now, copy_hook=copy_hook)
+
+    def _create_snapshot_locked(self, kind, *, now=None, copy_hook=None):
         if not self.config_dir.is_dir():
             raise FileNotFoundError(self.config_dir)
         target_root = self.daily_dir if kind == "daily" else self.transaction_dir
@@ -387,7 +447,7 @@ class ConfigBackupService:
             if not verification.ok:
                 raise RuntimeError(verification.error or "snapshot verification failed")
             os.replace(str(temp_path), str(final_path))
-            self.cleanup()
+            self.cleanup(protected=(final_path,))
             return Snapshot(final_path, kind)
         except Exception:
             shutil.rmtree(temp_path, ignore_errors=True)
@@ -418,6 +478,8 @@ class ConfigBackupService:
 
     @staticmethod
     def _read_manifest(path):
+        from .secure_backup import validate_restore_path
+        validate_restore_path(Path(path) / MANIFEST_NAME, Path(path).with_name('.manifest-path-check'))
         with (Path(path) / MANIFEST_NAME).open("r", encoding="utf-8") as stream:
             return json.load(stream)
 
@@ -430,51 +492,45 @@ class ConfigBackupService:
         return digest.hexdigest()
 
     @staticmethod
+    def _tree_files(root, *, include_dirs=False):
+        """Walk without traversing symlinks or Windows junctions."""
+        root = Path(root)
+        from .secure_backup import validate_restore_path
+        validate_restore_path(root, root.with_name(root.name + '.path-check'))
+        def on_error(error):
+            raise error
+        for directory, dirs, files in os.walk(root, followlinks=False, onerror=on_error):
+            for name in dirs + files:
+                item = Path(directory) / name
+                if item.is_symlink() or item.is_junction():
+                    raise ValueError('snapshot tree contains a symlink or junction')
+            for name in files:
+                yield Path(directory) / name
+            if include_dirs:
+                for name in dirs:
+                    yield Path(directory) / name
+
+    @staticmethod
     def _copy_tree(source, target, *, copy_hook=None, exclude_manifest=False, exclude_paths=()):
         source, target = Path(source), Path(target)
         target.mkdir(parents=True, exist_ok=True)
-        try:
-            source_resolved, target_resolved = source.resolve(), target.resolve()
-        except OSError:
-            source_resolved, target_resolved = source.absolute(), target.absolute()
-        excluded = []
-        for excluded_path in exclude_paths:
-            try:
-                excluded.append(Path(excluded_path).resolve())
-            except OSError:
-                excluded.append(Path(excluded_path).absolute())
-        for item in source.rglob("*"):
-            # A user may configure the backup root below configs/.  Do not
-            # copy the temporary snapshot into itself recursively.
-            try:
-                if item.resolve() == target_resolved or target_resolved in item.resolve().parents:
-                    continue
-            except OSError:
-                pass
-            try:
-                if any(item.resolve() == excluded_root or excluded_root in item.resolve().parents
-                       for excluded_root in excluded):
-                    continue
-            except OSError:
-                pass
+        for item in ConfigBackupService._tree_files(source, include_dirs=True):
             relative = item.relative_to(source)
             if exclude_manifest and relative.as_posix() == MANIFEST_NAME:
                 continue
             destination = target / relative
             if item.is_dir():
                 destination.mkdir(parents=True, exist_ok=True)
-            elif item.is_file():
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                if copy_hook:
-                    copy_hook(item, destination)
-                else:
-                    shutil.copy2(item, destination)
+                continue
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            (copy_hook or shutil.copy2)(item, destination)
 
     def _snapshots(self, kind):
         root = self.daily_dir if kind == "daily" else self.transaction_dir
         if not root.is_dir():
             return []
-        return [p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")
+        return [p for p in root.iterdir() if p.is_dir() and not p.is_symlink() and not p.is_junction()
+                and not p.name.startswith(".")
                 and (p / MANIFEST_NAME).is_file()]
 
     @staticmethod
@@ -482,7 +538,7 @@ class ConfigBackupService:
         try:
             return ConfigBackupService._read_manifest(path).get("created_at", "")
         except Exception:
-            return path.stat().st_mtime
+            return datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat()
 
     @staticmethod
     def _snapshot_size(snapshots: Iterable[Path]):

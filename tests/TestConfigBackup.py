@@ -1,5 +1,7 @@
 import hashlib
 import json
+import os
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -178,10 +180,214 @@ class TestConfigBackup(unittest.TestCase):
             }
             (backup_dir / ".restore-journal.json").write_text(json.dumps(journal), encoding="utf-8")
 
-            service = ConfigBackupService(config_dir, backup_dir)
-            self.assertFalse(service.recover_pending_restore())
+            with self.assertRaises(RuntimeError):
+                ConfigBackupService(config_dir, backup_dir)
             self.assertEqual((sentinel / "keep.txt").read_text(encoding="utf-8"), "keep")
-            self.assertTrue(service.restore_journal_path.exists())
+            self.assertTrue((backup_dir / '.restore-journal.json').exists())
+
+    def test_shared_backup_resolver_precedence_and_config_exclusion(self):
+        from src.storage import resolve_config_backup_dir, get_config_backup_dir
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            for values, expected in [({}, root / 'configs_backup'),
+                                     ({'legacy_backup_dir': 'old'}, root / 'old'),
+                                     ({'warehouse_root': 'warehouse', 'legacy_backup_dir': 'old'},
+                                      root / 'warehouse/ok仓库/配置备份'),
+                                     ({'legacy_backup_dir': str(root / 'configs/backups')}, root / 'configs_backup')]:
+                self.assertEqual(resolve_config_backup_dir(root, **values), expected)
+            settings = {'数据仓库文件夹': {'数据仓库文件夹': str(root / 'warehouse')},
+                        'Config Backup': {'Config Backup Directory': str(root / 'old')}}
+            with patch('ok.og.executor', SimpleNamespace(global_config=SimpleNamespace(get_config=settings.get))):
+                self.assertEqual(get_config_backup_dir(root), root / 'warehouse/ok仓库/配置备份')
+
+    def test_external_and_cross_volume_restore_roundtrip(self):
+        from tests.fixture_support import make_account_environment
+        volumes = [None]
+        if os.name == 'nt' and Path('C:/').exists() and Path('E:/').exists():
+            volumes.append('E:/AI work/ok-wuthering-waves-master/test_out')
+        for application_volume in volumes:
+            with self.subTest(volume=application_volume), tempfile.TemporaryDirectory(dir=application_volume) as temp, \
+                    tempfile.TemporaryDirectory() as external:
+                env = make_account_environment(Path(temp))
+                config = env.integrity.paths.config_dir
+                state = config / '运行状态/账号/test.json'
+                state.parent.mkdir(parents=True, exist_ok=True)
+                state.write_text('{"completed": true}', encoding='utf-8')
+                service = ConfigBackupService(config, Path(external) / 'warehouse/backups')
+                snapshot = service.create_daily_snapshot()
+                expected = {p.relative_to(config): p.read_bytes() for p in config.rglob('*') if p.is_file()}
+                state.write_text('{"completed": false}', encoding='utf-8')
+                real_replace = os.replace
+                renamed = []
+                def same_volume(source, target):
+                    if Path(target) == config or Path(source) == config:
+                        self.assertEqual(Path(source).parent, config.parent)
+                        self.assertEqual(Path(target).parent, config.parent)
+                        renamed.append((source, target))
+                    return real_replace(source, target)
+                with patch.object(config_backup.os, 'replace', side_effect=same_volume):
+                    self.assertTrue(service.restore(snapshot.path, confirmed=True).ok)
+                actual = {p.relative_to(config): p.read_bytes() for p in config.rglob('*') if p.is_file()}
+                self.assertEqual(actual, expected)
+                self.assertEqual(len(renamed), 2)
+                if application_volume:
+                    self.assertNotEqual(config.drive, service.backup_dir.drive)
+                self.assertTrue(service.verify_snapshot(snapshot.path).ok)
+
+    def test_restore_faults_preserve_old_tree_and_source(self):
+        for fault in ('copy', 'source_changes', 'first_swap', 'final_check'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as temp:
+                config = Path(temp) / 'app/configs'
+                config.mkdir(parents=True)
+                value = config / 'value'
+                value.write_text('old')
+                service = ConfigBackupService(config, Path(temp) / 'warehouse/backups', transaction_limit=0)
+                snapshot = service.create_transaction_snapshot()
+                value.write_text('current')
+                real_copy, real_replace = service._copy_tree, os.replace
+                def copy(source, target, **kwargs):
+                    if Path(source) == snapshot.path:
+                        if fault == 'copy':
+                            raise OSError('copy failed')
+                        if fault == 'source_changes':
+                            (snapshot.path / 'value').write_text('changed')
+                    return real_copy(source, target, **kwargs)
+                def replace(source, target):
+                    if fault == 'first_swap' and Path(source) == config:
+                        raise PermissionError('target in use')
+                    return real_replace(source, target)
+                with patch.object(service, '_copy_tree', side_effect=copy), \
+                        patch.object(config_backup.os, 'replace', side_effect=replace), \
+                        patch.object(service, '_account_tree_valid', return_value=fault != 'final_check'):
+                    with self.assertRaises((OSError, RuntimeError)):
+                        service.restore(snapshot.path, confirmed=True)
+                self.assertEqual(value.read_text(), 'current')
+                self.assertTrue(snapshot.path.exists())
+                self.assertFalse(service.restore_journal_path.exists())
+
+    def test_interrupted_restore_recovers_each_directory_swap_phase(self):
+        class Interrupted(BaseException):
+            pass
+        for phase in ('prepared', 'verified', 'first_swap', 'second_swap', 'activated'):
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                config = root / 'configs'
+                config.mkdir()
+                value = config / 'value'
+                value.write_text('snapshot')
+                service = ConfigBackupService(config, root / 'backups')
+                snapshot = service.create_daily_snapshot()
+                value.write_text('current')
+                real_write, real_replace = service._write_restore_journal, os.replace
+                def write(journal):
+                    real_write(journal)
+                    if journal['phase'] == phase:
+                        raise Interrupted()
+                def replace(source, target):
+                    real_replace(source, target)
+                    if (phase == 'first_swap' and Path(source) == config or
+                            phase == 'second_swap' and Path(target) == config):
+                        raise Interrupted()
+                with patch.object(service, '_write_restore_journal', side_effect=write), \
+                        patch.object(config_backup.os, 'replace', side_effect=replace):
+                    with self.assertRaises(Interrupted):
+                        service.restore(snapshot.path, confirmed=True)
+                # New constructor sees the target-side journal even when the
+                # warehouse setting cannot be read because configs is absent.
+                recovered = ConfigBackupService(config, root / 'default-backups')
+                self.assertEqual(value.read_text(), 'snapshot' if phase == 'activated' else 'current')
+                self.assertFalse(recovered.restore_journal_path.exists())
+                self.assertFalse(list(root.glob('configs.rollback-*')))
+                self.assertFalse(list(root.glob('.restore-*')))
+
+    def test_restore_blocks_running_or_paused_task(self):
+        with tempfile.TemporaryDirectory() as temp:
+            service = ConfigBackupService(Path(temp) / 'configs', Path(temp) / 'backups')
+            with patch('ok.og.executor', SimpleNamespace(current_task=object())):
+                with self.assertRaisesRegex(Exception, '运行或暂停'):
+                    service.restore(service.backup_dir / 'snapshot', confirmed=True)
+
+    def test_cleanup_failure_or_no_progress_only_attempts_once(self):
+        for failure in (PermissionError('locked'), None):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                config = root / 'configs'
+                config.mkdir()
+                (config / 'value').write_text('value')
+                service = ConfigBackupService(config, root / 'backups')
+                snapshot = service.create_daily_snapshot()
+                service.total_limit_bytes = 0
+                calls = []
+                def remove(path, *args, **kwargs):
+                    calls.append(path)
+                    if len(calls) > 1:
+                        raise AssertionError('cleanup repeated an undeletable candidate')
+                    if failure:
+                        raise failure
+                with patch.object(config_backup.shutil, 'rmtree', side_effect=remove), \
+                        self.assertLogs('src.config_backup', level='WARNING'):
+                    service.cleanup()
+                self.assertEqual(calls, [snapshot.path])
+                self.assertTrue(snapshot.path.exists())
+                service.cleanup()
+                self.assertFalse(snapshot.path.exists())
+                service.cleanup()  # Empty candidates terminate as well.
+
+    def test_cleanup_retains_all_snapshots_while_restore_is_pending(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            config = root / 'configs'
+            config.mkdir()
+            service = ConfigBackupService(config, root / 'backups')
+            source = service.create_daily_snapshot()
+            rollback = service.create_transaction_snapshot()
+            service.restore_journal_path.parent.mkdir(parents=True, exist_ok=True)
+            service.restore_journal_path.write_text('{}')
+            service.daily_limit = service.transaction_limit = service.total_limit_bytes = 0
+            service.cleanup()
+            self.assertTrue(source.path.exists())
+            self.assertTrue(rollback.path.exists())
+
+    def test_snapshot_manifest_paths_and_descendant_links_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            config = root / 'configs'
+            config.mkdir()
+            (config / 'value').write_text('value')
+            service = ConfigBackupService(config, root / 'backups')
+            snapshot = service.create_daily_snapshot()
+            manifest_path = snapshot.path / 'manifest.json'
+            manifest = json.loads(manifest_path.read_text())
+            original = manifest['files'][0].copy()
+            for name in ('../value', '/value', 'C:/value', 'nested\\value', './value'):
+                with self.subTest(name=name):
+                    manifest['files'] = [dict(original, path=name)]
+                    manifest_path.write_text(json.dumps(manifest))
+                    self.assertFalse(service.verify_snapshot(snapshot.path).ok)
+            manifest['files'] = [original, original]
+            manifest_path.write_text(json.dumps(manifest))
+            self.assertFalse(service.verify_snapshot(snapshot.path).ok)
+            manifest['files'] = [original]
+            manifest_path.write_text(json.dumps(manifest))
+            link = snapshot.path / 'outside'
+            link.symlink_to(config, target_is_directory=True)
+            try:
+                self.assertFalse(service.verify_snapshot(snapshot.path).ok)
+            finally:
+                link.unlink()
+
+    def test_preflight_rejects_damaged_active_even_when_snapshot_hashes_match(self):
+        from tests.fixture_support import make_account_environment
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            env = make_account_environment(root)
+            active = env.publisher.load_active()
+            profile = next((active.bundle_dir / 'profiles').glob('*.json'))
+            profile.write_text('{}')
+            service = ConfigBackupService(env.integrity.paths.config_dir, root / 'backups')
+            snapshot = service.create_daily_snapshot()
+            self.assertTrue(service.verify_snapshot(snapshot.path).ok)
+            self.assertFalse(service.preflight_restore(snapshot.path).ok)
 
     def test_daily_task_injects_governed_transaction_snapshot_hook(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -317,21 +317,22 @@ class CharacterCodeTab(CustomTab):
                     message = self.tr("Custom code matches built in code. Removed custom code and switched to built in.")
                     if reloaded:
                         message = self.tr("Custom code matches built in code. Removed custom code, switched to built in, and reloaded loaded characters.")
-                    show_info_bar(self.window(), message, title=self.tr("Success"))
+                    self._show_reload_result(message)
                     return
                 path = save_custom_char_code(self.current_char_cls, code, use_custom=True)
                 reloaded = self._reload_live_char_code()
                 self.clean_code = code
-                self.status_label.setText(self.tr("Saved and reloaded"))
-                message = self.tr("Custom character code saved and reloaded.")
+                self.status_label.setText(self.tr("Saved and reloaded") if reloaded else self.tr("Custom code saved"))
+                message = self.tr("Custom code saved")
                 if reloaded:
                     message = self.tr("Custom character code saved and reloaded for loaded characters.")
-                show_info_bar(self.window(), message, title=self.tr("Success"))
+                self._show_reload_result(message)
             else:
                 set_custom_char_enabled(self.current_char_cls, False)
+                self._reload_live_char_code()
                 path = None
                 self.status_label.setText(self.tr("Using built in code"))
-                show_info_bar(self.window(), self.tr("Built in character code selected."), title=self.tr("Success"))
+                self._show_reload_result(self.tr("Built in character code selected."))
             self._refresh_char_list(self.current_char_cls)
             if path:
                 self.logger.info(f"saved custom char code {self.current_char_cls.__name__}: {path}")
@@ -357,6 +358,12 @@ class CharacterCodeTab(CustomTab):
         message = self.tr("Custom code reset to built in code.")
         if reloaded:
             message = self.tr("Custom code reset to built in code and reloaded for loaded characters.")
+        self._show_reload_result(message)
+
+    def _show_reload_result(self, message):
+        if getattr(self, '_reload_deferred', False):
+            message = self.tr("Saved. Character code will apply after the next team rebuild or task restart.")
+            self.status_label.setText(message)
         show_info_bar(self.window(), message, title=self.tr("Success"))
 
     def _switch_to_builtin_mode(self, builtin_code):
@@ -419,11 +426,17 @@ class CharacterCodeTab(CustomTab):
         QDesktopServices.openUrl(QUrl(url))
 
     def _reload_live_char_code(self):
+        self._reload_deferred = False
         if self.executor is None or self.current_char_cls is None:
+            return 0
+        tasks = list(getattr(self.executor, "onetime_tasks", [])) + list(getattr(self.executor, "trigger_tasks", []))
+        if (getattr(self.executor, 'current_task', None) is not None or
+                getattr(self.executor, 'paused', False) is True or
+                any(getattr(task, '_in_action', False) is True for task in tasks)):
+            self._reload_deferred = True
             return 0
         new_cls = load_custom_char_class(self.current_char_cls)
         reloaded = 0
-        tasks = list(getattr(self.executor, "onetime_tasks", [])) + list(getattr(self.executor, "trigger_tasks", []))
         for task in tasks:
             chars = getattr(task, "chars", None)
             if not chars:
@@ -431,7 +444,8 @@ class CharacterCodeTab(CustomTab):
             for index, char in enumerate(chars):
                 if char is None:
                     continue
-                if not isinstance(char, self.current_char_cls):
+                info = char_dict.get(char.char_name)
+                if info is None or info['cls'] is not self.current_char_cls:
                     continue
                 if type(char) is new_cls:
                     continue
@@ -453,6 +467,9 @@ class CharacterCodeTab(CustomTab):
                 replacement.last_echo = char.last_echo
                 replacement.last_liberation = char.last_liberation
                 replacement.last_buff_time = char.last_buff_time
+                replacement.last_full_con_switch_time = char.last_full_con_switch_time
+                replacement.last_perform = char.last_perform
+                replacement.last_outro_time = char.last_outro_time
                 chars[index] = replacement
                 reloaded += 1
         return reloaded

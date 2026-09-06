@@ -1,4 +1,5 @@
 import tempfile
+import os
 import unittest
 
 from ok.util.config import Config
@@ -49,6 +50,24 @@ class Mortefi(BuiltinMortefi):
         set_custom_char_enabled(Mortefi, False)
 
         self.assertIs(load_custom_char_class(Mortefi), Mortefi)
+
+    def test_same_second_same_size_source_reload_does_not_use_stale_bytecode(self):
+        code = 'from src.char.BaseChar import BaseChar\nclass Mortefi(BaseChar):\n    marker = 1\n'
+        save_custom_char_code(Mortefi, code)
+        path = get_custom_char_file(Mortefi)
+        for version in (1, 2):
+            path.write_text(code.replace('marker = 1', f'marker = {version}'))
+            stamp = 1700000000 * 10**9 + version
+            os.utime(path, ns=(stamp, stamp))
+            clear_custom_char_cache()
+            self.assertEqual(load_custom_char_class(Mortefi).marker, version)
+
+    def test_invalid_external_source_falls_back_to_builtin(self):
+        save_custom_char_code(Mortefi, 'from src.char.BaseChar import BaseChar\nclass Mortefi(BaseChar): pass')
+        for code in ('invalid syntax !!!', 'class Another: pass', 'class Mortefi: pass'):
+            get_custom_char_file(Mortefi).write_text(code)
+            clear_custom_char_cache()
+            self.assertIs(load_custom_char_class(Mortefi), Mortefi)
 
     def test_remove_custom_char_code_deletes_file_and_uses_builtin_class(self):
         code = """

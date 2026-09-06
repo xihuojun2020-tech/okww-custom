@@ -1315,3 +1315,13 @@ msgstr "현재 순서의 계정"
 
 msgid "当前序列包含的账号；请在序列管理页面修改"
 msgstr "현재 순서에 포함된 계정입니다. 순서 관리 페이지에서 변경하세요"
+
+msgid ""
+"Your computer's local time when the monthly card will popup, hour in (0-23),"
+" 0 means midnight"
+msgstr "월정액 팝업이 표시되는 컴퓨터 현지 시간: 0~23시(0은 자정)"
+
+msgid ""
+"Saved. Character code will apply after the next team rebuild or task "
+"restart."
+msgstr "저장했습니다. 다음 팀 재구성 또는 작업 재시작 후 캐릭터 코드가 적용됩니다."

@@ -10,7 +10,7 @@
 
 **Spec：** [全面代码审查报告](../../reviews/2026-09-06全面代码审查.md)、[程序结构说明](../../程序结构说明.md)。基线为 `3fd591a5` / `1.31.15`，计划日期 2026-09-06。
 
-**执行进展：** 批次 A（T00–T06）已实现并离线验证；T12 操作内图复用已提前接入，规模测量待性能批次完成。具体实现调整、测试计数和验证边界见[整改执行记录](../../reviews/2026-09-06整改执行记录.md)。以下清单保留原始验收细目，完成结论以执行记录的实际证据为准。
+**执行进展：** 批次 A（T00–T06）已发布为 `1.32.00`；批次 B（T07–T11）已实现并完成重点离线验证，版本 `1.32.01`，安装器实装验收仍归 T15；T12 操作内图复用已提前接入，规模测量待性能批次完成。具体实现调整、测试计数和验证边界见[整改执行记录](../../reviews/2026-09-06整改执行记录.md)。以下清单保留原始验收细目，完成结论以执行记录的实际证据为准。
 
 ## 1. 范围、设计选择和共同约束
 
@@ -368,17 +368,17 @@ with patch('src.task.TestAccountSwitchTask.get_default_repository',
 
 **文件：** `src/storage.py`、`src/config_backup.py`、`src/secure_backup.py`、`src/task/DailyTask.py`、`custom_ok/ok/gui/MainWindow.py`、`custom_ok/ok/gui/settings/SettingTab.py`；测试 `TestConfigBackup.py`、`TestSecureBackup.py`、`TestUsabilityUI.py`。
 
-- [ ] 实现第 3.2 节的纯路径解析函数；启动备份、查看备份、手工备份、Daily 恢复全部通过它得到相同路径。
-- [ ] 恢复分别检查 source 位于选定 backup_dir、target 是 service.config_dir；继续拒绝源/目标互相包含、路径穿越、符号链接和适用的 Windows junction。不能再要求两个合法目录拥有同一个业务根目录。
-- [ ] staging 创建在目标配置目录的父目录，跨卷只做文件复制，最后的两次目录替换均在目标卷；暂存文件沿用备份权限保护。
+- [x] 实现第 3.2 节的纯路径解析函数；启动备份、查看备份、手工备份、Daily 恢复全部通过它得到相同路径。
+- [x] 恢复分别检查 source 位于选定 backup_dir、target 是 service.config_dir；继续拒绝源/目标互相包含、路径穿越、符号链接和适用的 Windows junction。不能再要求两个合法目录拥有同一个业务根目录。
+- [x] staging 创建在目标配置目录的父目录，跨卷只做文件复制，最后的两次目录替换均在目标卷；暂存文件沿用备份权限保护。
 
 ```python
 staging = Path(tempfile.mkdtemp(
     prefix='.restore-', dir=str(self.config_dir.parent)))
 ```
 
-- [ ] 保留源文件清单验证、复制后再次验证、restore journal、中断恢复与回滚副本。目录替换成功后用 T02 的恢复入口重新加载账号服务，校验 active 与旧投影一致。
-- [ ] 在 `TestConfigBackup` 加入可独立运行的外置目录用例：
+- [x] 保留源文件清单验证、复制后再次验证、restore journal、中断恢复与回滚副本。目录替换成功后用 T02 的恢复入口重新加载账号服务，校验 active 与旧投影一致。
+- [x] 在 `TestConfigBackup` 加入可独立运行的外置目录用例：
 
 ```python
 def test_restore_from_separate_warehouse(self):
@@ -395,7 +395,7 @@ def test_restore_from_separate_warehouse(self):
         self.assertEqual(path.read_text(encoding='utf-8'), '{"value": 1}')
 ```
 
-- [ ] 用受控文件替换检查断言 staging 与 target 同卷；在可用的两个测试卷上追加实盘往返。中途源文件变化、复制失败、目标被占用、替换后校验失败均保持原配置可恢复。
+- [x] 用受控文件替换检查断言 staging 与 target 同卷；在可用的两个测试卷上追加实盘往返。中途源文件变化、复制失败、目标被占用、替换后校验失败均保持原配置可恢复。
 
 **验收：** 默认目录、独立目录、自定义仓库和跨卷四条路径均能完成往返；不削弱原恢复路径安全检查。没有第二测试卷时明确记录未实测，不能用 mock 结果代替实盘结论。
 
@@ -403,7 +403,7 @@ def test_restore_from_separate_warehouse(self):
 
 **文件：** `src/config_backup.py`；测试 `tests/TestConfigBackup.py`。
 
-- [ ] 容量循环使用可见的删除错误；本轮选中的目录删除失败或删除后仍存在，记录原因并退出清理。数量清理也记录失败，不无限重试。
+- [x] 容量循环使用可见的删除错误；本轮选中的目录删除失败或删除后仍存在，记录原因并退出清理。数量清理也记录失败，不无限重试。
 
 ```python
 candidate = candidates[0]
@@ -417,8 +417,8 @@ if candidate.exists():
     break
 ```
 
-- [ ] 测试删除成功、PermissionError、删除函数正常返回但目录未消失、容量仍超限、没有候选目录；logger 使用项目已有日志方式，不引入清理线程或重试框架。
-- [ ] 用 no-op rmtree 复现无进展，但测试不能真的无限等待；在第二次重复调用时主动抛异常，修复后断言只尝试一次即可返回。
+- [x] 测试删除成功、PermissionError、删除函数正常返回但目录未消失、容量仍超限、没有候选目录；logger 使用项目已有日志方式，不引入清理线程或重试框架。
+- [x] 用 no-op rmtree 复现无进展，但测试不能真的无限等待；在第二次重复调用时主动抛异常，修复后断言只尝试一次即可返回。
 
 **验收：** 无进展清理快速返回，日志能解释残留原因，下一次正常定时清理仍可重试；不误删有效配置目录。
 
@@ -426,8 +426,8 @@ if candidate.exists():
 
 **文件：** `config.py`、`src/task/BaseWWTask.py`、相关 `.po/.mo`；测试 `tests/TestConfig.py`。
 
-- [ ] UI 和帮助文字改为本机时间 0–23，0 表示午夜。为已有配置的 24 提供显式兼容归一化，沿用现有“当天检查时点已过则安排下一天”的规则。
-- [ ] 添加小型纯函数并由 `set_check_monthly_card()` 使用：
+- [x] UI 和帮助文字改为本机时间 0–23，0 表示午夜。为已有配置的 24 提供显式兼容归一化，沿用现有“当天检查时点已过则安排下一天”的规则。
+- [x] 添加小型纯函数并由 `set_check_monthly_card()` 使用：
 
 ```python
 def normalize_monthly_hour(value):
@@ -440,8 +440,8 @@ def normalize_monthly_hour(value):
     return value
 ```
 
-- [ ] 验证 0、23、旧 24、-1、25、布尔值、非数字；时间冻结在检查点前后验证日期推进，不只断言函数不抛错。
-- [ ] 更新翻译目录并编译 .mo；非法外部配置得到明确可定位的配置错误。
+- [x] 验证 0、23、旧 24、-1、25、布尔值、非数字；时间冻结在检查点前后验证日期推进，不只断言函数不抛错。
+- [x] 更新翻译目录并编译 .mo；非法外部配置得到明确可定位的配置错误。
 
 **验收：** 旧的 24 配置可运行，午夜含义明确，设置说明与实际执行一致。
 
@@ -449,10 +449,10 @@ def normalize_monthly_hour(value):
 
 **文件：** `scripts/package_smoke.py`、`.github/workflows/build.yml`、`run_tests.ps1`；新增 `tests/TestPackageSmoke.py`，并更新 `tests/TestReleaseReadiness.py`。
 
-- [ ] 对每个 ZIP 条目先统一分隔符和大小写，按完整路径片段识别受保护目录。任意层级的 configs 都检查，不只看第一段；拒绝穿越和绝对路径条目。
-- [ ] 保留的 `configs/notification.json` 特例必须对应清理过的构建模板并验证内容；不自动放行嵌套副本。将已知账号运行状态、备份、事故、截图/录像输出目录加入运行数据规则。
-- [ ] 对照实际安装包目录清单校验规则，避免把合法的打包依赖静态数据当运行配置。若需要例外，精确限定路径和内容，并加入正反用例；不能使用“整个 site-packages 都放行”规则。
-- [ ] 用标准库构造最小 ZIP，加入以下完整复现测试。
+- [x] 对每个 ZIP 条目先统一分隔符和大小写，按完整路径片段识别受保护目录。任意层级的 configs 都检查，不只看第一段；拒绝穿越和绝对路径条目。
+- [x] 保留的 `configs/notification.json` 特例必须对应清理过的构建模板并验证内容；不自动放行嵌套副本。将已知账号运行状态、备份、事故、截图/录像输出目录加入运行数据规则。
+- [x] 对照实际安装包目录清单校验规则，避免把合法的打包依赖静态数据当运行配置。若需要例外，精确限定路径和内容，并加入正反用例；不能使用“整个 site-packages 都放行”规则。
+- [x] 用标准库构造最小 ZIP，加入以下完整复现测试。
 
 ```python
 def test_nested_account_configuration_is_rejected(self):
@@ -468,7 +468,7 @@ def test_nested_account_configuration_is_rejected(self):
             inspect_distribution(dist)
 ```
 
-- [ ] 参数化根级、二层、深层、大写、反斜杠、合法源码/素材以及空目录场景；将新文件加入官方组。
+- [x] 参数化根级、二层、深层、大写、反斜杠、合法源码/素材以及空目录场景；将新文件加入官方组。
 - [ ] 将现有检查名称明确为产物内容检查。EXE/MSI 增加解包清单检查或隔离安装验证；两者没有完成前不声称“已验证安装和启动”。实际候选安装包验证纳入 T15。
 
 **验收：** 合成的嵌套账号文件一定被拒绝，正常候选产物能通过明确规则；检查失败阻断 Release。
@@ -477,8 +477,8 @@ def test_nested_account_configuration_is_rejected(self):
 
 **文件：** `src/gui/CharacterCodeTab.py`、必要时 `src/char/CharFactory.py`；测试 `TestCharacterCodeTab.py`、`TestCustomCharLoader.py`。
 
-- [ ] 保持该编辑页当前未挂载的状态。只修复保留模块，不借此新增产品导航。
-- [ ] 将 `isinstance(char, builtin_cls)` 条件改为通过角色特征名查询注册表，判断该实例所属的内置注册角色。不要只比较动态 Python 类名。
+- [x] 保持该编辑页当前未挂载的状态。只修复保留模块，不借此新增产品导航。
+- [x] 将 `isinstance(char, builtin_cls)` 条件改为通过角色特征名查询注册表，判断该实例所属的内置注册角色。不要只比较动态 Python 类名。
 
 ```python
 info = char_dict.get(char.char_name)
@@ -486,9 +486,9 @@ if info is None or info['cls'] is not self.current_char_cls:
     continue
 ```
 
-- [ ] 沿用已有状态字段迁移，核对当前角色、变奏状态、上次切换和技能/增益计时。正在执行动作的任务不在 GUI 线程直接替换对象，保存结果明确显示将在下次队伍重建或任务重启生效。
-- [ ] 增加直接继承 BaseChar 的 custom v1/custom v2 两个最小类，连续验证“内置→v1→v2→内置”；同时保留继承内置类的用例。
-- [ ] 断言实际对象类型改变、无关角色未替换、时间状态保留；语法错误或类名/继承不合法时回退内置且错误可见。
+- [x] 沿用已有状态字段迁移，核对当前角色、变奏状态、上次切换和技能/增益计时。正在执行动作的任务不在 GUI 线程直接替换对象，保存结果明确显示将在下次队伍重建或任务重启生效。
+- [x] 增加直接继承 BaseChar 的 custom v1/custom v2 两个最小类，连续验证“内置→v1→v2→内置”；同时保留继承内置类的用例。
+- [x] 断言实际对象类型改变、无关角色未替换、时间状态保留；语法错误或类名/继承不合法时回退内置且错误可见。
 
 **批次 B 总体验收：** R07–R11 的新增用例通过；外置备份往返不丢账号和进度；运行总测试入口一次正常结束；构建候选的文件清单检查通过。
 

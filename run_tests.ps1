@@ -22,7 +22,7 @@ $groups = @{
     "TestBaseCombatTask.py", "TestConfig.py", "TestCustomCharLoader.py", "TestDiagnosisRetention.py",
     "TestDiagnosisTask.py", "TestDomainRecoveryLoop.py", "TestForgeryDomainLabels.py",
     "TestLoggingRedaction.py", "TestMainProxyConfig.py",
-    "TestObservability.py", "TestReleaseReadiness.py", "TestRuntimeServices.py",
+    "TestObservability.py", "TestPackageSmoke.py", "TestReleaseReadiness.py", "TestRuntimeServices.py",
     "TestScheduleSupport.py", "TestSecurityBaseline.py", "TestSensitiveIdentifierScan.py",
     "TestTaskStatus.py", "TestLogoutCapture.py", "TestDailyTaskStatus.py", "TestDailyActivityFlow.py", "TestStaminaAccounting.py",
     "TestSequenceRepository.py", "TestTestGroups.py", "TestTestRunner.py", "TestGameRuntimeErrors.py", "TestUpstreamCharacterPort.py", "TestWaitLogin.py",

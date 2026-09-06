@@ -105,7 +105,7 @@ jobs:
           retention-days: 7
 
   package-smoke:
-    name: package-smoke
+    name: artifact-content-check
     needs: package
     runs-on: windows-latest
     steps:

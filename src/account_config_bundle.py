@@ -338,7 +338,8 @@ class AccountConfigBundleService:
 
     def _publisher(self):
         from .account_publish_service import AccountPublishService
-        return AccountPublishService(self.paths.config_dir, program_version=self.integrity.program_version)
+        return AccountPublishService(self.paths.config_dir, config_dir=self.paths.config_dir,
+                                     program_version=self.integrity.program_version)
 
     def _base_revisions(self) -> tuple[str, str]:
         publisher = self._publisher()

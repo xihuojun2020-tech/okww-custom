@@ -18,7 +18,7 @@ from src.task.process_feature import process_feature
 # okww 版本号（固定宽度 X.YY.ZZ）：
 #   小改动 → 第三位 +1；中等改动 → 第二位 +1 且第三位归 00；
 #   大改动 → 第一位 +1 且后两位归 00（仅用户明确提出时执行）
-version = "1.32.00"
+version = "1.32.01"
 
 
 def _find_most_recently_run_pc_exe():
@@ -179,8 +179,8 @@ monthly_card_config_option = ConfigOption('Monthly Card Config', {
     'Monthly Card Time': 4
 }, description='Turn on to avoid interruption by monthly card when executing tasks', config_description={
     'Check Monthly Card': 'Check for monthly card to avoid interruption of tasks',
-    'Monthly Card Time': 'Your computer\'s local time when the monthly card will popup, hour in (1-24)'
-})
+    'Monthly Card Time': "Your computer's local time when the monthly card will popup, hour in (0-23), 0 means midnight"
+}, config_type={'Monthly Card Time': {'min': 0, 'max': 23}})
 
 config = {
     'debug': False,  # Optional, default: False

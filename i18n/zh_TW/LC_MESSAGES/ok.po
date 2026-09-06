@@ -1441,3 +1441,13 @@ msgstr "目前序列帳號"
 
 msgid "当前序列包含的账号；请在序列管理页面修改"
 msgstr "目前序列包含的帳號；請在序列管理頁面修改"
+
+msgid ""
+"Your computer's local time when the monthly card will popup, hour in (0-23),"
+" 0 means midnight"
+msgstr "月卡彈出時的電腦本機時間，小時範圍 0–23，0 表示午夜"
+
+msgid ""
+"Saved. Character code will apply after the next team rebuild or task "
+"restart."
+msgstr "已儲存。角色程式碼將於下次重建隊伍或重新啟動任務後生效。"

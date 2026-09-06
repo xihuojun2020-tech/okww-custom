@@ -98,12 +98,13 @@ def _inside(path: Path, root: Path) -> bool:
 
 
 def validate_restore_path(source: os.PathLike | str, target: os.PathLike | str,
-                          data_root: os.PathLike | str | None = None) -> tuple[Path, Path]:
+                          data_root: os.PathLike | str | None = None, *,
+                          source_root=None, target_dir=None) -> tuple[Path, Path]:
     """Validate source/target before a restore copy or directory swap.
 
     ``data_root`` is the configured boundary.  When omitted, existing
     symlinks and traversal are still rejected; callers restoring application
-    data should pass the common configured root for a strict boundary check.
+    data may use distinct ``source_root`` and exact ``target_dir`` boundaries.
     """
     source_path = Path(source)
     target_path = Path(target)
@@ -114,14 +115,18 @@ def validate_restore_path(source: os.PathLike | str, target: os.PathLike | str,
     if root is not None and (not _inside(source_abs.resolve(), root) or
                              not _inside(target_abs.resolve(), root)):
         raise ValueError("恢复路径超出配置数据根目录")
+    if source_root is not None and not _inside(source_abs.resolve(), Path(source_root).resolve()):
+        raise ValueError("恢复源超出选定备份目录")
+    if target_dir is not None and target_abs.resolve() != Path(target_dir).resolve():
+        raise ValueError("恢复目标不是配置目录")
     # A symlink at any existing component is rejected rather than guessed
     # safe.  This prevents an attacker from swapping a directory between
     # validation and copy and escaping the configured restore boundary.
     for path in (source_abs, target_abs):
         current = path
         while current != current.parent:
-            if current.is_symlink():
-                raise ValueError("恢复路径不允许使用符号链接")
+            if current.is_symlink() or current.is_junction():
+                raise ValueError("恢复路径不允许使用符号链接或 junction")
             current = current.parent
     if source_abs == target_abs or _inside(target_abs, source_abs) or _inside(source_abs, target_abs):
         raise ValueError("恢复源与目标路径不能相互包含")

@@ -1314,3 +1314,13 @@ msgstr "現在のシーケンスのアカウント"
 
 msgid "当前序列包含的账号；请在序列管理页面修改"
 msgstr "現在のシーケンスに含まれるアカウント。変更はシーケンス管理ページで行ってください"
+
+msgid ""
+"Your computer's local time when the monthly card will popup, hour in (0-23),"
+" 0 means midnight"
+msgstr "月間パスが表示されるパソコンの現地時刻。0～23時（0は深夜0時）"
+
+msgid ""
+"Saved. Character code will apply after the next team rebuild or task "
+"restart."
+msgstr "保存しました。次回のチーム再構築またはタスク再起動後に適用されます。"

@@ -386,35 +386,12 @@ class MainWindow(FluentWindow):
         from datetime import datetime
         from pathlib import Path
         from src.config_backup import ConfigBackupService
-        from ok import og
+        from src.storage import get_config_backup_dir
 
-        backup_dir = ''
-        try:
-            from src.storage import get_warehouse_sub
-            wh = get_warehouse_sub('配置备份')
-            if wh:
-                backup_dir = wh
-        except Exception:
-            pass
-        if not backup_dir:
-            try:
-                global_config = og.executor.global_config.get_config('Config Backup')
-                backup_dir = (global_config or {}).get('Config Backup Directory', '') or ''
-            except Exception:
-                pass
-        if not backup_dir.strip():
-            backup_dir = os.path.join(os.getcwd(), 'configs_backup')
-        backup_dir = backup_dir.strip()
-        config_src = Path(os.path.join(os.getcwd(), 'configs'))
+        backup_dir = get_config_backup_dir()
+        config_src = Path(os.getcwd()) / 'configs'
         if not config_src.is_dir():
             return None
-        # Never place a backup tree inside configs: that would make the next
-        # full snapshot include its own previous snapshots.
-        try:
-            if Path(backup_dir).resolve() == config_src.resolve() or config_src.resolve() in Path(backup_dir).resolve().parents:
-                backup_dir = os.path.join(os.getcwd(), 'configs_backup')
-        except OSError:
-            pass
         service = ConfigBackupService(config_src, backup_dir, app_version=str(self.version))
         if service.has_daily_snapshot_for_date(datetime.now().strftime('%Y-%m-%d')):
             return None
@@ -438,20 +415,8 @@ class MainWindow(FluentWindow):
         def cleanup():
             try:
                 from src.config_backup import ConfigBackupService
-                from ok import og
-                backup_dir = ''
-                try:
-                    from src.storage import get_warehouse_sub
-                    backup_dir = get_warehouse_sub('配置备份') or ''
-                except Exception:
-                    pass
-                if not backup_dir:
-                    try:
-                        global_config = og.executor.global_config.get_config('Config Backup')
-                        backup_dir = (global_config or {}).get('Config Backup Directory', '') or ''
-                    except Exception:
-                        pass
-                backup_dir = backup_dir.strip() or os.path.join(os.getcwd(), 'configs_backup')
+                from src.storage import get_config_backup_dir
+                backup_dir = get_config_backup_dir()
                 service = ConfigBackupService(
                     os.path.join(os.getcwd(), 'configs'),
                     backup_dir,
@@ -711,28 +676,9 @@ class MainWindow(FluentWindow):
         from pathlib import Path
         from src.config_backup import ConfigBackupService
 
-        backup_dir = ''
-        try:
-            from src.storage import get_warehouse_sub
-            backup_dir = get_warehouse_sub('配置备份') or ''
-        except Exception:
-            pass
-        if not backup_dir:
-            try:
-                from ok import og
-                global_config = og.executor.global_config.get_config('Config Backup')
-                backup_dir = (global_config or {}).get('Config Backup Directory', '') or ''
-            except Exception:
-                pass
-        backup_dir = backup_dir.strip() or os.path.join(os.getcwd(), 'configs_backup')
-        config_dir = Path(os.path.join(os.getcwd(), 'configs'))
-        try:
-            resolved_backup = Path(backup_dir).resolve()
-            resolved_config = config_dir.resolve()
-            if resolved_backup == resolved_config or resolved_config in resolved_backup.parents:
-                backup_dir = os.path.join(os.getcwd(), 'configs_backup')
-        except OSError:
-            pass
+        from src.storage import get_config_backup_dir
+        backup_dir = get_config_backup_dir()
+        config_dir = Path(os.getcwd()) / 'configs'
         return ConfigBackupService(
             config_dir, backup_dir, app_version=str(self.version)).create_transaction_snapshot()
 
