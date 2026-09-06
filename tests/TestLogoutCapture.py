@@ -86,6 +86,20 @@ class TestLogoutCapture(unittest.TestCase):
         session.close()
         self.assertEqual(1, created[0].closed)
 
+    def test_foreground_trusted_probe_avoids_reacquiring_window(self):
+        session = LogoutCaptureSession(
+            FakeHwndWindow(), threading.Event(),
+            capture_factory=lambda hwnd: FakeCapture(
+                hwnd, np.ones((20, 20, 3), dtype=np.uint8)),
+            foreground_hwnd=lambda: 77,
+            window_pid=lambda hwnd: 900 if hwnd == 77 else 0,
+        )
+
+        self.assertTrue(session.foreground_is_trusted())
+
+        session.foreground_hwnd = lambda: 88
+        self.assertFalse(session.foreground_is_trusted())
+
     def test_pure_color_frame_is_rejected(self):
         frame = np.zeros((100, 200, 3), dtype=np.uint8)
         session = LogoutCaptureSession(

@@ -165,6 +165,16 @@ class AccountSwitchCaptureSession:
         except Exception:
             return 0
 
+    def foreground_is_trusted(self):
+        """Return whether the current foreground belongs to the trusted game PID.
+
+        Account-switch OCR can run many times while a window is already in
+        front.  Callers use this cheap probe to avoid repeatedly invoking
+        SetForegroundWindow and sleeping before every BitBlt sample.
+        """
+        foreground = int(self.foreground_hwnd() or 0)
+        return bool(foreground and self.is_trusted_hwnd(foreground))
+
     def is_trusted_hwnd(self, hwnd):
         pid = self.pid_for(hwnd)
         return bool(pid and pid in self._refresh_trusted_pids())

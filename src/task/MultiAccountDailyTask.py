@@ -2017,15 +2017,24 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             main_hwnd, _pid = self._main_window_identity()
         if not main_hwnd:
             return None
-        if capture_session is not None and self._bring_account_window_to_front(main_hwnd):
-            self.sleep(0.2)
+        if capture_session is not None:
+            foreground_ready = getattr(capture_session, 'foreground_is_trusted', None)
+            already_front = bool(callable(foreground_ready) and foreground_ready())
+            if not already_front:
+                if not self._bring_account_window_to_front(main_hwnd):
+                    self.log_warning('账号切换整屏 BitBlt 无可信前台，跳过本次采样')
+                    return None
+                self.sleep(0.2)
             sample = capture_session.capture_main()
             if sample is not None:
                 return sample
-            self.log_warning(
-                f'账号切换整屏 BitBlt 不可用（{capture_session.last_reason}），已安全停止本次识别'
-            )
-            return None
+            reason = getattr(capture_session, 'last_reason', '')
+            # Match the upstream WGC-first/fallback behavior for transient
+            # capture failures, but never bypass the PID safety boundary.
+            if reason == 'foreground-process-mismatch':
+                self.log_warning(f'账号切换整屏 BitBlt 拒绝不可信前台：{reason}')
+                return None
+            self.log_warning(f'账号切换整屏 BitBlt 不可用（{reason}），回退 WGC 当前帧')
         try:
             frame = self.next_frame()
         except TaskDisabledException:

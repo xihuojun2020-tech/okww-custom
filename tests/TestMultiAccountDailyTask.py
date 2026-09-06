@@ -2731,7 +2731,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         self.assertTrue(task._click_main_login_box(box, stage='logout_confirm', origin=(100, 200)))
         self.assertEqual([(125, 225, 0.5, 10)], clicks)
 
-    def test_active_monitor_capture_failure_does_not_fall_back_to_wgc(self):
+    def test_active_monitor_capture_failure_falls_back_to_wgc(self):
         class Session:
             last_reason = 'pure-color-frame'
 
@@ -2760,14 +2760,15 @@ class TestMultiAccountDailyTask(unittest.TestCase):
 
             @staticmethod
             def next_frame():
-                raise AssertionError('active account switch must not fall back to WGC')
+                return object()
 
             @staticmethod
             def log_warning(_message):
                 pass
 
         sample = FakeTask()._capture_logout_main_sample(Session())
-        self.assertIsNone(sample)
+        self.assertIsNotNone(sample)
+        self.assertEqual('wgc', sample.source)
 
     def test_active_account_switch_capture_drives_main_ocr(self):
         frame = object()
