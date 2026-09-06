@@ -31,7 +31,8 @@ from src.runtime.account_runtime_bootstrap import (
     require_account_runtime_for_task,
 )
 from src.runtime.game_runtime_errors import FrameUnavailable, GameProcessLost
-from src.account_identity import short_profile_name
+from src.account_identity import short_profile_name, account_identity_signature
+from src.sequence_repository import thaw_snapshot
 from src.task_status import publish_task_status
 
 logger = Logger.get_logger(__name__)
@@ -329,6 +330,24 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             return None
 
     def run(self):
+        if not getattr(self, '_snapshot_bound_externally', False):
+            self.clear_profile_binding()
+        self._snapshot_bound_externally = False
+        self._profile_run_active = True
+        try:
+            with self.account_input_guard(self._guard_bound_profile_identity):
+                return self._run_daily_inner()
+        finally:
+            self._profile_run_active = False
+            self.clear_profile_binding()
+
+    def clear_profile_binding(self):
+        self._verified_profile_name = None
+        self._verified_profile_id = None
+        self._verified_profile_snapshot = None
+        self._snapshot_bound_externally = False
+
+    def _run_daily_inner(self):
         self._publish_daily_stage('每日任务', '正在启动每日任务')
         require_account_runtime_for_task(self)
         if getattr(self, '_account_refresh_pending', False):
@@ -470,6 +489,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         if self._profile_get(LOGOUT_AFTER_DAILY, True):
             try:
                 self._logout_pc_after_daily()
+            except (ConfigIntegrityBlocked, ConfigWriteBlocked):
+                raise
             except Exception as e:
                 self.log_error('自动退登 PC 端失败（不影响每日任务结果）', e)
         self._publish_daily_stage('每日任务', '任务已完成')
@@ -554,6 +575,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def get_active_profile_name(self):
         """当前激活的配置方案名称。"""
+        if (getattr(self, '_profile_run_active', False) or getattr(self, '_snapshot_bound_externally', False)) and getattr(self, '_verified_profile_name', None):
+            return self._verified_profile_name
         return self.config.get(DAILY_PROFILE, '默认')
 
     def _profile_get(self, key, default=None):
@@ -563,7 +586,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         if key in overrides:
             return override
         frozen = getattr(self, '_verified_profile_snapshot', None)
-        if isinstance(frozen, dict) and key in frozen:
+        if isinstance(frozen, dict) and (key in frozen or key in PROFILE_KEYS):
             return copy.deepcopy(frozen.get(key, default))
         if self.integrity_service is not None and key in PROFILE_KEYS:
             profiles = self.load_daily_profiles()
@@ -593,10 +616,14 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             result[key] = copy.deepcopy(self._profile_get(key))
         return result
 
-    def bind_verified_profile(self, profile_name, expected_profile_id=None):
-        """Bind this run to one validated profile ID, correcting stale labels."""
-        profiles = self.load_daily_profiles()
-        selected = profiles.get(profile_name) or {}
+    def bind_verified_profile(self, profile_name, expected_profile_id=None, *, snapshot_profile=None):
+        """Bind a detached run configuration without overwriting newly saved preferences."""
+        if snapshot_profile is not None:
+            frozen = thaw_snapshot(snapshot_profile)
+            selected = {**frozen['account'], **frozen['tasks'], 'task_config': frozen['tasks'],
+                        'profile_id': frozen['profile_id']}
+        else:
+            selected = self.load_daily_profiles().get(profile_name) or {}
         profile_id = selected.get('profile_id')
         if not profile_id:
             raise ConfigIntegrityBlocked(f'validated account profile has no stable profile_id: {profile_name}')
@@ -607,7 +634,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self._verified_profile_name = profile_name
         self._verified_profile_id = str(profile_id)
         self._verified_profile_snapshot = copy.deepcopy(selected)
-        if self.config is not None and self.config.get(DAILY_PROFILE) != profile_name:
+        self._snapshot_bound_externally = snapshot_profile is not None
+        if snapshot_profile is None and self.config is not None and self.config.get(DAILY_PROFILE) != profile_name:
             switching = getattr(self, '_switching_profile', False)
             self._switching_profile = True
             try:
@@ -615,6 +643,21 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             finally:
                 self._switching_profile = switching
         return copy.deepcopy(selected)
+
+    def _guard_bound_profile_identity(self):
+        frozen = getattr(self, '_verified_profile_snapshot', None)
+        service = getattr(self, 'integrity_service', None)
+        if not frozen or service is None:
+            return
+        service.guard_task_start()
+        repository = get_default_repository() or AccountRepository(paths=service.paths, integrity_service=service)
+        try:
+            record = repository.load_profile(self._verified_profile_id)
+        except Exception as error:
+            raise ConfigIntegrityBlocked('本轮账号已删除或已发布配置损坏，请停止后重新开始') from error
+        current = {**record.account, 'task_config': record.tasks}
+        if account_identity_signature(frozen) != account_identity_signature(current):
+            raise ConfigIntegrityBlocked('本轮账号身份已修改，请停止后重新开始')
 
     @contextmanager
     def runtime_config_override(self, key, value):
@@ -648,7 +691,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                     profiles = projection.get('profiles', {}) if isinstance(projection, dict) else {}
                     return copy.deepcopy(profiles) if isinstance(profiles, dict) else {}
                 except Exception as exc:
-                    logger.warning(f'active account snapshot unavailable: {exc}')
+                    raise ConfigIntegrityBlocked(f'已发布账号配置读取失败：{exc}') from exc
         if self.integrity_service is not None:
             result = self.integrity_service.last_result or self.integrity_service.check()
             if result.master_valid and result.master:
@@ -687,7 +730,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                     if isinstance(sequences, dict):
                         return copy.deepcopy(sequences)
             except Exception as exc:
-                logger.warning(f'account repository sequence projection unavailable: {exc}')
+                raise ConfigIntegrityBlocked(f'已发布账号序列读取失败：{exc}') from exc
         if self.integrity_service is not None:
             result = self.integrity_service.last_result or self.integrity_service.check()
             if result.master_valid and result.master:
@@ -754,6 +797,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def ensure_daily_profiles(self):
         """确保至少存在一个方案（默认），并保证当前激活方案有效。"""
+        if (getattr(self, '_profile_run_active', False) or getattr(self, '_snapshot_bound_externally', False)) and getattr(self, '_verified_profile_snapshot', None):
+            self._guard_bound_profile_identity()
+            return
         if self.integrity_service is not None:
             # Creation/defaulting is explicitly outside the main process.  The
             # startup guard handles missing/invalid master files before a task
@@ -1038,6 +1084,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
     def import_account_config(self, *args):
         """从 JSON 文件导入账号配置（导入前自动备份现有配置）。"""
         try:
+            from src.account_config_bundle import AccountConfigBundleService
+            AccountConfigBundleService.require_idle_executor()
             service = self._get_account_bundle_service()
             path = self._ask_open_path()
             if not path:
@@ -1058,11 +1106,15 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 if not self._confirm_bundle_import(summary):
                     self.log_info('已取消账号配置包导入')
                     return
-                self._invoke_bundle_service(
+                result = self._invoke_bundle_service(
                     service, ('import_bundle', 'import_config', 'import_bundle_v2', 'import'),
                     path=path, task=self, confirmed=True, trust_external=bool(summary_trust),
                     preflight=summary)
-                self.log_info(f'账号配置包已导入: {path}', notify=True)
+                maintenance = getattr(result, 'maintenance_errors', ())
+                if maintenance:
+                    self.log_warning('配置已生效，维护待恢复：' + '; '.join(maintenance), notify=True)
+                else:
+                    self.log_info(f'账号配置包已导入: {path}', notify=True)
                 self._refresh_gui()
                 return
             if self.integrity_service is not None:

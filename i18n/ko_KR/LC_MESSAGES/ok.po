@@ -1309,3 +1309,9 @@ msgstr ""
 
 msgid "Qingxiao"
 msgstr "칭샤오"
+
+msgid "当前序列账号"
+msgstr "현재 순서의 계정"
+
+msgid "当前序列包含的账号；请在序列管理页面修改"
+msgstr "현재 순서에 포함된 계정입니다. 순서 관리 페이지에서 변경하세요"

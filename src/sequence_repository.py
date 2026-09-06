@@ -9,7 +9,7 @@ from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 
 from .account_identity import AccountIdentityError, resolve_profile_identity, resolve_profile_short_names
-from .account_repository import ProfileRevisionConflict
+from .account_repository import AccountRepository, ProfileRevisionConflict
 
 
 class SequenceRepositoryError(RuntimeError):
@@ -59,6 +59,7 @@ class SequenceRunSnapshot:
     profile_ids: tuple[str, ...]
     profiles: tuple[Mapping[str, Any], ...]
     run_id: str
+    identity_profiles: Mapping[str, Any] = field(default_factory=dict)
 
 
 def _freeze(value: Any) -> Any:
@@ -68,6 +69,14 @@ def _freeze(value: Any) -> Any:
         return tuple(_freeze(item) for item in value)
     if isinstance(value, tuple):
         return tuple(_freeze(item) for item in value)
+    return copy.deepcopy(value)
+
+
+def thaw_snapshot(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {key: thaw_snapshot(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [thaw_snapshot(item) for item in value]
     return copy.deepcopy(value)
 
 
@@ -90,10 +99,10 @@ class SequenceRepository:
     def _profiles(self) -> dict[str, Any]:
         return {record.profile_id: record for record in self.repository.list_profiles()}
 
-    def _normalize(self, members: Sequence[Any]) -> tuple[str, ...]:
+    def _normalize(self, members: Sequence[Any], profiles=None) -> tuple[str, ...]:
         if isinstance(members, (str, bytes)):
             raise SequenceReferenceError("序列成员必须是列表")
-        profiles = self._profiles()
+        profiles = self._profiles() if profiles is None else profiles
         identities = {profile_id: {**dict(record.account), "task_config": dict(record.tasks)}
                       for profile_id, record in profiles.items()}
         result: list[str] = []
@@ -165,14 +174,32 @@ class SequenceRepository:
             raise SequenceReferenceError(str(exc)) from exc
 
     def snapshot_for_profile_ids(self, profile_ids: Sequence[Any], *,
-                                 sequence_id: str = "临时序列", revision: str | int = 0) -> SequenceRunSnapshot:
-        members = self._normalize(profile_ids)
+                                 sequence_id: str = "临时序列", revision: str | int = 0,
+                                 short_names: bool = False) -> SequenceRunSnapshot:
         records = self._profiles()
+        if short_names:
+            profile_ids = resolve_profile_short_names(profile_ids, {pid: record.account for pid, record in records.items()})
+        return self._snapshot(profile_ids, records, sequence_id, revision)
+
+    def _snapshot(self, profile_ids, records, sequence_id, revision):
+        members = self._normalize(profile_ids, records)
         profiles = tuple(_freeze({"profile_id": profile_id, "account": dict(records[profile_id].account),
                                   "tasks": dict(records[profile_id].tasks)}) for profile_id in members)
-        return SequenceRunSnapshot(sequence_id, revision, members, profiles, str(uuid.uuid4()))
+        identities = _freeze({pid: {**dict(record.account), 'profile_id': pid, 'task_config': dict(record.tasks)}
+                              for pid, record in records.items()})
+        revision = next(iter(records.values())).revision if records and hasattr(next(iter(records.values())), 'revision') else revision
+        return SequenceRunSnapshot(sequence_id, revision, members, profiles, str(uuid.uuid4()), identities)
 
     def create_run_snapshot(self, sequence_id: str) -> SequenceRunSnapshot:
+        if isinstance(self.repository, AccountRepository):
+            raw, accounts, sequences = self.repository._load_index()
+            if sequence_id not in sequences:
+                raise SequenceRepositoryError('序列不存在')
+            metadata = raw.get('extensions', {}).get('pc_sequence_settings', {}).get(sequence_id, {})
+            if not metadata.get('enabled', True):
+                raise SequenceRepositoryError('序列已停用')
+            records = {record.profile_id: record for record in self.repository._profile_records(raw, accounts)}
+            return self._snapshot(sequences[sequence_id], records, sequence_id, self.repository._revision(raw))
         sequence = self.load(sequence_id)
         if not sequence.enabled:
             raise SequenceRepositoryError("序列已停用")

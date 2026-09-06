@@ -377,7 +377,7 @@ class AccountConfigTab(CustomTab):
             if dialog.exec() != QDialog.Accepted:
                 return None
             result = self.editor.save_template(dialog.tasks(), expected_revision=str(template.revision))
-            self.status.setText("新账号模板保存成功")
+            self._commit_status("新账号模板保存成功")
             return result
         except Exception as exc:
             self.status.setText(f"模板保存失败：{sanitize_error(exc)}")
@@ -398,7 +398,7 @@ class AccountConfigTab(CustomTab):
             if answer != QMessageBox.StandardButton.Yes:
                 return None
             result = self.editor.create_profile(template, **values)
-            self.status.setText("新账号创建成功")
+            self._commit_status("新账号创建成功")
             self.refresh(profile_id=result.profile_id)
             self.changed.emit(AccountChangeEvent(
                 "profile_created", str(result.revision), (result.profile_id,), values["sequence_ids"]))
@@ -429,7 +429,7 @@ class AccountConfigTab(CustomTab):
             result = self.editor.save_draft(self.draft.scope, self.draft,
                                             confirmed_account_label=label,
                                             sequence_ids=sequence_ids)
-            self.status.setText("保存成功，已先创建账号备份")
+            self._commit_status("保存成功，已先创建账号备份")
             profile_id = self.draft.profile_id
             revision = str(getattr(result, "revision", ""))
             self.refresh(profile_id=profile_id)
@@ -470,7 +470,7 @@ class AccountConfigTab(CustomTab):
             result = self.rebind_service.rebind(
                 self.draft.profile_id, current_identity=current,
                 new_identity=requested, confirmed=True)
-            self.status.setText("身份重新绑定成功，已创建旧身份备份")
+            self._commit_status("身份重新绑定成功，已创建旧身份备份")
             profile_id = self.draft.profile_id
             self.refresh(profile_id=profile_id)
             self.changed.emit(AccountChangeEvent("identity_rebound", str(getattr(result, "revision", "")),
@@ -498,7 +498,7 @@ class AccountConfigTab(CustomTab):
             return None
         try:
             result = self.editor.delete_profile(self.draft.scope, confirmed_account_label=label)
-            self.status.setText("账号删除成功，序列引用已同步移除")
+            self._commit_status("账号删除成功，序列引用已同步移除")
             profile_id = self.draft.profile_id
             self.refresh()
             self.changed.emit(AccountChangeEvent(
@@ -507,6 +507,12 @@ class AccountConfigTab(CustomTab):
         except Exception as exc:
             self.status.setText(f"账号删除失败：{sanitize_error(exc)}")
             return None
+
+
+    def _commit_status(self, success):
+        result = getattr(self.editor.repository, 'last_publish_result', None)
+        errors = getattr(result, 'maintenance_errors', ())
+        self.status.setText(('配置已生效，维护待恢复：' + sanitize_error('; '.join(errors))) if errors else success)
 
 
 __all__ = ["AccountConfigTab", "AccountTemplateDialog", "ClickOnlyComboBox", "NewAccountDialog"]

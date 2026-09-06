@@ -464,6 +464,8 @@ def normalize_working(data: Mapping[str, Any], master: Mapping[str, Any] | None 
             for pid in ids:
                 if pid in output and str(seq) not in output[pid]["sequence_ids"]:
                     output[pid]["sequence_ids"].append(str(seq))
+    for profile in output.values():
+        profile['sequence_ids'].sort()
     return {"profiles": output, "sequences": sequences,
             "extensions": _canonical(data.get("extensions", {}))}
 
@@ -602,7 +604,8 @@ class ConfigIntegrityService:
                  program_version: str = "development"):
         self.paths = paths or ConfigPaths.from_root(root)
         self.program_version = str(program_version or "development")
-        self._lock = threading.RLock()
+        from .account_change_lock import get_account_change_lock
+        self._lock = get_account_change_lock(self.paths.config_dir)
         self._last_result: IntegrityResult | None = None
         self._snapshot: dict[str, Any] | None = None
         self._runtime_error: str | None = None

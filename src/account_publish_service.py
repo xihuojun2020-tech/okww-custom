@@ -7,8 +7,6 @@ import hashlib
 import json
 import os
 import shutil
-import threading
-import time
 import uuid
 from dataclasses import dataclass
 from enum import Enum
@@ -17,9 +15,7 @@ from typing import Any, Mapping
 
 from .config_integrity import _atomic_write_json_unchecked, atomic_write_json, canonical_json
 from .account_repository import ProfileRevisionConflict
-
-
-_PUBLISH_LOCK = threading.RLock()
+from .account_change_lock import get_account_change_lock
 
 
 @dataclass(frozen=True)
@@ -27,6 +23,7 @@ class PublishedRevision:
     revision: str
     bundle_dir: Path
     manifest: Mapping[str, Any]
+    maintenance_errors: tuple[str, ...] = ()
 
 
 class PublishState(str, Enum):
@@ -54,6 +51,8 @@ class AccountPublishService:
         self.root = self.config_dir / "published"
         self.bundles_dir = self.root / "bundles"
         self.active_path = self.root / "active.json"
+        self.maintenance_path = self.root / '.maintenance.json'
+        self._lock = get_account_change_lock(self.config_dir)
         self.program_version = str(program_version)
         self.fail_after_bundle_write = bool(fail_after_bundle_write)
         self.publish_state = PublishState.PREPARED
@@ -96,7 +95,7 @@ class AccountPublishService:
 
     def _write_editable_mirror(self, profiles: Mapping[str, Any], index: Mapping[str, Any],
                                sequences: Mapping[str, list[str]]) -> None:
-        """Keep one-JSON-per-account editor files in sync before activation."""
+        """Refresh derived editor files after activation."""
         root = self.config_dir / "accounts"
         profile_dir = root / "profiles"
         profile_dir.mkdir(parents=True, exist_ok=True)
@@ -153,6 +152,8 @@ class AccountPublishService:
         })
 
     def _prune_inactive_bundles(self, keep: int = 2) -> None:
+        if (self.root / '.import-transaction.json').exists():
+            return
         active = self._active_revision()
         valid = []
         for path in self.bundles_dir.iterdir():
@@ -173,13 +174,12 @@ class AccountPublishService:
             if path.name not in retained:
                 shutil.rmtree(path)
 
-    def publish(self, *, expected_revision: str, profiles: Mapping[str, Any],
-                index: Mapping[str, Any], sequences: Mapping[str, list[str]]) -> PublishedRevision:
-        with _PUBLISH_LOCK:
+    def prepare(self, *, profiles: Mapping[str, Any], index: Mapping[str, Any],
+                sequences: Mapping[str, list[str]]) -> PublishedRevision:
+        with self._lock:
             self.publish_state = PublishState.PREPARED
-            current = self._active_revision()
-            if expected_revision not in ("", None) and str(expected_revision) != current:
-                raise ProfileRevisionConflict("已发布账号配置已被其他操作修改")
+            if self.active_path.exists():
+                self.load_active()
             master = self._master(profiles, sequences, index)
             working = self._working(master)
             revision = _digest({"master": master, "working": working})
@@ -208,16 +208,60 @@ class AccountPublishService:
                 if self.fail_after_bundle_write:
                     raise RuntimeError("forced publication failure")
                 manifest = self._install_or_reuse_bundle(staging, bundle_dir, revision)
-                self._write_active_pointer(revision, bundle_dir)
-                self.publish_state = PublishState.ACTIVATED
-                self._mirror_projections(profiles, index, sequences)
-                self.publish_state = PublishState.MIRRORED
-                self._prune_inactive_bundles()
                 return PublishedRevision(revision, bundle_dir, manifest)
             except Exception:
                 if staging.exists():
                     shutil.rmtree(staging, ignore_errors=True)
                 raise
+
+    def activate(self, prepared: PublishedRevision, *, expected_revision: str) -> PublishedRevision:
+        with self._lock:
+            previous = self.load_active() if self.active_path.exists() else None
+            if str(expected_revision or '') != (previous.revision if previous else ''):
+                raise ProfileRevisionConflict('已发布账号配置已被其他操作修改')
+            if prepared.bundle_dir.resolve() != (self.bundles_dir / prepared.revision).resolve():
+                raise ValueError('prepared bundle is outside this account store')
+            manifest = self._validate_bundle_dir(prepared.bundle_dir, prepared.revision)
+            old_profiles = []
+            if previous:
+                old = json.loads((previous.bundle_dir / 'account_master_config.json').read_text(encoding='utf-8'))
+                old_profiles = list(old.get('profiles', {}))
+            atomic_write_json(self.maintenance_path, {
+                'revision': prepared.revision, 'previous_profiles': old_profiles,
+            })
+            self._write_active_pointer(prepared.revision, prepared.bundle_dir)
+            self.publish_state = PublishState.ACTIVATED
+            errors = self._finish_maintenance()
+            return PublishedRevision(prepared.revision, prepared.bundle_dir, manifest, errors)
+
+    def _finish_maintenance(self) -> tuple[str, ...]:
+        try:
+            marker = json.loads(self.maintenance_path.read_text(encoding='utf-8'))
+            active = self.load_active()
+            if marker.get('revision') != active.revision:
+                self.maintenance_path.unlink()
+                return ()
+            master = json.loads((active.bundle_dir / 'account_master_config.json').read_text(encoding='utf-8'))
+            index = json.loads((active.bundle_dir / 'index.json').read_text(encoding='utf-8'))
+            profiles, sequences = master['profiles'], master['sequences']
+            self._mirror_projections(profiles, index, sequences)
+            for old_id in set(marker.get('previous_profiles', ())) - set(profiles):
+                # Only remove UUID-named projections owned by the previous graph.
+                if str(uuid.UUID(old_id)) == old_id:
+                    (self.config_dir / 'accounts/profiles' / f'{old_id}.json').unlink(missing_ok=True)
+            self._prune_inactive_bundles()
+            if not (self.root / '.import-transaction.json').exists():
+                self.maintenance_path.unlink()
+            self.publish_state = PublishState.MIRRORED
+            return ()
+        except Exception as error:
+            return (str(error),)
+
+    def publish(self, *, expected_revision: str, profiles: Mapping[str, Any],
+                index: Mapping[str, Any], sequences: Mapping[str, list[str]]) -> PublishedRevision:
+        with self._lock:
+            prepared = self.prepare(profiles=profiles, index=index, sequences=sequences)
+            return self.activate(prepared, expected_revision=expected_revision)
 
     def load_active(self) -> PublishedRevision:
         if not self.active_path.is_file():
@@ -232,11 +276,19 @@ class AccountPublishService:
         return PublishedRevision(revision, bundle_dir, manifest)
 
     def recover_incomplete_transactions(self) -> None:
-        """Leave the active bundle untouched; incomplete staging is disposable."""
-        self.bundles_dir.mkdir(parents=True, exist_ok=True)
-        for path in self.bundles_dir.iterdir():
-            if path.name.startswith(".tmp-") and path.is_dir():
-                shutil.rmtree(path, ignore_errors=True)
+        """Repair derived files without changing the committed active pointer."""
+        with self._lock:
+            self.bundles_dir.mkdir(parents=True, exist_ok=True)
+            if self.maintenance_path.exists():
+                if self.active_path.exists():
+                    errors = self._finish_maintenance()
+                    if errors:
+                        raise RuntimeError('账号镜像恢复失败：' + '; '.join(errors))
+                else:
+                    self.maintenance_path.unlink()
+            for path in self.bundles_dir.iterdir():
+                if path.name.startswith(".tmp-") and path.is_dir():
+                    shutil.rmtree(path, ignore_errors=True)
 
 
 __all__ = ["AccountPublishService", "PublishState", "PublishedRevision"]

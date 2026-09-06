@@ -11,6 +11,12 @@ This directory is the source for the ok-ww documentation website.
 
 Navigation and theme settings live in `mkdocs.yml` at the repository root.
 
+## Architecture and code review
+
+- [程序结构说明（1.31.15）](程序结构说明.md)
+- [全面代码审查报告（2026-09-06）](reviews/2026-09-06全面代码审查.md)
+- [审查整改实施计划（2026-09-06）](superpowers/plans/2026-09-06-review-remediation-plan.md)
+
 ## Preview locally
 
 From the repository root:

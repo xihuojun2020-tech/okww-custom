@@ -38,9 +38,11 @@ from src.account_identity import (
     normalize_identity as _normalize_identity,
     resolve_profile_short_names as _resolve_profile_short_names,
     short_profile_name as _short_profile_name,
+    profile_identity_values,
+    account_identity_signature,
 )
 from src.account_repository import AccountRepository, get_default_repository
-from src.sequence_repository import SequenceRepository
+from src.sequence_repository import SequenceRepository, thaw_snapshot
 from src.runtime.sequence_snapshot_service import SequenceSnapshotService
 from src.runtime.task_run_coordinator import TaskRunCoordinator
 from src.runtime.account_selection_service import AccountSelectionService
@@ -71,6 +73,7 @@ profile_short_name_pattern = re.compile(
 )
 
 CURRENT_SEQUENCE = '当前序列'
+CURRENT_SEQUENCE_MEMBERS = '当前序列账号'
 CURRENT_ACCOUNT = '当前执行账号'
 MANAGE_SEQUENCES = '管理序列'
 MAX_SEQUENCES = 10
@@ -168,18 +171,15 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         self.config_type[CURRENT_SEQUENCE] = {
             'type': 'drop_down',
             'options': seq_names,
-            'sub_configs': {seq: [SEQ_ACCOUNTS[i]] for i, seq in enumerate(seq_names)},
+            'sub_configs': {seq: [CURRENT_SEQUENCE_MEMBERS] for seq in seq_names},
         }
         # 每个序列的账号列表（独立选择、各自记住；账号可跨序列共享，当天已打的账号任何序列都会跳过）
-        for i, seq in enumerate(seq_names):
-            protected_accounts = self._read_sequences().get(seq, []) if self.integrity_service is not None else []
-            self.default_config[SEQ_ACCOUNTS[i]] = list(protected_accounts)
-            self.config_description[SEQ_ACCOUNTS[i]] = f'{seq} 包含的账号（按顺序，选过的不会重复出现；无 = 该位置没有账号）'
-            self.config_type[SEQ_ACCOUNTS[i]] = {
-                'type': 'label',
-                'options': self.get_profile_names(),
-                'last_completed_provider': self.get_profile_last_completed,
-            }
+        self.default_config[CURRENT_SEQUENCE_MEMBERS] = []
+        self.config_description[CURRENT_SEQUENCE_MEMBERS] = '当前序列包含的账号；请在序列管理页面修改'
+        self.config_type[CURRENT_SEQUENCE_MEMBERS] = {
+            'type': 'label', 'options': self.get_profile_names(),
+            'last_completed_provider': self.get_profile_last_completed,
+        }
         # 当前执行账号：用户确认当前已登录该账号；从它开始并在整轮结束后登录回它。
         self.default_config[CURRENT_ACCOUNT] = ''
         self.config_description[CURRENT_ACCOUNT] = (
@@ -221,15 +221,20 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         """当前执行的序列名（仅作账号分类标识，按「当前序列」配置执行）。"""
         return (self.config.get(CURRENT_SEQUENCE) or '序列1').strip()
 
+    def validate_config(self, key, value):
+        result = super().validate_config(key, value)
+        if not result and key == CURRENT_SEQUENCE:
+            from PySide6.QtCore import QTimer
+            # Validation precedes Config's write; refresh after the value is stored.
+            QTimer.singleShot(0, self.refresh_account_options)
+        return result
+
     def get_readonly_config_value(self, key):
+        if key == CURRENT_SEQUENCE_MEMBERS:
+            return self._read_sequences().get(self.get_current_sequence(), [])
         if key in SEQ_ACCOUNTS:
-            try:
-                index = SEQ_ACCOUNTS.index(key)
-                sequence_names = self.get_sequence_names()
-                sequence = sequence_names[index] if index < len(sequence_names) else key
-                return self._read_sequences().get(sequence, [])
-            except Exception:
-                return []
+            sequence = f'序列{int(re.search(r"\d+", key).group())}'
+            return self._read_sequences().get(sequence, [])
         return self.config.get(key)
 
     def _sync_local_to_sequences(self):
@@ -245,11 +250,14 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             if not seqs:
                 seqs = {f'序列{i}': [] for i in range(1, 6)}
             changed = False
-            for i in range(MAX_SEQUENCES):
-                key = f'序列{i + 1}'
+            for legacy_key, values in self.config.items():
+                match = re.fullmatch(r'序列\s*(\d+)\s*账号', legacy_key)
+                if not match:
+                    continue
+                key = f'序列{int(match.group(1))}'
                 if key not in seqs:
                     continue
-                acc = [a for a in (self.config.get(SEQ_ACCOUNTS[i]) or []) if a and a != '无']
+                acc = [a for a in (values or []) if a and a != '无']
                 if acc != seqs[key]:
                     seqs[key] = acc
                     changed = True
@@ -264,13 +272,19 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         优先读统一归属数据（daily_profiles 的 sequences）；无归属数据时回退自身配置。
         """
         name = seq_name or self.get_current_sequence()
-        idx = self._seq_index(name)
-        seq = self.config.get(SEQ_ACCOUNTS[idx]) or [] if idx is not None else []
+        seq = []
+        match = re.fullmatch(r'序列\s*(\d+)', name)
+        if match:
+            seq = self.config.get(f'序列 {int(match.group(1))} 账号') or []
         # 统一归属数据优先（多账号任务勾选时同步写入 sequences）
         try:
             seqs = self._read_sequences()
+            if self.integrity_service is not None:
+                return [a for a in seqs.get(name, []) if a and a != '无']
             if seqs and name in seqs:
                 seq = seqs[name]
+        except ConfigIntegrityBlocked:
+            raise
         except Exception:
             pass
         return [a for a in seq if a and a != '无']
@@ -306,7 +320,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     if isinstance(sequences, dict):
                         return sequences
             except Exception as exc:
-                logger.warning(f'account repository sequence projection unavailable: {exc}')
+                raise ConfigIntegrityBlocked(f'账号序列读取失败：{exc}') from exc
         if self.integrity_service is not None:
             try:
                 result = self.integrity_service.last_result or self.integrity_service.check()
@@ -347,6 +361,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         seqs = self._read_sequences()
         if seqs:
             return [str(k) for k in seqs.keys()]
+        if self.integrity_service is not None:
+            return []
         return [f'序列{i}' for i in range(1, 6)]
 
     def manage_sequences(self, *args):
@@ -392,9 +408,6 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 if new in seqs:
                     QMessageBox.information(dlg, '提示', '该序列已存在')
                     return
-                if len(seqs) >= MAX_SEQUENCES:
-                    QMessageBox.warning(dlg, '提示', f'最多支持 {MAX_SEQUENCES} 个序列')
-                    return
                 seqs[new] = []
                 name_edit.clear()
                 _refresh_list()
@@ -435,9 +448,6 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             # 保存统一归属 + 同步自身配置（序列N账号）并刷新序列下拉选项
             self._write_sequences(seqs)
             seq_names = list(seqs.keys())
-            for i, k in enumerate(seq_names):
-                if i < MAX_SEQUENCES:
-                    self.config[SEQ_ACCOUNTS[i]] = [a for a in seqs[k] if a and a != '无']
             self._sync_sequence_ui(seq_names)
             self.log_info(f'序列已更新：{seq_names}', notify=True)
         except Exception as e:
@@ -449,7 +459,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             if CURRENT_SEQUENCE in self.config_type and isinstance(self.config_type[CURRENT_SEQUENCE], dict):
                 self.config_type[CURRENT_SEQUENCE]['options'] = seq_names
                 self.config_type[CURRENT_SEQUENCE]['sub_configs'] = {
-                    seq: [SEQ_ACCOUNTS[i]] for i, seq in enumerate(seq_names)
+                    seq: [CURRENT_SEQUENCE_MEMBERS] for seq in seq_names
                 }
             # 更新「当前序列」下拉控件选项（单控件更新，不重建）
             from ok import og
@@ -481,12 +491,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             self.config[CURRENT_SEQUENCE] = current_sequence
         self.config_type[CURRENT_SEQUENCE]['options'] = seq_names
         self.config_type[CURRENT_SEQUENCE]['sub_configs'] = {
-            seq: [SEQ_ACCOUNTS[i]] for i, seq in enumerate(seq_names)
+            seq: [CURRENT_SEQUENCE_MEMBERS] for seq in seq_names
         }
-        for i, _seq in enumerate(seq_names):
-            if i >= len(SEQ_ACCOUNTS):
-                break
-            self.config_type[SEQ_ACCOUNTS[i]]['options'] = profile_names
+        self.config_type.setdefault(CURRENT_SEQUENCE_MEMBERS, {'type': 'label'})['options'] = profile_names
         self.config_type[CURRENT_ACCOUNT]['options'] = [''] + profile_names
         try:
             from ok import og
@@ -512,7 +519,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                         combo.addItems([''] + profile_names)
                         combo.setCurrentText(current if current in profile_names else '')
                         combo.blockSignals(False)
-                    elif key in SEQ_ACCOUNTS and hasattr(widget, 'update_value'):
+                    elif key == CURRENT_SEQUENCE_MEMBERS and hasattr(widget, 'update_value'):
                         widget.update_value()
         except Exception:
             pass
@@ -523,6 +530,13 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _load_profiles(self):
         """加载全部方案（含手机号、账号别名）。"""
+        snapshot = getattr(self, '_active_run_snapshot', None)
+        if snapshot is not None:
+            identities = getattr(snapshot, 'identity_profiles', {})
+            source = identities or {p['profile_id']: {**p['account'], 'profile_id': p['profile_id'],
+                                                      'task_config': p['tasks']} for p in snapshot.profiles}
+            return {str(p.get('display_name') or pid): {**thaw_snapshot(p), **thaw_snapshot(p.get('task_config', {}))}
+                    for pid, p in source.items()}
         try:
             repository = get_default_repository()
             if repository is None and self.integrity_service is not None:
@@ -543,8 +557,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             profiles = (data or {}).get('profiles', {})
             return profiles if isinstance(profiles, dict) else {}
         except Exception as e:
-            logger.error('load profiles failed', e)
-            return {}
+            raise ConfigIntegrityBlocked(f'账号配置读取失败：{e}') from e
 
     def get_profile_names(self):
         """返回全部方案名。"""
@@ -568,14 +581,35 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             integrity_service=self.integrity_service,
         )
         sequences = SequenceSnapshotService(repository)
-        members = (sequences.sequences.resolve_short_names(profile_names)
-                   if short_names else list(profile_names or []))
-        snapshot = sequences.create_for_profile_ids(
-            members, sequence_id=sequence_id or self.get_current_sequence()
-        )
+        if profile_names is None:
+            snapshot = sequences.create(sequence_id or self.get_current_sequence())
+        else:
+            snapshot = sequences.create_for_profile_ids(list(profile_names), sequence_id=sequence_id or self.get_current_sequence(), short_names=short_names)
         self._active_run_snapshot = snapshot
+        self._run_profile_order = snapshot.profile_ids
+        self._run_start_profile_id = None
+        self._run_return_profile_id = None
         self.run_coordinator.start(snapshot)
         return snapshot
+
+    def clear_run_snapshot(self):
+        self._active_run_snapshot = None
+        self._run_profile_order = ()
+        self._run_start_profile_id = None
+        self._run_return_profile_id = None
+        self._current_profile_id = None
+        self.run_coordinator.request_stop()
+
+    def _set_run_start(self, profile_name):
+        if getattr(self, '_active_run_snapshot', None) is None or not profile_name:
+            return
+        profile_id = self._profile_id_for(profile_name)
+        self._run_start_profile_id = profile_id
+        self._run_return_profile_id = profile_id
+        order = self._run_profile_order
+        if profile_id in order:
+            index = order.index(profile_id)
+            self._run_profile_order = order[index:] + order[:index]
 
     def request_coordinated_stop(self):
         """Publish a stop request without mutating the active run snapshot."""
@@ -590,36 +624,10 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         """返回方案的识别标识列表：手机号掩码 + 账号别名（归一化）。"""
         profiles = self._load_profiles()
         profile = profiles.get(profile_name) or {}
-        ids = []
-        m = phone_in_name_pattern.search(profile_name)
-        if m:
-            phone = m.group(1)
-            ids.append(normalize_account_name(masked_phone(phone)))
-        # 账号别名：兼容新旧字段，贯穿登录就绪、展开、选号和登录前核对。
-        aliases = []
-        if isinstance(profile, dict):
-            for key in ('masked_phone', 'phone', 'nickname', 'alternate_login_name'):
-                value = profile.get(key)
-                if value:
-                    normalized = normalize_account_name(str(value).strip())
-                    if normalized and normalized not in ids:
-                        ids.append(normalized)
-            for key in ('备用识别名称内容', 'Account Name', 'account_name', '账号名称'):
-                value = profile.get(key)
-                if isinstance(value, (list, tuple, set)):
-                    aliases.extend(value)
-                elif value:
-                    aliases.extend(a.strip() for a in re.split(r'[,，;；\r\n]+', str(value)) if a.strip())
-            old = profile.get('account_aliases') or []
-            if isinstance(old, (list, tuple, set)):
-                aliases.extend(old)
-            elif old:
-                aliases.extend(a.strip() for a in re.split(r'[,，;；\r\n]+', str(old)) if a.strip())
-        for a in aliases:
-            if a:
-                normalized = normalize_account_name(str(a).strip())
-                if normalized and normalized not in ids:
-                    ids.append(normalized)
+        ids = [normalize_account_name(value) for value in profile_identity_values(profile_name, profile)]
+        match = phone_in_name_pattern.search(profile_name)
+        if match:
+            ids.append(normalize_account_name(masked_phone(match.group(1))))
         return ids
 
     def match_profile_from_login(self, login_text):
@@ -720,6 +728,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
     # ==================== 主流程 ====================
 
     def run(self):
+        self.clear_run_snapshot()
         _publish_status_safe(self, stage='启动', detail='正在启动多账号任务')
         require_account_runtime_for_task(self)
         if getattr(self, '_account_refresh_pending', False):
@@ -755,10 +764,11 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             if daily_task is not None:
                 override = getattr(daily_task, 'runtime_config_override', None)
                 context = override(LOGOUT_AFTER_DAILY_KEY, False) if callable(override) else nullcontext()
-                with context:
+                with context, self.account_input_guard(self._guard_account_transition):
                     self._run_inner()
             else:
-                self._run_inner()
+                with self.account_input_guard(self._guard_account_transition):
+                    self._run_inner()
         except TaskDisabledException:
             self.run_coordinator.request_stop()
             raise
@@ -768,6 +778,11 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         else:
             self.run_coordinator.request_stop()
         finally:
+            self.clear_run_snapshot()
+            if daily_task is not None:
+                release = getattr(daily_task, 'clear_profile_binding', None)
+                if callable(release):
+                    release()
             if daily_task is not None and hasattr(daily_task, '_runtime_status_account'):
                 del daily_task._runtime_status_account
 
@@ -776,10 +791,10 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         sequence = self.get_sequence_accounts()
         snapshot_maker = getattr(self, 'create_run_snapshot', None)
         if sequence and callable(snapshot_maker):
-            snapshot = snapshot_maker(sequence, sequence_id=self.get_current_sequence())
+            snapshot = snapshot_maker(None, sequence_id=self.get_current_sequence())
             sequence = self._snapshot_profile_names(snapshot)
         if not sequence:
-            self.log_info('未配置「本轮账号序列」，仅跑当前账号后结束', notify=True)
+            raise ConfigIntegrityBlocked('当前序列没有可执行账号，请先在序列管理页面配置账号')
 
         # 断点恢复：加载今日已完成账号
         for done in self._load_today_progress():
@@ -797,6 +812,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         ) if configured_start else None
         if configured_start and first_account is None:
             raise Exception(f'当前执行账号 {profile_status_label(configured_start)} 不属于当前序列')
+        MultiAccountDailyTask._set_run_start(self, first_account)
 
         # 第一轮：主界面启动先退登并识别真实账号；登录界面启动则从序列选号。
         try:
@@ -858,6 +874,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     self.screenshot('multi')
                     raise Exception(self.tr('Cannot identify the current account safely'))
 
+                MultiAccountDailyTask._set_run_start(self, first_account)
                 in_sequence = any(self._same_account(first_account, acc) for acc in sequence)
                 if in_sequence and not self._is_done(first_account):
                     _publish_status_safe(self,
@@ -921,6 +938,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         if not first_account:
             self.log_error('无法确定本轮真实起始账号，停止运行以防止错误回登')
             raise Exception(self.tr('Cannot determine the starting account safely'))
+        MultiAccountDailyTask._set_run_start(self, first_account)
         self.log_info(f'起始账号：{profile_status_label(first_account)}（全部完成后登录回）', notify=True)
 
         self.info_set('Completed', MultiAccountDailyTask._done_status_labels(self))
@@ -998,6 +1016,19 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         result = service.check()
         if not getattr(result, 'ok', False):
             raise ConfigIntegrityBlocked(service.describe(result))
+        snapshot = getattr(self, '_active_run_snapshot', None)
+        if snapshot is not None:
+            repository = get_default_repository() or AccountRepository(paths=service.paths, integrity_service=service)
+            _, current, _ = repository._load_index()
+            identities = getattr(snapshot, 'identity_profiles', {})
+            required = set(snapshot.profile_ids)
+            if getattr(self, '_run_return_profile_id', None):
+                required.add(self._run_return_profile_id)
+            for profile_id in required:
+                previous = identities.get(profile_id)
+                if profile_id not in current or (previous is not None and
+                        account_identity_signature(previous) != account_identity_signature(current[profile_id])):
+                    raise ConfigIntegrityBlocked('本轮账号已删除或身份已修改，请停止后重新开始')
         return True
 
     def _publish_status(self, *, account=None, stage=None, detail=None):
@@ -1647,6 +1678,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _screen_click(self, x, y, after_sleep=0.5, *, target_hwnd):
         """Deliver one verified SendInput click to an explicit login HWND."""
+        if getattr(self, '_active_run_snapshot', None) is not None:
+            MultiAccountDailyTask._guard_account_transition(self)
         if getattr(self, '_android_boundary', lambda: None)() is not None:
             raise RuntimeError('ADB 模式禁止使用 Windows 系统鼠标')
         executor = getattr(self, 'executor', None)
@@ -2536,6 +2569,11 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _next_target_account(self):
         """Return the next unfinished account in the fixed rotation selected before the run."""
+        snapshot = getattr(self, '_active_run_snapshot', None)
+        if snapshot is not None:
+            names = {p['profile_id']: str(p['account'].get('display_name') or p['profile_id']) for p in snapshot.profiles}
+            return next((names[pid] for pid in self._run_profile_order
+                         if not self._is_done(names[pid]) and not self._is_failed(names[pid])), None)
         sequence = self.get_sequence_accounts()
         if not sequence:
             return None
@@ -2573,17 +2611,17 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 binder = getattr(daily_task, 'bind_verified_profile', None)
                 if not callable(binder):
                     raise ConfigIntegrityBlocked('DailyTask cannot bind a verified profile ID')
-                binder(profile_name)
+                snapshot = getattr(self, '_active_run_snapshot', None)
+                selected = next((p for p in snapshot.profiles if p['account'].get('display_name') == profile_name), None) if snapshot else None
+                binder(profile_name, snapshot_profile=selected) if snapshot else binder(profile_name)
                 self.log_info(f'每日任务方案已按验证 ID 联动到 {profile_status_label(profile_name)}')
             elif daily_task.config.get(DAILY_PROFILE) == profile_name:
                 self.log_info(f'每日任务方案已是 {profile_status_label(profile_name)}')
             else:
                 daily_task.switch_profile(profile_name)
                 self.log_info(f'每日任务方案已联动到 {profile_status_label(profile_name)}', notify=True)
-            try:
+            if getattr(self, '_active_run_snapshot', None) is None:
                 self.config[DAILY_PROFILE] = profile_name
-            except Exception:
-                pass
             return True
         except TaskDisabledException:
             raise
@@ -2598,6 +2636,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         配置，否则即使登录账号正确，也可能按错误方案执行。
         """
         integrity_service = getattr(self, 'integrity_service', None)
+        MultiAccountDailyTask._guard_account_transition(self)
         if integrity_service is not None:
             result = integrity_service.check()
             if not result.ok:
@@ -2618,7 +2657,12 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             binder = getattr(daily_task, 'bind_verified_profile', None)
             if not callable(binder):
                 raise ConfigIntegrityBlocked('DailyTask cannot bind a verified profile ID')
-            binder(profile_name, expected_profile_id=profile_id)
+            snapshot = getattr(self, '_active_run_snapshot', None)
+            selected = next((p for p in snapshot.profiles if p['profile_id'] == profile_id), None) if snapshot else None
+            if snapshot:
+                binder(profile_name, expected_profile_id=profile_id, snapshot_profile=selected)
+            else:
+                binder(profile_name, expected_profile_id=profile_id)
         if daily_task is not None:
             daily_task._runtime_status_account = profile_status_label(profile_name)
         self._current_profile_id = profile_id

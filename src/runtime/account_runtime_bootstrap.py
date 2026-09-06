@@ -56,6 +56,9 @@ def initialize_account_runtime(root=None, program_version=None, *,
                 raise RuntimeError("account runtime is already initialized for another root")
             return _RUNTIME
         install_redaction_filters()
+        from src.account_config_bundle import AccountConfigBundleService
+        # Recover legacy/runtime writes before either mirrors or integrity checks.
+        AccountConfigBundleService(resolved).recover_incomplete_transactions()
         publish_service = AccountPublishService(resolved, program_version=str(program_version))
         publish_service.recover_incomplete_transactions()
         integrity_service = ConfigIntegrityService(

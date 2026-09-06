@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 import uuid
@@ -91,12 +92,24 @@ class TestAccountPublishService(unittest.TestCase):
 
         with patch.object(service, "_mirror_projections",
                           side_effect=OSError("forced mirror failure")):
-            with self.assertRaises(OSError):
-                service.publish(expected_revision=old.revision, profiles=changed,
-                                index=self.index, sequences=self.sequences)
+            result = service.publish(expected_revision=old.revision, profiles=changed,
+                                     index=self.index, sequences=self.sequences)
 
         self.assertNotEqual(old.revision, service.load_active().revision)
+        self.assertEqual(result.revision, service.load_active().revision)
+        self.assertTrue(result.maintenance_errors)
         self.assertTrue(old.bundle_dir.is_dir())
+        service.recover_incomplete_transactions()
+        mirror = self.root / 'configs/accounts/profiles' / f'{self.a1}.json'
+        self.assertEqual(json.loads(mirror.read_text(encoding='utf-8'))['display_name'], 'changed')
+
+    def test_prepare_does_not_activate_and_stale_empty_revision_is_rejected(self):
+        service = AccountPublishService(self.root)
+        prepared = service.prepare(profiles=self.profiles, index=self.index, sequences=self.sequences)
+        self.assertFalse(service.active_path.exists())
+        service.activate(prepared, expected_revision='')
+        with self.assertRaises(ProfileRevisionConflict):
+            service.activate(prepared, expected_revision='')
 
     def test_corrupt_active_same_revision_is_never_deleted(self):
         service = AccountPublishService(self.root)

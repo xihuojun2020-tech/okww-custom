@@ -144,14 +144,15 @@ class AccountRepository:
         self.index_path = Path(index_path) if index_path is not None else self.paths.master
         self.integrity_service = integrity_service
         self.migration_service = migration_service or migration
-        runtime_root = Path(runtime_dir) if runtime_dir is not None else self.root / "运行状态"
+        runtime_root = Path(runtime_dir) if runtime_dir is not None else self.paths.config_dir.parent / "运行状态"
         self.runtime_dir = runtime_root
         self.account_runtime_dir = runtime_root / "账号"
         self.account_dir = Path(account_dir) if account_dir is not None else self.root / "账号"
         self.sequence_dir = Path(sequence_dir) if sequence_dir is not None else self.root / "序列"
         self.progress_path = runtime_root / "全局.json"
         self.backup_dir = Path(backup_dir) if backup_dir is not None else self.root / "账号备份"
-        self._lock = threading.RLock()
+        from .account_change_lock import get_account_change_lock
+        self._lock = get_account_change_lock(self.paths.config_dir)
         self._verified_account_digests: dict[str, str] | None = None
 
     @property
@@ -260,18 +261,28 @@ class AccountRepository:
         return tuple(self._load_index()[1])
 
     def list_profiles(self) -> tuple[ProfileRecord, ...]:
-        return tuple(self.load_profile(profile_id) for profile_id in self.list_profile_ids())
+        raw, accounts, _ = self._load_index()
+        return self._profile_records(raw, accounts)
+
+    @classmethod
+    def _profile_records(cls, raw, accounts) -> tuple[ProfileRecord, ...]:
+        revision = cls._revision(raw)
+        records = []
+        for profile_id, value in accounts.items():
+            account = copy.deepcopy(value)
+            tasks = account.pop('task_config', {})
+            records.append(ProfileRecord(profile_id, revision, account, copy.deepcopy(tasks)))
+        return tuple(records)
 
     def legacy_profile_projection(self, *_args, **_kwargs) -> dict[str, Any]:
         """Detached name-keyed compatibility view for existing PC tasks."""
-        profiles = {}
-        for record in self.list_profiles():
+        raw, accounts, sequences = self._load_index()
+        profiles, names = {}, {}
+        for record in self._profile_records(raw, accounts):
             name = str(record.account.get("display_name") or record.profile_id)
+            names[record.profile_id] = name
             profiles[name] = {"profile_id": record.profile_id, **copy.deepcopy(dict(record.account)),
                               **copy.deepcopy(dict(record.tasks))}
-        _, _, sequences = self._load_index()
-        names = {record.profile_id: str(record.account.get("display_name") or record.profile_id)
-                 for record in self.list_profiles()}
         return {"profiles": profiles,
                 "sequences": {key: [names[item] for item in value] for key, value in sequences.items()}}
 
@@ -356,31 +367,30 @@ class AccountRepository:
             self._publish_master(candidate)
             return self.load_profile(profile_id)
 
-    def _publish_master(self, raw: Mapping[str, Any]) -> None:
+    def _publish_master(self, raw: Mapping[str, Any], *, precommit_hook=None):
         from . import account_config_bundle as bundle_module
 
         service = bundle_module.AccountConfigBundleService(
             self.root, integrity_service=self.integrity_service)
-        bundle = service.export_bundle()
-        bundle["master_config"] = copy.deepcopy(dict(raw))
-        bundle["manifest"]["config_id"] = raw.get("config_id")
-        bundle["manifest"]["partitions"] = {
-            name: bundle_module._digest(bundle[name])
-            for name in bundle_module._PARTITION_NAMES
-        }
-        service.import_bundle(bundle, confirm=True, trust_external=True)
-        # Keep a complete immutable runtime snapshot alongside the legacy
-        # master/working projection.  Existing callers continue to use the
-        # projection during migration; new callers can resolve active.json.
-        from .account_graph_store import AccountGraphStore
-        graph_store = AccountGraphStore(self.root)
-        source_profiles = raw.get("profiles", raw.get("accounts", {}))
-        if isinstance(source_profiles, Mapping) and isinstance(raw.get("sequences", {}), Mapping):
-            graph_store.publish({
-                "profiles": source_profiles,
-                "index": raw,
-                "sequences": raw.get("sequences", {}),
-            }, expected_revision=graph_store.service._active_revision())
+        with self._lock:
+            service.recover_incomplete_transactions()
+            revision, fingerprint = service._base_revisions()
+            bundle = service.export_bundle()
+            bundle["master_config"] = copy.deepcopy(dict(raw))
+            bundle["manifest"]["config_id"] = raw.get("config_id")
+            bundle["manifest"]["partitions"] = {
+                name: bundle_module._digest(bundle[name])
+                for name in bundle_module._PARTITION_NAMES
+            }
+            self.last_publish_result = service.import_bundle(
+                bundle, confirm=True, trust_external=True,
+                expected_active_revision=revision, expected_master_fingerprint=fingerprint,
+                preserve_runtime_and_preferences=True, precommit_hook=precommit_hook)
+            if self.last_publish_result.maintenance_errors:
+                import logging
+                logging.getLogger(__name__).warning('配置已生效，维护待恢复：%s',
+                                                   '; '.join(self.last_publish_result.maintenance_errors))
+            return self.last_publish_result
 
     def publish_profile(self, scope: ProfileEditScope, payload: Mapping[str, Any], **_kwargs) -> ProfileRecord:
         with self._lock:
@@ -508,11 +518,6 @@ class AccountRepository:
                 "account": dict(record.account), "tasks": dict(record.tasks),
                 "referenced_sequences": list(preview.sequence_ids),
             })
-            state_path = self._account_state_path(profile_id)
-            task_path = self.paths.multi_account_task or self.paths.config_dir / "MultiAccountDailyTask.json"
-            protected_paths = tuple(dict.fromkeys((self.paths.master, self.paths.working,
-                                                   self.paths.runtime, task_path, state_path)))
-            before = {path: path.read_bytes() if path.exists() else None for path in protected_paths}
             candidate = copy.deepcopy(raw)
             source_key = "accounts" if "accounts" in candidate else "profiles"
             del candidate[source_key][profile_id]
@@ -520,24 +525,8 @@ class AccountRepository:
                 name: [member for member in members if member != profile_id]
                 for name, members in sequences.items()
             }
-            try:
-                self._publish_master(candidate)
-                state_path.unlink(missing_ok=True)
-                hook = getattr(self, "deletion_postcheck_hook", None)
-                if callable(hook):
-                    hook()
-                return preview
-            except Exception:
-                from . import config_integrity as ci
-                for path, payload in before.items():
-                    if payload is None:
-                        path.unlink(missing_ok=True)
-                    elif path == self.paths.master:
-                        from .account_config_bundle import _atomic_replace_unchecked
-                        _atomic_replace_unchecked(path, payload)
-                    else:
-                        ci._atomic_replace_bytes(path, payload)
-                raise
+            self._publish_master(candidate, precommit_hook=getattr(self, 'deletion_postcheck_hook', None))
+            return preview
 
     def _account_state_path(self, profile_id: str) -> Path:
         return self.account_runtime_dir / f"{_profile_id(profile_id)}.json"

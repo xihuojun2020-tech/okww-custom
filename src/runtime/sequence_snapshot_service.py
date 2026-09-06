@@ -16,9 +16,9 @@ class SequenceSnapshotService:
         return self.sequences.create_run_snapshot(sequence_id)
 
     def create_for_profile_ids(self, profile_ids, *, sequence_id: str = "临时序列",
-                               revision: str | int = 0) -> SequenceRunSnapshot:
+                               revision: str | int = 0, short_names: bool = False) -> SequenceRunSnapshot:
         return self.sequences.snapshot_for_profile_ids(profile_ids, sequence_id=sequence_id,
-                                                        revision=revision)
+                                                        revision=revision, short_names=short_names)
 
 
 __all__ = ["SequenceSnapshotService"]

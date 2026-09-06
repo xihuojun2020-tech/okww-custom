@@ -1235,3 +1235,11 @@ msgstr ""
 
 msgid "Qingxiao"
 msgstr "Qingxiao"
+
+msgid "当前序列账号"
+msgstr "Cuentas de la secuencia actual"
+
+msgid "当前序列包含的账号；请在序列管理页面修改"
+msgstr ""
+"Cuentas de la secuencia actual; modifícalas en la página de gestión de "
+"secuencias"

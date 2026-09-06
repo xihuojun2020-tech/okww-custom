@@ -1,8 +1,11 @@
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 import uuid
 from pathlib import Path
+from unittest.mock import patch
 
 from src.account_config_bundle import (
     AccountConfigBundleService,
@@ -60,6 +63,178 @@ class TestAccountConfigBundle(unittest.TestCase):
 
     def tearDown(self):
         self.temp.cleanup()
+
+    def test_import_updates_existing_active_and_fresh_reader(self):
+        from src.account_repository import AccountRepository
+        repo = AccountRepository(self.root, integrity_service=self.service)
+        repo._publish_master(self.master)
+        bundles = AccountConfigBundleService(self.root, integrity_service=self.service)
+        candidate = bundles.export_bundle()
+        candidate['master_config']['profiles'][PROFILE_A]['task_config']['Which Tacet Suppression to Farm'] = 2
+        result = bundles.import_bundle(candidate, confirm=True, trust_external=True)
+        self.assertTrue(result.published_revision)
+        for reader in (repo, AccountRepository(self.root, integrity_service=self.service)):
+            self.assertEqual(reader.load_profile(PROFILE_A).tasks['Which Tacet Suppression to Farm'], 2)
+
+    def test_stale_preview_rejected_and_edit_preserves_latest_progress(self):
+        from src.account_repository import AccountRepository, ProfileRevisionConflict
+        bundles = AccountConfigBundleService(self.root, integrity_service=self.service)
+        candidate = bundles.export_bundle()
+        preview = bundles.preflight_import(candidate)
+        self.service.record_completion(PROFILE_A, 'daily', 'newest')
+        self.service.paths.multi_account_task.write_text('{"latest_preference": true}', encoding='utf-8')
+        candidate['master_config']['profiles'][PROFILE_A]['task_config']['Which Tacet Suppression to Farm'] = 2
+        bundles.import_bundle(candidate, confirm=True, trust_external=True, preserve_runtime_and_preferences=True)
+        self.assertEqual(self.service.get_completion(PROFILE_A, 'daily'), 'newest')
+        self.assertEqual(json.loads(self.service.paths.multi_account_task.read_text()), {'latest_preference': True})
+        with self.assertRaises(ProfileRevisionConflict):
+            bundles.import_bundle(preview.bundle, preflight=preview, confirm=True)
+        self.assertEqual(AccountRepository(self.root).load_profile(PROFILE_A).tasks['Which Tacet Suppression to Farm'], 2)
+
+    def test_running_executor_blocks_external_import_but_allows_parameter_edit(self):
+        import ok
+        from types import SimpleNamespace
+        service = AccountConfigBundleService(self.root)
+        bundle = service.export_bundle()
+        with patch.object(ok.og, 'executor', SimpleNamespace(current_task=object())):
+            with self.assertRaisesRegex(BundleImportBlocked, '先停止任务'):
+                service.import_bundle(bundle, confirm=True)
+            self.assertTrue(service.import_bundle(bundle, confirm=True, preserve_runtime_and_preferences=True).ok)
+
+    def test_corrupt_recovery_snapshot_is_preserved_without_guessing(self):
+        from src.account_publish_service import AccountPublishService
+        bundles = AccountConfigBundleService(self.root)
+        candidate = bundles.export_bundle()
+        candidate['master_config']['profiles'][PROFILE_A]['task_config']['Which Tacet Suppression to Farm'] = 2
+        with patch.object(AccountPublishService, '_write_active_pointer', side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                bundles.import_bundle(candidate, confirm=True, trust_external=True)
+        intact = bundles._journal_path.read_bytes()
+        damaged = json.loads(intact)
+        damaged['before']['master']['data'] = 'invalid base64!'
+        bundles._journal_path.write_text(json.dumps(damaged), encoding='utf-8')
+        before = self.service.paths.master.read_bytes()
+        with self.assertRaises(ConfigBundleError):
+            bundles.recover_incomplete_transactions()
+        self.assertTrue(bundles._journal_path.exists())
+        self.assertEqual(self.service.paths.master.read_bytes(), before)
+        bundles._journal_path.write_bytes(intact)
+        bundles.recover_incomplete_transactions()
+        self.assertTrue(self.service.check(record_incident=False).ok)
+
+    def test_completion_waiting_during_edit_is_not_lost(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Event
+        entered, attempted = Event(), Event()
+        def snapshot_hook(_before):
+            entered.set()
+            self.assertTrue(attempted.wait(5))
+        bundles = AccountConfigBundleService(self.root, transaction_snapshot_hook=snapshot_hook)
+        candidate = bundles.export_bundle()
+        candidate['master_config']['profiles'][PROFILE_A]['task_config']['Which Tacet Suppression to Farm'] = 2
+        def complete():
+            self.assertTrue(entered.wait(5))
+            attempted.set()
+            self.service.record_completion(PROFILE_A, 'daily', 'concurrent')
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            writer = executor.submit(bundles.import_bundle, candidate, confirm=True,
+                                     trust_external=True, preserve_runtime_and_preferences=True)
+            completion = executor.submit(complete)
+            writer.result(timeout=15)
+            completion.result(timeout=15)
+        self.assertEqual(self.service.get_completion(PROFILE_A, 'daily'), 'concurrent')
+
+    def test_forced_process_exit_recovers_pre_and_post_commit_including_same_revision(self):
+        from tests.fixture_support import make_account_environment, synthetic_identity
+        from src.account_repository import AccountRepository
+        child = r'''
+import os, sys
+from src.account_config_bundle import AccountConfigBundleService
+from src.account_publish_service import AccountPublishService
+root, phase, same = sys.argv[1:]
+service = AccountConfigBundleService(root)
+bundle = service.export_bundle()
+if same == 'False':
+    pid = list(bundle['master_config']['profiles'])[1]
+    del bundle['master_config']['profiles'][pid]
+    bundle['master_config']['sequences']['S1'].remove(pid)
+bundle['runtime_data']['progress'] = {'transaction_probe': 'new'}
+write = service._write_journal
+def journal(value):
+    write(value)
+    if value['phase'] == phase:
+        os._exit(73)
+service._write_journal = journal
+activate = AccountPublishService._write_active_pointer
+def pointer(self, *args):
+    if phase == 'ACTIVE_BEFORE': os._exit(73)
+    activate(self, *args)
+    if phase == 'ACTIVE_AFTER': os._exit(73)
+AccountPublishService._write_active_pointer = pointer
+service.import_bundle(bundle, confirm=True, trust_external=True)
+'''
+        for same in (False, True):
+            for phase in ('PREPARED', 'LEGACY_WRITTEN', 'ACTIVE_BEFORE', 'ACTIVE_AFTER', 'COMMITTED'):
+                with self.subTest(same=same, phase=phase):
+                    root = self.root / f'{same}-{phase}'
+                    env = make_account_environment(root, names=('A1', 'A3'))
+                    deleted = synthetic_identity('A3')['profile_id']
+                    env.repository.record_completion(deleted, 'daily', 'old')
+                    service = AccountConfigBundleService(root)
+                    targets = service._transaction_targets([deleted])
+                    before = {path: path.read_bytes() if path.exists() else None for path in targets.values()}
+                    result = subprocess.run([sys.executable, '-c', child, str(root), phase, str(same)],
+                                            capture_output=True, text=True, timeout=30)
+                    self.assertEqual(result.returncode, 73, result.stderr)
+                    service.recover_incomplete_transactions()
+                    committed = phase == 'COMMITTED' or (not same and phase == 'ACTIVE_AFTER')
+                    if not committed:
+                        for path, payload in before.items():
+                            self.assertEqual(path.read_bytes() if path.exists() else None, payload)
+                    else:
+                        self.assertEqual(env.integrity.get_progress('transaction_probe'), 'new')
+                    self.assertEqual(deleted in AccountRepository(root).list_profile_ids(), same or not committed)
+                    self.assertTrue(env.integrity.check(record_incident=False).ok)
+                    self.assertFalse(service._journal_path.exists())
+
+    def test_two_processes_cannot_commit_the_same_preview(self):
+        from tests.fixture_support import make_account_environment
+        from src.account_repository import AccountRepository
+        root = self.root / 'concurrent'
+        make_account_environment(root)
+        child = r'''
+import sys, time
+from pathlib import Path
+from src.account_config_bundle import AccountConfigBundleService
+from src.account_repository import ProfileRevisionConflict
+root, slot = sys.argv[1:]
+service = AccountConfigBundleService(root)
+bundle = service.export_bundle()
+next(iter(bundle['master_config']['profiles'].values()))['task_config']['Which Tacet Suppression to Farm'] = int(slot) + 2
+preview = service.preflight_import(bundle)
+Path(root, 'ready' + slot).touch()
+end = time.monotonic() + 10
+while not all(Path(root, 'ready' + n).exists() for n in ('0', '1')):
+    if time.monotonic() > end: raise RuntimeError('barrier timed out')
+    time.sleep(0.02)
+try:
+    service.import_bundle(bundle, preflight=preview, confirm=True, trust_external=True)
+except ProfileRevisionConflict:
+    sys.exit(2)
+'''
+        processes = [subprocess.Popen([sys.executable, '-c', child, str(root), str(slot)],
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE) for slot in range(2)]
+        try:
+            for process in processes:
+                output = process.communicate(timeout=30)
+                self.assertIn(process.returncode, (0, 2), output)
+            self.assertEqual(sorted(p.returncode for p in processes), [0, 2])
+            self.assertIn(AccountRepository(root).list_profiles()[0].tasks['Which Tacet Suppression to Farm'], (2, 3))
+        finally:
+            for process in processes:
+                if process.poll() is None:
+                    process.kill()
+                process.communicate()
 
     def test_task_sequence_extraction_preserves_empty_and_numeric_order(self):
         actual = extract_task_sequences({"序列 2 账号": ["A3"], "序列 1 账号": [], "other": 1})

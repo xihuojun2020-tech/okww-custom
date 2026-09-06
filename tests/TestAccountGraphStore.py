@@ -53,8 +53,8 @@ class TestAccountGraphStore(unittest.TestCase):
                          "index": {"config_id": "test"},
                          "sequences": {"主序列": [profile_id]}}
             with patch.object(store.service, "_mirror_projections", side_effect=OSError("interrupt")):
-                with self.assertRaises(OSError):
-                    store.publish(candidate, expected_revision=first.revision)
+                result = store.publish(candidate, expected_revision=first.revision)
+            self.assertTrue(result.maintenance_errors)
             active = store.load_active()
             self.assertNotEqual(active.revision, first.revision)
             self.assertEqual(active.profiles[profile_id]["display_name"], "changed")

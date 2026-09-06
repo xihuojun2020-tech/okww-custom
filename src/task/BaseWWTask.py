@@ -1,6 +1,7 @@
 import math
 import re
 import time
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import List
 
@@ -383,6 +384,7 @@ class BaseWWTask(BaseTask):
 
     def click(self, x=-1, y=-1, move_back=False, name=None, interval=-1, move=False, down_time=0.01, after_sleep=0,
               key="left"):
+        self._guard_account_input()
         if x == -1 and y == -1:
             x = self.width_of_screen(0.5)
             y = self.height_of_screen(0.5)
@@ -392,6 +394,41 @@ class BaseWWTask(BaseTask):
             down_time = 0.2
         return super().click(x, y, move_back, name, interval, move=move, down_time=down_time, after_sleep=after_sleep,
                              key=key)
+
+    @contextmanager
+    def account_input_guard(self, guard):
+        """Keep the same identity guard for nested farming tasks on this executor."""
+        executor = getattr(self, 'executor', None)
+        if executor is None:
+            yield
+            return
+        previous = getattr(executor, '_account_input_guard', None)
+        executor._account_input_guard = previous or guard
+        try:
+            yield
+        finally:
+            executor._account_input_guard = previous
+
+    def _guard_account_input(self):
+        guard = getattr(getattr(self, 'executor', None), '_account_input_guard', None)
+        if callable(guard):
+            guard()
+
+    def send_key(self, *args, **kwargs):
+        self._guard_account_input()
+        return super().send_key(*args, **kwargs)
+
+    def send_key_down(self, *args, **kwargs):
+        self._guard_account_input()
+        return super().send_key_down(*args, **kwargs)
+
+    def mouse_down(self, *args, **kwargs):
+        self._guard_account_input()
+        return super().mouse_down(*args, **kwargs)
+
+    def scroll(self, *args, **kwargs):
+        self._guard_account_input()
+        return super().scroll(*args, **kwargs)
 
     def check_for_monthly_card(self):
         if self.should_check_monthly_card():

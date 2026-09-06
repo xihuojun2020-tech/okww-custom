@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -18,6 +18,7 @@ class ActiveAccountGraph:
     index: Mapping[str, Any]
     sequences: Mapping[str, list[str]]
     bundle_dir: Path
+    maintenance_errors: tuple[str, ...] = ()
 
 
 class AccountGraphStore:
@@ -59,7 +60,7 @@ class AccountGraphStore:
             raise ValueError("account graph candidate has invalid shape")
         result = self.service.publish(expected_revision=str(expected_revision or ""),
                                       profiles=profiles, index=index, sequences=sequences)
-        return self.load_active()
+        return replace(self.load_active(), maintenance_errors=result.maintenance_errors)
 
 
 __all__ = ["AccountGraphStore", "ActiveAccountGraph"]

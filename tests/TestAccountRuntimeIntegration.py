@@ -28,6 +28,166 @@ def _digest(value):
 
 
 class TestAccountRuntimeIntegration(unittest.TestCase):
+    def test_real_run_uses_snapshot_after_parameter_sequence_and_label_edits(self):
+        from src.account_repository import ProfileEditScope
+        from src.config_integrity import ConfigIntegrityBlocked
+        from src.runtime.task_run_coordinator import TaskRunCoordinator
+        from src.task.MultiAccountDailyTask import CURRENT_ACCOUNT, CURRENT_SEQUENCE
+        from src.task.DailyTask import DAILY_PROFILE
+        from tests.fixture_support import make_account_environment, synthetic_identity
+        with tempfile.TemporaryDirectory() as temp:
+            env = make_account_environment(temp)
+            repo = env.repository
+            a1 = synthetic_identity('A1')['profile_id']
+            a3 = synthetic_identity('A3')['profile_id']
+            multi = object.__new__(MultiAccountDailyTask)
+            multi.integrity_service = env.integrity
+            multi.config = {CURRENT_SEQUENCE: 'S1', CURRENT_ACCOUNT: 'A1'}
+            multi.run_coordinator = TaskRunCoordinator()
+            multi.done_set = set()
+            multi.failed_accounts = {}
+            snapshot = multi.create_run_snapshot(None, sequence_id='S1')
+            multi._set_run_start('A1')
+            daily = object.__new__(DailyTask)
+            daily.integrity_service = env.integrity
+            daily.config = {DAILY_PROFILE: 'A3'}
+            daily.bind_verified_profile('A1', expected_profile_id=a1, snapshot_profile=snapshot.profiles[0])
+            record = repo.load_profile(a1)
+            repo.publish_profile(ProfileEditScope(a1, record.revision), {
+                'account': {**record.account, 'display_name': 'A10'},
+                'tasks': {**record.tasks, 'Which Tacet Suppression to Farm': 2}})
+            repo.publish_sequence('S1', [a3])
+            multi.config[CURRENT_ACCOUNT] = 'A3'
+            self.assertEqual(multi._next_target_account(), 'A1')
+            self.assertEqual(multi._run_return_profile_id, a1)
+            self.assertTrue(multi._guard_account_transition())
+            daily.ensure_daily_profiles()
+            self.assertEqual(daily._profile_get('Which Tacet Suppression to Farm'), 1)
+            self.assertEqual(daily.config[DAILY_PROFILE], 'A3')
+            self.assertEqual(daily.get_active_profile_name(), 'A1')
+            daily.clear_profile_binding()
+            multi.clear_run_snapshot()
+            new = multi.create_run_snapshot(None, sequence_id='S1')
+            self.assertEqual(new.profile_ids, (a3,))
+            self.assertEqual(repo.load_profile(a1).tasks['Which Tacet Suppression to Farm'], 2)
+            repo.delete_profile_cascade(a3, expected_revision=repo.load_profile(a3).revision)
+            with self.assertRaises(ConfigIntegrityBlocked):
+                multi._screen_click(0, 0, target_hwnd=1)
+
+    def test_alias_disable_is_respected_by_production_with_flat_and_nested_profiles(self):
+        from tests.fixture_support import synthetic_identity
+        identity = synthetic_identity('A1')
+        for nested in (False, True):
+            settings = {'备用识别名称': '无', '备用识别名称内容': identity['alternate_login_name']}
+            profile = {**identity, 'display_name': 'A1', 'account_aliases': [identity['alternate_login_name']],
+                       **({'task_config': settings} if nested else settings)}
+            task = object.__new__(MultiAccountDailyTask)
+            task._load_profiles = lambda: {'A1': profile}
+            self.assertIsNone(task.match_profile_from_login(identity['alternate_login_name']))
+            self.assertEqual(task.match_profile_from_login(identity['masked_phone']), 'A1')
+            settings['备用识别名称'] = '使用'
+            if not nested:
+                profile.update(settings)
+            self.assertEqual(task.match_profile_from_login(identity['alternate_login_name']), 'A1')
+
+    def test_arbitrary_sequence_counts_construct_and_refresh_real_task(self):
+        from tests.fixture_support import make_account_environment
+        from src.task.MultiAccountDailyTask import CURRENT_ACCOUNT, CURRENT_SEQUENCE, CURRENT_SEQUENCE_MEMBERS
+        module = __import__('src.task.MultiAccountDailyTask', fromlist=['MultiAccountDailyTask'])
+        with tempfile.TemporaryDirectory() as temp:
+            env = make_account_environment(temp)
+            repo = env.repository
+            for count in (0, 1, 10, 11, 50):
+                master = copy.deepcopy(env.master)
+                master['sequences'] = {f'S{i}': list(master['profiles']) for i in range(count)}
+                repo._publish_master(master)
+                with patch.object(module, 'get_default_service', return_value=env.integrity), \
+                        patch.object(module, 'get_default_repository', return_value=repo):
+                    from types import SimpleNamespace
+                    executor = SimpleNamespace(scene=None, text_fix={}, global_config=SimpleNamespace(get_config=lambda _: {}))
+                    task = MultiAccountDailyTask(executor=executor, app=None)
+                    task.config = {**task.default_config, CURRENT_SEQUENCE: f'S{count-1}', CURRENT_ACCOUNT: ''}
+                    task.running = False
+                    self.assertTrue(task.refresh_account_options())
+                    self.assertEqual(len(task.config_type[CURRENT_SEQUENCE]['options']), count)
+                    self.assertEqual(task.get_readonly_config_value(CURRENT_SEQUENCE_MEMBERS),
+                                     ['A1', 'A3', 'A4'] if count else [])
+                    if count:
+                        self.assertEqual(len(task.create_run_snapshot(None, sequence_id=f'S{count-1}').profiles), 3)
+                    task.clear_run_snapshot()
+
+    def test_test_task_reads_real_default_repository_and_reports_corruption(self):
+        from tests.fixture_support import make_account_environment
+        module = __import__('src.task.TestAccountSwitchTask', fromlist=['TestAccountSwitchTask'])
+        with tempfile.TemporaryDirectory() as temp:
+            env = make_account_environment(temp)
+            task = object.__new__(TestAccountSwitchTask)
+            task.log_error = lambda *args: None
+            with patch.object(module, 'get_default_repository', return_value=env.repository):
+                self.assertEqual(task._get_profile_names(), ['A1', 'A3', 'A4'])
+                env.publisher.active_path.write_text('{}', encoding='utf-8')
+                self.assertEqual(task._get_profile_names(), [])
+                self.assertTrue(task._profile_load_error)
+
+    def test_projection_and_snapshot_validate_once_and_fail_closed_after_corruption(self):
+        from tests.fixture_support import make_account_environment
+        from src.sequence_repository import SequenceRepository
+        from src.config_integrity import ConfigIntegrityBlocked
+        with tempfile.TemporaryDirectory() as temp:
+            env = make_account_environment(temp)
+            original = AccountPublishService._validate_bundle_dir
+            calls = []
+            def counted(service, *args):
+                calls.append(1)
+                return original(service, *args)
+            for operation in (env.repository.get_detached_projection,
+                              lambda: SequenceRepository(env.repository).create_run_snapshot('S1')):
+                calls.clear()
+                with patch.object(AccountPublishService, '_validate_bundle_dir', counted):
+                    operation()
+                self.assertEqual(len(calls), 1)
+            active = env.publisher.load_active()
+            (active.bundle_dir / 'sequences.json').write_text('{}', encoding='utf-8')
+            for cls, method in ((DailyTask, 'load_daily_profiles'), (MultiAccountDailyTask, '_load_profiles')):
+                task = object.__new__(cls)
+                task.integrity_service = env.integrity
+                with self.assertRaises(ConfigIntegrityBlocked):
+                    getattr(task, method)()
+
+    def test_nested_input_guard_stops_before_delivery_and_is_released(self):
+        from types import SimpleNamespace
+        from tests.fixture_support import make_account_environment, synthetic_identity
+        from src.config_integrity import ConfigIntegrityBlocked
+        from src.task.BaseWWTask import BaseWWTask
+        from src.sequence_repository import SequenceRepository
+        with tempfile.TemporaryDirectory() as temp:
+            env = make_account_environment(temp)
+            daily = object.__new__(DailyTask)
+            daily.integrity_service = env.integrity
+            daily.config = {'Daily Profile': 'A3'}
+            executor = SimpleNamespace()
+            daily._executor = executor
+            child = object.__new__(BaseWWTask)
+            child._executor = executor
+            a1 = synthetic_identity('A1')['profile_id']
+            profile = SequenceRepository(env.repository).create_run_snapshot('S1').profiles[0]
+            daily.bind_verified_profile('A1', snapshot_profile=profile)
+            with daily.account_input_guard(daily._guard_bound_profile_identity):
+                env.repository.delete_profile_cascade(a1, expected_revision=env.repository.load_profile(a1).revision)
+                with self.assertRaises(ConfigIntegrityBlocked):
+                    child.send_key('e')
+            self.assertIsNone(executor._account_input_guard)
+
+    def test_daily_exception_releases_run_binding(self):
+        task = object.__new__(DailyTask)
+        task._snapshot_bound_externally = True
+        task._verified_profile_snapshot = {'old': True}
+        task._run_daily_inner = lambda: (_ for _ in ()).throw(RuntimeError('forced'))
+        with self.assertRaisesRegex(RuntimeError, 'forced'):
+            task.run()
+        self.assertIsNone(task._verified_profile_snapshot)
+        self.assertFalse(task._snapshot_bound_externally)
+
     def test_daily_task_prefers_detached_default_repository_projection(self):
         projection = {"A1": {"profile_id": "a1", "Which to Farm": "repository"}}
 

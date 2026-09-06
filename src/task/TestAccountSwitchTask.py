@@ -15,7 +15,8 @@ from ok import TaskDisabledException
 from src.task.BaseWWTask import BaseWWTask
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.MouseResetTask import MouseResetTask
-from src.account_repository import AccountRepository
+from src.account_repository import AccountRepository, get_default_repository
+from src.config_integrity import get_default_service, ConfigIntegrityBlocked
 from src.account_identity import short_profile_name
 from src.runtime.account_runtime_bootstrap import require_account_runtime_for_task
 
@@ -89,25 +90,23 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
 
     def _get_profile_names(self):
         try:
+            self._profile_load_error = None
             service = get_default_service()
-            if service is not None:
+            repository = get_default_repository()
+            if repository is None and service is not None:
                 repository = AccountRepository(paths=service.paths, integrity_service=service)
+            if repository is not None:
                 projection = repository.get_detached_projection()
-                profiles = projection.get('profiles', {}) if isinstance(projection, dict) else {}
-                if isinstance(profiles, dict):
-                    return list(profiles.keys())
-                result = service.last_result or service.check()
-                if result.master_valid and result.master:
-                    return list(service.legacy_profile_projection(result.master).get('profiles', {}).keys())
-                return []
+                return list(projection.get('profiles', {}))
             from ok.util.file import get_relative_path, read_json_file
             profiles = read_json_file(get_relative_path('configs', 'daily_profiles.json'))
             if isinstance(profiles, dict) and 'profiles' in profiles:
                 return list(profiles['profiles'].keys())
             elif isinstance(profiles, dict):
                 return [k for k in profiles.keys() if k != 'sequences']
-        except Exception:
-            pass
+        except Exception as error:
+            self._profile_load_error = str(error)
+            self.log_error('读取账号列表失败', error)
         return []
 
     def refresh_profile_options(self):
@@ -146,6 +145,9 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
 
     def run(self):
         require_account_runtime_for_task(self)
+        self._get_profile_names()
+        if getattr(self, '_profile_load_error', None):
+            raise ConfigIntegrityBlocked('账号列表读取失败，请修复配置后重试')
         if getattr(self, '_account_refresh_pending', False):
             self.refresh_profile_options()
         WWOneTimeTask.run(self)
@@ -155,6 +157,7 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
         if mouse_reset_was_enabled:
             mouse_reset_task.disable()
 
+        mat = None
         try:
             test_mode = (self.config.get('测试模式') or SINGLE_MODE).strip()
             target_config = (self.config.get('目标账号') or '').strip()
@@ -166,6 +169,9 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
                 self.log_error('未找到 MultiAccountDailyTask 实例')
                 raise Exception('MultiAccountDailyTask 未注册')
 
+            clear = getattr(mat, 'clear_run_snapshot', None)
+            if callable(clear):
+                clear()
             continuous_mode = test_mode == CONTINUOUS_MODE
             sequence_targets = []
             if continuous_mode:
@@ -312,5 +318,8 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
             self.info_set('状态', '测试通过 ✓')
 
         finally:
+            clear = getattr(mat, 'clear_run_snapshot', None)
+            if callable(clear):
+                clear()
             if mouse_reset_was_enabled:
                 mouse_reset_task.enable()

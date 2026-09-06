@@ -72,6 +72,26 @@ def _safe_profile_label(value: Any) -> str:
     return short_profile_name(value) or "未命名账号"
 
 
+def _alias_config(profile: Mapping[str, Any]) -> Mapping[str, Any]:
+    nested = profile.get('task_config')
+    return nested if isinstance(nested, Mapping) else profile
+
+
+def _enabled_aliases(profile: Mapping[str, Any]) -> list[str]:
+    config = _alias_config(profile)
+    disabled = normalize_identity(config.get('备用识别名称')) in {'无', '不使用', 'disabled', 'false'}
+    alternate = split_identity_values(profile.get('alternate_login_name'))
+    for source in (profile, config):
+        for key in _ALIAS_FIELDS:
+            alternate.extend(split_identity_values(source.get(key)))
+    aliases = split_identity_values(profile.get('account_aliases'))
+    if disabled:
+        excluded = {normalize_identity(value) for value in alternate}
+        return [value for value in aliases if normalize_identity(value) not in excluded
+                and not _ALTERNATE_NAME.fullmatch(value)]
+    return aliases + alternate
+
+
 def _profile_values(name: Any, profile: Mapping[str, Any] | None) -> list[str]:
     profile = profile if isinstance(profile, Mapping) else {}
     values = [str(name)]
@@ -83,19 +103,7 @@ def _profile_values(name: Any, profile: Mapping[str, Any] | None) -> list[str]:
     for key in ("phone", "masked_phone", "nickname"):
         if profile.get(key):
             values.append(str(profile[key]))
-    values.extend(split_identity_values(profile.get("account_aliases")))
-    task_config = profile.get("task_config") if isinstance(profile.get("task_config"), Mapping) else {}
-    alias_mode = normalize_identity(task_config.get("备用识别名称"))
-    alias_enabled = alias_mode in {"使用", "use", "enabled", "true"}
-    alias_disabled = alias_mode in {"无", "不使用", "disabled", "false"}
-    if not alias_disabled and profile.get("alternate_login_name"):
-        values.append(str(profile["alternate_login_name"]))
-    sources = (profile, task_config) if not alias_disabled else ()
-    for source in sources:
-        if isinstance(source, Mapping):
-            for key in _ALIAS_FIELDS:
-                if alias_enabled or not alias_mode:
-                    values.extend(split_identity_values(source.get(key)))
+    values.extend(_enabled_aliases(profile))
     return values
 
 
@@ -114,17 +122,11 @@ def _text_field(profile: Mapping[str, Any], key: str) -> str | None:
 def extract_account_identity(profile_id: str, profile: Mapping[str, Any]) -> AccountIdentity:
     """Extract explicit identity fields while retaining legacy alias formats."""
     profile = profile if isinstance(profile, Mapping) else {}
-    task_config = profile.get("task_config") if isinstance(profile.get("task_config"), Mapping) else {}
-    aliases = split_identity_values(profile.get("account_aliases"))
-    alias_mode = normalize_identity(task_config.get("备用识别名称"))
+    alias_mode = normalize_identity(_alias_config(profile).get("备用识别名称"))
     alias_disabled = alias_mode in {"无", "不使用", "disabled", "false"}
-    legacy_aliases: list[str] = []
-    for source in (() if alias_disabled else (profile, task_config)):
-        for key in _ALIAS_FIELDS:
-            legacy_aliases.extend(split_identity_values(source.get(key)))
     alternate = None if alias_disabled else _text_field(profile, "alternate_login_name")
-    if alternate is None:
-        alternate = next((value for value in [*aliases, *legacy_aliases]
+    if alternate is None and not alias_disabled:
+        alternate = next((value for value in _enabled_aliases(profile)
                           if _ALTERNATE_NAME.fullmatch(value)), None)
     return AccountIdentity(
         profile_id=str(profile_id),
@@ -135,6 +137,13 @@ def extract_account_identity(profile_id: str, profile: Mapping[str, Any]) -> Acc
         alternate_login_name=alternate,
         game_feature_code=_text_field(profile, "game_feature_code"),
     )
+
+
+def account_identity_signature(profile: Mapping[str, Any]) -> tuple:
+    """Identity changes invalidate a run; labels and ordinary task edits do not."""
+    return (tuple(normalize_identity(profile.get(key)) for key in
+                  ('phone', 'masked_phone', 'nickname', 'game_feature_code')),
+            tuple(sorted({normalize_identity(value) for value in _enabled_aliases(profile)})))
 
 
 def build_identity_index(profiles: Mapping[Any, Any] | Iterable[Any]) -> dict[str, frozenset[str]]:
@@ -209,11 +218,17 @@ def resolve_profile_short_names(short_names: Iterable[Any], profiles: Mapping[An
     if not requested:
         raise AccountIdentityError("连续账号顺序不能为空")
     result = []
+    items = list(profiles.items()) if isinstance(profiles, Mapping) else [(name, {}) for name in profiles]
     for value in requested:
-        match = resolve_profile_identity(value, profiles)
-        if match is None:
+        if not re.fullmatch(r'[A-Za-z]\d+', value):
+            raise AccountIdentityError('连续账号顺序必须使用精确短名，如 A1,A3,A4')
+        matches = [str(name) for name, profile in items
+                   if short_profile_name(profile.get('display_name', name) if isinstance(profile, Mapping) else name) == value.upper()]
+        if len(matches) > 1:
+            raise AccountIdentityError('账号短名同时匹配多个账号方案')
+        if not matches:
             raise AccountIdentityError("找不到账号配置")
-        result.append(match)
+        result.append(matches[0])
     return result
 
 

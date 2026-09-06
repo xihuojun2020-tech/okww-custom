@@ -8,12 +8,12 @@ no operation silently merges two competing sequence sources.
 
 from __future__ import annotations
 
+import base64
 import copy
 import hashlib
 import json
 import re
 import shutil
-import tempfile
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -293,15 +293,7 @@ def _read_optional(path: Path) -> tuple[Any, bytes | None]:
 
 def _atomic_replace_unchecked(path: Path, payload: bytes) -> None:
     """Atomic byte rollback for the protected master path."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".rollback", dir=str(path.parent))
-    try:
-        with open(fd, "wb", closefd=True) as stream:
-            stream.write(payload)
-            stream.flush()
-        Path(temp_name).replace(path)
-    finally:
-        Path(temp_name).unlink(missing_ok=True)
+    ci._atomic_replace_bytes_unchecked(path, payload)
 
 
 @dataclass
@@ -318,13 +310,19 @@ class BundlePreflight:
     sequence_count: int = 0
     runtime_record_count: int = 0
     diff_summary: list[str] = field(default_factory=list)
+    base_active_revision: str = ""
+    base_master_fingerprint: str = ""
+    published_revision: str = ""
+    maintenance_errors: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         return {"ok": self.ok, "trust_required": self.trust_required,
                 "errors": list(self.errors), "differences": copy.deepcopy(self.differences),
                 "account_count": self.account_count, "sequence_count": self.sequence_count,
                 "runtime_record_count": self.runtime_record_count,
-                "diff_summary": list(self.diff_summary)}
+                "diff_summary": list(self.diff_summary),
+                "published_revision": self.published_revision,
+                "maintenance_errors": list(self.maintenance_errors)}
 
     to_dict = as_dict
 
@@ -337,6 +335,16 @@ class AccountConfigBundleService:
         self.integrity = integrity_service or ci.ConfigIntegrityService(root)
         self.paths = self.integrity.paths
         self.transaction_snapshot_hook = transaction_snapshot_hook
+
+    def _publisher(self):
+        from .account_publish_service import AccountPublishService
+        return AccountPublishService(self.paths.config_dir, program_version=self.integrity.program_version)
+
+    def _base_revisions(self) -> tuple[str, str]:
+        publisher = self._publisher()
+        revision = publisher.load_active().revision if publisher.active_path.exists() else ""
+        master, _ = _read_optional(self.paths.master)
+        return revision, ci.fingerprint(ci.normalize_master(master)) if master else ""
 
     def _preferences(self) -> dict[str, Any]:
         data, _ = _read_optional(self.paths.multi_account_task or self.paths.config_dir / "MultiAccountDailyTask.json")
@@ -456,7 +464,12 @@ class AccountConfigBundleService:
         return summary
 
     def preflight_import(self, source: str | Path | Mapping[str, Any]) -> BundlePreflight:
+        with self.integrity._lock:
+            return self._preflight_import(source)
+
+    def _preflight_import(self, source: str | Path | Mapping[str, Any]) -> BundlePreflight:
         try:
+            base_revision, base_fingerprint = self._base_revisions()
             raw = copy.deepcopy(dict(source)) if isinstance(source, Mapping) else ci._read_json(Path(source))[0]
             if not isinstance(raw, Mapping):
                 raise ConfigBundleError("配置包必须是 JSON 对象")
@@ -524,7 +537,8 @@ class AccountConfigBundleService:
                                    candidate_runtime=copy.deepcopy(dict(runtime)), candidate_preferences=copy.deepcopy(dict(preferences)),
                                    bundle=copy.deepcopy(dict(bundle)), account_count=account_count,
                                    sequence_count=sequence_count, runtime_record_count=runtime_record_count,
-                                   diff_summary=diff_summary)
+                                   diff_summary=diff_summary, base_active_revision=base_revision,
+                                   base_master_fingerprint=base_fingerprint)
         except (OSError, ValueError, RuntimeError, TypeError, KeyError, AttributeError,
                 json.JSONDecodeError) as exc:
             message = str(exc)
@@ -533,10 +547,43 @@ class AccountConfigBundleService:
             return BundlePreflight(False, errors=[message])
 
     def import_bundle(self, source: str | Path | Mapping[str, Any], *, confirm: bool = False,
-                      trust_external: bool = False) -> BundlePreflight:
-        preflight = self.preflight_import(source)
+                      trust_external: bool = False, preflight: BundlePreflight | None = None,
+                      expected_active_revision: str | None = None,
+                      expected_master_fingerprint: str | None = None,
+                      preserve_runtime_and_preferences: bool = False,
+                      precommit_hook=None) -> BundlePreflight:
         if not confirm:
             raise BundleImportBlocked("explicit confirmation is required to import an account bundle")
+        with self.integrity._lock:
+            self.recover_incomplete_transactions()
+            if not preserve_runtime_and_preferences:
+                self.require_idle_executor()
+            current = self.preflight_import(source)
+            if preflight is not None:
+                if _digest(current.bundle) != _digest(preflight.bundle):
+                    raise BundleImportBlocked("配置包在预览后发生变化，请重新预览")
+                expected_active_revision = preflight.base_active_revision
+                expected_master_fingerprint = preflight.base_master_fingerprint
+            from .account_repository import ProfileRevisionConflict
+            if ((expected_active_revision is not None and current.base_active_revision != expected_active_revision)
+                    or (expected_master_fingerprint is not None
+                        and current.base_master_fingerprint != expected_master_fingerprint)):
+                raise ProfileRevisionConflict("账号配置在预览后已被修改，请重新预览")
+            return self._commit_import(current, trust_external=trust_external,
+                                       preserve_runtime_and_preferences=preserve_runtime_and_preferences,
+                                       precommit_hook=precommit_hook)
+
+    @staticmethod
+    def require_idle_executor() -> None:
+        # Import lazily so offline tools do not initialize the framework/GUI.
+        import sys
+        framework = sys.modules.get('ok')
+        executor = getattr(getattr(framework, 'og', None), 'executor', None)
+        if getattr(executor, 'current_task', None) is not None:
+            raise BundleImportBlocked("任务运行或暂停期间不能导入或整体恢复账号配置，请先停止任务")
+
+    def _commit_import(self, preflight: BundlePreflight, *, trust_external: bool,
+                       preserve_runtime_and_preferences: bool, precommit_hook=None) -> BundlePreflight:
         if preflight.trust_required and not trust_external:
             raise BundleImportBlocked("bundle changed after export; explicitly trust the external modification")
         if not preflight.candidate_master or preflight.errors:
@@ -562,54 +609,152 @@ class AccountConfigBundleService:
             existing_preferences = {}
         if not isinstance(existing_preferences, Mapping):
             existing_preferences = {}
-        before: dict[Path, bytes | None] = {}
-        paths = [self.paths.master, self.paths.working, self.paths.runtime]
-        paths.append(task_path)
-        with self.integrity._lock:
-            for path in paths:
-                before[path] = path.read_bytes() if path.exists() else None
-            self._write_transaction_snapshot(before)
-            try:
-                ci._atomic_write_json_unchecked(self.paths.master, master)
-                ci.atomic_write_json(self.paths.working, working)
-                runtime = self._restore_runtime(runtime, set(master.get("profiles", {})))
-                runtime["accepted_master_fingerprint"] = ci.fingerprint(ci.normalize_master(master))
-                runtime["last_bundle_import"] = datetime.now(timezone.utc).isoformat()
-                ci.atomic_write_json(self.paths.runtime, runtime)
-                # Preserve legacy/non-exported task keys and only overlay the
-                # explicitly exported preference namespace.
-                preferences = {**copy.deepcopy(dict(existing_preferences)),
-                               **copy.deepcopy(preflight.candidate_preferences or {})}
-                if preferences:
-                    ci.atomic_write_json(task_path, preferences)
-                checked = self.integrity.check(record_incident=False, resolve_incidents=False)
-                if not checked.ok:
-                    raise BundleImportBlocked("bundle import failed post-write integrity check")
-                return BundlePreflight(True, candidate_master=copy.deepcopy(master), candidate_runtime=runtime,
-                                       candidate_preferences=preferences, bundle=preflight.bundle,
-                                       differences=preflight.differences, account_count=preflight.account_count,
-                                       sequence_count=preflight.sequence_count,
-                                       runtime_record_count=preflight.runtime_record_count,
-                                       diff_summary=preflight.diff_summary)
-            except Exception:
-                rollback_errors = []
-                for path, payload in before.items():
-                    try:
-                        if payload is None:
-                            path.unlink(missing_ok=True)
-                        elif path == self.paths.master:
-                            _atomic_replace_unchecked(path, payload)
-                        else:
-                            ci._atomic_replace_bytes(path, payload)
-                    except Exception as rollback_error:
-                        rollback_errors.append(f"{path}: {rollback_error}")
-                for path, payload in before.items():
-                    current = path.read_bytes() if path.exists() else None
-                    if current != payload:
-                        rollback_errors.append(f"{path}: rollback bytes differ")
-                if rollback_errors:
-                    raise BundleImportBlocked("bundle import rollback failed: " + "; ".join(rollback_errors))
+        if preserve_runtime_and_preferences:
+            runtime, _ = _read_optional(self.paths.runtime)
+            if not isinstance(runtime, Mapping):
+                raise ConfigBundleError("运行数据必须是对象")
+        preferences = {**copy.deepcopy(dict(existing_preferences)),
+                       **({} if preserve_runtime_and_preferences else copy.deepcopy(preflight.candidate_preferences or {}))}
+        previous_master, _ = _read_optional(self.paths.master)
+        previous_profiles = previous_master.get('profiles', {}) if isinstance(previous_master, Mapping) else {}
+        removed = set(previous_profiles) - set(master.get('profiles', {}))
+        # Dynamic files and account deletion belong to the same pre-activation transaction.
+        targets = self._transaction_targets(removed)
+        before = {path: path.read_bytes() if path.exists() else None for path in targets.values()}
+        publisher = self._publisher()
+        SecureStoragePolicy(publisher.root).prepare()
+        prepared = publisher.prepare(profiles=master['profiles'], index=master, sequences=master['sequences'])
+        self._write_transaction_snapshot(before)
+        journal = {
+            'transaction_id': uuid.uuid4().hex, 'phase': 'PREPARED',
+            'previous_revision': preflight.base_active_revision, 'candidate_revision': prepared.revision,
+            'before': {key: (None if before[path] is None else {
+                'data': base64.b64encode(before[path]).decode('ascii'),
+                'sha256': hashlib.sha256(before[path]).hexdigest(),
+            }) for key, path in targets.items()},
+        }
+        self._write_journal(journal)
+        committed = False
+        try:
+            ci._atomic_write_json_unchecked(self.paths.master, master)
+            ci.atomic_write_json(self.paths.working, working)
+            runtime = self._restore_runtime(runtime, set(master.get("profiles", {})))
+            runtime["accepted_master_fingerprint"] = ci.fingerprint(ci.normalize_master(master))
+            runtime["last_bundle_import"] = datetime.now(timezone.utc).isoformat()
+            ci.atomic_write_json(self.paths.runtime, runtime)
+            # Preserve legacy/non-exported task keys and only overlay the
+            # explicitly exported preference namespace.
+            if preferences:
+                ci.atomic_write_json(task_path, preferences)
+            for key, path in targets.items():
+                if key.startswith('account_state:'):
+                    path.unlink(missing_ok=True)
+            if callable(precommit_hook):
+                precommit_hook()
+            checked = self.integrity.check(record_incident=False, resolve_incidents=False)
+            if not checked.ok:
+                raise BundleImportBlocked("bundle import failed post-write integrity check")
+            journal['phase'] = 'LEGACY_WRITTEN'
+            self._write_journal(journal)
+            published = publisher.activate(prepared, expected_revision=preflight.base_active_revision)
+            # For an identical configuration revision this durable record is
+            # the commit point for the new preferences/completion records.
+            journal['phase'] = 'COMMITTED'
+            self._write_journal(journal)
+            committed = True
+            errors = published.maintenance_errors
+            if not errors:
+                self._journal_path.unlink()
+                publisher.recover_incomplete_transactions()
+        except Exception as error:
+            committed = committed or self._transaction_committed(journal)
+            if not committed:
+                self._rollback(before)
+                self._journal_path.unlink(missing_ok=True)
                 raise
+            errors = (str(error),)
+        preflight.ok = True
+        preflight.candidate_runtime = runtime
+        preflight.candidate_preferences = preferences
+        preflight.published_revision = prepared.revision
+        preflight.maintenance_errors = errors
+        return preflight
+
+    @property
+    def _journal_path(self) -> Path:
+        return self.paths.config_dir / 'published/.import-transaction.json'
+
+    def _write_journal(self, journal) -> None:
+        ci.atomic_write_json(self._journal_path, journal)
+
+    def _transaction_targets(self, removed=()) -> dict[str, Path]:
+        targets = {'master': self.paths.master, 'working': self.paths.working,
+                   'runtime': self.paths.runtime,
+                   'task': self.paths.multi_account_task or self.paths.config_dir / 'MultiAccountDailyTask.json'}
+        for profile_id in removed:
+            if str(uuid.UUID(profile_id)) != profile_id:
+                raise ConfigBundleError('无效的账号状态 UUID')
+            targets['account_state:' + profile_id] = self.paths.config_dir.parent / '运行状态/账号' / (profile_id + '.json')
+        return targets
+
+    def _transaction_committed(self, journal) -> bool:
+        publisher = self._publisher()
+        current = publisher.load_active().revision if publisher.active_path.exists() else ''
+        previous, candidate = journal['previous_revision'], journal['candidate_revision']
+        if current not in (previous, candidate):
+            raise ConfigBundleError('账号事务恢复失败：active 不属于本次事务，已保留恢复材料')
+        if previous == candidate:
+            # Read the disk marker: writing COMMITTED may itself have failed.
+            marker = ci._read_json(self._journal_path)[0]
+            return marker.get('phase') == 'COMMITTED'
+        return current == candidate
+
+    @staticmethod
+    def _rollback(before) -> None:
+        errors = []
+        for path, payload in before.items():
+            try:
+                if payload is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    _atomic_replace_unchecked(path, payload)
+                if (path.read_bytes() if path.exists() else None) != payload:
+                    raise OSError('rollback bytes differ')
+            except Exception as error:
+                errors.append(f'{path.name}: {error}')
+        if errors:
+            raise BundleImportBlocked('bundle import rollback failed: ' + '; '.join(errors))
+
+    def recover_incomplete_transactions(self) -> None:
+        with self.integrity._lock:
+            if not self._journal_path.exists():
+                self._publisher().recover_incomplete_transactions()
+                return
+            journal = ci._read_json(self._journal_path)[0]
+            try:
+                uuid.UUID(hex=journal['transaction_id'])
+                for key in ('previous_revision', 'candidate_revision'):
+                    if not re.fullmatch(r'[0-9a-f]{64}' if key == 'candidate_revision' else r'(?:[0-9a-f]{64})?', journal[key]):
+                        raise ValueError('invalid revision')
+                if journal['phase'] not in ('PREPARED', 'LEGACY_WRITTEN', 'COMMITTED'):
+                    raise ValueError('invalid phase')
+                records = journal['before']
+                targets = self._transaction_targets(key.split(':', 1)[1] for key in records if key.startswith('account_state:'))
+                if set(records) != set(targets):
+                    raise ValueError('invalid target list')
+                before = {}
+                for key, record in records.items():
+                    payload = base64.b64decode(record['data'], validate=True) if record is not None else None
+                    if record is not None and hashlib.sha256(payload).hexdigest() != record['sha256']:
+                        raise ValueError('snapshot checksum mismatch')
+                    before[targets[key]] = payload
+            except (ValueError, KeyError, TypeError, AttributeError) as error:
+                raise ConfigBundleError('账号事务恢复材料损坏，已停止恢复') from error
+            if not self._transaction_committed(journal):
+                self._rollback(before)
+            self._publisher().recover_incomplete_transactions()
+            self._journal_path.unlink()
+            self._publisher().recover_incomplete_transactions()
 
     def _write_transaction_snapshot(self, before: Mapping[Path, bytes | None]) -> Path:
         """Persist a verifiable pre-import snapshot before any replacement."""
@@ -634,7 +779,7 @@ class AccountConfigBundleService:
             if payload is None:
                 manifest["files"][str(path)] = None
                 continue
-            name = path.name + ".before"
+            name = str(len(manifest['files'])) + '_' + path.name + ".before"
             (event / name).write_bytes(payload)
             manifest["files"][str(path)] = {"name": name, "length": len(payload),
                                               "sha256": hashlib.sha256(payload).hexdigest()}

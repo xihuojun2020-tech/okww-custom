@@ -1614,3 +1614,9 @@ msgstr "碎蚀云渊-武器及技能材料：臂铠"
 
 msgid "Qingxiao"
 msgstr "清宵"
+
+msgid "当前序列账号"
+msgstr "当前序列账号"
+
+msgid "当前序列包含的账号；请在序列管理页面修改"
+msgstr "当前序列包含的账号；请在序列管理页面修改"

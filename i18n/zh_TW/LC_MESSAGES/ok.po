@@ -1435,3 +1435,9 @@ msgstr "碎蝕雲淵-武器及技能材料：臂鎧"
 
 msgid "Qingxiao"
 msgstr "清宵"
+
+msgid "当前序列账号"
+msgstr "目前序列帳號"
+
+msgid "当前序列包含的账号；请在序列管理页面修改"
+msgstr "目前序列包含的帳號；請在序列管理頁面修改"
