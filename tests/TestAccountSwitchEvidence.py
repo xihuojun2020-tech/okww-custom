@@ -10,7 +10,12 @@ import numpy as np
 
 from src.account_switch_evidence import AccountSwitchEvidenceSession, cleanup_account_switch_evidence
 from src.task.MultiAccountDailyTask import MultiAccountDailyTask
-from src.task.TestAccountSwitchTask import SINGLE_MODE, TestAccountSwitchTask
+from src.task.TestAccountSwitchTask import (
+    CONTINUOUS_MODE,
+    DEFAULT_CONTINUOUS_ORDER,
+    SINGLE_MODE,
+    TestAccountSwitchTask,
+)
 
 
 class TestAccountSwitchEvidence(unittest.TestCase):
@@ -177,6 +182,74 @@ class TestAccountSwitchEvidence(unittest.TestCase):
             task.run()
         gate.assert_called_once_with(task)
         self.assertEqual(calls, ['A3'])
+
+    def test_test_task_continuous_mode_uses_production_sequence_and_returns_to_start(self):
+        calls = []
+
+        class Executor:
+            def get_task_by_class(self, _klass):
+                return None
+
+        class MultiTask:
+            _select_and_login_sequence = MultiAccountDailyTask._select_and_login_sequence
+            _same_account = MultiAccountDailyTask._same_account
+
+            def create_run_snapshot(self, names, **_kwargs):
+                return list(names)
+
+            def _snapshot_profile_names(self, snapshot):
+                return list(snapshot)
+
+            def do_find_account_drop_down(self):
+                return object()
+
+            def _detect_current_account_from_login(self):
+                return 'A1'
+
+            def _select_and_login_specific(self, target):
+                calls.append(('login', target))
+                return target
+
+            def _switch_to_login(self):
+                calls.append(('logout', None))
+
+            def sleep(self, _seconds):
+                pass
+
+            def log_info(self, *_args, **_kwargs):
+                pass
+
+        task = object.__new__(TestAccountSwitchTask)
+        task._executor = Executor()
+        task.config = {
+            '测试模式': CONTINUOUS_MODE,
+            '连续账号顺序': DEFAULT_CONTINUOUS_ORDER,
+            '测试轮数': '1',
+        }
+        multi = MultiTask()
+        task._get_multi_account_task = lambda: multi
+        task.log_info = lambda *_args, **_kwargs: None
+        task.info_set = lambda *_args, **_kwargs: None
+        task.sleep = lambda *_args, **_kwargs: None
+        task.screenshot = lambda *_args, **_kwargs: None
+        task.is_main = lambda **_kwargs: False
+        task.log_error = lambda *_args, **_kwargs: None
+        with patch("src.task.TestAccountSwitchTask.require_account_runtime_for_task") as gate, \
+                patch("src.task.TestAccountSwitchTask.WWOneTimeTask.run"):
+            task.run()
+
+        gate.assert_called_once_with(task)
+        self.assertEqual(
+            calls,
+            [
+                ('login', 'A1'),
+                ('logout', None),
+                ('login', 'A3'),
+                ('logout', None),
+                ('login', 'A4'),
+                ('login', 'A1'),
+            ],
+        )
 
 
 if __name__ == "__main__":
