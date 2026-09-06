@@ -1908,6 +1908,73 @@ class TestMultiAccountDailyTask(unittest.TestCase):
             1,
         )
 
+    def test_selection_accepts_matching_account_after_stability_timeout(self):
+        class FakeTask:
+            _same_account = MultiAccountDailyTask._same_account
+            _wait_for_account_selection_stable = MultiAccountDailyTask._wait_for_account_selection_stable
+
+            def __init__(self):
+                # Initial precheck sees the list open. During confirmation the
+                # target is visible once, then an animation frame reports the
+                # list as open until the bounded wait expires.
+                self.expanded = iter([True, False, True, True])
+                self.detected = iter(['profile-b8'])
+                self.click_count = 0
+                self.logs = []
+
+            def sleep(self, _seconds):
+                pass
+
+            def _account_list_expanded(self):
+                return next(self.expanded)
+
+            def _open_account_list(self):
+                self.click_count += 1
+                return True
+
+            def _click_account_in_list(self, _target):
+                return True
+
+            def wait_until(self, callback, **kwargs):
+                if kwargs.get('time_out') == 10:
+                    return callback()
+                if kwargs.get('time_out') == 20:
+                    for _ in range(3):
+                        try:
+                            if callback():
+                                return True
+                        except StopIteration:
+                            return None
+                    return None
+                return callback()
+
+            def _detect_current_account_from_login(self):
+                return next(self.detected)
+
+            def log_info(self, message, **_kwargs):
+                self.logs.append(str(message))
+
+            def log_warning(self, message, **_kwargs):
+                self.logs.append(str(message))
+
+            def log_error(self, *_args, **_kwargs):
+                pass
+
+            def screenshot(self, *_args, **_kwargs):
+                pass
+
+            def tr(self, message):
+                return message
+
+        task = FakeTask()
+        self.assertTrue(
+            MultiAccountDailyTask._select_account_with_retry(
+                task, 'profile-b8', max_retries=3,
+            )
+        )
+        self.assertEqual(task.click_count, 1)
+        self.assertTrue(any('已匹配目标账号' in message for message in task.logs))
+
     def test_login_precheck_reselects_when_displayed_account_changed(self):
         class FakeTask:
             def __init__(self):

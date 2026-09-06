@@ -2870,7 +2870,6 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             previous_expanded = state['last_expanded']
             expanded_changed = previous_expanded is not expanded
             if expanded:
-                state['matches'] = 0
                 if expanded_changed:
                     self.log_info('账号选择后列表仍展开，等待界面收起并稳定')
                 state['last_expanded'] = True
@@ -2990,6 +2989,16 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 )
             if stable:
                 self.log_info(f'确认已选择账号：{profile_status_label(target)}')
+                return True
+
+            # A transient dropdown animation can prevent two consecutive
+            # collapsed samples even though OCR already identified the target.
+            # Do not reopen the list and risk changing a valid selection.
+            if self._same_account(last_current, target):
+                self.log_warning(
+                    f'稳定检测超时但已匹配目标账号 {profile_status_label(target)}，'
+                    '跳过重新选择'
+                )
                 return True
 
             unconfirmed_deliveries += 1
