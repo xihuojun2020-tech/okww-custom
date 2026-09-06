@@ -1081,7 +1081,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         except Exception as e:
             self.log_error('导出账号配置失败', e)
 
-    def import_account_config(self, *args):
+    def import_account_config(self, *args, operation_runner=None):
         """从 JSON 文件导入账号配置（导入前自动备份现有配置）。"""
         try:
             from src.account_config_bundle import AccountConfigBundleService
@@ -1091,32 +1091,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             if not path:
                 return
             if service is not None:
-                summary = self._invoke_bundle_service(
-                    service, ('preflight_import', 'preflight'), path=path, task=self)
-                self.log_info(f'导入预检摘要: {self._bundle_summary_text(summary)}')
-                summary_errors = (getattr(summary, 'errors', None)
-                                  if not isinstance(summary, dict) else summary.get('errors'))
-                summary_trust = (getattr(summary, 'trust_required', False)
-                                 if not isinstance(summary, dict) else summary.get('trust_required', False))
-                summary_ok = (getattr(summary, 'ok', True)
-                              if not isinstance(summary, dict) else summary.get('ok', True))
-                if summary_errors or (summary_ok is False and not summary_trust):
-                    self.log_error('账号配置包预检失败，未写入任何文件')
-                    return
-                if not self._confirm_bundle_import(summary):
-                    self.log_info('已取消账号配置包导入')
-                    return
-                result = self._invoke_bundle_service(
-                    service, ('import_bundle', 'import_config', 'import_bundle_v2', 'import'),
-                    path=path, task=self, confirmed=True, trust_external=bool(summary_trust),
-                    preflight=summary)
-                maintenance = getattr(result, 'maintenance_errors', ())
-                if maintenance:
-                    self.log_warning('配置已生效，维护待恢复：' + '; '.join(maintenance), notify=True)
-                else:
-                    self.log_info(f'账号配置包已导入: {path}', notify=True)
-                self._refresh_gui()
-                return
+                return self._import_bundle_from_path(service, path, operation_runner)
             if self.integrity_service is not None:
                 raise ConfigWriteBlocked(
                     'account profile imports are disabled; edit the master configuration outside the application'
@@ -1170,6 +1145,43 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 self.log_error('导入后刷新界面失败', e)
         except Exception as e:
             self.log_error('导入账号配置失败', e)
+
+    @staticmethod
+    def _dispatch_config_io(work, complete, operation_runner=None, *, changed=False):
+        if operation_runner is not None:
+            return operation_runner(work, complete, changed=changed)
+        return complete(work())
+
+    def _import_bundle_from_path(self, service, path, operation_runner=None):
+        def imported(result):
+            maintenance = getattr(result, 'maintenance_errors', ())
+            if maintenance:
+                self.log_warning('配置已生效，维护待恢复：' + '; '.join(maintenance), notify=True)
+            else:
+                self.log_info(f'账号配置包已导入: {path}', notify=True)
+            self._refresh_gui()
+            return result
+
+        def previewed(summary):
+            self.log_info(f'导入预检摘要: {self._bundle_summary_text(summary)}')
+            errors = summary.get('errors') if isinstance(summary, dict) else getattr(summary, 'errors', None)
+            trust = summary.get('trust_required', False) if isinstance(summary, dict) else getattr(summary, 'trust_required', False)
+            valid = summary.get('ok', True) if isinstance(summary, dict) else getattr(summary, 'ok', True)
+            if errors or (valid is False and not trust):
+                self.log_error('账号配置包预检失败，未写入任何文件')
+                return summary
+            if not self._confirm_bundle_import(summary):
+                self.log_info('已取消账号配置包导入')
+                return summary
+            return self._dispatch_config_io(
+                lambda: self._invoke_bundle_service(
+                    service, ('import_bundle', 'import_config', 'import_bundle_v2', 'import'),
+                    path=path, task=self, confirmed=True, trust_external=bool(trust), preflight=summary),
+                imported, operation_runner, changed=True)
+
+        return self._dispatch_config_io(
+            lambda: self._invoke_bundle_service(service, ('preflight_import', 'preflight'), path=path, task=self),
+            previewed, operation_runner)
 
     def _get_account_bundle_service(self):
         """Resolve the account bundle v2 service without a hard import edge."""
@@ -1272,30 +1284,35 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         from src.storage import get_config_backup_dir
         return ConfigBackupService(get_relative_path('configs'), get_config_backup_dir())
 
-    def verify_backup(self, *args):
+    def verify_backup(self, *args, operation_runner=None):
         """Verify a user-selected complete backup without changing config."""
         path = self._ask_backup_path(open_mode=True)
         if not path:
             return None
-        result = self._config_backup_service().verify_snapshot(path)
-        message = ('备份验证通过' if result.ok else '备份验证失败')
-        self.log_info(f'{message}: {self._bundle_summary_text(result)}', notify=True)
-        return result
+        service = self._config_backup_service()
+        def completed(result):
+            message = '备份验证通过' if result.ok else '备份验证失败'
+            self.log_info(f'{message}: {self._bundle_summary_text(result)}', notify=True)
+            return result
+        return self._dispatch_config_io(lambda: service.verify_snapshot(path), completed, operation_runner)
 
-    def restore_backup(self, *args):
+    def restore_backup(self, *args, operation_runner=None):
         """Preflight and confirm a complete backup before transactional restore."""
         path = self._ask_backup_path(open_mode=True)
         if not path:
             return None
         service = self._config_backup_service()
-        summary = service.preflight_restore(path)
-        self.log_info(f'恢复预检摘要: {self._bundle_summary_text(summary)}')
-        if not summary.ok or not self._confirm_backup_restore(summary):
-            self.log_info('已取消或拒绝配置备份恢复')
+        def completed(summary):
+            self.log_info('配置备份已事务恢复，请重启程序后继续任务', notify=True)
             return summary
-        service.restore(path, confirmed=True)
-        self.log_info('配置备份已事务恢复，请重启程序后继续任务', notify=True)
-        return summary
+        def previewed(summary):
+            self.log_info(f'恢复预检摘要: {self._bundle_summary_text(summary)}')
+            if not summary.ok or not self._confirm_backup_restore(summary):
+                self.log_info('已取消或拒绝配置备份恢复')
+                return summary
+            return self._dispatch_config_io(lambda: service.restore(path, confirmed=True, preflight=summary), completed,
+                                            operation_runner, changed=True)
+        return self._dispatch_config_io(lambda: service.preflight_restore(path), previewed, operation_runner)
 
     def _confirm_backup_restore(self, summary):
         """Confirm a complete configs-tree replacement separately from import."""
@@ -1312,7 +1329,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         except Exception:
             return False
 
-    def repair_legacy_sequences(self, *args):
+    def repair_legacy_sequences(self, *args, operation_runner=None):
         """Inspect and explicitly confirm the core missing-sequence repair."""
         integrity = getattr(self, 'integrity_service', None)
         if integrity is None:
@@ -1326,9 +1343,11 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         if not self._confirm_legacy_sequence_repair(detection):
             self.log_info('已取消旧版遗漏序列恢复')
             return None
-        snapshot_path = self._transaction_snapshot_hook()
-        self.log_info(f'遗漏序列恢复前事务快照已创建: {snapshot_path}')
-        return integrity.repair_missing_sequences(confirm=True)
+        def repair():
+            snapshot_path = self._transaction_snapshot_hook()
+            self.log_info(f'遗漏序列恢复前事务快照已创建: {snapshot_path}')
+            return integrity.repair_missing_sequences(confirm=True)
+        return self._dispatch_config_io(repair, lambda result: result, operation_runner, changed=True)
 
     def _confirm_legacy_sequence_repair(self, detection):
         try:

@@ -8,6 +8,8 @@ from ok.gui.common.config import cfg
 from ok.gui.settings.GlobalConfigCard import GlobalConfigCard
 from ok.gui.widget.Tab import Tab
 from ok.util.GlobalConfig import APP_LAUNCHER_OPTION_NAME
+from src.gui.BackgroundOperation import BackgroundOperation
+from src.account_config_editor import sanitize_error
 
 
 class SettingTab(Tab):
@@ -100,6 +102,13 @@ class SettingTab(Tab):
         self.backup_config_card.setParent(self.data_group)
         self.data_group.addSettingCard(self.backup_config_card)
         self.config_groups = []
+        from qfluentwidgets import BodyLabel
+        self.maintenance_status = BodyLabel('等待操作', self)
+        if account_maintenance_only:
+            self.vBoxLayout.addWidget(self.maintenance_status)
+        self.operation = BackgroundOperation(self, (
+            self.export_account_card, self.import_account_card, self.verify_backup_card,
+            self.restore_backup_card, self.repair_sequences_card, self.integrity_card))
         self.__initWidget()
 
     def __initWidget(self):
@@ -140,10 +149,11 @@ class SettingTab(Tab):
             )
 
     def import_accounts(self):
+        if self.operation.busy:
+            return
         task = self._get_daily_task()
         if task is not None:
-            task.import_account_config()
-            self._refresh_account_settings()
+            task.import_account_config(operation_runner=self._run_maintenance_io)
         else:
             InfoBar.warning(
                 self.tr('Daily Task 未加载'),
@@ -153,27 +163,43 @@ class SettingTab(Tab):
             )
 
     def verify_backup(self):
+        if self.operation.busy:
+            return
         task = self._get_daily_task()
         if task is not None and hasattr(task, 'verify_backup'):
-            task.verify_backup()
+            task.verify_backup(operation_runner=self._run_maintenance_io)
         else:
             InfoBar.warning(self.tr('备份服务不可用'), self.tr('请稍后再试'), duration=2000, parent=self)
 
     def restore_backup(self):
+        if self.operation.busy:
+            return
         task = self._get_daily_task()
         if task is not None and hasattr(task, 'restore_backup'):
-            task.restore_backup()
-            self._refresh_account_settings()
+            task.restore_backup(operation_runner=self._run_maintenance_io)
         else:
             InfoBar.warning(self.tr('备份服务不可用'), self.tr('请稍后再试'), duration=2000, parent=self)
 
     def repair_legacy_sequences(self):
+        if self.operation.busy:
+            return
         task = self._get_daily_task()
         if task is not None and hasattr(task, 'repair_legacy_sequences'):
-            task.repair_legacy_sequences()
-            self._refresh_account_settings()
+            task.repair_legacy_sequences(operation_runner=self._run_maintenance_io)
         else:
             InfoBar.warning(self.tr('序列修复服务不可用'), self.tr('请稍后再试'), duration=2000, parent=self)
+
+    def _run_maintenance_io(self, work, complete, *, changed=False):
+        self.maintenance_status.setText('正在处理配置文件…')
+        def completed(result):
+            complete(result)
+            if changed:
+                self._refresh_account_settings()
+            if not self.operation.busy:
+                self.maintenance_status.setText('处理完成，请查看结果提示')
+        def failed(error):
+            self.maintenance_status.setText('处理失败：' + sanitize_error(error))
+        return self.operation.start(work, completed, failed)
 
     def review_account_integrity(self):
         window = getattr(og, 'main_window', None)

@@ -22,6 +22,7 @@ MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MAX_EVENTS = 20
 MAX_BYTES = 500 * 1024 * 1024
 MAX_FRAMES = 30
+MAX_FRAME_BYTES = 128 * 1024 * 1024
 FRAME_WINDOW_SECONDS = 60.0
 SAMPLE_INTERVAL_SECONDS = 2.0
 
@@ -138,37 +139,57 @@ def cleanup_account_switch_evidence(
 class AccountSwitchEvidenceSession:
     """One bounded account-switch evidence session."""
 
-    def __init__(self, target_account, *, root=None, clock=None, blur_area=None):
+    def __init__(self, target_account, *, root=None, clock=None, blur_area=None,
+                 max_frame_bytes=MAX_FRAME_BYTES):
         self.target_account = target_account
         self.root = Path(root) if root is not None else _default_root()
         self.clock = clock or time.time
         self.blur_area = blur_area
         self.started_at = float(self.clock())
-        self.frames = deque(maxlen=MAX_FRAMES)
+        self.frames = deque()
+        self.frame_bytes = 0
+        self.max_frame_bytes = max(0, int(max_frame_bytes))
         self.events = []
         self.clicks = []
         self.identities = []
         self._finished = False
         self._last_sample_at = None
+        self.event_dir = None
+
+    def _drop_oldest_frame(self):
+        self.frame_bytes -= int(self.frames.popleft()[1].nbytes)
 
     def _trim_frames(self, now):
         while self.frames and now - self.frames[0][0] > FRAME_WINDOW_SECONDS:
-            self.frames.popleft()
+            self._drop_oldest_frame()
 
     def record_frame(self, frame, *, stage=None, force=False, metadata=None):
         if self._finished or frame is None:
             return False
         now = float(self.clock())
         self._trim_frames(now)
+        if not force:
+            if self._last_sample_at is not None and now - self._last_sample_at < SAMPLE_INTERVAL_SECONDS:
+                return False
+        size = int(getattr(frame, 'nbytes', 0))
+        if size <= 0:
+            return False
+        if size > self.max_frame_bytes:
+            self.events.append({'time': now, 'stage': 'frame_skipped', 'reason': 'frame_too_large',
+                                'frame_bytes': size, 'source_stage': stage, 'forced': bool(force)})
+            return False
+        # Evict before allocation so the raw retained buffer never needs a
+        # temporary extra frame beyond the cap.
+        while self.frames and (len(self.frames) >= MAX_FRAMES or self.frame_bytes + size > self.max_frame_bytes):
+            self._drop_oldest_frame()
         try:
             image = frame.copy()
         except Exception:
             return False
         if not force:
-            if self._last_sample_at is not None and now - self._last_sample_at < SAMPLE_INTERVAL_SECONDS:
-                return False
             self._last_sample_at = now
         self.frames.append((now, image, {"stage": stage, **(metadata or {})}))
+        self.frame_bytes += size
         return True
 
     def record_stage(self, stage, *, attempt=None, detail=None, frame=None, metadata=None):
@@ -288,13 +309,13 @@ class AccountSwitchEvidenceSession:
         except Exception:
             return frame
 
-    def _write_failure_event(self, event_dir, event_id, reason, stage, last_account):
+    def _write_failure_event(self, event_dir, event_id, reason, stage, last_account, frames):
         """Write a complete event into a private directory, then publish it."""
         temp_dir = self.root / f".pending_{event_id}"
         try:
             temp_dir.mkdir(parents=True, exist_ok=False)
             image_names = []
-            for index, (_timestamp, frame, metadata) in enumerate(self.frames):
+            for index, (_timestamp, frame, metadata) in enumerate(frames):
                 path = temp_dir / f"frame_{index:03d}.jpg"
                 try:
                     import cv2
@@ -340,11 +361,16 @@ class AccountSwitchEvidenceSession:
                 shutil.rmtree(temp_dir)
             except OSError:
                 pass
+        finally:
+            frames.clear()
 
     def fail(self, reason, *, stage=None, last_account=None, stopped=False):
         if self._finished:
             return self.event_dir
         self._finished = True
+        self._trim_frames(float(self.clock()))
+        frames, self.frames = self.frames, deque()
+        self.frame_bytes = 0
         cleanup_account_switch_evidence(root=self.root)
         event_id = uuid.uuid4().hex[:12]
         stamp = time.strftime("%Y%m%d_%H%M%S", time.localtime(self.started_at))
@@ -354,17 +380,20 @@ class AccountSwitchEvidenceSession:
         if stopped:
             threading.Thread(
                 target=self._write_failure_event,
-                args=(event_dir, event_id, reason, stage, last_account),
+                args=(event_dir, event_id, reason, stage, last_account, frames),
                 daemon=True,
             ).start()
             return event_dir
-        self._write_failure_event(event_dir, event_id, reason, stage, last_account)
+        self._write_failure_event(event_dir, event_id, reason, stage, last_account, frames)
         cleanup_account_switch_evidence(root=self.root)
         return event_dir
 
     def succeed(self):
+        if self._finished:
+            return True
         self._finished = True
         self.frames.clear()
+        self.frame_bytes = 0
         self.events.clear()
         self.clicks.clear()
         self.identities.clear()

@@ -133,10 +133,11 @@ class SequenceRepository:
                                                   metadata={"enabled": enabled}, source="序列管理页面")
         return SequenceDraft(record.sequence_id, record.revision, tuple(record.profile_ids), enabled)
 
-    def create(self, sequence_id: str, profile_ids: Sequence[Any] = (), *, enabled: bool = True) -> SequenceDraft:
+    def create(self, sequence_id: str, profile_ids: Sequence[Any] = (), *, enabled: bool = True,
+               expected_revision=0) -> SequenceDraft:
         if sequence_id in self.repository.list_sequence_ids():
             raise SequenceRepositoryError("序列已存在")
-        return self.publish(SequenceEditScope(sequence_id, 0),
+        return self.publish(SequenceEditScope(sequence_id, expected_revision),
                             {"sequence_id": sequence_id, "profile_ids": profile_ids, "enabled": enabled})
 
     def copy(self, sequence_id: str, new_sequence_id: str) -> SequenceDraft:
@@ -154,8 +155,10 @@ class SequenceRepository:
         return self.publish(current.scope, SequenceDraft(sequence_id, current.revision,
                                                          current.profile_ids, bool(enabled)))
 
-    def delete(self, sequence_id: str) -> SequenceDraft:
+    def delete(self, sequence_id: str, *, expected_revision=None) -> SequenceDraft:
         current = self.load(sequence_id)
+        if expected_revision is not None and str(current.revision) != str(expected_revision):
+            raise ProfileRevisionConflict('序列已被其他操作修改，请重新预览删除')
         self.repository.delete_sequence(sequence_id, expected_revision=str(current.revision))
         return current
 

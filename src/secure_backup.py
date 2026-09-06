@@ -130,7 +130,7 @@ def validate_restore_path(source: os.PathLike | str, target: os.PathLike | str,
             current = current.parent
     if source_abs == target_abs or _inside(target_abs, source_abs) or _inside(source_abs, target_abs):
         raise ValueError("恢复源与目标路径不能相互包含")
-    return source_abs, target_abs
+    return source_abs.resolve(), target_abs.resolve()
 
 
 def harden_directory_permissions(path: os.PathLike | str) -> Path:

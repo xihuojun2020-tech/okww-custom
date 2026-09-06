@@ -28,6 +28,20 @@ def _digest(value):
 
 
 class TestAccountRuntimeIntegration(unittest.TestCase):
+    def test_one_validation_per_projection_and_snapshot_at_2_10_50_accounts(self):
+        from tests.fixture_support import make_account_environment
+        from src.sequence_repository import SequenceRepository
+        original = AccountPublishService._validate_bundle_dir
+        for count in (2, 10, 50):
+            with self.subTest(count=count), tempfile.TemporaryDirectory() as temp:
+                env = make_account_environment(temp, names=tuple(f'A{n}' for n in range(1, count + 1)))
+                for create in (env.repository.get_detached_projection,
+                               lambda: SequenceRepository(env.repository).create_run_snapshot('S1')):
+                    with patch.object(AccountPublishService, '_validate_bundle_dir',
+                                      autospec=True, side_effect=original) as check:
+                        create()
+                        self.assertEqual(check.call_count, 1)
+
     def test_real_run_uses_snapshot_after_parameter_sequence_and_label_edits(self):
         from src.account_repository import ProfileEditScope
         from src.config_integrity import ConfigIntegrityBlocked

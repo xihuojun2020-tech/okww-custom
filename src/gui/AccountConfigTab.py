@@ -1,6 +1,8 @@
 """PC account task-configuration editor tab."""
 
 import json
+import copy
+from functools import partial
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
@@ -16,6 +18,7 @@ from src.account_repository import AccountRepository, AccountRepositoryError, ge
 from src.account_field_metadata import (account_field_metadata, localize_account_value,
                                         restore_account_value)
 from src.gui.AccountChangeEvent import AccountChangeEvent
+from src.gui.BackgroundOperation import BackgroundOperation
 
 
 class ClickOnlyComboBox(QComboBox):
@@ -140,6 +143,7 @@ class AccountConfigTab(CustomTab):
         self.editor = editor or AccountConfigEditor(repository)
         self.rebind_service = AccountRebindService(self.editor.repository)
         self.draft = None
+        self._failed_drafts = {}
         root = QWidget(self.view)
         root.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         layout = QVBoxLayout(root)
@@ -203,6 +207,10 @@ class AccountConfigTab(CustomTab):
         self.rebind_button.clicked.connect(self.rebind_identity)
         self.template_button.clicked.connect(self.edit_template)
         self.new_button.clicked.connect(self.create_account)
+        self.operation = BackgroundOperation(self, (
+            self.save_button, self.delete_button, self.rebind_button, self.template_button,
+            self.new_button, self.discard_button, self.preview_button,
+            self.form_host, self.task_editor, self.sequence_group))
         self.refresh()
 
     @property
@@ -214,7 +222,9 @@ class AccountConfigTab(CustomTab):
         if self.draft is None:
             return False
         try:
-            return self.editor.preview_diff(self.draft).changed
+            self._apply_text()
+            members = tuple(name for name, box in self.sequence_widgets.items() if box.isChecked())
+            return (self.draft.tasks != self._loaded_tasks or members != self._loaded_sequences)
         except Exception:
             return True
 
@@ -247,7 +257,10 @@ class AccountConfigTab(CustomTab):
     def add_after_default_tabs(self):
         return True
 
-    def refresh(self, profile_id=None):
+    def refresh(self, profile_id=None, *, preserve_draft=False):
+        if self.operation.busy or (preserve_draft and self.dirty):
+            self.status.setText('账号配置已更新；当前草稿已保留，保存时将检查版本冲突')
+            return
         selected_id = profile_id or self.profile_combo.currentData()
         self.profile_combo.blockSignals(True)
         self.profile_combo.clear()
@@ -270,13 +283,16 @@ class AccountConfigTab(CustomTab):
 
     def refresh_sequences(self):
         """Refresh membership checkboxes without discarding an unsaved draft."""
+        if self.operation.busy or self.dirty:
+            return
         self._render_sequences()
+        self._loaded_sequences = tuple(name for name, box in self.sequence_widgets.items() if box.isChecked())
 
     def _load_selected(self, *_args):
         profile_id = self.profile_combo.currentData()
         if not profile_id:
             return
-        self.draft = self.editor.load_draft(profile_id)
+        self.draft = self._failed_drafts.pop(profile_id, None) or self.editor.load_draft(profile_id)
         label = self.draft.account.get("display_name", "未命名账号")
         masked_phone = self.draft.account.get("masked_phone") or "未记录"
         alternate = self.draft.account.get("alternate_login_name") or "未记录"
@@ -290,6 +306,8 @@ class AccountConfigTab(CustomTab):
         self._render_identity()
         self.task_editor.setPlainText(json.dumps(self.draft.tasks, ensure_ascii=False, indent=2))
         self._render_form()
+        self._loaded_tasks = copy.deepcopy(self.draft.tasks)
+        self._loaded_sequences = tuple(name for name, box in self.sequence_widgets.items() if box.isChecked())
         self.status.setText("已载入独立草稿")
 
     def _apply_text(self):
@@ -371,19 +389,23 @@ class AccountConfigTab(CustomTab):
             self.form_layout.addRow(label, widget)
 
     def edit_template(self):
+        if self.operation.busy:
+            return None
         try:
             template = self.editor.load_template(self.selected_profile_id)
             dialog = AccountTemplateDialog(template.tasks, self.view)
             if dialog.exec() != QDialog.Accepted:
                 return None
-            result = self.editor.save_template(dialog.tasks(), expected_revision=str(template.revision))
-            self._commit_status("新账号模板保存成功")
-            return result
+            return self._submit_action(
+                partial(self.editor.save_template, copy.deepcopy(dialog.tasks()), expected_revision=str(template.revision)),
+                '新账号模板保存成功', refresh=False)
         except Exception as exc:
             self.status.setText(f"模板保存失败：{sanitize_error(exc)}")
             return None
 
     def create_account(self):
+        if self.operation.busy:
+            return None
         try:
             template = self.editor.load_template(self.selected_profile_id)
             sequence_ids = self.editor.repository.list_sequence_ids()
@@ -397,12 +419,10 @@ class AccountConfigTab(CustomTab):
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return None
-            result = self.editor.create_profile(template, **values)
-            self._commit_status("新账号创建成功")
-            self.refresh(profile_id=result.profile_id)
-            self.changed.emit(AccountChangeEvent(
-                "profile_created", str(result.revision), (result.profile_id,), values["sequence_ids"]))
-            return result
+            return self._submit_action(
+                partial(self.editor.create_profile, copy.deepcopy(template), **copy.deepcopy(values)),
+                '新账号创建成功', lambda result: AccountChangeEvent(
+                    'profile_created', str(result.revision), (result.profile_id,), values['sequence_ids']))
         except Exception as exc:
             self.status.setText(f"新建账号失败：{sanitize_error(exc)}")
             return None
@@ -419,6 +439,8 @@ class AccountConfigTab(CustomTab):
             return None
 
     def save(self):
+        if self.operation.busy:
+            return None
         try:
             self._apply_text()
             label = str(self.draft.account.get("display_name", self.draft.profile_id))
@@ -426,22 +448,22 @@ class AccountConfigTab(CustomTab):
             answer = QMessageBox.question(self.view, "确认账号", f"确认保存账号 {label} 的修改？")
             if answer != QMessageBox.Yes:
                 return None
-            result = self.editor.save_draft(self.draft.scope, self.draft,
-                                            confirmed_account_label=label,
-                                            sequence_ids=sequence_ids)
-            self._commit_status("保存成功，已先创建账号备份")
-            profile_id = self.draft.profile_id
-            revision = str(getattr(result, "revision", ""))
-            self.refresh(profile_id=profile_id)
-            self.changed.emit(AccountChangeEvent(
-                "profile_saved", revision, (profile_id,), tuple(sequence_ids)))
-            return result
+            submitted = copy.deepcopy(self.draft)
+            profile_id = submitted.profile_id
+            return self._submit_action(
+                partial(self.editor.save_draft, submitted.scope, submitted,
+                        confirmed_account_label=label, sequence_ids=sequence_ids),
+                '保存成功，已先创建账号备份', lambda result: AccountChangeEvent(
+                    'profile_saved', str(getattr(result, 'revision', '')), (profile_id,), sequence_ids),
+                submitted=submitted)
         except Exception as exc:
             self.status.setText(f"保存失败：{exc}")
             return None
 
     def rebind_identity(self):
         """Run the explicit identity re-bind flow for the selected account."""
+        if self.operation.busy:
+            return None
         if self.draft is None:
             return None
         current = str(self.draft.account.get("masked_phone") or "")
@@ -467,20 +489,21 @@ class AccountConfigTab(CustomTab):
                 "旧身份会先备份，是否继续？")
             if answer != QMessageBox.StandardButton.Yes:
                 return None
-            result = self.rebind_service.rebind(
-                self.draft.profile_id, current_identity=current,
-                new_identity=requested, confirmed=True)
-            self._commit_status("身份重新绑定成功，已创建旧身份备份")
-            profile_id = self.draft.profile_id
-            self.refresh(profile_id=profile_id)
-            self.changed.emit(AccountChangeEvent("identity_rebound", str(getattr(result, "revision", "")),
-                                                 (profile_id,), ()))
-            return result
+            submitted = copy.deepcopy(self.draft)
+            profile_id = submitted.profile_id
+            return self._submit_action(
+                partial(self.rebind_service.rebind, profile_id, current_identity=current,
+                        new_identity=copy.deepcopy(requested), confirmed=True, expected_revision=submitted.revision),
+                '身份重新绑定成功，已创建旧身份备份', lambda result: AccountChangeEvent(
+                    'identity_rebound', str(getattr(result, 'revision', '')), (profile_id,), ()),
+                submitted=submitted)
         except Exception as exc:
             self.status.setText(f"身份重新绑定失败：{sanitize_error(exc)}")
             return None
 
     def delete_account(self):
+        if self.operation.busy:
+            return None
         if self.draft is None:
             return None
         label = str(self.draft.account.get("display_name") or
@@ -497,17 +520,33 @@ class AccountConfigTab(CustomTab):
         if second != QMessageBox.StandardButton.Yes:
             return None
         try:
-            result = self.editor.delete_profile(self.draft.scope, confirmed_account_label=label)
-            self._commit_status("账号删除成功，序列引用已同步移除")
-            profile_id = self.draft.profile_id
-            self.refresh()
-            self.changed.emit(AccountChangeEvent(
-                "profile_deleted", "", (profile_id,), tuple(preview.sequence_ids)))
-            return result
+            submitted = copy.deepcopy(self.draft)
+            profile_id = submitted.profile_id
+            return self._submit_action(
+                partial(self.editor.delete_profile, submitted.scope, confirmed_account_label=label),
+                '账号删除成功，序列引用已同步移除', lambda result: AccountChangeEvent(
+                    'profile_deleted', '', (profile_id,), tuple(preview.sequence_ids)), submitted=submitted)
         except Exception as exc:
             self.status.setText(f"账号删除失败：{sanitize_error(exc)}")
             return None
 
+
+    def _submit_action(self, work, success_text, event=None, *, submitted=None, refresh=True):
+        origin_id = self.selected_profile_id
+        self.status.setText('正在保存配置…')
+        def completed(result):
+            self._failed_drafts.pop(origin_id, None)
+            if self.selected_profile_id == origin_id:
+                if refresh:
+                    self.refresh(profile_id=getattr(result, 'profile_id', origin_id))
+                self._commit_status(success_text)
+            if event:
+                self.changed.emit(event(result))
+        def failed(error):
+            if submitted is not None and self.selected_profile_id != origin_id:
+                self._failed_drafts[origin_id] = submitted
+            self.status.setText(f'配置保存失败，草稿已保留：{sanitize_error(error)}')
+        return self.operation.start(work, completed, failed)
 
     def _commit_status(self, success):
         result = getattr(self.editor.repository, 'last_publish_result', None)

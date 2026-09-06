@@ -56,6 +56,8 @@ class RestoreSummary:
     sequence_count: int = 0
     sequence_member_count: int = 0
     sequence_summary: dict[str, int] = field(default_factory=dict)
+    snapshot_manifest_digest: str = ''
+    base_config_revision: tuple[str, str] = ('', '')
 
 
 class ConfigBackupService:
@@ -155,6 +157,8 @@ class ConfigBackupService:
                                  result.hash_differences, result.error)
         if not result.ok:
             return summary
+        summary.snapshot_manifest_digest = self._sha256(Path(snapshot_path) / MANIFEST_NAME)
+        summary.base_config_revision = self._restore_base_revision()
         master_path = Path(snapshot_path) / "account_master_config.json"
         if not master_path.is_file():
             # Backups created by releases before the master-config feature
@@ -189,7 +193,7 @@ class ConfigBackupService:
     # Explicit names used by recovery controllers and UI adapters.
     summarize_restore = preflight_restore
 
-    def restore(self, snapshot_path, *, confirmed=False, create_rollback=True):
+    def restore(self, snapshot_path, *, confirmed=False, create_rollback=True, preflight=None):
         """Copy across volumes, then commit by renaming only on the target volume."""
         if not confirmed:
             raise PermissionError("restore requires explicit confirmation")
@@ -203,6 +207,10 @@ class ConfigBackupService:
                 target_dir=self.config_dir)
             # Retain this exact manifest, closing a source+manifest copy race.
             manifest_bytes = (source / MANIFEST_NAME).read_bytes()
+            if preflight is not None and (
+                    hashlib.sha256(manifest_bytes).hexdigest() != preflight.snapshot_manifest_digest or
+                    self._restore_base_revision() != preflight.base_config_revision):
+                raise ValueError('备份或账号配置在预览后已改变，请重新预览恢复')
             summary = self.preflight_restore(source)
             if not summary.ok:
                 raise ValueError(summary.error or "snapshot verification failed")
@@ -257,6 +265,12 @@ class ConfigBackupService:
                         logger.warning('restore committed; cleanup pending: %s', maintenance_error)
             return summary
 
+    def _restore_base_revision(self):
+        # Raw digests also permit restoring a valid snapshot over a corrupt
+        # current master, while rejecting edits made after the preview.
+        return tuple(self._sha256(path) if path.exists() else '' for path in (
+            self.config_dir / 'published/active.json', self.config_dir / 'account_master_config.json'))
+
     def rollback(self, snapshot_path, *, confirmed=False):
         return self.restore(snapshot_path, confirmed=confirmed, create_rollback=False)
 
@@ -288,11 +302,11 @@ class ConfigBackupService:
             config = Path(journal['config_dir'])
             staging = Path(journal['staging'])
             old = Path(journal['old'])
+            staging, config = validate_restore_path(staging, config)
+            old, _ = validate_restore_path(old, config)
             if config != self.config_dir:
                 raise RuntimeError('restore journal targets another config directory')
             allowed_parent = self.backup_dir if journal.get('version') == 1 else config.parent
-            validate_restore_path(staging, config)
-            validate_restore_path(old, config)
             if staging.parent != allowed_parent or not staging.name.startswith('.restore-'):
                 raise RuntimeError('restore journal has an unsafe staging path')
             if old.parent != config.parent or not old.name.startswith(config.name + '.rollback-'):

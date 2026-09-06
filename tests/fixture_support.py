@@ -37,7 +37,19 @@ _SYNTHETIC_IDENTITIES = {
 
 def synthetic_identity(short_name):
     """Return an isolated synthetic account identity for tests and examples."""
-    return dict(_SYNTHETIC_IDENTITIES[short_name])
+    if short_name in _SYNTHETIC_IDENTITIES:
+        return dict(_SYNTHETIC_IDENTITIES[short_name])
+    import re
+    if not re.fullmatch(r'A[1-9][0-9]{0,3}', short_name):
+        raise ValueError('synthetic short name must be A1–A9999')
+    number = int(short_name[1:])
+    return {
+        'short_name': short_name, 'nickname': f'合成测试账号{number}',
+        'phone': str(19910000000 + number), 'masked_phone': f'199****{number:04d}',
+        'alternate_login_name': f'UTEST{number:04d}A',
+        'game_feature_code': f'TEST-FEATURE-{short_name}',
+        'profile_id': str(UUID(int=number, version=4)),
+    }
 
 
 def make_account_environment(root, *, names=('A1', 'A3', 'A4'), publish=True):

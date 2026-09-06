@@ -1,5 +1,6 @@
 """Standalone account-sequence management tab."""
 
+from functools import partial
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QAbstractScrollArea, QHBoxLayout, QInputDialog, QListWidget,
                                QMessageBox, QPushButton, QVBoxLayout, QWidget)
@@ -11,6 +12,7 @@ from src.account_repository import AccountRepository, AccountRepositoryError, ge
 from src.account_config_editor import sanitize_error
 from src.sequence_repository import SequenceRepository
 from src.gui.AccountChangeEvent import AccountChangeEvent
+from src.gui.BackgroundOperation import BackgroundOperation
 
 
 class SequenceManagementTab(CustomTab):
@@ -61,6 +63,8 @@ class SequenceManagementTab(CustomTab):
         self.delete_button.clicked.connect(self._delete)
         self.up_button.clicked.connect(lambda: self._move(-1))
         self.down_button.clicked.connect(lambda: self._move(1))
+        self.operation = BackgroundOperation(self, (self.create_button, self.delete_button,
+                                                    self.up_button, self.down_button))
         self.refresh()
 
     @property
@@ -121,19 +125,26 @@ class SequenceManagementTab(CustomTab):
         return QInputDialog.getText(self.view, title, "序列名称")
 
     def _create(self):
+        if self.operation.busy:
+            return
         name, ok = self._name("新建序列")
         if ok and name.strip():
-            self._run_action("新建序列", lambda: self.service.create(name.strip()))
+            revision = self._drafts[0].revision if self._drafts else 0
+            self._run_action("新建序列", partial(self.service.create, name.strip(), expected_revision=revision))
 
     def _delete(self):
+        if self.operation.busy:
+            return
         item = self._selected()
         if not item:
             return
         answer = QMessageBox.question(self.view, "删除序列", f"确认删除 {item.sequence_id}？")
         if answer == QMessageBox.StandardButton.Yes:
-            self._run_action("删除序列", lambda: self.service.delete(item.sequence_id))
+            self._run_action("删除序列", partial(self.service.delete, item.sequence_id, expected_revision=item.revision))
 
     def _move(self, offset):
+        if self.operation.busy:
+            return
         item = self._selected()
         row = self.members.currentRow()
         target = row + offset
@@ -141,25 +152,30 @@ class SequenceManagementTab(CustomTab):
             return
         members = list(item.profile_ids)
         members[row], members[target] = members[target], members[row]
-        if self._run_action("调整账号顺序", lambda: self.service.publish(
-                item.scope, {"profile_ids": members, "enabled": item.enabled})) is not None:
-            self.members.setCurrentRow(target)
+        self._run_action("调整账号顺序", partial(self.service.publish,
+                item.scope, {"profile_ids": members, "enabled": item.enabled}), selected_row=target)
 
-    def _run_action(self, label, callback):
-        try:
-            self.status.setText(f"{label}中…")
-            result = callback()
+    def _run_action(self, label, callback, *, selected_row=None):
+        if self.operation.busy:
+            return None
+        original = self._selected()
+        original_id = original.sequence_id if original else None
+        self.status.setText(f"{label}中…")
+        def completed(result):
             sequence_id = str(getattr(result, "sequence_id", "")) or None
             revision = str(getattr(result, "revision", ""))
-            self.refresh(sequence_id=sequence_id)
+            current = self._selected()
+            same_selection = (current.sequence_id if current else None) == original_id
+            self.refresh(sequence_id=sequence_id if same_selection else current.sequence_id if current else None)
+            if same_selection and selected_row is not None:
+                self.members.setCurrentRow(selected_row)
             self.status.setText(f"{label}成功")
             if sequence_id:
                 self.changed.emit(AccountChangeEvent(
                     "sequence_changed", revision, (), (sequence_id,)))
-            return result
-        except Exception as exc:
+        def failed(exc):
             self.status.setText(f"{label}失败：{sanitize_error(exc)}")
-            return None
+        return self.operation.start(callback, completed, failed)
 
 
 __all__ = ["SequenceManagementTab"]

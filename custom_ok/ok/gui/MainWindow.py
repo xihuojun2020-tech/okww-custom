@@ -393,15 +393,18 @@ class MainWindow(FluentWindow):
         if not config_src.is_dir():
             return None
         service = ConfigBackupService(config_src, backup_dir, app_version=str(self.version))
-        if service.has_daily_snapshot_for_date(datetime.now().strftime('%Y-%m-%d')):
-            return None
-        try:
-            snapshot = service.create_daily_snapshot()
-            logger.info(f'config auto backup done: {snapshot.path}')
-            return snapshot
-        except Exception as e:
-            logger.error('config auto backup failed', e)
-            return None
+        from src.gui.BackgroundOperation import BackgroundOperation
+        if not hasattr(self, '_startup_backup_operation'):
+            self._startup_backup_operation = BackgroundOperation(self)
+        date = datetime.now().strftime('%Y-%m-%d')
+        def create():
+            if not service.has_daily_snapshot_for_date(date):
+                return service.create_daily_snapshot()
+        def completed(snapshot):
+            if snapshot:
+                logger.info(f'config auto backup done: {snapshot.path}')
+        return self._startup_backup_operation.start(
+            create, completed, lambda error: logger.error(f'config auto backup failed: {error}'))
 
     def _start_backup_cleanup_timer(self):
         """Run retention and failure-evidence cleanup off the GUI thread."""

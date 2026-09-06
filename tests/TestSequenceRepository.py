@@ -78,12 +78,25 @@ class TestSequenceRepository(unittest.TestCase):
 
     def test_ui_action_surfaces_sequence_delete_error(self):
         status = SimpleNamespace(value="", setText=lambda value: setattr(status, "value", value))
-        tab = SimpleNamespace(status=status, refresh=lambda: None)
+        def start(work, success, failure):
+            try:
+                success(work())
+            except Exception as error:
+                failure(error)
+        tab = SimpleNamespace(status=status, refresh=lambda: None, _selected=lambda: None,
+                              operation=SimpleNamespace(busy=False, start=start))
         result = SequenceManagementTab._run_action(
             tab, "删除序列", lambda: (_ for _ in ()).throw(RuntimeError("修订冲突")))
         self.assertIsNone(result)
         self.assertIn("删除序列失败", status.value)
         self.assertIn("修订冲突", status.value)
+
+    def test_delete_rejects_revision_from_an_outdated_preview(self):
+        current = self.service.load('默认')
+        self.service.create('新序列')
+        with self.assertRaises(ProfileRevisionConflict):
+            self.service.delete('默认', expected_revision=current.revision)
+        self.assertIn('默认', self.raw.sequences)
 
 
 if __name__ == "__main__":

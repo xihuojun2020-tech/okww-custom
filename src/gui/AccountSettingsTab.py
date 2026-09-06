@@ -45,7 +45,7 @@ class AccountSettingsTab(CustomTab):
 
     def refresh_all(self):
         """Reload both account panels after import/restore/repair operations."""
-        self.account_tab.refresh()
+        self.account_tab.refresh(preserve_draft=True)
         self.sequence_tab.refresh()
         self.account_changed.emit(AccountChangeEvent("graph_refreshed"))
 

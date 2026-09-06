@@ -16,7 +16,7 @@ from src.task.DailyTask import DailyTask
 class TestConfigBackup(unittest.TestCase):
     def test_daily_snapshot_writes_manifest_and_is_verifiable(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             config_dir = root / "configs"
             backup_dir = root / "backups"
             config_dir.mkdir()
@@ -37,7 +37,7 @@ class TestConfigBackup(unittest.TestCase):
 
     def test_nested_manifest_is_backed_up_and_verified(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             config_dir = root / "configs"
             backup_dir = root / "backups"
             nested = config_dir / "published" / "bundle"
@@ -52,7 +52,7 @@ class TestConfigBackup(unittest.TestCase):
 
     def test_failed_build_does_not_leave_a_complete_snapshot(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             config_dir = root / "configs"
             backup_dir = root / "backups"
             config_dir.mkdir()
@@ -65,7 +65,7 @@ class TestConfigBackup(unittest.TestCase):
 
     def test_preflight_summary_and_restore_are_transactional(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             config_dir = root / "configs"
             backup_dir = root / "backups"
             config_dir.mkdir()
@@ -82,7 +82,7 @@ class TestConfigBackup(unittest.TestCase):
 
     def test_preflight_reports_verified_master_and_sequence_summary(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             config_dir = root / "configs"
             backup_dir = root / "backups"
             config_dir.mkdir()
@@ -111,7 +111,7 @@ class TestConfigBackup(unittest.TestCase):
 
     def test_preflight_blocks_snapshot_with_invalid_master_even_if_hashes_match(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             config_dir = root / "configs"
             backup_dir = root / "backups"
             config_dir.mkdir()
@@ -124,7 +124,7 @@ class TestConfigBackup(unittest.TestCase):
 
     def test_retention_removes_old_complete_snapshots_as_whole_units(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             config_dir = root / "configs"
             backup_dir = root / "backups"
             config_dir.mkdir()
@@ -139,7 +139,7 @@ class TestConfigBackup(unittest.TestCase):
 
     def test_failed_second_swap_rolls_back_live_tree_immediately(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             config_dir = root / "configs"
             backup_dir = root / "backups"
             config_dir.mkdir()
@@ -165,7 +165,7 @@ class TestConfigBackup(unittest.TestCase):
 
     def test_restore_journal_cannot_target_paths_outside_the_service_scope(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             config_dir = root / "configs"
             backup_dir = root / "backups"
             sentinel = root / "do-not-delete"
@@ -188,7 +188,7 @@ class TestConfigBackup(unittest.TestCase):
     def test_shared_backup_resolver_precedence_and_config_exclusion(self):
         from src.storage import resolve_config_backup_dir, get_config_backup_dir
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             for values, expected in [({}, root / 'configs_backup'),
                                      ({'legacy_backup_dir': 'old'}, root / 'old'),
                                      ({'warehouse_root': 'warehouse', 'legacy_backup_dir': 'old'},
@@ -199,6 +199,30 @@ class TestConfigBackup(unittest.TestCase):
                         'Config Backup': {'Config Backup Directory': str(root / 'old')}}
             with patch('ok.og.executor', SimpleNamespace(global_config=SimpleNamespace(get_config=settings.get))):
                 self.assertEqual(get_config_backup_dir(root), root / 'warehouse/ok仓库/配置备份')
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows short paths')
+    def test_restore_journal_accepts_equivalent_windows_short_paths(self):
+        import win32api
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve() / 'configuration recovery long name'
+            config = root / 'configs'
+            config.mkdir(parents=True)
+            (config / 'value').write_text('original')
+            service = ConfigBackupService(config, root / 'backups')
+            staging = root / '.restore-staged'
+            staging.mkdir()
+            old = root / 'configs.rollback-old'
+            old.mkdir()
+            (old / 'value').write_text('rollback')
+            short = Path(win32api.GetShortPathName(str(root)))
+            service._write_restore_journal({
+                'version': 2, 'phase': 'verified', 'had_config': True,
+                'config_dir': str(short / config.name), 'staging': str(short / staging.name),
+                'old': str(short / old.name),
+            })
+            restored = ConfigBackupService(config, root / 'backups')
+            self.assertFalse(restored.restore_journal_path.exists())
+            self.assertEqual((config / 'value').read_text(), 'rollback')
 
     def test_external_and_cross_volume_restore_roundtrip(self):
         from tests.fixture_support import make_account_environment
@@ -237,7 +261,7 @@ class TestConfigBackup(unittest.TestCase):
     def test_restore_faults_preserve_old_tree_and_source(self):
         for fault in ('copy', 'source_changes', 'first_swap', 'final_check'):
             with self.subTest(fault=fault), tempfile.TemporaryDirectory() as temp:
-                config = Path(temp) / 'app/configs'
+                config = Path(temp).resolve() / 'app/configs'
                 config.mkdir(parents=True)
                 value = config / 'value'
                 value.write_text('old')
@@ -270,7 +294,7 @@ class TestConfigBackup(unittest.TestCase):
             pass
         for phase in ('prepared', 'verified', 'first_swap', 'second_swap', 'activated'):
             with self.subTest(phase=phase), tempfile.TemporaryDirectory() as temp:
-                root = Path(temp)
+                root = Path(temp).resolve()
                 config = root / 'configs'
                 config.mkdir()
                 value = config / 'value'
@@ -307,10 +331,26 @@ class TestConfigBackup(unittest.TestCase):
                 with self.assertRaisesRegex(Exception, '运行或暂停'):
                     service.restore(service.backup_dir / 'snapshot', confirmed=True)
 
+    def test_restore_refuses_source_or_target_changed_since_preview(self):
+        from tests.fixture_support import make_account_environment
+        for change_source in (True, False):
+            with self.subTest(change_source=change_source), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp).resolve()
+                env = make_account_environment(root)
+                service = ConfigBackupService(env.integrity.paths.config_dir, root / 'backups')
+                snapshot = service.create_daily_snapshot()
+                summary = service.preflight_restore(snapshot.path)
+                changed = snapshot.path / 'manifest.json' if change_source else env.integrity.paths.master
+                before = changed.read_bytes()
+                changed.write_bytes(before + b'\n')
+                with self.assertRaisesRegex(ValueError, '预览后已改变'):
+                    service.restore(snapshot.path, confirmed=True, preflight=summary)
+                self.assertEqual(changed.read_bytes(), before + b'\n')
+
     def test_cleanup_failure_or_no_progress_only_attempts_once(self):
         for failure in (PermissionError('locked'), None):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temp:
-                root = Path(temp)
+                root = Path(temp).resolve()
                 config = root / 'configs'
                 config.mkdir()
                 (config / 'value').write_text('value')
@@ -335,7 +375,7 @@ class TestConfigBackup(unittest.TestCase):
 
     def test_cleanup_retains_all_snapshots_while_restore_is_pending(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             config = root / 'configs'
             config.mkdir()
             service = ConfigBackupService(config, root / 'backups')
@@ -350,7 +390,7 @@ class TestConfigBackup(unittest.TestCase):
 
     def test_snapshot_manifest_paths_and_descendant_links_are_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             config = root / 'configs'
             config.mkdir()
             (config / 'value').write_text('value')
@@ -379,7 +419,7 @@ class TestConfigBackup(unittest.TestCase):
     def test_preflight_rejects_damaged_active_even_when_snapshot_hashes_match(self):
         from tests.fixture_support import make_account_environment
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             env = make_account_environment(root)
             active = env.publisher.load_active()
             profile = next((active.bundle_dir / 'profiles').glob('*.json'))
@@ -391,7 +431,7 @@ class TestConfigBackup(unittest.TestCase):
 
     def test_daily_task_injects_governed_transaction_snapshot_hook(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             config_dir = root / "configs"
             backup_dir = root / "backups"
             config_dir.mkdir()

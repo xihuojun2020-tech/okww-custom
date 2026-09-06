@@ -114,8 +114,10 @@ class AccountRebindService:
         return RebindPreview(str(profile_id), current, requested, changes)
 
     def rebind(self, profile_id: str, current_identity: Any,
-               new_identity: Mapping[str, Any], confirmed: bool = False) -> Any:
+               new_identity: Mapping[str, Any], confirmed: bool = False, *, expected_revision=None) -> Any:
         record = self.repository.load_profile(profile_id)
+        if expected_revision is not None and str(record.revision) != str(expected_revision):
+            raise ProfileRevisionConflict('账号配置已被其他操作修改，请重新预览身份绑定')
         current = _identity_mapping(record.account)
         observed = normalize_identity(current_identity)
         known = set()

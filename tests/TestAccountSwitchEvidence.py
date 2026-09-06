@@ -19,6 +19,55 @@ from src.task.TestAccountSwitchTask import (
 
 
 class TestAccountSwitchEvidence(unittest.TestCase):
+    def test_filtered_and_oversized_frames_do_not_copy(self):
+        class CountedFrame:
+            nbytes = 12
+            copies = 0
+            def copy(self):
+                self.copies += 1
+                return self
+        frame = CountedFrame()
+        session = AccountSwitchEvidenceSession('A1', clock=lambda: 100.0, max_frame_bytes=16)
+        self.assertTrue(session.record_frame(frame))
+        self.assertFalse(session.record_frame(frame))
+        self.assertEqual(frame.copies, 1)
+        frame.nbytes = 20
+        self.assertFalse(session.record_frame(frame, force=True))
+        self.assertEqual(frame.copies, 1)
+        self.assertEqual(session.events[-1]['reason'], 'frame_too_large')
+        session.succeed()
+        self.assertFalse(session.record_frame(frame, force=True))
+        self.assertEqual(session.frame_bytes, 0)
+
+    def test_byte_capacity_expiration_forced_frames_and_finish_accounting(self):
+        now = [0.0]
+        session = AccountSwitchEvidenceSession('A1', clock=lambda: now[0], max_frame_bytes=24)
+        frame = np.zeros((2, 2, 3), dtype=np.uint8)
+        for index in range(8):
+            self.assertTrue(session.record_frame(frame, stage=str(index), force=True))
+            self.assertLessEqual(session.frame_bytes, 24)
+        self.assertEqual([entry[2]['stage'] for entry in session.frames], ['6', '7'])
+        self.assertEqual(session.frame_bytes, 24)
+        now[0] = 61.0
+        session.record_frame(frame)
+        self.assertEqual(session.frame_bytes, 12)
+        session.succeed()
+        session.succeed()
+        self.assertEqual(session.frame_bytes, 0)
+        self.assertFalse(session.frames)
+
+    def test_failure_transfers_owned_buffer_and_releases_it_after_writing(self):
+        with tempfile.TemporaryDirectory() as root:
+            session = AccountSwitchEvidenceSession('A1', root=root)
+            session.record_frame(np.zeros((8, 8, 3), dtype=np.uint8))
+            retained = session.frames
+            event = session.fail('synthetic failure')
+            self.assertTrue((event / 'event.json').exists())
+            self.assertFalse(retained)
+            self.assertFalse(session.frames)
+            self.assertEqual(session.frame_bytes, 0)
+            self.assertEqual(session.fail('again'), event)
+
     def test_success_discards_frames_without_creating_event(self):
         with tempfile.TemporaryDirectory() as root:
             session = AccountSwitchEvidenceSession("A3", root=root, clock=lambda: 100.0)
