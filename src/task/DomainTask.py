@@ -1,7 +1,7 @@
 import re
 
 
-from ok import Logger
+from ok import Logger, WaitFailedException
 from src.task.BaseCombatTask import BaseCombatTask, NotInCombatException, CharDeadException
 from src.task.WWOneTimeTask import WWOneTimeTask
 
@@ -98,7 +98,13 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
             try:
                 self.combat_once()
                 self.sleep(3)
-                self.walk_to_treasure()
+                try:
+                    self.walk_to_treasure()
+                except WaitFailedException:
+                    if self._domain_combat_finished():
+                        self.log_warning('领域战斗已结束但未出现寻宝目标，跳过寻宝并继续结算')
+                    else:
+                        raise
                 self.pick_f(handle_claim=False)
             except (NotInCombatException, CharDeadException):
                 self.log_info('farm_in_domain: death recovered, exiting domain')
@@ -131,3 +137,26 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
         self.click(0.42, 0.84, after_sleep=2)  # back to world
         self.make_sure_in_world()
         return True, must_use
+
+    def _domain_combat_finished(self):
+        """判断领域战斗是否已经正常结束，避免无奖励目标时卡死寻宝。
+
+        战斗循环在切人瞬间可能以 ``not in_team while switching`` 退出，
+        这不一定代表死亡。若战斗模块已清除战斗状态、画面也没有目标或
+        敌人血条，则把后续寻宝视为可选步骤；真正的死亡仍由
+        ``CharDeadException`` 路径处理。
+        """
+        try:
+            if self.is_expected_combat_end():
+                return True
+        except Exception:
+            pass
+        if getattr(self, '_in_combat', True):
+            return False
+        try:
+            if self.has_target() or self.check_health_bar():
+                return False
+        except Exception:
+            # 视觉复核失败时不吞掉寻宝异常，保留原有失败行为。
+            return False
+        return True

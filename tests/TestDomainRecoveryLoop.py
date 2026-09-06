@@ -2,6 +2,9 @@ import ast
 import unittest
 from pathlib import Path
 
+from ok import WaitFailedException
+from src.task.DomainTask import DomainTask
+
 
 class TestDomainRecoveryLoop(unittest.TestCase):
     def setUp(self):
@@ -72,6 +75,93 @@ class TestDomainRecoveryLoop(unittest.TestCase):
             for node in ast.walk(self.method_node)
         )
         self.assertTrue(has_unpack)
+
+    def test_domain_combat_finished_when_team_and_enemy_signals_are_gone(self):
+        class FakeTask:
+            _domain_combat_finished = DomainTask._domain_combat_finished
+            _in_combat = False
+
+            @staticmethod
+            def is_expected_combat_end():
+                return False
+
+            @staticmethod
+            def has_target():
+                return False
+
+            @staticmethod
+            def check_health_bar():
+                return False
+
+        self.assertTrue(FakeTask()._domain_combat_finished())
+
+    def test_domain_combat_finished_rejects_live_target(self):
+        class FakeTask:
+            _domain_combat_finished = DomainTask._domain_combat_finished
+            _in_combat = False
+
+            @staticmethod
+            def is_expected_combat_end():
+                return False
+
+            @staticmethod
+            def has_target():
+                return True
+
+            @staticmethod
+            def check_health_bar():
+                return False
+
+        self.assertFalse(FakeTask()._domain_combat_finished())
+
+    def test_farm_in_domain_skips_treasure_timeout_after_combat_end(self):
+        class FakeTask:
+            farm_in_domain = DomainTask.farm_in_domain
+            stamina_once = 40
+            _in_combat = False
+            picked = 0
+            world = 0
+
+            def walk_until_f(self, **_kwargs):
+                return True
+
+            def pick_f(self, **_kwargs):
+                self.picked += 1
+
+            def combat_once(self):
+                pass
+
+            def sleep(self, _seconds):
+                pass
+
+            def walk_to_treasure(self):
+                raise WaitFailedException()
+
+            def _domain_combat_finished(self):
+                return True
+
+            def use_stamina(self, **_kwargs):
+                return False, 40
+
+            def info_incr(self, *_args):
+                pass
+
+            def click(self, *_args, **_kwargs):
+                pass
+
+            def make_sure_in_world(self):
+                self.world += 1
+
+            def log_warning(self, *_args):
+                pass
+
+            def log_info(self, *_args):
+                pass
+
+        task = FakeTask()
+        self.assertEqual((True, -40), task.farm_in_domain())
+        self.assertEqual(2, task.picked)
+        self.assertEqual(1, task.world)
 
 
 if __name__ == "__main__":
