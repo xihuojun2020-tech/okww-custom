@@ -1,6 +1,5 @@
 from typing import Tuple
 
-from openvino import Core
 import cv2
 import numpy as np
 
@@ -12,6 +11,11 @@ logger = Logger.get_logger(__name__)
 class OpenVinoYolo8Detect:
 
     def __init__(self, weights='echo.onnx', model_h=640, model_w=640, iou_thres=0.45):
+        try:
+            from openvino import Core
+        except (ImportError, OSError) as error:
+            raise RuntimeError(
+                'OpenVINO 后端不可用：请使用当前 Python 3.12 环境重新安装 requirements.txt。') from error
         self.dic_labels = {0: 'echo'}
         self.weights = weights
         self.model_size = (model_w, model_h)
@@ -47,8 +51,8 @@ class OpenVinoYolo8Detect:
 
             self.input_layer = self.compiled_model.input(0)
             self.output_layer = self.compiled_model.output(0)
-            self.input_width = self.input_layer.shape[2]
-            self.input_height = self.input_layer.shape[3]
+            self.input_width = self.input_layer.shape[3]
+            self.input_height = self.input_layer.shape[2]
             logger.info(
                 f"OpenVINO model compiled successfully for {device_used} {self.input_width}x{self.input_height}."
             )
@@ -75,7 +79,7 @@ class OpenVinoYolo8Detect:
     def _preprocess(self, img):
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        img, pad = self.letterbox(img, (self.input_width, self.input_height))
+        img, pad = self.letterbox(img, (self.input_height, self.input_width))
 
         image_data = np.array(img, dtype=np.float32) / 255.0
         image_data = np.transpose(image_data, (2, 0, 1))
@@ -84,7 +88,7 @@ class OpenVinoYolo8Detect:
         return image_data, pad
 
     def _postprocess(self, outputs, padding, orig_shape, confidence_threshold, label):
-        outputs = np.transpose(np.squeeze(outputs[0]))
+        outputs = np.asarray(outputs)[0].T.copy()
 
         gain = min(self.input_height / orig_shape[0], self.input_width / orig_shape[1])
 

@@ -1,10 +1,5 @@
-import os
-import random
-import time
 from typing import Tuple
 
-import onnxruntime as ort  # Added onnxruntime
-# from openvino import Core  # Removed OpenVINO Core
 import cv2
 import numpy as np
 
@@ -20,6 +15,12 @@ class OnnxYolo8Detect:  # Renamed class
         yolov ONNX Runtime inference
         dic_labels: {0: 'person', 1: 'bicycle'}
         """
+        try:
+            import onnxruntime as ort
+        except (ImportError, OSError) as error:
+            raise RuntimeError(
+                'ONNX Runtime 后端不可用：请在当前 Python 3.12 环境安装 onnxruntime，'
+                '或启用默认 OpenVINO 后端。') from error
         self.dic_labels = {0: 'echo'}
         self.weights = weights
         # Store model_h and model_w for preprocessing.
@@ -123,23 +124,14 @@ class OnnxYolo8Detect:  # Renamed class
         Perform post-processing on the model's output.
         """
         # outputs_from_model is a list from session.run(), take the first element.
-        processed_outputs = np.transpose(np.squeeze(outputs_from_model[0]))
+        processed_outputs = np.asarray(outputs_from_model[0])[0].T.copy()
         rows = processed_outputs.shape[0]
 
         boxes = []
         scores = []
         class_ids = []
 
-        # The 'gain' calculation below replicates the logic from the original OpenVINO-based code.
-        # In the original code, self.input_width stored model height, and self.input_height stored model width.
-        # The gain was calculated as: min(variable_storing_width / original_image_height, variable_storing_height / original_image_width).
-        # To replicate this with current variable names (where preprocess_target_h is height, preprocess_target_w is width):
-        # gain = min(self.preprocess_target_w / orig_shape[0], self.preprocess_target_h / orig_shape[1])
-        # This calculation for 'gain' might be incorrect if orig_shape is (height, width) as it would mix width/height ratios.
-        # A more standard gain calculation would be:
-        # gain = min(self.preprocess_target_h / orig_shape[0], self.preprocess_target_w / orig_shape[1])
-        # However, to adhere to "do not fix bugs", the original logic is replicated.
-        gain = min(self.preprocess_target_w / orig_shape[0], self.preprocess_target_h / orig_shape[1])
+        gain = min(self.preprocess_target_h / orig_shape[0], self.preprocess_target_w / orig_shape[1])
 
         # Adjust detections for padding
         # padding is (pad_top, pad_left)

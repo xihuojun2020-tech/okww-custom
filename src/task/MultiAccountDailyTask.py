@@ -44,7 +44,7 @@ from src.account_identity import (
 from src.account_repository import AccountRepository, get_default_repository
 from src.sequence_repository import SequenceRepository, thaw_snapshot
 from src.runtime.sequence_snapshot_service import SequenceSnapshotService
-from src.runtime.task_run_coordinator import TaskRunCoordinator
+from src.runtime.task_run_coordinator import TaskRunCoordinator, TaskRunState
 from src.runtime.account_selection_service import AccountSelectionService
 from src.runtime.account_verification_service import AccountVerificationService
 from src.runtime.login_flow_service import LoginFlowService
@@ -598,7 +598,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         self._run_start_profile_id = None
         self._run_return_profile_id = None
         self._current_profile_id = None
-        self.run_coordinator.request_stop()
+        self.run_coordinator.finish()
 
     def _set_run_start(self, profile_name):
         if getattr(self, '_active_run_snapshot', None) is None or not profile_name:
@@ -613,7 +613,17 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def request_coordinated_stop(self):
         """Publish a stop request without mutating the active run snapshot."""
-        return self.run_coordinator.request_stop()
+        status = self.run_coordinator.request_stop()
+        executor = getattr(self, 'executor', None)
+        if getattr(executor, 'current_task', None) is self:
+            executor.stop_current_task()
+        return status
+
+    def disable(self):
+        coordinator = getattr(self, 'run_coordinator', None)
+        if coordinator is not None and getattr(getattr(self, 'executor', None), 'current_task', None) is self:
+            coordinator.request_stop()
+        super().disable()
 
     @staticmethod
     def _snapshot_profile_names(snapshot):
@@ -778,13 +788,18 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         else:
             self.run_coordinator.request_stop()
         finally:
-            self.clear_run_snapshot()
-            if daily_task is not None:
-                release = getattr(daily_task, 'clear_profile_binding', None)
-                if callable(release):
-                    release()
-            if daily_task is not None and hasattr(daily_task, '_runtime_status_account'):
-                del daily_task._runtime_status_account
+            try:
+                if daily_task is not None:
+                    release = getattr(daily_task, 'clear_profile_binding', None)
+                    if callable(release):
+                        release()
+                if daily_task is not None and hasattr(daily_task, '_runtime_status_account'):
+                    del daily_task._runtime_status_account
+            except Exception as error:
+                self.run_coordinator.fail(str(error))
+                raise
+            finally:
+                self.clear_run_snapshot()
 
     def _run_inner(self):
         # 本轮账号序列（配置）
@@ -1010,6 +1025,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _guard_account_transition(self):
         """Freshly verify integrity before any account-transition interaction."""
+        if getattr(getattr(self, 'run_coordinator', None), 'state', None) == TaskRunState.STOPPING:
+            raise TaskDisabledException()
         service = getattr(self, 'integrity_service', None)
         if service is None:
             return True

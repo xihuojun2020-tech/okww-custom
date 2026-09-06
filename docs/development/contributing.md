@@ -35,10 +35,10 @@ This project only supports Python 3.12. Prefer using the repository-local virtua
 
 ```powershell
 # 安装或更新依赖 / Install or update dependencies
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt --upgrade
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 
 # 如需开发测试依赖 / For development test dependencies
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt --upgrade
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 
 # 运行 Release 版本 / Run release version
 .\.venv\Scripts\python.exe main.py
@@ -50,6 +50,18 @@ This project only supports Python 3.12. Prefer using the repository-local virtua
 如果没有 `.venv`，可以使用 `python` 代替上面的解释器路径。
 
 If `.venv` does not exist, use `python` instead of the interpreter path above.
+
+运行依赖的直接来源是 `requirements.in`，完整固定版本集合是 `requirements.txt`；开发依赖位于 `requirements-dev.txt`。修改依赖时同步声明，并在新的临时虚拟环境安装两份锁定文件、执行 `pip check`。不要把本机残留包记录当成需要升级整个框架的证据。只修改 `custom_ok/` 中的框架覆盖文件，启动时由 `main.py` 同步；不要把 `.venv` 内的补丁作为分发来源。
+
+Direct runtime pins live in `requirements.in`; `requirements.txt` and `requirements-dev.txt` are the validated runtime and development locks. Verify changes by installing both in a fresh venv and running `pip check`. Maintain framework overrides in `custom_ok/`, which `main.py` synchronizes at startup.
+
+```powershell
+.\.venv\Scripts\python.exe -m pip check
+.\.venv\Scripts\python.exe 打包更新.py dist
+.\.venv\Scripts\python.exe -m scripts.verify_update_package dist\okww_update_v1.33.01.zip --previous-ref v1.33.00
+```
+
+增量包验证使用临时旧版源码与合成配置；示例版本在后续发布时替换。EXE/MSI 解包检查和实际安装/打开/卸载是分开的验收项。About 与发布说明共用 `更新日志.md`，不要再复制版本历史到界面源码。
 
 ## 测试 / Testing
 

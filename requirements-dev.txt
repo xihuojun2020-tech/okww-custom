@@ -1,2 +1,8 @@
-polib
-pytest
+# Development lock; install alongside requirements.txt on Python 3.12.
+polib==1.2.0
+pytest==8.4.1
+colorama==0.4.6
+iniconfig==2.1.0
+packaging==25.0
+pluggy==1.6.0
+pygments==2.19.2

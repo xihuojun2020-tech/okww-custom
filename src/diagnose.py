@@ -14,10 +14,11 @@ import re
 import socket
 import subprocess
 import time
+import zipfile
 from datetime import datetime
 from pathlib import Path
 
-from src.observability import redact_message
+from src.observability import redact_data, redact_message
 from src.secure_backup import SecureStoragePolicy
 
 
@@ -127,12 +128,12 @@ def collect_diagnosis():
     ap('  KRLauncher 路径: <APPDATA>\\KRLauncher')
     ap(_dir_snapshot(kr, max_files=40, max_depth=3))
     ap(f'')
-    # 关键标记文件内容（设备标识类原文输出，便于对比；账号类脱敏）
+    # 设备标识仅输出稳定摘要，账号文本经过脱敏。
     if os.path.isdir(kr):
         for f in sorted(os.listdir(kr)):
             fp = os.path.join(kr, f)
             if f.endswith('_kurodata') or f.endswith('_tag') or 'cached' in f.lower():
-                # 设备标识文件（unique_id/distinctId/accountId/device）保留原文用于对比；含 username 的脱敏
+                # 设备标识使用摘要比较，不保存原文。
                 if any(k in f.lower() for k in ('unique_id', 'distinctid', 'accountid', 'device')):
                     ap(f'  [{f}] -> {_read_text(fp, 200, mask=False)}')
                 else:
@@ -232,7 +233,7 @@ def collect_diagnosis():
         ap(f'  psutil 不可用: {e}')
     ap(f'')
     ap('===== 诊断结束 =====')
-    return '\n'.join(L)
+    return _mask_all_sensitive('\n'.join(L))
 
 
 def _read_file_try(name):
@@ -247,7 +248,7 @@ def _read_file_try(name):
 
 def save_diagnosis(root=None, now=None):
     """按需生成诊断文件并限制为 10 份、14 天。"""
-    text = collect_diagnosis()
+    text = _mask_all_sensitive(collect_diagnosis())
     working = Path(root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))).resolve()
     log_dir = working / 'logs' / '实验性日志'
     storage = SecureStoragePolicy(log_dir, max_entries=10, max_age_days=14)
@@ -260,6 +261,55 @@ def save_diagnosis(root=None, now=None):
     os.utime(fname, (timestamp_value, timestamp_value))
     storage.cleanup(now=timestamp_value)
     return str(fname)
+
+
+def export_diagnostic_archive(root, destination):
+    """Export redacted text only; local evidence images remain private originals.
+
+    Pixel identities cannot be reliably removed by the configured best-effort
+    blur. Do not silently include images, binary archives, links or raw files.
+    """
+    root, destination = Path(root).resolve(), Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    pending = destination.with_suffix('.zip.tmp')
+    exported = omitted = 0
+    try:
+        with zipfile.ZipFile(pending, 'w', zipfile.ZIP_DEFLATED) as package:
+            for folder in ('logs', 'screenshots'):
+                source = root / folder
+                if not source.is_dir() or source.is_symlink() or source.is_junction():
+                    continue
+                for directory, dirs, files in os.walk(source, followlinks=False):
+                    dirs[:] = sorted(name for name in dirs if not (Path(directory) / name).is_symlink()
+                                     and not (Path(directory) / name).is_junction())
+                    for name in sorted(files):
+                        path = Path(directory) / name
+                        if path.is_symlink() or not path.resolve().is_relative_to(root):
+                            omitted += 1
+                            continue
+                        if path.suffix.lower() not in {'.txt', '.log', '.json'}:
+                            omitted += 1
+                            continue
+                        try:
+                            content = path.read_text(encoding='utf-8-sig')
+                            if path.suffix.lower() == '.json':
+                                content = json.dumps(redact_data(json.loads(content), redact=_mask_all_sensitive),
+                                                     ensure_ascii=False, indent=2)
+                            else:
+                                content = _mask_all_sensitive(content)
+                        except (OSError, UnicodeError, ValueError):
+                            omitted += 1
+                            continue  # Invalid/unknown data never falls back to raw bytes.
+                        exported += 1
+                        package.writestr(f'{folder}/{exported:06d}{path.suffix.lower()}', content)
+            package.writestr('README.txt',
+                f'已导出 {exported} 份脱敏文本，略过 {omitted} 份图片、二进制或无法安全读取的文件。\n'
+                '文件名已重新编号。本地原始日志和截图保持不变。截图不在分享包中；'
+                '如需补充，请手动检查并遮盖账号、昵称、UID 和其他隐私后单独选择。\n')
+        pending.replace(destination)
+    finally:
+        pending.unlink(missing_ok=True)
+    return destination
 
 
 if __name__ == '__main__':

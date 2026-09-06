@@ -25,6 +25,8 @@ okww监控室/
 debug.log
 probe_out.txt
 /test_out/
+/dist/
+/pyappify_dist/
 /probe_login_out/
 /实验性日志/
 /build/character_ports/

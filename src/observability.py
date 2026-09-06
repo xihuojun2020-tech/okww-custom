@@ -18,7 +18,11 @@ _ALT_LOGIN = re.compile(
     r"(?<![A-Za-z0-9])U(?=[A-Za-z0-9]{5,30}(?![A-Za-z0-9]))"
     r"(?=[A-Za-z0-9]*\d)[A-Za-z0-9]+"
 )
-_SECRET = re.compile(r"(?i)(password|passwd|pwd|token|cookie|authorization|credential|密码|令牌|凭证)\s*[=:]\s*[^\s,;]+")
+_PRIVATE_FIELD = r'password|passwd|pwd|token|cookie|authorization|credential|webhook|phone|nickname|display_name|alternate_login_name|login_name|game_feature_code|profile_id|account_aliases|(?:target_|last_)?account|密码|令牌|凭证|手机号|昵称|特征码'
+_SECRET = re.compile(
+    rf'''(?i)((?:{_PRIVATE_FIELD})["']?\s*[=:]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;}}\]]+)''')
+_PRIVATE_KEY = re.compile(rf'(?:{_PRIVATE_FIELD})$', re.I)
+_AUTH_HEADER = re.compile(r'(?im)\b(Authorization|Cookie)\s*:\s*[^\r\n]+')
 _LOGIN_URL = re.compile(r"https?://[^\s]+(?:login|oauth|auth|token)[^\s]*", re.I)
 _CURRENT_CONTEXT: contextvars.ContextVar[dict[str, Any]] = contextvars.ContextVar("okww_observation", default={})
 _SENSITIVE_VALUES: set[str] = set()
@@ -47,12 +51,23 @@ def redact_message(value: Any) -> str:
     if ("Config:init self.config =" in text or "OKTestRunner init_ok config:" in text
             or "ok:do_init, config:" in text or "ok-script init " in text and " config:" in text):
         return "[REDACTED_CONFIG]"
-    text = _SECRET.sub(lambda m: f"{m.group(1)}=[REDACTED]", text)
+    text = _AUTH_HEADER.sub(lambda m: f'{m.group(1)}: [REDACTED]', text)
+    text = _SECRET.sub(lambda m: f"{m.group(1)}[REDACTED]", text)
     text = _LOGIN_URL.sub("[REDACTED_URL]", text)
     text = _PHONE.sub("[REDACTED_PHONE]", text)
     text = _MASKED_PHONE.sub("[REDACTED_PHONE]", text)
     text = _ALT_LOGIN.sub("[REDACTED_LOGIN]", text)
     return text
+
+
+def redact_data(value: Any, *, redact=redact_message) -> Any:
+    """Preserve diagnostic JSON structure while removing nested identities/secrets."""
+    if isinstance(value, dict):
+        return {redact(str(key)): '[REDACTED]' if _PRIVATE_KEY.search(str(key)) else
+                redact_data(item, redact=redact) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [redact_data(item, redact=redact) for item in value]
+    return redact(value) if isinstance(value, str) else value
 
 
 class RedactingFilter(logging.Filter):

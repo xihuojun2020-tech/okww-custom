@@ -395,8 +395,9 @@ class BaseCombatTask(CombatCheck):
             wait_combat_time (int, optional): 等待进入战斗状态的超时时间 (秒)。默认为 200。
             raise_if_not_found (bool, optional): 如果未找到战斗状态是否抛出异常。默认为 True。
         """
-        if wait_combat_time > 0:
-            result = self.wait_combat(target=target, time_out=wait_combat_time, raise_if_not_found=raise_if_not_found)
+        if wait_combat_time <= 0:
+            raise ValueError('wait_combat_time must be positive')
+        result = self.wait_combat(target=target, time_out=wait_combat_time, raise_if_not_found=raise_if_not_found)
         if self.switch_healer_enabled():
             self.load_chars()
             self.switch_healer()

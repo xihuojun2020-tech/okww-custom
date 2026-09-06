@@ -1,5 +1,4 @@
 import os
-import zipfile
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -208,19 +207,9 @@ class StartTab(Tab):
         app_name = og.config.get('gui_title')
         downloads_path = Path(get_downloads_folder())
         zip_path = downloads_path / f"{app_name}-log.zip"
-        folders_to_archive = ["screenshots", "logs"]
-
         try:
-            downloads_path.mkdir(parents=True, exist_ok=True)
-            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-                for folder in folders_to_archive:
-                    source_dir = Path.cwd() / folder
-                    if not source_dir.is_dir():
-                        continue
-                    for file_path in source_dir.rglob("*"):
-                        if file_path.is_file():
-                            zipf.write(file_path, file_path.relative_to(Path.cwd()))
-
+            from src.diagnose import export_diagnostic_archive
+            export_diagnostic_archive(Path.cwd(), zip_path)
             reveal_in_explorer(zip_path)
         except Exception as e:
             alert_error(f"{og.app.tr('Export failed')}: {e}", tray=True)

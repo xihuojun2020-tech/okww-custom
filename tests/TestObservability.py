@@ -10,6 +10,11 @@ from src.observability import (
 
 
 class TestObservability(unittest.TestCase):
+    def test_authorization_and_cookie_headers_do_not_leave_tail_credentials(self):
+        text = redact_message('Authorization: Bearer SECRET_A\nCookie: first=SECRET_B; second=SECRET_C')
+        for secret in ('SECRET_A', 'SECRET_B', 'SECRET_C'):
+            self.assertNotIn(secret, text)
+
     def tearDown(self):
         _reset_sensitive_values_for_tests()
 

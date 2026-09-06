@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 import cv2
 import numpy as np
@@ -10,6 +11,37 @@ from src.Labels import Labels
 
 
 class TestFeatureSet(unittest.TestCase):
+    def test_cached_arrow_rotations_preserve_existing_sample_matches(self):
+        from src.task.BaseWWTask import BaseWWTask
+        for filename, expected_angle, expected_confidence in (
+                ('angle_130.png', 134, .5515261888504028),
+                ('mini_map.png', 24, .6617346405982971),
+                ('path.png', 158, .3197648227214813)):
+            with self.subTest(sample=filename):
+                frame = cv2.imread('tests/images/' + filename)
+                self.assertIsNotNone(frame)
+                features = FeatureSet(False, 'assets/coco_annotations.json', .002, .002, default_threshold=.7)
+                task = BaseWWTask.__new__(BaseWWTask)
+                task.get_feature_by_name = lambda name: features.get_feature_by_name(frame, name)
+                task.get_box_by_name = lambda name: features.get_box_by_name(frame, name)
+                def find(**kwargs):
+                    boxes = features.find_one_feature(frame, None, **kwargs)
+                    return boxes[0] if boxes else None
+                task.find_one = find
+                with patch.object(cv2, 'warpAffine', wraps=cv2.warpAffine) as rotate:
+                    first = task.rotate_arrow_and_find()
+                    self.assertEqual(rotate.call_count, 360)
+                    second = task.rotate_arrow_and_find()
+                    self.assertEqual(rotate.call_count, 360)
+                    self.assertEqual(first[0], expected_angle)
+                    self.assertEqual(first[0], second[0])
+                    self.assertAlmostEqual(first[1].confidence, expected_confidence, places=6)
+                    self.assertEqual(first[1].confidence, second[1].confidence)
+                    feature = task.get_feature_by_name('arrow')
+                    feature.mat[0, 0] ^= 1
+                    task.rotate_arrow_and_find()
+                    self.assertEqual(rotate.call_count, 720)
+
     def test_qingxiao_templates_are_loadable(self):
         feature_set = FeatureSet(
             False,

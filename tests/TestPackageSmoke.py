@@ -8,6 +8,40 @@ from scripts.package_smoke import inspect_distribution, NOTIFICATION_TEMPLATE
 
 
 class TestPackageSmoke(unittest.TestCase):
+    def test_installer_source_layout_preserves_runtime_data_checks(self):
+        from scripts.inspect_installer import inspect_extracted
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            reference = {'config.py': b'version = "1.33.01"\n', 'custom_ok/fix.py': b'pass\n'}
+            for folder in ('repo', 'working'):
+                source = root / 'data/apps/example' / folder
+                for name, data in reference.items():
+                    path = source / name
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(data.replace(b'\n', b'\r\n'))
+            metadata = root / 'data/apps/example/repo/.git/logs/HEAD'
+            metadata.parent.mkdir(parents=True)
+            metadata.write_text('synthetic public clone log', encoding='utf-8')
+            result = inspect_extracted(root, reference, '1.33.01')
+            self.assertEqual(len(result['source_trees']), 2)
+            self.assertFalse(result['installation_tested'])
+            self.assertFalse(result['startup_tested'])
+            private = root / 'data/apps/example/working/configs/profile.json'
+            private.parent.mkdir()
+            private.write_text('{}', encoding='utf-8')
+            with self.assertRaisesRegex(ValueError, '配置'):
+                inspect_extracted(root, reference, '1.33.01')
+
+    def test_installer_source_mismatch_is_not_accepted(self):
+        from scripts.inspect_installer import inspect_extracted
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            config = root / 'data/apps/example/working/config.py'
+            config.parent.mkdir(parents=True)
+            config.write_text('version = "old"', encoding='utf-8')
+            with self.assertRaisesRegex(ValueError, '不一致'):
+                inspect_extracted(root, {'config.py': b'version = "new"'}, 'new')
+
     def inspect(self, name, value=b'{}'):
         with tempfile.TemporaryDirectory() as temp:
             dist = Path(temp)

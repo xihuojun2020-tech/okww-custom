@@ -1,106 +1,84 @@
 # -*- coding: utf-8 -*-
-"""生成 okww 功能更新包（主电脑运行，复制到另一台电脑解压覆盖即可）。
+"""Build a source update from tracked files, excluding local configuration and venvs.
 
-只打包「功能更新」文件：
-  - 项目代码：src/、auto_proxy.py、config.py、main.py、fix_venv.py、启动okww.bat
-  - 功能资源：COCO 特征定义、角色模板、退登电源图标、版本说明与更新日志
-  - 翻译：i18n/（po + mo）
-  - 框架修改：.venv/Lib/site-packages/ok/gui/MainWindow.py、
-    .venv/Lib/site-packages/ok/notification/windows_messenger.py（不含 .bak）
-  - 功能配置：configs/Notification.json
-
-【明确排除 - 目标机保留，绝不覆盖】：
-  - configs/daily_profiles.json（账号方案 + 完成时间 = 账号数据）
-  - configs/DailyTask.json（激活账号方案）
-  - configs/ADBSwitchTask.json（模拟器地址等设备相关，目标机重新配置）
-  - configs/devices.json、其他所有 configs/*.json（目标机个性化配置）
-  - .venv/pyvenv.cfg 及 .venv 其余文件（避免破坏目标机的 Python 路径指向！）
-  - recordings/、screenshots/、logs/、cache/、okww监控室/、.workbuddy-ai/、__pycache__
-
-用法：python 打包更新.py [输出目录]
+Usage: .venv/Scripts/python.exe 打包更新.py [output_directory]
+Install into a stopped source checkout, then install requirements.txt with its
+own Python 3.12 venv before restarting. The launcher installer is built by CI.
 """
-import os
+from __future__ import annotations
+
+import hashlib
+import json
+import subprocess
 import sys
 import zipfile
-from datetime import datetime
+from pathlib import Path
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+from scripts.package_smoke import inspect_member
+from scripts.validate_release import validate_release
 
-# 同步文件/目录（相对项目根）
+ROOT = Path(__file__).resolve().parent
 SYNC_ITEMS = [
-    'src',
-    'auto_proxy.py',
-    'config.py',
-    'main.py',
-    'fix_venv.py',
-    '启动okww.bat',
-    'assets/coco_annotations.json',
-    'assets/images/characters',
-    'assets/images/logout_power_icon.png',
-    'assets/images/abyss_period_challenge_icon.png',
-    'assets/images/abyss_period_challenge_selected.png',
-    'assets/images/abyss_period_challenge_unselected.png',
-    'assets/images/abyss_completed_icon.png',
-    'assets/images/abyss_locked_icon.png',
-    'custom_ok/ok/gui/about/AboutTab.py',
-    '更新日志.md',
-    'i18n',
-    'configs/Notification.json',
-    '.venv/Lib/site-packages/ok/gui/MainWindow.py',
-    '.venv/Lib/site-packages/ok/notification/windows_messenger.py',
+    'src', 'custom_ok', 'assets', 'icons', 'i18n',
+    'auto_proxy.py', 'config.py', 'main.py', 'fix_venv.py', '启动okww.bat',
+    '更新日志.md', 'requirements.txt', 'requirements.in', 'requirements-dev.txt', 'setup.py', 'pyappify.yml',
 ]
-
-# 打包时排除的模式（防止误入）
-EXCLUDE_SUFFIXES = ('.pyc', '.bak', '.tmp', '.log')
-EXCLUDE_DIRS = ('__pycache__',)
+MANIFEST_NAME = 'update-manifest.json'
 
 
-def collect_files():
-    """收集要打包的文件列表（相对路径, 绝对路径）。"""
-    files = []
+def collect_files(root=ROOT, *, tracked_files=None):
+    """Only tracked sources; any missing required file aborts the build."""
+    root = Path(root).resolve()
+    if tracked_files is None:
+        tracked_files = subprocess.check_output(
+            ['git', '-C', str(root), 'ls-files', '-z']).decode('utf-8').split('\0')
+    selected = sorted({name for name in tracked_files if name and any(
+        name == item or name.startswith(item + '/') for item in SYNC_ITEMS)})
     for item in SYNC_ITEMS:
-        abs_item = os.path.join(ROOT, item)
-        if os.path.isfile(abs_item):
-            files.append((item, abs_item))
-        elif os.path.isdir(abs_item):
-            for dirpath, dirnames, filenames in os.walk(abs_item):
-                # 跳过 __pycache__ 等
-                dirnames[:] = [d for d in dirnames if d not in EXCLUDE_DIRS]
-                for fname in filenames:
-                    if fname.endswith(EXCLUDE_SUFFIXES):
-                        continue
-                    abs_path = os.path.join(dirpath, fname)
-                    rel_path = os.path.relpath(abs_path, ROOT)
-                    files.append((rel_path, abs_path))
-        else:
-            print(f'⚠️ 跳过（不存在）: {item}')
+        if not any(name == item or name.startswith(item + '/') for name in selected):
+            raise ValueError(f'更新包缺少必需的受控来源：{item}')
+    files = []
+    for name in selected:
+        path = root / name
+        inspect_member(name)
+        if not path.is_file() or path.is_symlink() or path.is_junction() or not path.resolve().is_relative_to(root):
+            raise ValueError(f'更新包来源缺失或越界：{name}')
+        if any(parent.is_symlink() or parent.is_junction() for parent in path.parents if parent != root):
+            raise ValueError(f'更新包来源包含链接：{name}')
+        files.append((name, path))
     return files
 
 
+def build_package(output_dir, root=ROOT, *, tracked_files=None):
+    root = Path(root).resolve()
+    version = validate_release(root)
+    files = collect_files(root, tracked_files=tracked_files)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    archive = output_dir / f'okww_update_v{version}.zip'
+    pending = archive.with_suffix('.zip.tmp')
+    framework = next(line.strip() for line in (root / 'requirements.txt').read_text(encoding='utf-8').splitlines()
+                     if line.startswith('ok-script=='))
+    manifest = {'version': version, 'framework': framework, 'files': {}}
+    try:
+        with zipfile.ZipFile(pending, 'w', zipfile.ZIP_DEFLATED) as package:
+            for name, path in files:
+                data = path.read_bytes()
+                package.writestr(name, data)
+                manifest['files'][name] = hashlib.sha256(data).hexdigest()
+            package.writestr(MANIFEST_NAME, json.dumps(manifest, ensure_ascii=False, indent=2))
+        pending.replace(archive)
+    finally:
+        pending.unlink(missing_ok=True)
+    return archive
+
+
 def main():
-    out_dir = sys.argv[1] if len(sys.argv) > 1 else ROOT
-    os.makedirs(out_dir, exist_ok=True)
-    stamp = datetime.now().strftime('%Y%m%d')
-    out_zip = os.path.join(out_dir, f'okww_更新包_{stamp}.zip')
-
-    files = collect_files()
-    with zipfile.ZipFile(out_zip, 'w', zipfile.ZIP_DEFLATED) as zf:
-        for rel_path, abs_path in sorted(files):
-            zf.write(abs_path, rel_path)
-
-    print(f'✅ 更新包已生成: {out_zip}')
-    print(f'   共 {len(files)} 个文件')
-    print()
-    print('【安装到另一台电脑】')
-    print('  1. 把 zip 拷到目标机，解压到 ok-wuthering-waves-master 文件夹根目录（覆盖）')
-    print('  2. 解压时选择"全部覆盖/替换"')
-    print('  3. 双击 启动okww.bat 即可')
-    print()
-    print('【不会动目标机的账号数据】')
-    print('  - configs/daily_profiles.json（账号方案+完成时间）保留')
-    print('  - configs/DailyTask.json（当前激活账号）保留')
-    print('  - configs/ADBSwitchTask.json（模拟器地址）保留，目标机重新配置')
-    print('  - .venv/pyvenv.cfg 不包含在包内，Python 路径指向不受影响')
+    output_dir = sys.argv[1] if len(sys.argv) > 1 else ROOT / 'dist'
+    archive = build_package(output_dir)
+    print(f'更新包已生成：{archive}')
+    print('关闭目标程序，解压到源码目录，使用目标 .venv 的 Python 3.12 安装 requirements.txt 后启动。')
+    print('账号配置和本机 Python 路径由目标设备保留；安装器由 GitHub Actions 单独生成。')
     return 0
 
 

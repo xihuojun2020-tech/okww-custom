@@ -317,9 +317,26 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
             self.log_info(f'全部 {rounds} 轮切换测试通过 ✓', notify=True)
             self.info_set('状态', '测试通过 ✓')
 
+        except TaskDisabledException:
+            if mat is not None:
+                mat.run_coordinator.request_stop()
+            raise
+        except Exception as error:
+            if mat is not None:
+                mat.run_coordinator.fail(str(error))
+            raise
         finally:
-            clear = getattr(mat, 'clear_run_snapshot', None)
-            if callable(clear):
-                clear()
-            if mouse_reset_was_enabled:
-                mouse_reset_task.enable()
+            try:
+                if mouse_reset_was_enabled:
+                    mouse_reset_task.enable()
+            finally:
+                clear = getattr(mat, 'clear_run_snapshot', None)
+                if callable(clear):
+                    clear()
+
+    def disable(self):
+        if getattr(getattr(self, 'executor', None), 'current_task', None) is self:
+            mat = self._get_multi_account_task()
+            if mat is not None:
+                mat.run_coordinator.request_stop()
+        super().disable()

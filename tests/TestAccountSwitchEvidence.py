@@ -19,6 +19,26 @@ from src.task.TestAccountSwitchTask import (
 
 
 class TestAccountSwitchEvidence(unittest.TestCase):
+    def test_focused_test_stop_uses_production_coordinator(self):
+        from types import SimpleNamespace
+        from src.runtime.task_run_coordinator import TaskRunCoordinator, TaskRunState
+        from src.task.BaseWWTask import BaseWWTask
+        coordinator = TaskRunCoordinator()
+        coordinator.start(SimpleNamespace(profile_ids=('A1',), revision='r', run_id='focused'))
+        task = TestAccountSwitchTask.__new__(TestAccountSwitchTask)
+        task._get_multi_account_task = lambda: SimpleNamespace(run_coordinator=coordinator)
+        task._executor = SimpleNamespace(current_task=task)
+        with patch.object(BaseWWTask, 'disable') as disable:
+            task.disable()
+        disable.assert_called_once()
+        self.assertEqual(coordinator.state, TaskRunState.STOPPING)
+        coordinator.finish()
+        coordinator.start(SimpleNamespace(profile_ids=('A1',), revision='r', run_id='production'))
+        task._executor.current_task = object()
+        with patch.object(BaseWWTask, 'disable'):
+            task.disable()
+        self.assertEqual(coordinator.state, TaskRunState.RUNNING)
+
     def test_filtered_and_oversized_frames_do_not_copy(self):
         class CountedFrame:
             nbytes = 12

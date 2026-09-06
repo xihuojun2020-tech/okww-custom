@@ -33,7 +33,8 @@ class TestCodexLightUI(unittest.TestCase):
     def test_release_version_is_synchronized(self):
         from config import version
 
-        self.assertIn(f"V{version}", Path("custom_ok/ok/gui/about/AboutTab.py").read_text(encoding="utf-8"))
+        from scripts.validate_release import validate_release
+        self.assertEqual(version, validate_release(Path.cwd()))
         self.assertIn(version, Path("更新日志.md").read_text(encoding="utf-8"))
 
 

@@ -998,38 +998,25 @@ class BaseWWTask(BaseTask):
         return self.rotate_arrow_and_find()[0]
 
     def rotate_arrow_and_find(self):
-        arrow_template = self.get_feature_by_name('arrow')
-        original_mat = arrow_template.mat
-        max_conf = 0
-        max_angle = 0
-        max_target = None
-        max_mat = None
-        (h, w) = arrow_template.mat.shape[:2]
-        # self.log_debug(f'turn_east h:{h} w:{w}')
-        center = (w // 2, h // 2)
+        original_mat = self.get_feature_by_name('arrow').mat
+        # One template generation per content/size, retaining only the latest
+        # set. Resolution changes and in-place feature edits invalidate it.
+        key = (original_mat.shape, original_mat.dtype.str, original_mat.tobytes())
+        cached = getattr(self, '_arrow_rotation_cache', None)
+        if cached is None or cached[0] != key:
+            h, w = original_mat.shape[:2]
+            center = (w // 2, h // 2)
+            templates = tuple(cv2.warpAffine(original_mat, cv2.getRotationMatrix2D(center, -angle, 1.0), (w, h))
+                              for angle in range(360))
+            self._arrow_rotation_cache = key, templates
+        else:
+            templates = cached[1]
+        max_conf, max_angle, max_target = 0, 0, None
         target_box = self.get_box_by_name('arrow')
-        # if self.debug:
-        #     self.screenshot('arrow_original', original_ mat)
-        for angle in range(0, 360):
-            # Rotate the template image
-            rotation_matrix = cv2.getRotationMatrix2D(center, -angle, 1.0)
-            template = cv2.warpAffine(original_mat, rotation_matrix, (w, h))
-            # mask = np.where(np.all(template == [0, 0, 0], axis=2), 0, 255).astype(np.uint8)
-
-            target = self.find_one(box=target_box,
-                                   template=template, threshold=0.01)
-            # if self.debug and angle % 90 == 0:
-            #     self.screenshot(f'arrow_rotated_{angle}', arrow_template.mat)
+        for angle, template in enumerate(templates):
+            target = self.find_one(box=target_box, template=template, threshold=0.01)
             if target and target.confidence > max_conf:
-                max_conf = target.confidence
-                max_angle = angle
-                max_target = target
-                # max_mat = template
-        # arrow_template.mat = original_mat
-        # arrow_template.mask = None
-        # if self.debug and max_mat is not None:
-        #     self.screenshot('max_mat',frame=max_mat)
-        # self.log_debug(f'turn_east max_conf: {max_conf} {max_angle}')
+                max_conf, max_angle, max_target = target.confidence, angle, target
         return max_angle, max_target
 
     def get_mini_map_turn_angle(self, feature, threshold=0.72, x_offset=0, y_offset=0):

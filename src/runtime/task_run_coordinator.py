@@ -43,7 +43,13 @@ class TaskRunCoordinator:
     def request_stop(self) -> TaskStatusModel:
         if self.state == TaskRunState.RUNNING:
             self.state = TaskRunState.STOPPING
-        if self.state == TaskRunState.STOPPING:
+        self.status = TaskStatusModel(self.state.value, self.status.profile_id, self.status.sequence_id,
+                                      self.status.revision, self.status.run_id, self.status.error)
+        return self.status
+
+    def finish(self) -> TaskStatusModel:
+        """Called after the execution loop and its cleanup have exited."""
+        if self.state not in {TaskRunState.IDLE, TaskRunState.FAILED}:
             self.state = TaskRunState.STOPPED
         self.status = TaskStatusModel(self.state.value, self.status.profile_id, self.status.sequence_id,
                                       self.status.revision, self.status.run_id, self.status.error)

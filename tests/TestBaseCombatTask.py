@@ -7,6 +7,24 @@ from src.task.BaseCombatTask import BaseCombatTask
 
 
 class TestBaseCombatTask(unittest.TestCase):
+    def test_combat_wait_rejects_nonpositive_before_any_input(self):
+        task = Mock(spec=BaseCombatTask)
+        for value in (0, -1):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                BaseCombatTask.combat_once(task, wait_combat_time=value)
+        self.assertEqual(task.mock_calls, [])
+
+    def test_positive_combat_wait_preserves_result_and_completion(self):
+        task = Mock(spec=BaseCombatTask)
+        task.info = {}
+        task.switch_healer_enabled.return_value = False
+        task.in_combat.return_value = False
+        task.wait_combat.return_value = 'entered'
+        self.assertEqual(BaseCombatTask.combat_once(task, wait_combat_time=2), 'entered')
+        task.wait_combat.assert_called_once_with(target=False, time_out=2, raise_if_not_found=True)
+        task.combat_end.assert_called_once()
+        self.assertEqual(task.info['Combat Count'], 1)
+
     def setUp(self):
         module = ast.parse(Path("src/task/BaseCombatTask.py").read_text(encoding="utf-8"))
         class_node = next(

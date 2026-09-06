@@ -165,32 +165,52 @@ def _ensure_single_instance():
     return True
 
 
-def _exit_cleanup():
-    """正常退出时，联动结束 pyappify 启动器及其 WebView 子进程（关窗口 = 全部进程退出）。
-
-    仅正常退出（python 进程自行结束时 atexit 触发）执行；
-    更新/强制结束（外部杀进程）不触发，不会中断 pyappify 更新流程。
-    """
+def _find_owned_launcher():
+    """Capture a verified ancestor, never infer ownership from a process name."""
     exe = os.environ.get('PYAPPIFY_EXECUTABLE')
-    if not exe:
+    if not exe or not os.path.isabs(exe):
+        return None
+    try:
+        import psutil
+        expected = os.path.normcase(os.path.realpath(exe))
+        for process in psutil.Process().parents():
+            try:
+                if os.path.normcase(os.path.realpath(process.exe())) == expected:
+                    process.create_time()  # psutil retains identity to detect PID reuse.
+                    return process, expected
+            except (psutil.Error, OSError):
+                continue
+    except Exception:
+        pass
+    return None
+
+
+def _exit_cleanup(owned_launcher=None):
+    """End only the captured launcher and its current descendants on normal exit.
+
+    Detached WebViews without ancestry evidence are left for their owner.
+    psutil verifies process identity before termination; no global name scan.
+    """
+    if owned_launcher is None:
         return
     try:
-        import subprocess
-        base = os.path.basename(exe)
-        exe_dir = os.path.dirname(exe)
-        # 1. 终止 pyappify 启动器进程树（连带其 WebView 子进程）
-        subprocess.Popen(
-            ['taskkill', '/f', '/t', '/im', base],
-            creationflags=0x08000000,  # CREATE_NO_WINDOW
-        )
-        # 2. 清理 okww 相关孤儿 WebView（按 user-data-dir 所在目录匹配，Kill Launcher After Start 残留的）
-        ps = (
-            "Get-CimInstance Win32_Process -Filter \"Name='msedgewebview2.exe'\" | "
-            f"Where-Object {{ $_.CommandLine -like '*{exe_dir}*' }} | "
-            "ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
-        )
-        subprocess.Popen(['powershell', '-NoProfile', '-Command', ps],
-                         creationflags=0x08000000)
+        import psutil
+        launcher, expected = owned_launcher
+        if not launcher.is_running() or os.path.normcase(os.path.realpath(launcher.exe())) != expected:
+            return
+        # A venv redirector can own the current Python in a Windows Job. Keep
+        # that chain alive until this interpreter has finished its own exit.
+        interpreter_chain = {os.getpid(), *(process.pid for process in psutil.Process().parents()
+                                           if process.pid != launcher.pid)}
+        descendants = launcher.children(recursive=True)
+        for process in reversed(descendants):
+            if process.pid in interpreter_chain:
+                continue
+            try:
+                process.terminate()
+            except psutil.Error:
+                pass
+        launcher.terminate()
     except Exception:
         pass
 
@@ -249,7 +269,7 @@ if __name__ == '__main__':
         sys.exit(0)
     # 联网代理自愈：探测代理并写入 repo git 配置（下次 fetch 走代理）
     _setup_proxy()
-    atexit.register(_exit_cleanup)
+    atexit.register(_exit_cleanup, _find_owned_launcher())
     # 后台检查原版 okww 是否有更新（不阻塞启动；有更新写入标志，首页显示提醒）
     try:
         import threading

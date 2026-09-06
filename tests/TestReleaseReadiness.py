@@ -11,59 +11,20 @@ class TestReleaseReadiness(unittest.TestCase):
         version = re.search(r'version\s*=\s*"([0-9]+\.[0-9]{2}\.[0-9]{2})"',
                             Path("config.py").read_text(encoding="utf-8")).group(1)
         changelog = Path("更新日志.md").read_text(encoding="utf-8")
-        about = Path("custom_ok/ok/gui/about/AboutTab.py").read_text(encoding="utf-8")
-        self.assertRegex(version, r"^[0-9]+\.[0-9]{2}\.[0-9]{2}$")
+        from scripts.validate_release import validate_release
+        self.assertEqual(version, validate_release(Path.cwd()))
         self.assertEqual(version, re.search(r'^##\s+([0-9]+\.[0-9]{2}\.[0-9]{2})', changelog, re.M).group(1))
-        self.assertEqual(version, re.search(r'V([0-9]+\.[0-9]{2}\.[0-9]{2})', about).group(1))
-        self.assertIn(version, changelog)
-        self.assertIn(f"V{version}", about)
-        for theme in ("Qingxiao", "清宵", "port_upstream_character"):
-            self.assertIn(theme, changelog)
-            self.assertIn(theme, about)
-        for theme in ("Foreground BitBlt", "WGC", "点击连接", "SendInput"):
-            self.assertIn(theme, changelog)
-            self.assertIn(theme, about)
-        for theme in ("自动编队", "1/2/3", "不会点击开启挑战"):
-            self.assertIn(theme, changelog)
-            self.assertIn(theme, about)
-        for theme in ("白色 1/2/3", "不重复点击"):
-            self.assertIn(theme, changelog)
-            self.assertIn(theme, about)
-        for theme in ("两侧塔优先", "中间塔优先", "环境特性", "继续挑战", "传送复活"):
-            self.assertIn(theme, changelog)
-            self.assertIn(theme, about)
-        for theme in ("1280×720", "3840×2160", "16:9", "局部 OCR"):
-            self.assertIn(theme, changelog)
-        for theme in ("重置", "角色头像", "状态未知", "整塔"):
-            self.assertIn(theme, changelog)
-            self.assertIn(theme, about)
-        for theme in ("关卡存在性识别不连续", "连续规则", "原始存在性"):
-            self.assertIn(theme, changelog)
-            self.assertIn(theme, about)
-        for theme in ("部分进度", "受控重启", "连续两", "180", "200", "血条"):
-            self.assertIn(theme, changelog)
-            self.assertIn(theme, about)
-        for theme in ("低亮度选中边框", "当前可挑战关卡", "重新编队"):
-            self.assertIn(theme, changelog)
-            self.assertIn(theme, about)
-        for theme in ("编辑队伍", "每一层", "跳过重复点击"):
-            self.assertIn(theme, changelog)
-            self.assertIn(theme, about)
-        for theme in ("整屏 OCR", "同一帧", "局部 OCR"):
-            self.assertIn(theme, changelog)
-            self.assertIn(theme, about)
-        for theme in ("强制前台", "滚动条", "第一屏", "当前关卡消耗"):
-            self.assertIn(theme, changelog)
-            self.assertIn(theme, about)
-        for theme in ("⚡0", "真实 10", "黄色轮廓", "按不可用处理"):
-            self.assertIn(theme, changelog)
-            self.assertIn(theme, about)
-        for theme in ("选择边框", "局部标记", "全页诊断"):
-            self.assertIn(theme, changelog)
-            self.assertIn(theme, about)
-        for theme in ("角色阵亡", "重新扫描", "连续三次"):
-            self.assertIn(theme, changelog)
-            self.assertIn(theme, about)
+
+    def test_about_reads_packaged_changelog_and_reports_missing_source(self):
+        from unittest.mock import patch
+        from custom_ok.ok.gui.about.AboutTab import AboutTab
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / '更新日志.md'
+            path.write_text('## 9.99.99\n验证共同来源', encoding='utf-8')
+            with patch('custom_ok.ok.gui.about.AboutTab.get_path_relative_to_exe', return_value=str(path)):
+                self.assertEqual(path.read_text(encoding='utf-8'), AboutTab._read_update_log())
+                path.unlink()
+                self.assertIn('未能读取', AboutTab._read_update_log())
 
     def test_sensitive_runtime_boundaries_are_ignored(self):
         ignored = Path(".gitignore").read_text(encoding="utf-8")
@@ -103,22 +64,37 @@ class TestReleaseReadiness(unittest.TestCase):
         self.assertTrue(Path("scripts/validate_release.py").is_file())
         self.assertTrue(Path("scripts/package_smoke.py").is_file())
 
-    def test_update_package_includes_logout_feature_and_release_notes(self):
-        sync_items = runpy.run_path("打包更新.py")["SYNC_ITEMS"]
-        for required in (
-            "auto_proxy.py",
-            "assets/coco_annotations.json",
-            "assets/images/characters",
-            "assets/images/logout_power_icon.png",
-            "assets/images/abyss_period_challenge_icon.png",
-            "assets/images/abyss_period_challenge_selected.png",
-            "assets/images/abyss_period_challenge_unselected.png",
-            "assets/images/abyss_completed_icon.png",
-            "assets/images/abyss_locked_icon.png",
-            "custom_ok/ok/gui/about/AboutTab.py",
-            "更新日志.md",
-        ):
-            self.assertIn(required, sync_items)
+    def test_update_package_uses_complete_tracked_overlay_without_local_state(self):
+        builder = runpy.run_path('打包更新.py')
+        files = dict(builder['collect_files']())
+        for name in ('auto_proxy.py', 'assets/coco_annotations.json',
+                     'assets/images/logout_power_icon.png',
+                     'custom_ok/ok/gui/MainWindow.py', 'custom_ok/ok/gui/about/AboutTab.py',
+                     'custom_ok/ok/gui/start/StartTab.py', '更新日志.md', 'requirements.txt'):
+            self.assertIn(name, files)
+        self.assertFalse(any(name.startswith(('configs/', '.venv/')) for name in files))
+        deploy = Path('deploy.txt').read_text(encoding='utf-8').splitlines()
+        for name in ('custom_ok', '更新日志.md', 'requirements.txt', 'auto_proxy.py'):
+            self.assertIn(name, deploy)
+        with self.assertRaisesRegex(ValueError, '缺失'):
+            builder['collect_files'](tracked_files=[*files, 'src/missing-required-source.py'])
+
+    def test_release_validator_requires_current_heading_not_a_version_mention(self):
+        from scripts.validate_release import validate_release
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'config.py').write_text('version = "9.99.99"', encoding='utf-8')
+            (root / '更新日志.md').write_text('mentions 9.99.99 but no release heading', encoding='utf-8')
+            with self.assertRaisesRegex(ValueError, '更新日志'):
+                validate_release(root)
+
+    def test_direct_dependencies_match_the_runtime_lock(self):
+        def requirements(path):
+            return {line.strip().lower() for line in Path(path).read_text(encoding='utf-8').splitlines()
+                    if line.strip() and not line.lstrip().startswith('#')}
+        locked = requirements('requirements.txt')
+        self.assertTrue(requirements('requirements.in') <= locked)
+        self.assertTrue(all('==' in line and '>=' not in line for line in locked))
 
     def test_pc_only_release_excludes_abandoned_android_artifacts(self):
         config_text = Path("config.py").read_text(encoding="utf-8")

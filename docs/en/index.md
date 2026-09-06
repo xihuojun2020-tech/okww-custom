@@ -83,7 +83,7 @@ If you encounter issues, please check the following steps one by one before aski
 
 ### Running from Source (Python)
 
-Python 3.12 is recommended. Python 3.9 or later is required, but other versions have not been fully tested.
+Use Python 3.12. Source code requires Python ≥3.12; only 3.12 is currently validated and supported.
 
 ```bash
 # Install or update dependencies
