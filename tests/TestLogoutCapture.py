@@ -1,5 +1,6 @@
 import threading
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
@@ -48,6 +49,31 @@ class FakeCapture:
 
 
 class TestLogoutCapture(unittest.TestCase):
+    def test_destroyed_window_bounds_are_discarded_and_next_sample_recovers(self):
+        from custom_ok.ok.util import window
+        import pywintypes
+
+        with patch.object(window.win32gui, 'GetClientRect', return_value=(0, 0, 800, 600)), \
+                patch.object(window.win32gui, 'GetWindowRect', side_effect=[
+                    pywintypes.error(1400, 'GetWindowRect', 'invalid handle'), (10, 20, 810, 620)]), \
+                patch.object(window.win32gui, 'ClientToScreen', return_value=(10, 20)), \
+                patch.object(window.ctypes, 'windll'), \
+                patch.object(window, 'user32'), patch.object(window, 'logger') as logger:
+            self.assertEqual(window.get_window_bounds(77), (0, 0, 0, 0, 0, 0, 1))
+            self.assertEqual(window.get_window_bounds(88)[:6], (10, 20, 800, 600, 800, 600))
+            logger.error.assert_not_called()
+
+    def test_unexpected_window_bounds_error_is_still_reported(self):
+        from custom_ok.ok.util import window
+        import pywintypes
+
+        with patch.object(window.ctypes, 'windll'), \
+                patch.object(window.win32gui, 'GetClientRect',
+                             side_effect=pywintypes.error(5, 'GetClientRect', 'access denied')), \
+                patch.object(window, 'logger') as logger:
+            self.assertEqual(window.get_window_bounds(77), (0, 0, 0, 0, 0, 0, 1))
+            logger.error.assert_called_once()
+
     def test_monitor_bitmap_drops_alpha_before_ocr(self):
         bgra = np.array([[[1, 2, 3, 4], [5, 6, 7, 8]]], dtype=np.uint8)
 

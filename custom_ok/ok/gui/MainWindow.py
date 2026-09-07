@@ -81,8 +81,8 @@ class MainWindow(FluentWindow):
         self.basic_global_config = global_config.get_config(basic_options)
         self.main_window_config = Config('main_window', {'last_version': 'v0.0.0'})
         self.exit_event = exit_event
-        from ok.gui.start.StartTab import StartTab
-        self.start_tab = StartTab(config, exit_event)
+        # GeneralSettingsTab owns the sole StartTab and its hotkey handler.
+        self.start_tab = None
         self.onetime_tab = None
         self.trigger_tab = None
         self.version = version
