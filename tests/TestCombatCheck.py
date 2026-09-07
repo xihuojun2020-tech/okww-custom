@@ -22,6 +22,14 @@ class TestCombatCheck(TaskTestCase):
     task_class = AutoCombatTask
     config = config
 
+    def test_a4_unfinished_domain_frames_must_not_enter_rewards(self):
+        from src.task.DomainTask import DomainTask
+        for name, current in (('a4_domain_unfinished_1.png', 2), ('a4_domain_unfinished_2.png', 0)):
+            self.set_image('tests/images/' + name)
+            self.assertEqual(self.task.in_team(), (True, current, 3))
+            self.assertTrue(self.task.has_target())
+            self.assertEqual(DomainTask._domain_reward_state(self.task), 'combat')
+
     def test_in_combat_check(self):
         self.task.ensure_levitator = return_true
         self.task.do_reset_to_false()

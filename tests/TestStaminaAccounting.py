@@ -10,6 +10,12 @@ class TestStaminaAccounting(unittest.TestCase):
         class FakeTask:
             project_stamina_after_use = staticmethod(BaseWWTask.project_stamina_after_use)
 
+            def has_claim_stamina(self):
+                return True
+
+            def _confirm_stamina_used(self, total, used):
+                return self.project_stamina_after_use(current, backup, used)
+
             def sleep(self, _seconds):
                 pass
 
@@ -45,6 +51,38 @@ class TestStaminaAccounting(unittest.TestCase):
         current, backup, total = BaseWWTask.project_stamina_after_use(0, 106, 60)
 
         self.assertEqual((0, 46, 46), (current, backup, total))
+
+    def test_claim_confirmation_requires_balance_change_and_closed_dialog(self):
+        from unittest.mock import Mock
+        for open_dialog, balance, expected in (
+                (False, (2, 417, 419), True),
+                (False, (3, 417, 420), True),
+                (True, (2, 417, 419), False),
+                (False, (82, 417, 499), False),
+                (False, (-1, -1, -1), False)):
+            task = Mock(spec=BaseWWTask)
+            task.frame = None
+            task.has_claim_stamina.return_value = open_dialog
+            task.get_stamina.return_value = balance
+            task.wait_until.side_effect = lambda fn, **kw: fn()
+            if expected:
+                self.assertEqual(BaseWWTask._confirm_stamina_used(task, 499, 80), balance)
+            else:
+                with self.assertRaises(RuntimeError):
+                    BaseWWTask._confirm_stamina_used(task, 499, 80)
+
+    def test_unconfirmed_claim_does_not_return_spending(self):
+        from unittest.mock import Mock
+        task = self._stamina_task(82, 417)
+        task._confirm_stamina_used = Mock(side_effect=RuntimeError('unconfirmed'))
+        with self.assertRaises(RuntimeError):
+            BaseWWTask.use_stamina(task, once=40, must_use=120, allow_backup=True)
+
+    def test_backup_policy_is_preserved_at_two_current_stamina(self):
+        for allowed in (True, False):
+            task = self._stamina_task(82, 417)
+            self.assertEqual(BaseWWTask.use_stamina(task, once=40, must_use=120, allow_backup=allowed),
+                             (allowed, 80))
 
     def test_projected_stamina_spends_current_before_backup(self):
         current, backup, total = BaseWWTask.project_stamina_after_use(30, 100, 60)

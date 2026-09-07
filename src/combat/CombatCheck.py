@@ -3,7 +3,8 @@ import time
 
 import win32api
 
-from ok import find_boxes_by_name, Logger, calculate_color_percentage
+from ok import find_boxes_by_name, Logger, calculate_color_percentage, TaskDisabledException
+from src.config_integrity import ConfigIntegrityBlocked, ConfigWriteBlocked
 from ok import find_color_rectangles, get_mask_in_color_range, is_pure_black
 from src import text_white_color
 from src.Labels import Labels
@@ -214,10 +215,11 @@ class CombatCheck(BaseWWTask):
         self.in_sleep_check = True
         try:
             return self.do_check_in_combat(target)
-        except (GameProcessLost, FrameUnavailable):
+        except (GameProcessLost, FrameUnavailable, TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked):
             raise
         except Exception as e:
             logger.error(f'do_check_in_combat:', e)
+            raise
         finally:
             self.in_sleep_check = False
 

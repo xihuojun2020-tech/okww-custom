@@ -1,8 +1,9 @@
 import re
+import time
 
 
 from ok import Logger, WaitFailedException
-from src.task.BaseCombatTask import BaseCombatTask, NotInCombatException, CharDeadException
+from src.task.BaseCombatTask import BaseCombatTask, CombatStateUnknown, CharDeadException
 from src.task.WWOneTimeTask import WWOneTimeTask
 
 logger = Logger.get_logger(__name__)
@@ -80,7 +81,7 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
                 self.log_info(f'farm_domain: exceeded recovery retries ({max_recovery_retries}), stop farming',
                               notify=True)
                 self.make_sure_in_world()
-                return
+                raise CombatStateUnknown('领域死亡恢复次数已耗尽')
             self.log_info('farm_domain: death recovered, re-enter from F2 book')
             self.sleep(1)
 
@@ -96,17 +97,18 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
             self.walk_until_f(time_out=4, backward_time=0, raise_if_not_found=True)
             self.pick_f()
             try:
-                self.combat_once()
-                self.sleep(3)
-                try:
-                    self.walk_to_treasure()
-                except WaitFailedException:
-                    if self._domain_combat_finished():
-                        self.log_warning('领域战斗已结束但未出现寻宝目标，跳过寻宝并继续结算')
-                    else:
-                        raise
-                self.pick_f(handle_claim=False)
-            except (NotInCombatException, CharDeadException):
+                state = self._finish_domain_combat()
+                if state == 'treasure':
+                    try:
+                        self.walk_to_treasure()
+                    except WaitFailedException:
+                        if self._domain_reward_state() != 'claim':
+                            raise
+                    if self._domain_reward_state() != 'claim':
+                        self.pick_f(handle_claim=False)
+                if not self.wait_until(self.has_claim_stamina, time_out=3, raise_if_not_found=False):
+                    raise CombatStateUnknown('未确认领域领取界面，停止领奖')
+            except CharDeadException:
                 self.log_info('farm_in_domain: death recovered, exiting domain')
                 self.make_sure_in_world()
                 return False, must_use
@@ -138,25 +140,39 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
         self.make_sure_in_world()
         return True, must_use
 
-    def _domain_combat_finished(self):
-        """判断领域战斗是否已经正常结束，避免无奖励目标时卡死寻宝。
+    def _domain_reward_state(self):
+        # Absence of enemies is not proof of completion. Positive reward evidence is required.
+        if self.has_target() or self.check_health_bar():
+            return 'combat'
+        if self.has_claim_stamina():
+            return 'claim'
+        if self.find_f_with_claim_text() or self.find_treasure_icon():
+            return 'treasure'
+        return 'unknown'
 
-        战斗循环在切人瞬间可能以 ``not in_team while switching`` 退出，
-        这不一定代表死亡。若战斗模块已清除战斗状态、画面也没有目标或
-        敌人血条，则把后续寻宝视为可选步骤；真正的死亡仍由
-        ``CharDeadException`` 路径处理。
-        """
-        try:
-            if self.is_expected_combat_end():
-                return True
-        except Exception:
-            pass
-        if getattr(self, '_in_combat', True):
-            return False
-        try:
-            if self.has_target() or self.check_health_bar():
-                return False
-        except Exception:
-            # 视觉复核失败时不吞掉寻宝异常，保留原有失败行为。
-            return False
-        return True
+    def _domain_combat_finished(self):
+        return self._domain_reward_state() in ('claim', 'treasure')
+
+    def _finish_domain_combat(self):
+        for attempt in range(2):
+            try:
+                self.combat_once(**({'wait_combat_time': 3} if attempt else {}))
+            except CombatStateUnknown as error:
+                self.log_warning(f'领域战斗状态异常，重新核对当前画面：{error}')
+            deadline = time.monotonic() + 5
+            state = 'unknown'
+            while time.monotonic() < deadline:
+                self.executor.check_enabled()
+                self.executor.next_frame(time_out=min(1, max(0.01, deadline - time.monotonic())))
+                state = self._domain_reward_state()
+                if state in ('claim', 'treasure'):
+                    return state
+                if state == 'combat' and self.in_team()[0]:
+                    break
+                if self.executor.exit_event.wait(0.1):
+                    self.executor.check_enabled()
+                    raise CombatStateUnknown('领域状态等待已退出')
+            if state != 'combat' or attempt == 1 or not self.in_team()[0]:
+                self.screenshot('domain_state_unknown', frame=self.frame)
+                raise CombatStateUnknown(f'领域未确认完成：state={state}, recovery_used={attempt}')
+            self.log_warning('领域目标仍在，尝试一次原地战斗恢复；不重新开启挑战')

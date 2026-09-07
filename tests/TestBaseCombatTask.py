@@ -3,10 +3,77 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from src.task.BaseCombatTask import BaseCombatTask
+from src.task.BaseCombatTask import BaseCombatTask, NotInCombatException
 
 
 class TestBaseCombatTask(unittest.TestCase):
+    def test_unexpected_combat_exit_is_not_success(self):
+        task = Mock(spec=BaseCombatTask)
+        task.info = {}
+        task.chars = []
+        task.switch_healer_enabled.return_value = False
+        task.in_combat.return_value = True
+        task.is_expected_combat_end.return_value = False
+        task.get_current_char.return_value.perform.side_effect = NotInCombatException('not in_team while switching')
+        with self.assertRaises(RuntimeError):
+            BaseCombatTask.combat_once(task)
+        task.combat_end.assert_not_called()
+
+    def test_switch_team_wait_uses_new_frames_without_input(self):
+        from types import SimpleNamespace
+        task = Mock(spec=BaseCombatTask)
+        task._switch_missing_saved = False
+        task.frame = None
+        task.executor = SimpleNamespace(check_enabled=Mock(), next_frame=Mock())
+        task.in_team.side_effect = [(False, -1, 1), (True, 2, 3), (True, 2, 3)]
+        self.assertEqual(BaseCombatTask._wait_switch_team(task), (True, 2, 3))
+        self.assertEqual(task.executor.next_frame.call_count, 2)
+        task.send_key.assert_not_called()
+        task.click.assert_not_called()
+        task.screenshot.assert_called_once()
+
+    def test_expected_end_and_death_keep_their_contracts(self):
+        from src.task.BaseCombatTask import CharDeadException
+        for error in (NotInCombatException('expected'), CharDeadException('dead')):
+            task = Mock(spec=BaseCombatTask)
+            task.info = {}
+            task.chars = []
+            task.switch_healer_enabled.return_value = False
+            task.in_combat.return_value = True
+            task.is_expected_combat_end.return_value = True
+            task.wait_combat.return_value = 'entered'
+            task.get_current_char.return_value.perform.side_effect = error
+            if isinstance(error, CharDeadException):
+                with self.assertRaises(CharDeadException):
+                    BaseCombatTask.combat_once(task)
+                task.combat_end.assert_not_called()
+            else:
+                self.assertEqual(BaseCombatTask.combat_once(task), 'entered')
+                task.combat_end.assert_called_once()
+
+    def test_probe_errors_and_stop_are_not_combat_end(self):
+        from src.combat.CombatCheck import CombatCheck
+        from ok import TaskDisabledException
+        from types import SimpleNamespace
+        for error in (TaskDisabledException('stop'), ValueError('probe failed')):
+            task = SimpleNamespace(do_check_in_combat=Mock(side_effect=error))
+            with self.assertRaises(type(error)):
+                CombatCheck.in_combat(task)
+            self.assertFalse(task.in_sleep_check)
+
+    def test_switch_team_timeout_preserves_exception(self):
+        from types import SimpleNamespace
+        task = Mock(spec=BaseCombatTask)
+        task._switch_missing_saved = False
+        task.frame = None
+        task.executor = SimpleNamespace(check_enabled=Mock(), next_frame=Mock())
+        task.in_team.return_value = (False, -1, 1)
+        task.raise_not_in_combat.side_effect = NotInCombatException('missing')
+        with patch('src.task.BaseCombatTask.time.monotonic', side_effect=[0, 2]):
+            with self.assertRaises(NotInCombatException):
+                BaseCombatTask._wait_switch_team(task)
+        task.send_key.assert_not_called()
+
     def test_unconfirmed_liberation_records_context_without_extra_input(self):
         from src.char.BaseChar import BaseChar
         from types import SimpleNamespace

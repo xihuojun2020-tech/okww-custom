@@ -1622,7 +1622,9 @@ class TestChar(TaskTestCase):
             combat.sent_keys.append(key)
 
         combat.send_key = send_key
-        combat.in_team = lambda: (True, combat.sent_keys[-1] - 1 if combat.sent_keys else current.index, 3)
+        from types import SimpleNamespace
+        combat._executor = SimpleNamespace(frame=None)
+        combat.in_team = lambda **kwargs: (True, combat.sent_keys[-1] - 1 if combat.sent_keys else current.index, 3)
 
         combat.switch_next_char(current)
 
@@ -1656,7 +1658,9 @@ class TestChar(TaskTestCase):
         combat.sent_keys = []
         combat.update_lib_portrait_icon = lambda: None
         combat.check_combat = lambda: None
-        combat.in_team = lambda: (True, current.index, 2)
+        from types import SimpleNamespace
+        combat._executor = SimpleNamespace(frame=None)
+        combat.in_team = lambda **kwargs: (True, current.index, 2)
         combat.send_key = lambda key: combat.sent_keys.append(key)
         combat.sleep = lambda *args, **kwargs: None
         current.f_break = lambda **kwargs: None
@@ -1704,7 +1708,9 @@ class TestChar(TaskTestCase):
 
         current.f_break = f_break
         combat.send_key = send_key
-        combat.in_team = lambda: (True, target.index if switched else current.index, 2)
+        from types import SimpleNamespace
+        combat._executor = SimpleNamespace(frame=None)
+        combat.in_team = lambda **kwargs: (True, target.index if switched else current.index, 2)
 
         combat.switch_next_char(current)
 

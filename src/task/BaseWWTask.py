@@ -492,13 +492,14 @@ class BaseWWTask(BaseTask):
         else:
             return True
 
-    def get_stamina(self):
+    def get_stamina(self, time_out=0, screenshot_on_failure=True):
         boxes = self.wait_ocr(0.49, 0.0, 0.92, 0.10, raise_if_not_found=False,
-                              match=[number_re, stamina_re])
+                              match=[number_re, stamina_re], time_out=time_out)
         if not boxes:
-            self.screenshot('stamina_error')
+            if screenshot_on_failure:
+                self.screenshot('stamina_error')
             return -1, -1, -1
-        current = 0
+        current = -1
         back_up = 0
         for box in boxes:
             if match := stamina_re.search(box.name):
@@ -534,7 +535,13 @@ class BaseWWTask(BaseTask):
 
     def use_stamina(self, once=60, must_use=0, allow_backup=True):
         self.sleep(1)
+        if not self.has_claim_stamina():
+            raise RuntimeError('未确认体力领取界面，停止消费')
         current, back_up, total = self.get_stamina()
+        if min(current, back_up, total) < 0:
+            raise RuntimeError('体力读数无效，停止消费')
+        if (total if allow_backup else current) < once:
+            return False, 0
         requested_before = must_use
         if current >= once * 2 and (must_use <= 0 or must_use >= once * 2):
             used = once * 2
@@ -563,9 +570,10 @@ class BaseWWTask(BaseTask):
             self.back(after_sleep=1)
             self.click(btn, after_sleep=1)
 
-        current, back_up, total = self.project_stamina_after_use(current, back_up, used)
+        projected = self.project_stamina_after_use(current, back_up, used)
+        current, back_up, total = self._confirm_stamina_used(total, used)
         must_use -= used
-        logger.info(f'remaining stamina: current={current} back_up={back_up} total={total}')
+        logger.info(f'confirmed stamina: current={current} back_up={back_up} total={total}; projected={projected}')
         if requested_before > 0 and must_use <= 0:
             can_continue = False
             logger.info('daily stamina budget completed')
@@ -575,6 +583,22 @@ class BaseWWTask(BaseTask):
         else:
             can_continue = True
         return can_continue, used
+
+    def _confirm_stamina_used(self, before_total, used):
+        def confirmed():
+            if self.has_claim_stamina():
+                return False
+            balance = self.get_stamina(time_out=0.5, screenshot_on_failure=False)
+            # A short claim can overlap one naturally regenerated stamina point.
+            if min(balance) >= 0 and used - 1 <= before_total - balance[2] <= used:
+                return balance
+            return False
+
+        balance = self.wait_until(confirmed, time_out=8, raise_if_not_found=False)
+        if not balance:
+            self.screenshot('stamina_claim_unconfirmed', frame=self.frame)
+            raise RuntimeError('领奖后未确认体力扣除，停止记账和再次挑战')
+        return balance
 
     def send_key_and_wait_f(self, direction, raise_if_not_found, time_out, running=False, target_text=None,
                             check_combat=False):

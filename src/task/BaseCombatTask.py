@@ -24,6 +24,10 @@ class NotInCombatException(Exception):
     pass
 
 
+class CombatStateUnknown(RuntimeError):
+    """Combat stopped without evidence of a normal end or recovered death."""
+
+
 class CharDeadException(NotInCombatException):
     """角色死亡异常。"""
     pass
@@ -409,6 +413,8 @@ class BaseCombatTask(CombatCheck):
         except CharDeadException as e:
             raise e
         except NotInCombatException as e:
+            if not self.is_expected_combat_end():
+                raise CombatStateUnknown(str(e)) from e
             logger.info(f'combat_once out of combat break {e}')
         self.combat_end()
         if self.switch_healer_enabled():
@@ -636,11 +642,15 @@ class BaseCombatTask(CombatCheck):
         from src.char.ShoreKeeper import ShoreKeeper
         last_click = 0
         start = time.time()
+        switch_deadline = time.monotonic() + 10
+        self._switch_missing_saved = False
         while True:
+            if time.monotonic() >= switch_deadline:
+                self.raise_not_in_combat('failed switch chars: timeout')
             if not (isinstance(switch_to, ShoreKeeper) and has_intro):
                 self.check_combat()
             now = time.time()
-            _, current_index, _ = self.in_team()
+            _, current_index, _ = self._wait_switch_team()
             if current_index == current_char.index:
                 self.update_lib_portrait_icon()
                 refreshed_has_intro = has_intro or current_char.is_con_full()
@@ -669,23 +679,8 @@ class BaseCombatTask(CombatCheck):
                 self.log_debug('switch not detected, send click')
                 self.click()
                 self.sleep(0.001)
-            in_team, current_index, size = self.in_team()
-            if not in_team:
-                logger.info(f'not in team while switching chars_{current_char}_to_{switch_to} {now - start}')
-                # if self.debug:
-                #     self.screenshot(f'not in team while switching chars_{current_char}_to_{switch_to} {now - start}')
-                self.raise_not_in_combat(f'not in_team while switching')
-                if now - start > self.switch_char_time_out:
-                    self.raise_not_in_combat(
-                        f'switch too long failed chars_{current_char}_to_{switch_to}, {now - start}')
-                self.next_frame()
-                continue
-            if current_index != switch_to.index:
-                if now - start > 10:
-                    if self.debug:
-                        self.screenshot(f'switch_not_detected_{current_char}_to_{switch_to}')
-                    self.raise_not_in_combat('failed switch chars')
-            else:
+            _, current_index, _ = self._wait_switch_team()
+            if current_index == switch_to.index:
                 self.in_liberation = False
                 if not has_intro:
                     current_char.f_break(check_f_on_switch=True)
@@ -703,6 +698,29 @@ class BaseCombatTask(CombatCheck):
             logger.debug(f'post_action {post_action}')
             post_action(switch_to, has_intro)
         logger.info(f'switch_next_char end {(current_char.last_switch_time - start):.3f}s')
+
+    def _wait_switch_team(self, timeout=1.0):
+        frame = self.frame
+        team = self.in_team(frame=frame)
+        if team[0]:
+            return team
+        if not getattr(self, '_switch_missing_saved', False):
+            self._switch_missing_saved = True
+            self.screenshot('switch_team_missing', frame=frame)
+            self.log_warning(f'切人首次队伍失配：team={team}，保存当次匹配帧')
+        deadline = time.monotonic() + timeout
+        confirmed = 0
+        previous = None
+        while time.monotonic() < deadline:
+            self.executor.check_enabled()
+            self.executor.next_frame(time_out=min(0.2, max(0.01, deadline - time.monotonic())))
+            team = self.in_team()
+            confirmed = confirmed + 1 if team[0] and team == previous else int(bool(team[0]))
+            previous = team
+            if confirmed >= 2:
+                return team
+        self.log_warning('切人队伍状态未恢复，停止当前战斗；已保存首次失配帧')
+        self.raise_not_in_combat('not in_team while switching', expected=self.is_expected_combat_end())
 
     def find_mouse_forte(self):
         return self.find_one('mouse_forte', horizontal_variance=0.025, vertical_variance=0.015, threshold=0.6,
