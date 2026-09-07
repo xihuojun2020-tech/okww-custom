@@ -166,7 +166,12 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         # 当前执行序列（账号归属序列，序列列表来自 daily_profiles 的 sequences，可在下方管理增删）
         self.default_config[CURRENT_SEQUENCE] = '序列1'
         self.config_description[CURRENT_SEQUENCE] = '当前执行的账号序列（按该序列的账号执行；序列可增删）'
-        seq_names = self.get_sequence_names()
+        # Account setup/recovery must be reachable before configuration is valid.
+        try:
+            seq_names = self.get_sequence_names()
+            profile_names = self.get_profile_names()
+        except ConfigIntegrityBlocked:
+            seq_names, profile_names = [], []
         # 选择哪个序列，就只显示该序列的账号配置（sub_configs 联动）
         self.config_type[CURRENT_SEQUENCE] = {
             'type': 'drop_down',
@@ -177,7 +182,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         self.default_config[CURRENT_SEQUENCE_MEMBERS] = []
         self.config_description[CURRENT_SEQUENCE_MEMBERS] = '当前序列包含的账号；请在序列管理页面修改'
         self.config_type[CURRENT_SEQUENCE_MEMBERS] = {
-            'type': 'label', 'options': self.get_profile_names(),
+            'type': 'label', 'options': profile_names,
             'last_completed_provider': self.get_profile_last_completed,
         }
         # 当前执行账号：用户确认当前已登录该账号；从它开始并在整轮结束后登录回它。
@@ -188,7 +193,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         )
         self.config_type[CURRENT_ACCOUNT] = {
             'type': 'drop_down',
-            'options': [''] + self.get_profile_names(),
+            'options': [''] + profile_names,
         }
         # 管理序列（增删/重命名账号归属序列）
         self.default_config[MANAGE_SEQUENCES] = ''
@@ -230,11 +235,14 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         return result
 
     def get_readonly_config_value(self, key):
-        if key == CURRENT_SEQUENCE_MEMBERS:
-            return self._read_sequences().get(self.get_current_sequence(), [])
-        if key in SEQ_ACCOUNTS:
-            sequence = f'序列{int(re.search(r"\d+", key).group())}'
-            return self._read_sequences().get(sequence, [])
+        try:
+            if key == CURRENT_SEQUENCE_MEMBERS:
+                return self._read_sequences().get(self.get_current_sequence(), [])
+            if key in SEQ_ACCOUNTS:
+                sequence = f'序列{int(re.search(r"\d+", key).group())}'
+                return self._read_sequences().get(sequence, [])
+        except ConfigIntegrityBlocked:
+            return []
         return self.config.get(key)
 
     def _sync_local_to_sequences(self):
@@ -483,8 +491,11 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         if getattr(self, 'running', False):
             self._account_refresh_pending = True
             return False
-        seq_names = self.get_sequence_names()
-        profile_names = self.get_profile_names()
+        try:
+            seq_names = self.get_sequence_names()
+            profile_names = self.get_profile_names()
+        except ConfigIntegrityBlocked:
+            seq_names, profile_names = [], []
         current_sequence = (self.config.get(CURRENT_SEQUENCE) or '').strip()
         if current_sequence not in seq_names and seq_names:
             current_sequence = seq_names[0]

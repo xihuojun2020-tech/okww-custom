@@ -28,6 +28,52 @@ def _digest(value):
 
 
 class TestAccountRuntimeIntegration(unittest.TestCase):
+    def test_unconfigured_task_construction_keeps_runtime_reads_blocked(self):
+        from types import SimpleNamespace
+        from src.config_integrity import ConfigIntegrityService, ConfigIntegrityBlocked
+        for corrupt in (False, True):
+            with self.subTest(corrupt=corrupt), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                if corrupt:
+                    active = root / 'configs/published/active.json'
+                    active.parent.mkdir(parents=True)
+                    active.write_text('{}', encoding='utf-8')
+                service = ConfigIntegrityService(root, program_version='test')
+                service.check()
+                repository = AccountRepository(paths=service.paths, integrity_service=service)
+                for task_cls in (DailyTask, MultiAccountDailyTask):
+                    module = __import__(task_cls.__module__, fromlist=[task_cls.__name__])
+                    executor = SimpleNamespace(scene=None, text_fix={},
+                                               global_config=SimpleNamespace(get_config=lambda _: {}))
+                    with patch.object(module, 'get_default_service', return_value=service), \
+                            patch.object(module, 'get_default_repository', return_value=repository):
+                        task = task_cls(executor=executor, app=None)
+                        task.config = dict(task.default_config)
+                        self.assertTrue(task.refresh_account_options())
+                        if task_cls is DailyTask:
+                            self.assertIsNone(task.get_readonly_config_value('Which to Farm'))
+                            self.assertIsNone(task.get_readonly_last_completed('Weekly Garden'))
+                            from custom_ok.ok.gui.tasks.LabelAndLabel import LabelAndLabel
+                            from unittest.mock import Mock
+                            label = Mock()
+                            widget = SimpleNamespace(task=task, sub_key='Weekly Garden', label=label,
+                                                     _format_value=LabelAndLabel._format_value)
+                            LabelAndLabel.update_value(widget)
+                            label.setText.assert_called_once_with('')
+                            with self.assertRaises(ConfigIntegrityBlocked):
+                                task.get_last_completed('Weekly Garden')
+                            with self.assertRaises(ConfigIntegrityBlocked):
+                                task._profile_get('Which to Farm')
+                        else:
+                            from src.task.MultiAccountDailyTask import CURRENT_SEQUENCE_MEMBERS
+                            self.assertEqual(task.get_readonly_config_value(CURRENT_SEQUENCE_MEMBERS), [])
+                        reader = task.load_daily_profiles if task_cls is DailyTask else task._load_profiles
+                        with self.assertRaises(ConfigIntegrityBlocked):
+                            reader()
+                        with self.assertRaises(ConfigIntegrityBlocked):
+                            service.guard_task_start()
+                self.assertFalse(service.paths.master.exists())
+
     def test_one_validation_per_projection_and_snapshot_at_2_10_50_accounts(self):
         from tests.fixture_support import make_account_environment
         from src.sequence_repository import SequenceRepository

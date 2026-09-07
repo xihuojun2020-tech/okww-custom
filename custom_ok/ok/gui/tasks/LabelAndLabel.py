@@ -33,7 +33,8 @@ class LabelAndLabel(ConfigLabelAndWidget):
 
     def update_value(self):
         if self.task is not None and self.sub_key and hasattr(self.task, 'get_last_completed'):
-            ts = self.task.get_last_completed(self.sub_key)
+            reader = getattr(self.task, 'get_readonly_last_completed', self.task.get_last_completed)
+            ts = reader(self.sub_key)
             self.label.setText(self._format_value(ts))
         elif self.task is not None and hasattr(self.task, 'get_readonly_config_value'):
             self.label.setText(self._format_value(self.task.get_readonly_config_value(self.key)))

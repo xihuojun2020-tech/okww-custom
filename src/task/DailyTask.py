@@ -226,13 +226,19 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             RECORD_DURATION: '',
         }
         material_option_list = ['Resonator EXP', 'Weapon EXP', 'Shell Credit']
+        # Build the settings UI even before first-account setup or recovery.
+        # Runtime readers and the start guard remain strict.
+        try:
+            initial_sequences = self.get_profile_sequences()
+            initial_profiles = self.get_profile_names((initial_sequences or ['序列1'])[0])
+        except ConfigIntegrityBlocked:
+            initial_sequences, initial_profiles = [], []
         self.config_type = {
-            DAILY_PROFILE: {'type': 'drop_down', 'options': self.get_profile_names(
-                (self.get_profile_sequences() or ['序列1'])[0])},
+            DAILY_PROFILE: {'type': 'drop_down', 'options': initial_profiles},
             # 方案序列：选序列后「账号配置」下拉随之只显示该序列的方案（两级联动，避免翻页）
             PROFILE_SEQUENCE: {
                 'type': 'drop_down',
-                'options': self.get_profile_sequences(),
+                'options': initial_sequences,
             },
             MANAGE_PROFILES: {'type': 'button', 'text': 'Manage Daily Profiles', 'callback': self.manage_daily_profiles},
             # 导出/导入账号配置已移到「设置 → 数据设置」分组
@@ -607,7 +613,11 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         return self.config.get(key, default)
 
     def get_readonly_config_value(self, key):
-        return self._profile_get(key, self.config.get(key))
+        try:
+            return self._profile_get(key, self.config.get(key))
+        except ConfigIntegrityBlocked:
+            # Display-only: keep recovery accessible without inventing task values.
+            return None
 
     def _readonly_profile_config(self):
         """Return a detached execution mapping for child task compatibility."""
@@ -1021,6 +1031,13 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             raise
         except Exception as e:
             self.log_error('record last completed failed', e)
+
+    def get_readonly_last_completed(self, task_name):
+        """Keep completion labels available while configuration needs repair."""
+        try:
+            return self.get_last_completed(task_name)
+        except ConfigIntegrityBlocked:
+            return None
 
     def get_last_completed(self, task_name):
         """Read completion from runtime state for the active stable profile."""
@@ -1552,9 +1569,14 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         if getattr(self, 'running', False):
             self._account_refresh_pending = True
             return False
-        self._sync_sequence_options()
-        sequences = self.get_profile_sequences()
-        profiles = self.get_profile_names(self.config.get(PROFILE_SEQUENCE) or None)
+        try:
+            sequences = self.get_profile_sequences()
+            self._sync_sequence_options()
+            profiles = self.get_profile_names(self.config.get(PROFILE_SEQUENCE) or None)
+        except ConfigIntegrityBlocked:
+            sequences, profiles = [], []
+        self.config_type[PROFILE_SEQUENCE]['options'] = sequences
+        self.config_type[DAILY_PROFILE]['options'] = profiles
         self._update_dropdown_items(PROFILE_SEQUENCE, sequences)
         self._update_dropdown_items(DAILY_PROFILE, profiles)
         self._refresh_gui()
