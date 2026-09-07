@@ -11,6 +11,7 @@ from pathlib import Path
 from src.runtime.diagnostic_export import atomic_json
 
 POLICY = 'automatic-v1'
+SCHEDULER_REVISION = 2
 DEFAULT_TARGET = r'\\192.168.3.170\xihuojun 共享给我\AI诊断'
 REPO = Path(__file__).resolve().parents[2]
 
@@ -82,6 +83,7 @@ def ensure_task(root):
     try:
         state = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
         if (state.get('status') == 'installed' and state.get('root') == str(root)
+                and state.get('revision') == SCHEDULER_REVISION
                 and time.time() - state.get('checked_at', 0) < 86400):
             return
         result = subprocess.run(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
@@ -90,6 +92,7 @@ def ensure_task(root):
                                  '-TaskName', 'okww-diagnostics-' + installation_id()],
                                 capture_output=True, timeout=20, creationflags=subprocess.CREATE_NO_WINDOW)
         atomic_json(path, {'status': 'installed' if result.returncode == 0 else 'failed',
-                           'checked_at': time.time(), 'exit_code': result.returncode, 'root': str(root)})
+                           'checked_at': time.time(), 'exit_code': result.returncode, 'root': str(root),
+                           'revision': SCHEDULER_REVISION})
     except (OSError, subprocess.TimeoutExpired):
         atomic_json(path, {'status': 'failed', 'checked_at': time.time()})

@@ -1,5 +1,6 @@
 param(
     [switch]$Remove,
+    [switch]$Preview,
     [string]$TaskName = 'okww-custom-diagnostics-v1',
     [string]$PythonExe,
     [string]$Root
@@ -19,12 +20,21 @@ if ($Remove) {
     if ($existing) { Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false }
     return
 }
+$silentPython = Join-Path (Split-Path -Parent $PythonExe) 'pythonw.exe'
+if (-not (Test-Path -LiteralPath $silentPython -PathType Leaf)) {
+    throw 'pythonw.exe is required for background upload without console windows.'
+}
+$PythonExe = [IO.Path]::GetFullPath($silentPython)
 $arguments = '-m src.runtime.diagnostic_uploader'
 if ($Root) {
     if ($Root.Contains('"')) { throw 'Invalid spool path.' }
     $arguments += ' --root "' + [IO.Path]::GetFullPath($Root) + '"'
 }
 $action = New-ScheduledTaskAction -Execute $pythonExe -Argument $arguments -WorkingDirectory $repo
+if ($Preview) {
+    $action | Select-Object Execute, Arguments, WorkingDirectory | ConvertTo-Json
+    return
+}
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
 $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
 $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 3) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries

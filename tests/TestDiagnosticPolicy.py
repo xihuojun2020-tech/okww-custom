@@ -1,9 +1,13 @@
 import json
+import os
+import subprocess
+import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from types import SimpleNamespace
 
 from src.runtime.diagnostic_collector import FileCollector
 from src.runtime.diagnostic_policy import POLICY, settings
@@ -31,6 +35,34 @@ class TestDiagnosticPolicy(unittest.TestCase):
         self.assertTrue(second['enabled'])
         self.assertEqual(first['started_at'], second['started_at'])
         self.assertEqual(first['device_id'], second['device_id'])
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows scheduled task')
+    def test_scheduler_revision_migrates_cached_console_task(self):
+        from src.runtime.diagnostic_policy import ensure_task, SCHEDULER_REVISION
+        state = self.root / 'scheduler.json'
+        state.write_text(json.dumps({'status': 'installed', 'root': str(self.root),
+                                    'checked_at': time.time(), 'revision': SCHEDULER_REVISION - 1}))
+        with patch('src.runtime.diagnostic_policy.subprocess.run', return_value=SimpleNamespace(returncode=0)) as run:
+            ensure_task(self.root)
+            self.assertEqual(run.call_count, 1)
+            self.assertEqual(run.call_args.kwargs['creationflags'], subprocess.CREATE_NO_WINDOW)
+            ensure_task(self.root)
+            self.assertEqual(run.call_count, 1)
+        self.assertEqual(json.loads(state.read_text())['revision'], SCHEDULER_REVISION)
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows scheduled task')
+    def test_installer_selects_pythonw_without_registering_real_task(self):
+        script = Path(__file__).resolve().parents[1] / 'src/runtime/install_diagnostic_task.ps1'
+        quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+        command = ('& ' + quote(script) + ' -Preview -TaskName okww-silent-action-preview'
+                   + ' -PythonExe ' + quote(sys.executable) + ' -Root ' + quote(self.root))
+        result = subprocess.run(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command],
+                                capture_output=True, timeout=20, creationflags=subprocess.CREATE_NO_WINDOW)
+        self.assertEqual(result.returncode, 0, result.stderr.decode(errors='replace'))
+        action = json.loads(result.stdout.decode(errors='replace'))
+        chosen = Path(action['Execute'])
+        self.assertEqual(chosen.name.casefold(), 'pythonw.exe')
+        self.assertEqual(chosen.parent, Path(sys.executable).parent)
 
     def test_old_manifest_is_never_backfilled(self):
         self.session.record_event('old', {})
