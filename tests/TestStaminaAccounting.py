@@ -13,7 +13,7 @@ class TestStaminaAccounting(unittest.TestCase):
             def has_claim_stamina(self):
                 return True
 
-            def _confirm_stamina_used(self, total, used):
+            def _confirm_stamina_used(self, total, used, before_balance=None):
                 return self.project_stamina_after_use(current, backup, used)
 
             def sleep(self, _seconds):
@@ -77,6 +77,53 @@ class TestStaminaAccounting(unittest.TestCase):
         task._confirm_stamina_used = Mock(side_effect=RuntimeError('unconfirmed'))
         with self.assertRaises(RuntimeError):
             BaseWWTask.use_stamina(task, once=40, must_use=120, allow_backup=True)
+
+    def test_nas_settlement_balances_and_invalid_observations(self):
+        from unittest.mock import Mock
+        cases = [(240, 308, 120, 120), (139, 308, 120, 19),
+                 (240, 480, 120, 120), (64, 177, 40, 24),
+                 (64, 177, 40, 25)]
+        for current, backup, used, remaining in cases:
+            task = Mock(spec=BaseWWTask)
+            task.has_claim_stamina.return_value = False
+            task.get_stamina.return_value = (-1, -1, -1)
+            task.get_settlement_stamina.return_value = remaining
+            task.wait_until.side_effect = lambda fn, **kw: fn()
+            self.assertEqual((remaining, backup, remaining + backup),
+                             BaseWWTask._confirm_stamina_used(
+                                 task, current + backup, used, (current, backup, current + backup)))
+        for current, remaining, dialog in [(64, 64, False), (64, -1, False),
+                                            (64, 23, False), (64, 24, True), (20, 0, False)]:
+            task.has_claim_stamina.return_value = dialog
+            task.get_settlement_stamina.return_value = remaining
+            task.frame = None
+            with self.assertRaises(RuntimeError):
+                BaseWWTask._confirm_stamina_used(task, current + 177, 40, (current, 177, current + 177))
+
+    def test_settlement_ocr_requires_button_and_unambiguous_remaining_value(self):
+        from unittest.mock import Mock
+        from types import SimpleNamespace
+        for names, expected in [(['剩余19'], 19), (['剩餘120'], 120),
+                                (['Remaining 24'], 24), (['剩余', '24'], 24),
+                                (['288秒后自动退出'], -1), (['241'], -1),
+                                (['24', '40'], -1), ([], -1)]:
+            task = Mock(spec=BaseWWTask)
+            task.ocr.side_effect = [[SimpleNamespace(name='重新挑战')],
+                                    [SimpleNamespace(name=n) for n in names]]
+            self.assertEqual(expected, BaseWWTask.get_settlement_stamina(task))
+        task.ocr.side_effect = [[]]
+        self.assertEqual(-1, BaseWWTask.get_settlement_stamina(task))
+
+    def test_reserve_conversion_requires_observed_conserved_balances(self):
+        from unittest.mock import Mock
+        for converted, accepted in [((60, 57, 117), True), ((61, 57, 118), True),
+                                     ((60, 0, 60), False), ((-1, -1, -1), False)]:
+            task = self._stamina_task(20, 97, backup_prompt=True)
+            task.get_stamina = Mock(side_effect=[(20, 97, 117), converted])
+            task._confirm_stamina_used = Mock(return_value=(0, 57, 57))
+            BaseWWTask.use_stamina(task, once=60, must_use=60)
+            task._confirm_stamina_used.assert_called_once_with(
+                117, 60, before_balance=converted if accepted else None)
 
     def test_backup_policy_is_preserved_at_two_current_stamina(self):
         for allowed in (True, False):

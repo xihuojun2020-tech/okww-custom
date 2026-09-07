@@ -559,6 +559,7 @@ class BaseWWTask(BaseTask):
             btn = self.click_dialog_right_button()
         else:
             btn = self.click_dialog_left_button()
+        before_balance = (current, back_up, total)
         if self.wait_feature('gem_add_stamina', horizontal_variance=0.4, vertical_variance=0.05,
                              time_out=2, settle_time=0.5):  # 看是否需要使用备用体力
             if not allow_backup:
@@ -568,10 +569,17 @@ class BaseWWTask(BaseTask):
             self.click_relative(0.70, 0.71, hcenter=True, after_sleep=1)  # 点击确认
             self.click_relative(0.70, 0.71, hcenter=True, after_sleep=1)
             self.back(after_sleep=1)
+            # Observe both balances after conversion, before the final claim click.
+            # Conversion must conserve total stamina (allow one regenerated point).
+            before_balance = None
+            if self.has_claim_stamina():
+                converted = self.get_stamina()
+                if min(converted) >= 0 and 0 <= converted[2] - total <= 1:
+                    before_balance = converted
             self.click(btn, after_sleep=1)
 
         projected = self.project_stamina_after_use(current, back_up, used)
-        current, back_up, total = self._confirm_stamina_used(total, used)
+        current, back_up, total = self._confirm_stamina_used(total, used, before_balance=before_balance)
         must_use -= used
         logger.info(f'confirmed stamina: current={current} back_up={back_up} total={total}; projected={projected}')
         if requested_before > 0 and must_use <= 0:
@@ -584,7 +592,22 @@ class BaseWWTask(BaseTask):
             can_continue = True
         return can_continue, used
 
-    def _confirm_stamina_used(self, before_total, used):
+    def get_settlement_stamina(self):
+        # The result page hides the top resource bar. Anchor on its retry button,
+        # then read only the remaining stamina underneath (never reward quantities).
+        if not self.ocr(0.54, 0.80, 0.74, 0.90, match=re.compile(
+                r'重新挑[战戰]|再次挑[战戰]|Repeat\s*Challenge|Challenge\s*Again|Retry', re.I)):
+            return -1
+        boxes = self.ocr(0.57, 0.90, 0.68, 0.95)
+        values = []
+        for box in boxes:
+            text = re.sub(r'\s+', '', box.name)
+            match = re.fullmatch(r'(?:(?:剩余|剩餘|Remaining)[:：]?)?(\d{1,3})', text, re.I)
+            if match and 0 <= int(match.group(1)) <= 240:
+                values.append(int(match.group(1)))
+        return values[0] if len(values) == 1 else -1
+
+    def _confirm_stamina_used(self, before_total, used, before_balance=None):
         def confirmed():
             if self.has_claim_stamina():
                 return False
@@ -592,6 +615,14 @@ class BaseWWTask(BaseTask):
             # A short claim can overlap one naturally regenerated stamina point.
             if min(balance) >= 0 and used - 1 <= before_total - balance[2] <= used:
                 return balance
+            if before_balance is not None and before_balance[0] >= used:
+                remaining = self.get_settlement_stamina()
+                if remaining >= 0 and used - 1 <= before_balance[0] - remaining <= used:
+                    # No reserve was consumed: retain the last observed reserve,
+                    # rather than treating its absence on this page as zero.
+                    backup = before_balance[1]
+                    logger.info(f'confirmed settlement stamina: current={remaining} retained_backup={backup}')
+                    return remaining, backup, remaining + backup
             return False
 
         balance = self.wait_until(confirmed, time_out=8, raise_if_not_found=False)
