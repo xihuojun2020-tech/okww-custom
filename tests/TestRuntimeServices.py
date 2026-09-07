@@ -10,6 +10,27 @@ from src.runtime.task_run_coordinator import TaskRunCoordinator, TaskRunState
 
 
 class TestRuntimeServices(unittest.TestCase):
+    def test_startup_world_redispatch_unwinds_capture_before_return(self):
+        from src.runtime.game_runtime_errors import StartupStateChanged
+        task = Mock()
+        task._starting_from_login = True
+        task.do_find_account_drop_down.return_value = None
+        task.in_team.return_value = (True, 0, 3)
+        task._finish_account_switch_evidence.return_value = None
+        mouse = Mock(enabled=True)
+        task.executor.get_task_by_class.return_value = mouse
+        capture = Mock()
+        capture.__enter__ = Mock(return_value=capture)
+        capture.__exit__ = Mock(return_value=False)
+        task._create_account_switch_capture_session.return_value = capture
+        with self.assertRaises(StartupStateChanged):
+            LoginFlowService(task).switch_to_account('synthetic-a1')
+        capture.__exit__.assert_called_once()
+        mouse.enable.assert_called_once()
+        task._select_account_with_retry.assert_not_called()
+        task._click_login_for_target.assert_not_called()
+        self.assertIsNone(task._active_account_switch_capture)
+
     def test_disabling_queued_multi_does_not_stop_current_focused_test(self):
         from src.task.MultiAccountDailyTask import MultiAccountDailyTask
         from src.task.BaseWWTask import BaseWWTask

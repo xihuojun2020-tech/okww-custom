@@ -5,6 +5,20 @@ from src.account_field_metadata import (account_field_metadata, localize_account
 
 
 class TestAccountFieldMetadata(unittest.TestCase):
+    def test_weekday_storage_and_chinese_display(self):
+        from src.account_field_metadata import normalize_weekday
+        days = ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
+        for english, chinese in zip(days, '一二三四五六日'):
+            for value in (english, '星期' + chinese, '周' + chinese):
+                self.assertEqual(normalize_weekday(value), english)
+        self.assertEqual(normalize_weekday('星期天'), 'Sunday')
+        self.assertEqual(normalize_weekday(None), '无')
+        with self.assertRaises(ValueError):
+            normalize_weekday('invalid')
+        field = account_field_metadata({'Weekly Garden Check Day': 'Monday'})[0]
+        self.assertEqual(field.options, ('无', *days))
+        self.assertEqual(field.option_labels[1], '星期一')
+
     def test_common_fields_have_chinese_help_and_identity_is_read_only(self):
         fields = {field.key: field for field in account_field_metadata({
             "Which to Farm": "Tacet Suppression", "备用识别名称": "无",

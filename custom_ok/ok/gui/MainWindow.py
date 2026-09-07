@@ -69,6 +69,8 @@ class MainWindow(FluentWindow):
         )
         self.app = app
         self.executor = executor
+        from src.gui.DailyRunConfirmation import DailyRunConfirmation
+        self.daily_run_confirmation = DailyRunConfirmation(self)
         self.task_status_window = None
         try:
             from src.gui.TaskStatusWindow import TaskStatusWindow

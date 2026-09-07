@@ -23,6 +23,33 @@ from tests.fixture_support import make_account_environment
 
 
 class TestAccountManagementTabs(unittest.TestCase):
+    def test_weekday_template_and_account_roundtrip_preserves_day(self):
+        from src.gui.AccountConfigTab import AccountTemplateDialog
+        for stored in ('Monday', '星期一', '周一'):
+            dialog = AccountTemplateDialog({'Weekly Garden Check Day': stored})
+            self.assertEqual(dialog._widgets['Weekly Garden Check Day'].currentText(), '星期一')
+            self.assertEqual(dialog.tasks()['Weekly Garden Check Day'], 'Monday')
+            dialog.deleteLater()
+        dialog = AccountTemplateDialog({'Weekly Garden Check Day': 'invalid'})
+        with self.assertRaises(ValueError):
+            dialog.tasks()
+        dialog.deleteLater()
+        with tempfile.TemporaryDirectory() as temp:
+            env = make_account_environment(Path(temp))
+            tab = AccountConfigTab(AccountConfigEditor(env.repository))
+            try:
+                for stored in ('Monday', '星期一'):
+                    tab.draft.tasks['Weekly Garden Check Day'] = stored
+                    tab._render_form()
+                    tab._apply_text()
+                    self.assertEqual(tab.draft.tasks['Weekly Garden Check Day'], 'Monday')
+                tab.draft.tasks['Weekly Garden Check Day'] = 'invalid'
+                tab._render_form()
+                with self.assertRaises(ValueError):
+                    tab._apply_text()
+            finally:
+                tab.deleteLater()
+
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])

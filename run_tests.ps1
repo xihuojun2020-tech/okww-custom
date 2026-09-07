@@ -15,6 +15,7 @@ $Python = if (Test-Path ".\.venv\Scripts\python.exe") {
 
 $groups = @{
   unit = @(
+    "TestWindowsGraphicsRecovery.py", "TestMultiStartState.py", "TestHotkeyRegistration.py",
     "test_extract_issue_log.py", "TestAccountConfigEditor.py", "TestAccountDirectoryAssessment.py",
     "TestAccountFieldMetadata.py", "TestAccountGraphStore.py", "TestAccountIdentity.py",
     "TestAccountIdentityProtection.py", "TestAccountProfileStore.py", "TestAccountRepositoryRuntime.py",
@@ -34,6 +35,7 @@ $groups = @{
     "TestAccountSwitchEvidence.py", "TestMultiAccountDailyTask.py", "TestAccountRepositoryMigrationScenario.py"
   )
   ui = @(
+    "TestDailyRunConfirmation.py",
     "TestAccountManagementTabs.py", "TestCodexLightUI.py", "TestFiveSectionMainWindow.py",
     "TestMainWindowStartup.py", "TestNavigationSections.py", "TestTaskNavigationClassification.py",
     "TestCharacterCodeTab.py", "TestEnhanceEchoStatusBox.py", "TestSkipDialogConfirm.py",

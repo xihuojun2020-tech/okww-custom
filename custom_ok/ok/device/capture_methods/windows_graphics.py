@@ -43,12 +43,15 @@ class WindowsGraphicsCaptureMethod(BaseWindowsCaptureMethod):
         self.last_start_failure_key = None
         self.last_start_failure_time = 0
         self.capture_target_signature = None
+        self._capture_generation = 0
         self.start_or_stop()
 
-    def frame_arrived_callback(self, *args):
+    def frame_arrived_callback(self, *args, generation=None):
         next_frame = None
         frame = None
         with self.lock:
+            if generation is not None and generation != self._capture_generation:
+                return
             if self.exit_event.is_set():
                 logger.warning('frame_arrived_callback exit_event.is_set() return')
                 return
@@ -137,7 +140,9 @@ class WindowsGraphicsCaptureMethod(BaseWindowsCaptureMethod):
         self.start_or_stop()
 
     def connected(self):
-        return self.hwnd_window is not None and self.hwnd_window.exists and self.frame_pool is not None
+        # Pool readiness must not prevent get_frame() from rebuilding a failed pool.
+        return bool(not self.exit_event.is_set() and self.hwnd_window is not None
+                    and self.hwnd_window.exists and self.get_capture_hwnd())
 
     def get_capture_hwnd(self):
         # v1.03.73：恢复只捕获主窗口。WGC 无法捕获 #32770 对话框（CreateForWindow
@@ -175,7 +180,7 @@ class WindowsGraphicsCaptureMethod(BaseWindowsCaptureMethod):
                 self.close()
 
             failure_key = capture_hwnd
-            if self.frame_pool is None and self.last_start_failure_key == failure_key and time.time() - self.last_start_failure_time < 5:
+            if self.frame_pool is None and self.last_start_failure_key == failure_key and time.monotonic() - self.last_start_failure_time < 5:
                 return False
 
             if self.hwnd_window.exists and self.frame_pool is None:
@@ -201,12 +206,15 @@ class WindowsGraphicsCaptureMethod(BaseWindowsCaptureMethod):
                     self.dxdevice = self.d3d11.ID3D11Device()
                     self.immediatedc = self.d3d11.ID3D11DeviceContext()
                     self.create_device()
+                    if self.get_capture_hwnd() != capture_hwnd:
+                        raise RuntimeError('WGC target retired before capture creation')
                     self.capture_hwnd = capture_hwnd
                     item = interop.CreateForWindow(capture_hwnd, IGraphicsCaptureItem.GUID)
                     self.item = item
                     self.last_size = item.Size
+                    generation = self._capture_generation
                     delegate = TypedEventHandler(GraphicsCaptureItem, IInspectable).delegate(
-                        self.close)
+                        lambda *_: self._close_generation(generation))
                     self.evtoken = item.add_Closed(delegate)
 
                     self.frame_pool = Direct3D11CaptureFramePool.CreateFreeThreaded(self.rtdevice,
@@ -216,17 +224,18 @@ class WindowsGraphicsCaptureMethod(BaseWindowsCaptureMethod):
                     pool = self.frame_pool
                     pool.add_FrameArrived(
                         TypedEventHandler(Direct3D11CaptureFramePool, IInspectable).delegate(
-                            self.frame_arrived_callback))
+                            lambda *args: self.frame_arrived_callback(*args, generation=generation)))
                     self.session.IsCursorCaptureEnabled = capture_cursor
                     if WINDOWS_BUILD_NUMBER >= WGC_NO_BORDER_MIN_BUILD:
                         self.session.IsBorderRequired = False
                     self.session.StartCapture()
+                    self.last_frame_time = time.time()
                     self.last_start_failure_key = None
                     self.capture_target_signature = target_signature
                     return True
                 except Exception as e:
                     self.last_start_failure_key = failure_key
-                    self.last_start_failure_time = time.time()
+                    self.last_start_failure_time = time.monotonic()
                     self.close()
                     logger.error(f'start_or_stop failed: {self.hwnd_window}', exception=e)
                     return False
@@ -249,8 +258,15 @@ class WindowsGraphicsCaptureMethod(BaseWindowsCaptureMethod):
         self.rtdevice = CreateDirect3D11DeviceFromDXGIDevice(self.dxdevice)
         self.evtoken = None
 
+    def _close_generation(self, generation):
+        with self.lock:
+            if generation == self._capture_generation:
+                self.close()
+
     def close(self):
         with self.lock:
+            self._capture_generation += 1
+            self.last_frame = None
             logger.info('destroy windows capture')
             self.frame_requested.clear()
             self.frame_event.set()

@@ -159,6 +159,14 @@ class TestMergeEchoTask(unittest.TestCase):
 
 
 class TestDailyMergeEchoTask(unittest.TestCase):
+    def test_chinese_weekdays_use_same_completion_rule(self):
+        monday = datetime(2026, 9, 7, 12)
+        for value in ('Monday', '星期一', '周一'):
+            self.assertTrue(weekly_garden_check_due(value, None, monday))
+            self.assertFalse(weekly_garden_check_due(value, '2026-09-07 09:00:00', monday))
+        with self.assertRaises(ValueError):
+            weekly_garden_check_due('invalid', None, monday)
+
 
     def test_weekly_garden_retries_after_selected_day_until_recorded(self):
         monday = datetime(2026, 8, 31, 12, 0, 0)
@@ -319,6 +327,7 @@ class TestDailyMergeEchoTask(unittest.TestCase):
 
     def test_daily_stops_before_initialization_when_additional_config_is_invalid(self):
         daily_task = DailyTask.__new__(DailyTask)
+        daily_task._ensure_run_account_confirmation = Mock()
         daily_task.validate_daily_tasks = Mock(side_effect=Exception('invalid daily task config'))
         daily_task.ensure_main = Mock()
 

@@ -48,7 +48,7 @@ from src.runtime.task_run_coordinator import TaskRunCoordinator, TaskRunState
 from src.runtime.account_selection_service import AccountSelectionService
 from src.runtime.account_verification_service import AccountVerificationService
 from src.runtime.login_flow_service import LoginFlowService
-from src.runtime.game_runtime_errors import FrameUnavailable, GameProcessLost
+from src.runtime.game_runtime_errors import FrameUnavailable, GameProcessLost, StartupStateChanged
 from src.runtime.account_runtime_bootstrap import (
     initialize_account_runtime,
     require_account_runtime_for_task,
@@ -812,41 +812,93 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             finally:
                 self.clear_run_snapshot()
 
-    def _run_inner(self):
-        # 本轮账号序列（配置）
-        sequence = self.get_sequence_accounts()
-        snapshot_maker = getattr(self, 'create_run_snapshot', None)
-        if sequence and callable(snapshot_maker):
-            snapshot = snapshot_maker(None, sequence_id=self.get_current_sequence())
-            sequence = self._snapshot_profile_names(snapshot)
-        if not sequence:
-            raise ConfigIntegrityBlocked('当前序列没有可执行账号，请先在序列管理页面配置账号')
+    def _classify_start_state(self, time_out=20):
+        deadline = time.monotonic() + time_out
+        world_frames = 0
+        reason = 'no_frame'
+        while time.monotonic() < deadline:
+            self.executor.check_enabled()
+            self._guard_account_transition()
+            hwnd = self.hwnd
+            if hwnd is None or not hwnd.exists:
+                raise GameProcessLost('启动时游戏窗口已断开')
+            try:
+                frame = self.executor.next_frame(time_out=min(1, max(0, deadline - time.monotonic())))
+                if time.monotonic() >= deadline:
+                    break
+                if frame is not None:
+                    if self.in_team_and_world(frame=frame):
+                        world_frames += 1
+                        if world_frames >= 2:
+                            self.log_info('启动状态已确认：world；连续两帧世界特征')
+                            return 'world'
+                        continue
+                    world_frames = 0
+                    texts = self.ocr(frame=frame)
+                    if self._find_login_ready_box(texts, False) is not None:
+                        self.log_info('启动状态已确认：login；同帧账号与登录按钮')
+                        return 'login'
+                    sample = CaptureSample(frame, hwnd.get_capture_origin(), hwnd.hwnd, 'wgc', time.monotonic())
+                    if self._find_connect_target(sample, texts) is not None:
+                        self.log_info('启动状态已确认：login；连接入口')
+                        return 'login'
+                    reason = f'unrecognized_frame,ocr_count={len(texts or [])}'
+                else:
+                    world_frames = 0
+                    reason = 'no_frame'
+                if time.monotonic() < deadline:
+                    texts = self._ocr_login_dialog()
+                    if self._find_login_ready_box(texts, True) is not None:
+                        self.log_info('启动状态已确认：login；同进程登录对话框')
+                        return 'login'
+            except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked, GameProcessLost):
+                raise
+            except FrameUnavailable:
+                world_frames = 0
+                reason = 'frame_unavailable'
+            except Exception as error:
+                world_frames = 0
+                reason = f'probe_error={type(error).__name__}'
+            # BaseWWTask.sleep may dismiss a monthly-card popup; classification is read-only.
+            if self.executor.exit_event.wait(min(0.2, max(0, deadline - time.monotonic()))):
+                raise TaskDisabledException('启动状态识别已停止')
+        self.log_warning(f'启动状态未确认：{reason}；未执行选号或日常操作')
+        raise FrameUnavailable('无法确认游戏世界或登录界面，请恢复窗口和截图后重新开始')
 
-        # 断点恢复：加载今日已完成账号
-        for done in self._load_today_progress():
-            self.done_set.add(done)
-        if self.done_set:
-            labels = MultiAccountDailyTask._done_status_labels(self)
-            self.log_info(f'检测到今日已完成账号（断点恢复）: {labels}', notify=True)
+    def _run_inner(self, *, _startup_context=None):
+        if _startup_context is None:
+            # 本轮账号序列（配置）
+            sequence = self.get_sequence_accounts()
+            snapshot_maker = getattr(self, 'create_run_snapshot', None)
+            if sequence and callable(snapshot_maker):
+                snapshot = snapshot_maker(None, sequence_id=self.get_current_sequence())
+                sequence = self._snapshot_profile_names(snapshot)
+            if not sequence:
+                raise ConfigIntegrityBlocked('当前序列没有可执行账号，请先在序列管理页面配置账号')
 
-        # An explicit start account is the user's assertion about the account
-        # already open in the world and remains the final return target.
-        configured_start = (self.config.get(CURRENT_ACCOUNT) or '').strip()
-        first_account = next(
-            (account for account in sequence if self._same_account(account, configured_start)),
-            None,
-        ) if configured_start else None
-        if configured_start and first_account is None:
-            raise Exception(f'当前执行账号 {profile_status_label(configured_start)} 不属于当前序列')
-        MultiAccountDailyTask._set_run_start(self, first_account)
+            # 断点恢复：加载今日已完成账号
+            for done in self._load_today_progress():
+                self.done_set.add(done)
+            if self.done_set:
+                labels = MultiAccountDailyTask._done_status_labels(self)
+                self.log_info(f'检测到今日已完成账号（断点恢复）: {labels}', notify=True)
+
+            # An explicit start account is the user's assertion about the account
+            # already open in the world and remains the final return target.
+            configured_start = (self.config.get(CURRENT_ACCOUNT) or '').strip()
+            first_account = next(
+                (account for account in sequence if self._same_account(account, configured_start)),
+                None,
+            ) if configured_start else None
+            if configured_start and first_account is None:
+                raise Exception(f'当前执行账号 {profile_status_label(configured_start)} 不属于当前序列')
+            MultiAccountDailyTask._set_run_start(self, first_account)
+
+        else:
+            sequence, configured_start, first_account = _startup_context
 
         # 第一轮：主界面启动先退登并识别真实账号；登录界面启动则从序列选号。
-        try:
-            in_main = self.is_main(esc=False)
-        except TaskDisabledException:
-            raise
-        except Exception:
-            in_main = False
+        in_main = self._classify_start_state() == 'world'
         if in_main:
             if configured_start:
                 account_failure_recovered = False
@@ -934,7 +986,16 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     )
         else:
             _publish_status_safe(self, stage='账号切换', detail='正在识别当前账号')
-            first_target = self._select_and_login_account()
+            self._starting_from_login = True
+            try:
+                first_target = self._select_and_login_account()
+            except StartupStateChanged:
+                if _startup_context is not None:
+                    raise FrameUnavailable('启动界面再次变化，请确认游戏状态后重新开始')
+                self._starting_from_login = False
+                return self._run_inner(_startup_context=(sequence, configured_start, first_account))
+            finally:
+                self._starting_from_login = False
             if first_target:
                 _publish_status_safe(self,
                     account=first_target,
@@ -1378,6 +1439,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         last_log = 0.0
         connect_attempts = 0
         connect_exhausted_logged = False
+        world_frames = 0
+        last_world_sample = float('-inf')
         while time.monotonic() < deadline:
             try:
                 monitor_mode = getattr(self, '_active_account_switch_capture', None) is not None
@@ -1406,6 +1469,14 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     continue
                 reader = getattr(self, '_ocr_account_switch_main', None)
                 texts, main_sample = reader() if callable(reader) else (self.ocr(), None)
+                if getattr(self, '_starting_from_login', False):
+                    new_world = (main_sample is not None and main_sample.captured_at > last_world_sample
+                                 and self.in_team_and_world(frame=main_sample.frame))
+                    world_frames = world_frames + 1 if new_world else 0
+                    if main_sample is not None:
+                        last_world_sample = main_sample.captured_at
+                    if world_frames >= 2:
+                        raise StartupStateChanged('登录等待中确认世界界面，重新判定启动状态')
                 # 游戏登录页本身也含 KURO、公告、修复和产品版本文字；账号身份
                 # 与精确“登录”按钮的组合是更强证据，必须先于启动器候选判断。
                 ready_box = self._find_login_ready_box(texts, False) if texts else None
@@ -1473,11 +1544,13 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 if now - last_log >= 30:
                     last_log = now
                     win_state = 'visible' if (hwnd is not None and hwnd.visible) else 'invisible'
-                    self.log_info(f'登录界面暂不可见（闪烁/加载中）: 窗口={win_state}, OCR文本数={len(texts) if texts else 0}')
+                    source = getattr(main_sample, 'source', 'window')
+                    age = max(0, time.monotonic() - main_sample.captured_at) if main_sample else None
+                    self.log_info(f'登录界面暂不可见: 窗口={win_state}, OCR文本数={len(texts) if texts else 0}, 来源={source}, 帧龄={age}')
             except TaskDisabledException:
                 # 停止任务必须立即终止等待；不能被闪烁容错逻辑吞掉后继续 OCR。
                 raise
-            except (GameProcessLost, FrameUnavailable):
+            except (GameProcessLost, FrameUnavailable, StartupStateChanged, ConfigIntegrityBlocked, ConfigWriteBlocked):
                 raise
             except Exception as e:
                 if 'launcher' in str(e).lower() or '启动器' in str(e):

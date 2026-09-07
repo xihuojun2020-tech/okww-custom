@@ -6,6 +6,8 @@ from contextlib import nullcontext
 from typing import Any
 
 from ok import TaskDisabledException
+from .game_runtime_errors import GameProcessLost, FrameUnavailable, StartupStateChanged
+from ..config_integrity import ConfigIntegrityBlocked, ConfigWriteBlocked
 
 
 class LoginFlowService:
@@ -41,9 +43,13 @@ class LoginFlowService:
                             in_team = bool(task.in_team()[0])
                         except TaskDisabledException:
                             raise
+                        except (GameProcessLost, FrameUnavailable, ConfigIntegrityBlocked, ConfigWriteBlocked):
+                            raise
                         except Exception:
                             in_team = False
                         if in_team:
+                            if getattr(task, '_starting_from_login', False):
+                                raise StartupStateChanged('登录启动探测发现世界界面')
                             task.log_info("检测到仍在游戏世界内，先退登再执行账号切换")
                             task._evidence_stage("logout_from_world")
                             task._switch_to_login()

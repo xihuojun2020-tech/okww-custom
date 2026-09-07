@@ -845,6 +845,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
     def test_main_start_identifies_actual_account_before_daily_task(self):
         class FakeTask:
             _run_inner = MultiAccountDailyTask._run_inner
+            _classify_start_state = lambda self: "world"
 
             def __init__(self):
                 self.done_set = set()
@@ -925,6 +926,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
     def test_explicit_current_account_runs_in_place_then_rotates_and_returns(self):
         class FakeTask:
             _run_inner = MultiAccountDailyTask._run_inner
+            _classify_start_state = lambda self: "world"
             _next_target_account = MultiAccountDailyTask._next_target_account
 
             def __init__(self):
@@ -998,6 +1000,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
     def test_explicit_current_account_outside_sequence_stops_before_game_state_check(self):
         class FakeTask:
             _run_inner = MultiAccountDailyTask._run_inner
+            _classify_start_state = lambda self: "world"
 
             done_set = set()
             config = {CURRENT_ACCOUNT: 'A4'}
@@ -1112,6 +1115,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
     def test_all_done_explicit_start_stays_in_world_without_logout(self):
         class FakeTask:
             _run_inner = MultiAccountDailyTask._run_inner
+            _classify_start_state = lambda self: "world"
             _next_target_account = MultiAccountDailyTask._next_target_account
 
             def __init__(self):

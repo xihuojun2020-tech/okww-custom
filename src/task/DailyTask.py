@@ -26,6 +26,7 @@ from src.config_integrity import (
     get_default_service,
 )
 from src.account_repository import AccountRepository, get_default_repository
+from src.account_field_metadata import WEEKDAYS, normalize_weekday
 from src.runtime.account_runtime_bootstrap import (
     initialize_account_runtime,
     require_account_runtime_for_task,
@@ -75,13 +76,12 @@ MULTI_ACCOUNT_CONFIG_FILE = get_relative_path('configs', 'MultiAccountDailyTask.
 ACCOUNT_CONFIG_VERSION = 1
 
 # 每周乐园检查日（周一~周日），随账号方案切换
-WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
 
 def weekly_garden_check_due(check_day, last_completed, now=None):
     """Return whether this account still needs its weekly garden check."""
     now = now or datetime.now()
-    selected_day = str(check_day or '无').strip()
+    selected_day = normalize_weekday(check_day)
     scheduled_weekday = WEEKDAYS.index(selected_day) if selected_day in WEEKDAYS else 6
     if now.weekday() < scheduled_weekday:
         return False
@@ -282,7 +282,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             # 每周乐园检查日：单选一天（周一~周六 + 无）；周日固定检查、不显示
             GARDEN_CHECK_DAY: {
                 'type': 'drop_down',
-                'options': ['无'] + WEEKDAYS[:6],
+                'options': ['无', *WEEKDAYS],
             },
             # 备用识别名称：无 / 使用（使用则显示输入框，输入即保存）
             ALIAS_ENABLE: {
@@ -336,6 +336,10 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             return None
 
     def run(self):
+        self._daily_from_verified_snapshot = bool(
+            getattr(self, '_snapshot_bound_externally', False)
+            and getattr(self, '_verified_profile_snapshot', None)
+            and getattr(self, '_verified_profile_id', None))
         if not getattr(self, '_snapshot_bound_externally', False):
             self.clear_profile_binding()
         self._snapshot_bound_externally = False
@@ -345,6 +349,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 return self._run_daily_inner()
         finally:
             self._profile_run_active = False
+            self._daily_from_verified_snapshot = False
             self.clear_profile_binding()
 
     def clear_profile_binding(self):
@@ -352,6 +357,38 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self._verified_profile_id = None
         self._verified_profile_snapshot = None
         self._snapshot_bound_externally = False
+
+    def _ensure_run_account_confirmation(self):
+        self._guard_bound_profile_identity()
+        if getattr(self, '_daily_from_verified_snapshot', False):
+            return
+        if not getattr(self, '_verified_profile_id', None) or self.integrity_service is None:
+            raise ConfigIntegrityBlocked('独立每日任务需要有效的账号方案')
+        repository = AccountRepository(paths=self.integrity_service.paths, integrity_service=self.integrity_service)
+        before = repository.load_profile(self._verified_profile_id)
+        selection = self.config.get(DAILY_PROFILE)
+        if not self._confirm_standalone_profile():
+            raise TaskDisabledException('未确认本轮账号与方案，已取消每日任务')
+        self._guard_bound_profile_identity()
+        if (repository.load_profile(self._verified_profile_id).revision != before.revision
+                or self.config.get(DAILY_PROFILE) != selection):
+            raise ConfigIntegrityBlocked('确认期间账号方案发生变化，请重新开始')
+        self.log_info('独立每日任务账号来源=user_confirmed；未声明已自动识别游戏内身份')
+
+    def _confirm_standalone_profile(self):
+        from ok import og
+        bridge = getattr(getattr(og, 'main_window', None), 'daily_run_confirmation', None)
+        if bridge is None:
+            return False
+        text = self.tr(
+            'Confirm that the game is logged into {account}.\n'
+            'Stamina: {farm}\nNests selected: {nests}\nWeekly garden: {day}\n'
+            'The account in the game has not been automatically verified. Continue?'
+        ).format(account=short_profile_name(self._verified_profile_name),
+                 farm=self.tr(self._profile_get('Which to Farm', '')),
+                 nests=len(self._profile_get('Tacet Discord Nests to Farm', [])),
+                 day=self.tr(normalize_weekday(self._profile_get(GARDEN_CHECK_DAY))))
+        return bridge.confirm(self, text)
 
     def _run_daily_inner(self):
         self._publish_daily_stage('每日任务', '正在启动每日任务')
@@ -361,6 +398,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         if self.integrity_service is not None:
             self.integrity_service.guard_task_start()
             self.ensure_daily_profiles()
+        self._ensure_run_account_confirmation()
         self.validate_daily_tasks()
         self.log_info(f'开始执行每日任务（账号：{self.get_active_profile_name()}）', notify=True)
 
@@ -821,6 +859,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 raise ConfigIntegrityBlocked('validated master configuration has no profiles')
             active = self.config.get(DAILY_PROFILE)
             if active not in profiles:
+                if getattr(self, '_profile_run_active', False):
+                    raise ConfigIntegrityBlocked('所选账号方案已失效，请重新选择')
                 self._switching_profile = True
                 try:
                     self.config[DAILY_PROFILE] = next(iter(profiles))
@@ -1664,7 +1704,11 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self.log_info('正在检查每周乐园...')
         # 所选日期是本周最早检查日；之后会持续补检，直到账号写入本周完成记录。
         # “无”保持旧行为，以周日作为最早检查日。
-        check_day = (self._profile_get(GARDEN_CHECK_DAY) or '无').strip()
+        raw_day = self._profile_get(GARDEN_CHECK_DAY)
+        try:
+            check_day = normalize_weekday(raw_day)
+        except ValueError as error:
+            raise ConfigIntegrityBlocked(str(error)) from error
         now = datetime.now()
         today = WEEKDAYS[now.weekday()]
         last_completed = self.get_last_completed('Weekly Garden')

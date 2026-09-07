@@ -7,6 +7,19 @@ from src.task.BaseCombatTask import BaseCombatTask
 
 
 class TestBaseCombatTask(unittest.TestCase):
+    def test_unconfirmed_liberation_records_context_without_extra_input(self):
+        from src.char.BaseChar import BaseChar
+        from types import SimpleNamespace
+        char = object.__new__(BaseChar)
+        char.task = SimpleNamespace(executor=SimpleNamespace(_last_frame_time=99),
+                                    hwnd=SimpleNamespace(exists=True, visible=False))
+        char.logger = Mock()
+        with patch('src.char.BaseChar.time.time', return_value=100):
+            char._log_liberation_unconfirmed(98, 3)
+        message = char.logger.error.call_args.args[0]
+        for text in ('send_attempts=3', 'frame_age=1', 'visible=False', 'input_delivery=unverified'):
+            self.assertIn(text, message)
+
     def test_combat_wait_rejects_nonpositive_before_any_input(self):
         task = Mock(spec=BaseCombatTask)
         for value in (0, -1):

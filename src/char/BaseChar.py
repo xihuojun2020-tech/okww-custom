@@ -611,6 +611,7 @@ class BaseChar:
         start = time.time()
         last_click = 0
         clicked = False
+        send_attempts = 0
         if not self.task.in_liberation:
             while self.liberation_available():  # clicked and still in team wait for animation
                 self.logger.debug(f'click_liberation liberation_available click')
@@ -619,6 +620,7 @@ class BaseChar:
                 now = time.time()
                 if now - last_click > 0.1:
                     self.send_liberation_key()
+                    send_attempts += 1
                     if not clicked:
                         clicked = True
                     last_click = now
@@ -633,7 +635,7 @@ class BaseChar:
                     self.logger.debug(f'not in_team successfully casted liberation')
                 else:
                     self.task.in_liberation = False
-                    self.logger.error(f'clicked liberation but no effect')
+                    self._log_liberation_unconfirmed(start, send_attempts)
                     return False
             else:
                 start = time.time()
@@ -669,6 +671,19 @@ class BaseChar:
         if clicked:
             self.logger.info(f'click_liberation end {duration}')
         return clicked
+
+    def _log_liberation_unconfirmed(self, started, send_attempts):
+        """Record existing state only: no extra OCR, input, or animation retries."""
+        executor = getattr(self.task, 'executor', None)
+        timestamp = getattr(executor, '_last_frame_time', None)
+        age = max(0, time.time() - timestamp) if isinstance(timestamp, (int, float)) else None
+        hwnd = getattr(self.task, 'hwnd', None)
+        self.logger.error(
+            f'clicked liberation but no effect; reason=animation_unconfirmed '
+            f'send_attempts={send_attempts} confirmation_timeout=0.4 '
+            f'elapsed={max(0, time.time() - started):.3f} frame_age={age} '
+            f'window_exists={getattr(hwnd, "exists", None)} visible={getattr(hwnd, "visible", None)} '
+            f'input_delivery=unverified')
 
     def on_combat_end(self, chars):
         """当战斗结束时, 角色可能需要执行的特定清理逻辑。

@@ -3,6 +3,22 @@
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+WEEKDAYS = ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
+_WEEKDAY_ALIASES = {prefix + day: english for english, day in zip(WEEKDAYS, '一二三四五六日')
+                    for prefix in ('星期', '周')}
+_WEEKDAY_ALIASES.update({'星期天': 'Sunday', '周天': 'Sunday'})
+
+
+def normalize_weekday(value: Any) -> str:
+    value = '' if value is None else str(value).strip()
+    if value in ('', '无'):
+        return '无'
+    if value in WEEKDAYS:
+        return value
+    if value in _WEEKDAY_ALIASES:
+        return _WEEKDAY_ALIASES[value]
+    raise ValueError('周常乐园检查日无效，请重新选择星期')
+
 
 @dataclass(frozen=True)
 class AccountFieldMetadata:
@@ -34,10 +50,11 @@ _LABELS = {
 _OPTIONS = {
     "Which to Farm": ("Tacet Suppression", "Forgery Challenge", "Simulation Challenge"),
     "Material Selection": ("Resonator EXP", "Weapon EXP", "Shell Credit"),
-    "Weekly Garden Check Day": ("无", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"),
+    "Weekly Garden Check Day": ("无", *WEEKDAYS),
     "备用识别名称": ("无", "使用"),
 }
 _VALUE_LABELS = {
+    **dict(zip(WEEKDAYS, ('星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'))),
     "Tacet Suppression": "无音区",
     "Forgery Challenge": "凝素领域",
     "Simulation Challenge": "模拟领域",

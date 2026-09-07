@@ -16,7 +16,7 @@ from src.account_config_editor import AccountConfigEditor, sanitize_error
 from src.account_rebind_service import AccountRebindService
 from src.account_repository import AccountRepository, AccountRepositoryError, get_default_repository
 from src.account_field_metadata import (account_field_metadata, localize_account_value,
-                                        restore_account_value)
+                                        restore_account_value, normalize_weekday)
 from src.gui.AccountChangeEvent import AccountChangeEvent
 from src.gui.BackgroundOperation import BackgroundOperation
 
@@ -26,6 +26,26 @@ class ClickOnlyComboBox(QComboBox):
 
     def wheelEvent(self, event):
         event.ignore()
+
+
+def _select_account_choice(widget, key, value):
+    if key == 'Weekly Garden Check Day':
+        try:
+            value = normalize_weekday(value)
+        except ValueError:
+            widget.setPlaceholderText('检查日无效，请重新选择')
+            widget.setCurrentIndex(-1)
+            return
+    widget.setCurrentIndex(max(widget.findData(value), 0))
+
+
+def _read_account_choice(widget, key):
+    value = widget.currentData()
+    if key == 'Weekly Garden Check Day':
+        if widget.currentIndex() < 0:
+            raise ValueError('周常乐园检查日无效，请重新选择星期')
+        return normalize_weekday(value)
+    return value
 
 
 class AccountTemplateDialog(QDialog):
@@ -50,7 +70,7 @@ class AccountTemplateDialog(QDialog):
                 widget = ClickOnlyComboBox(self)
                 for option, label in zip(field.options, field.option_labels):
                     widget.addItem(label, option)
-                widget.setCurrentIndex(max(widget.findData(value), 0))
+                _select_account_choice(widget, field.key, value)
             else:
                 widget = QLineEdit(self)
                 display = localize_account_value(value)
@@ -71,7 +91,7 @@ class AccountTemplateDialog(QDialog):
             if isinstance(widget, QCheckBox):
                 result[key] = widget.isChecked()
             elif isinstance(widget, QComboBox):
-                result[key] = widget.currentData()
+                result[key] = _read_account_choice(widget, key)
             else:
                 text = widget.text()
                 original = result.get(key)
@@ -323,7 +343,7 @@ class AccountConfigTab(CustomTab):
             if isinstance(widget, QCheckBox):
                 self.draft.tasks[key] = widget.isChecked()
             elif isinstance(widget, QComboBox):
-                self.draft.tasks[key] = widget.currentData()
+                self.draft.tasks[key] = _read_account_choice(widget, key)
             else:
                 text = widget.text()
                 original = self.draft.tasks.get(key)
@@ -375,8 +395,7 @@ class AccountConfigTab(CustomTab):
                 widget = ClickOnlyComboBox(self.form_host)
                 for option, option_label in zip(field.options, field.option_labels):
                     widget.addItem(option_label, option)
-                index = widget.findData(value)
-                widget.setCurrentIndex(max(index, 0))
+                _select_account_choice(widget, field.key, value)
             else:
                 from PySide6.QtWidgets import QLineEdit
                 widget = QLineEdit(self.form_host)
