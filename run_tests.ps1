@@ -30,11 +30,13 @@ $groups = @{
     "TestWin32LoginInput.py"
   )
   integration = @(
+    "TestDiagnosticPipeline.py",
     "TestAccountConfigBundle.py", "TestAccountPublishService.py", "TestAccountDeletion.py", "TestSecureBackup.py",
     "TestConfigBackup.py", "TestConfigIntegrity.py", "TestAccountRuntimeIntegration.py",
     "TestAccountSwitchEvidence.py", "TestMultiAccountDailyTask.py", "TestAccountRepositoryMigrationScenario.py"
   )
   ui = @(
+    "TestDiagnosticStatusCard.py",
     "TestDailyRunConfirmation.py",
     "TestAccountManagementTabs.py", "TestCodexLightUI.py", "TestFiveSectionMainWindow.py",
     "TestMainWindowStartup.py", "TestNavigationSections.py", "TestTaskNavigationClassification.py",

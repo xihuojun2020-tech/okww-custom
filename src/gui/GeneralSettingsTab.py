@@ -25,6 +25,8 @@ class GeneralSettingsTab(CustomTab):
         behavior_tab = QWidget(self.view)
         behavior_layout = QVBoxLayout(behavior_tab)
         behavior_layout.setContentsMargins(12, 12, 12, 12)
+        from src.gui.DiagnosticStatusCard import DiagnosticStatusCard
+        behavior_layout.addWidget(DiagnosticStatusCard(behavior_tab))
         self.hotkey_config = None
         self.basic_config = None
         for name, config_obj, option in global_config.get_all_visible_configs():

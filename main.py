@@ -280,6 +280,8 @@ if __name__ == '__main__':
     # Read-only account integrity preflight must happen before OK constructs
     # task objects or any start controller can refresh/activate a device.
     from config import version as _program_version
+    from src.runtime.diagnostic_lifecycle import start_diagnostics, attach_framework_hooks, record_crash
+    start_diagnostics(_program_version)
     from src.runtime.account_runtime_bootstrap import initialize_account_runtime
     _integrity_root = os.path.dirname(os.path.abspath(__file__))
     try:
@@ -295,10 +297,12 @@ if __name__ == '__main__':
     ok = None
     try:
         ok = OK(config)
+        attach_framework_hooks()
         ok.start()
     except Exception as e:
         # 启动异常（含 OK 构造）：写日志 + 弹窗（pythonw 无控制台时不再静默崩溃）
         import traceback
         tb = traceback.format_exc()
+        record_crash(type(e), e, e.__traceback__)
         _report_startup_error(e, tb)
         sys.exit(1)
