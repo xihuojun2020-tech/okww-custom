@@ -14,29 +14,20 @@ from datetime import datetime
 from pathlib import Path
 
 from src.runtime.diagnostic_export import atomic_json, digest, sanitize_data, sanitize_file, sanitize_text
+from src.runtime.diagnostic_policy import POLICY, installation_id, settings
 
 PART_LIMIT = 4 * 1024 * 1024
-RUN_LIMIT = 64 * 1024 * 1024
-ROOT_LIMIT = 2 * 1024 * 1024 * 1024
-
-
-def storage_size(root):
-    total = 0
-    for directory, folders, files in os.walk(root, followlinks=False):
-        folders[:] = [name for name in folders if not (Path(directory) / name).is_symlink()
-                      and not (Path(directory) / name).is_junction()]
-        for name in files:
-            path = Path(directory) / name
-            if not path.is_symlink() and not path.is_junction():
-                try:
-                    total += path.stat().st_size
-                except FileNotFoundError:
-                    pass
-    return total
 
 
 def default_root():
-    return Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'okww-custom' / 'diagnostics'
+    root = (Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'okww-custom' / 'diagnostics'
+            / POLICY / installation_id())
+    root.mkdir(parents=True, exist_ok=True)
+    # MSIX hosts can redirect files while returning an unredirected directory.
+    # Resolve an owned file so child processes and scheduled tasks share one root.
+    anchor = root / '.storage-root'
+    anchor.touch(exist_ok=True)
+    return anchor.resolve().parent
 
 
 class FileLease:
@@ -69,12 +60,15 @@ class FileLease:
         self.close()
 
 
-def seal_run(run, kind, *, sizes=None, reviewed_images=()):
+def log_sources(run):
+    return {p: p.stat().st_size for p in Path(run).iterdir() if p.suffix in ('.log', '.txt', '.jsonl')
+            or p.name == 'crash.json' or (p.name.startswith('collected-') and p.suffix == '.json')}
+
+
+def seal_run(run, kind, *, sizes=None, reviewed_images=(), offsets=None):
     """Publish a local batch only after every exported file is valid."""
     run = Path(run).absolute()
     root = run.parent
-    if storage_size(root) > ROOT_LIMIT:
-        raise ValueError('diagnostic storage limit reached; retain pending evidence')
     metadata = json.loads((run / 'metadata.json').read_text(encoding='utf-8'))
     batch_id = datetime.now().strftime('%H%M%S') + '-' + uuid.uuid4().hex[:12]
     batch = run / 'batches' / batch_id
@@ -91,40 +85,66 @@ def seal_run(run, kind, *, sizes=None, reviewed_images=()):
 
     metadata['batch_kind'] = kind
     add(f'日志/{prefix}/metadata.json', json.dumps(sanitize_data(metadata), ensure_ascii=False).encode())
-    sources = sizes if sizes is not None else {
-        p: p.stat().st_size for p in run.iterdir() if p.suffix in ('.log', '.jsonl') or p.name == 'crash.json'}
+    sources = sizes if sizes is not None else log_sources(run)
     # Files are append-only. Snapshot sizes are captured under the writer lock.
     for index, (source, size) in enumerate(sorted(sources.items())):
         if source.is_symlink() or source.parent != run:
             raise ValueError('invalid session source')
         with source.open('rb') as stream:
-            content = stream.read(size)
-        if kind != 'final' and source.suffix != '.json':
-            content = content[-256 * 1024:]
-            if size > 256 * 1024:
-                content = content.partition(b'\n')[2]
+            start = (offsets or {}).get(source.name, 0)
+            stream.seek(start)
+            content = stream.read(size - start)
         snapshot = batch / ('snapshot' + source.suffix)
         snapshot.write_bytes(content)
         content = sanitize_file(snapshot)
         snapshot.unlink()
         add(f'日志/{prefix}/{index:04d}{source.suffix}', content)
     for index, picture in enumerate(reviewed_images):
-        add(f'截图/{prefix}/image-{index:04d}.png', sanitize_file(picture, reviewed_image=True))
+        add(f'截图/{prefix}/{Path(picture).stem}.png', sanitize_file(picture, reviewed_image=True))
     manifest = {'schema_version': 1, 'run_id': run.name, 'batch_id': batch_id,
-                'created_at': time.time(), 'kind': kind, 'files': entries}
+                'created_at': time.time(), 'kind': kind, 'files': entries,
+                'policy': metadata.get('policy'),
+                'log_ranges': {p.name: [int((offsets or {}).get(p.name, 0)), n] for p, n in sources.items()}}
     atomic_json(batch / 'manifest.json', manifest)
     (batch / '_READY').write_text(digest((batch / 'manifest.json').read_bytes()), encoding='ascii')
     atomic_json(run / 'upload-status.json', {'latest_batch': batch_id, 'status': 'pending'})
     return batch
 
 
+def seal_pending(run, kind, *, sizes=None):
+    """At least once: advance offsets only after an immutable batch is durable."""
+    run = Path(run)
+    state_path = run / 'sealed-offsets.json'
+    state = json.loads(state_path.read_text(encoding='utf-8')) if state_path.exists() else {}
+    sources = sizes if sizes is not None else log_sources(run)
+    for source, size in sorted(sources.items()):
+        start = state.get(source.name, 0)
+        if size <= start:
+            continue
+        seal_run(run, kind, sizes={source: size}, offsets={source.name: start})
+        state[source.name] = size
+        atomic_json(state_path, state)
+    for picture in sorted((run / 'screenshots').glob('*')):
+        if picture.suffix.lower() not in ('.png', '.jpg', '.jpeg'):
+            continue
+        key = 'screenshots/' + picture.name
+        if key not in state:
+            seal_run(run, 'screenshot', sizes={}, reviewed_images=[picture])
+            state[key] = picture.stat().st_size
+            atomic_json(state_path, state)
+    # Small metadata batch records final/error status even without new log bytes.
+    if kind in ('final', 'error'):
+        seal_run(run, kind, sizes={})
+    if kind == 'final':
+        (run / '_FINAL_SEALED').touch()
+
+
 class DiagnosticSession(logging.Handler):
-    def __init__(self, root, version):
+    def __init__(self, root, version, *, source_root=None):
         super().__init__()
         self.root = Path(root).absolute()
         self.root.mkdir(parents=True, exist_ok=True)
-        if storage_size(self.root) >= ROOT_LIMIT:
-            raise OSError('diagnostic storage full; existing evidence retained')
+        self.collector_lease = FileLease(self.root / '.collector.lock') if source_root is not None else None
         self.run_id = datetime.now().strftime('%Y%m%d-%H%M%S-') + uuid.uuid4().hex[:12]
         self.run = self.root / self.run_id
         self.run.mkdir()
@@ -132,13 +152,19 @@ class DiagnosticSession(logging.Handler):
         self.guard = threading.RLock()
         self.pending = queue.Queue(maxsize=32)
         self.closed_session = False
-        self.metadata = {'schema_version': 1, 'version': version, 'system': platform.platform(),
+        self.metadata = {'schema_version': 1, 'version': version, 'policy': POLICY,
+                         'device_id': settings(self.root)['device_id'], 'installation_id': installation_id(),
+                         'system': platform.platform(),
                          'started_at': datetime.now().astimezone().isoformat(), 'run_id': self.run_id,
                          'process_status': 'running', 'error_events': 0, 'dropped_batches': 0}
         self.parts, self.total, self.last_error_batch = {}, 0, 0
         self.sequence = 0
         self.frame_provider = None
         self.on_batch_ready = None
+        self.collector = None
+        if source_root is not None:
+            from src.runtime.diagnostic_collector import FileCollector
+            self.collector = FileCollector(source_root, self.root)
         self.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(name)s %(message)s'))
         self._save_metadata()
         self.worker = threading.Thread(target=self._work, name='diagnostic-local', daemon=True)
@@ -148,12 +174,7 @@ class DiagnosticSession(logging.Handler):
         atomic_json(self.run / 'metadata.json', sanitize_data(self.metadata))
 
     def _append(self, stem, suffix, text):
-        if suffix == '.jsonl' and len(text) > 65536:
-            text = json.dumps({'event': 'truncated_event', 'summary': text[:8192]}, ensure_ascii=False)
-        data = (text[:65536] + '\n').encode('utf-8')
-        if self.total + len(data) > RUN_LIMIT:
-            self.metadata['log_truncated'] = True
-            return
+        data = (text + '\n').encode('utf-8')
         index, size = self.parts.get(stem, (0, 0))
         if size + len(data) > PART_LIMIT:
             index, size = index + 1, 0
@@ -199,19 +220,26 @@ class DiagnosticSession(logging.Handler):
             self.metadata['dropped_batches'] += 1
 
     def add_screenshot(self, path):
-        # Retain a local private copy; export requires separate image approval.
-        self.record_event('screenshot_saved', {'status': 'needs_review', 'suffix': Path(path).suffix})
+        self.record_event('screenshot_saved', {'status': 'automatic_upload', 'suffix': Path(path).suffix})
+        if self.collector and any(Path(path).absolute().is_relative_to(self.collector.source / folder)
+                                  for folder in ('logs', 'screenshots')):
+            self.request_batch('periodic')
+            return
         self.request_batch(('screenshot', str(path)))
 
     def capture_last_frame(self):
         if self.frame_provider:
             frame = self.frame_provider()
-            if frame is not None and frame.nbytes <= 20 * 1024 * 1024:
+            if frame is not None and frame.nbytes <= 256 * 1024 * 1024:
                 self.request_batch(('frame', frame.copy()))
 
     def _work(self):
         while True:
-            kind = self.pending.get()
+            queued = True
+            try:
+                kind = self.pending.get(timeout=30)
+            except queue.Empty:
+                kind, queued = 'periodic', False
             try:
                 if kind is None:
                     return
@@ -221,28 +249,27 @@ class DiagnosticSession(logging.Handler):
                     folder.mkdir(exist_ok=True)
                     image_id = uuid.uuid4().hex
                     saved = None
-                    if storage_size(folder) + 20 * 1024 * 1024 <= RUN_LIMIT:
-                        if action == 'frame':
-                            import cv2
-                            saved = folder / (image_id + '.png')
-                            if not cv2.imwrite(str(saved), source):
-                                raise OSError('frame encoding failed')
-                        else:
-                            source = Path(source)
-                            if (source.suffix.lower() in ('.png', '.jpg') and not source.is_symlink()
-                                    and not source.is_junction() and source.stat().st_size <= 20 * 1024 * 1024):
-                                saved = folder / (image_id + source.suffix.lower())
-                                shutil.copyfile(source, saved)
+                    if action == 'frame':
+                        import cv2
+                        saved = folder / (image_id + '.png')
+                        if not cv2.imwrite(str(saved), source):
+                            raise OSError('frame encoding failed')
+                    else:
+                        source = Path(source)
+                        if (source.suffix.lower() in ('.png', '.jpg', '.jpeg') and not source.is_symlink()
+                                and not source.is_junction()):
+                            saved = folder / (image_id + source.suffix.lower())
+                            shutil.copyfile(source, saved)
                     self.record_event('screenshot_copy', {'image_id': image_id,
                                       'local_file': saved.name if saved else None,
-                                      'status': 'needs_review' if saved else 'unavailable_or_limit'}, allow_closed=True)
+                                      'status': 'automatic_upload' if saved else 'unavailable'}, allow_closed=True)
                     kind = 'screenshot'
                 with self.guard:
                     self._save_metadata()
-                    sizes = {p: p.stat().st_size for p in self.run.iterdir() if p.suffix in ('.log', '.jsonl') or p.name == 'crash.json'}
-                seal_run(self.run, kind, sizes=sizes)
-                if kind == 'final':
-                    (self.run / '_FINAL_SEALED').touch()
+                    sizes = log_sources(self.run)
+                if self.collector:
+                    self.collector.collect(self.run)
+                seal_pending(self.run, kind, sizes=sizes)
                 if self.on_batch_ready:
                     self.on_batch_ready()
             except Exception as error:
@@ -251,7 +278,8 @@ class DiagnosticSession(logging.Handler):
                 except OSError:
                     pass
             finally:
-                self.pending.task_done()
+                if queued:
+                    self.pending.task_done()
 
     def finish(self, status='exited', exit_code=0, timeout=2):
         with self.guard:
@@ -270,6 +298,8 @@ class DiagnosticSession(logging.Handler):
             self.pending.put(None)
             self.worker.join(timeout=0.2)
             self.lease.close()
+            if self.collector_lease:
+                self.collector_lease.close()
 
 
 def recover_sessions(root):
@@ -280,6 +310,9 @@ def recover_sessions(root):
             continue
         try:
             with FileLease(run / '.session.lock'):
+                metadata = json.loads((run / 'metadata.json').read_text(encoding='utf-8'))
+                if metadata.get('policy') != POLICY:
+                    continue
                 finalized = False
                 for ready in run.glob('batches/*/_READY'):
                     try:
@@ -297,7 +330,6 @@ def recover_sessions(root):
                 if metadata['process_status'] == 'running':
                     metadata['process_status'] = 'interrupted'
                     atomic_json(run / 'metadata.json', metadata)
-                seal_run(run, 'final')
-                (run / '_FINAL_SEALED').touch()
+                seal_pending(run, 'final')
         except (OSError, ValueError, KeyError):
             continue

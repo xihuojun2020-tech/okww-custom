@@ -4,13 +4,14 @@ from collections import Counter
 
 from PySide6.QtCore import QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QCheckBox
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton
 
 from src.gui.BackgroundOperation import BackgroundOperation
 from src.runtime.diagnostic_export import atomic_json, sanitize_text
 from src.runtime.diagnostic_session import default_root, FileLease
 from src.runtime.diagnostic_lifecycle import wake_uploader
 from src.runtime.diagnostic_uploader import DEFAULT_TARGET
+from src.runtime.diagnostic_policy import settings, save_credentials
 
 
 class DiagnosticStatusCard(QWidget):
@@ -18,12 +19,17 @@ class DiagnosticStatusCard(QWidget):
         super().__init__(parent)
         self.root = default_root()
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel('诊断日志与 NAS 上传（图片需单独审核）'))
-        self.enabled = QCheckBox('启用 NAS 上传')
+        layout.addWidget(QLabel('日志与截图自动上传 NAS（仅从本版本开始）'))
+        layout.addWidget(QLabel('每周清理超过 7 天且已上传的日志；截图和待补传资料保留。'))
         self.target = QLineEdit(DEFAULT_TARGET)
         self.target.setPlaceholderText('NAS 诊断目录，不填写密码')
-        layout.addWidget(self.enabled)
         layout.addWidget(self.target)
+        self.username = QLineEdit('ai-upload')
+        self.password = QLineEdit()
+        self.password.setEchoMode(QLineEdit.Password)
+        self.password.setPlaceholderText('首次连接时填写密码，仅保存到本机 Windows 凭据管理器')
+        layout.addWidget(self.username)
+        layout.addWidget(self.password)
         self.status = QLabel('正在读取本地状态')
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
@@ -37,9 +43,7 @@ class DiagnosticStatusCard(QWidget):
         retry.clicked.connect(self.retry)
         folder.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.root))))
         try:
-            settings = json.loads((self.root / 'settings.json').read_text(encoding='utf-8'))
-            self.enabled.setChecked(bool(settings.get('enabled')))
-            self.target.setText(settings.get('target', DEFAULT_TARGET))
+            self.target.setText(settings(self.root).get('target', DEFAULT_TARGET))
         except (OSError, ValueError):
             pass
         self.timer = QTimer(self)
@@ -62,18 +66,29 @@ class DiagnosticStatusCard(QWidget):
                 last_success = max(last_success, state.get('uploaded_at', 0))
             from datetime import datetime
             success = datetime.fromtimestamp(last_success).isoformat(timespec='seconds') if last_success else '无'
-            return f'批次：{dict(counts)}\n最后成功：{success}\n最近阻塞：{sanitize_text(last_error) or "无"}'
+            scheduler_path = root / 'scheduler.json'
+            scheduler = json.loads(scheduler_path.read_text(encoding='utf-8')).get('status') if scheduler_path.exists() else '待安装'
+            collector_error = root / 'collector-error.json'
+            if collector_error.exists():
+                last_error = json.loads(collector_error.read_text(encoding='utf-8')).get('error') or last_error
+            return f'批次：{dict(counts)}\n最后成功：{success}\n退出后补传任务：{scheduler}\n最近阻塞：{sanitize_text(last_error) or "无"}'
         self.operation.start(read, self.status.setText, lambda e: self.status.setText(sanitize_text(e)))
 
     def save(self):
-        root, target, enabled = self.root, self.target.text().strip(), self.enabled.isChecked()
-        if enabled and not target:
+        root, target = self.root, self.target.text().strip()
+        username, secret = self.username.text().strip(), self.password.text()
+        if not target:
             self.status.setText('请填写 NAS 目录')
             return
         def write():
-            atomic_json(root / 'settings.json', {'enabled': enabled, 'target': target})
+            if secret:
+                save_credentials(target, username, secret)
+            value = settings(root)
+            value['target'] = target
+            atomic_json(root / 'settings.json', value)
             wake_uploader(root)
-        self.operation.start(write, lambda _: self.refresh(), lambda e: self.status.setText(sanitize_text(e)))
+        self.operation.start(write, lambda _: (self.password.clear(), self.refresh()),
+                             lambda e: (self.password.clear(), self.status.setText(sanitize_text(e))))
 
     def retry(self):
         root = self.root

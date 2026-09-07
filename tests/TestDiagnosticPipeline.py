@@ -27,7 +27,8 @@ class TestDiagnosticPipeline(unittest.TestCase):
     def batch(self):
         self.session.record_event('test', {'message': 'safe event'})
         self.session.finish(timeout=5)
-        return next(self.session.run.glob('batches/*'))
+        return next(p for p in self.session.run.glob('batches/*')
+                    if any(item['path'].endswith('.jsonl') for item in json.loads((p / 'manifest.json').read_text(encoding='utf-8'))['files']))
 
     def test_secrets_and_invalid_json_do_not_escape(self):
         secret = 'synthetic-value-DO-NOT-SHARE'
@@ -117,11 +118,13 @@ class TestDiagnosticPipeline(unittest.TestCase):
             with self.assertRaisesRegex(OSError, 'timed out'):
                 bounded_upload(self.root, self.remote, 1)
 
-    def test_expired_evidence_is_retained(self):
+    def test_offline_evidence_keeps_retrying_after_24_hours(self):
         batch = self.batch()
-        retry_pending(self.root, self.remote, now=time.time() + 90000)
+        def offline(*args):
+            raise OSError('offline')
+        retry_pending(self.root, self.remote, now=time.time() + 90000, transfer=offline)
         state = json.loads(next((self.root / 'states').glob('*.json')).read_text())
-        self.assertEqual(state['status'], 'expired_pending')
+        self.assertEqual(state['status'], 'retrying')
         self.assertTrue(batch.exists())
 
     def test_malformed_manifests_are_rejected(self):

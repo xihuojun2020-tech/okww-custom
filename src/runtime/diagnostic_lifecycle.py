@@ -13,6 +13,7 @@ from pathlib import Path
 
 from src.runtime.diagnostic_export import atomic_json, sanitize_text
 from src.runtime.diagnostic_session import DiagnosticSession, default_root
+from src.runtime.diagnostic_policy import settings, REPO
 
 _session = None
 _uploader = None
@@ -29,13 +30,11 @@ def wake_uploader(root=None):
             return
         if time.monotonic() - _last_wake < 5:
             return
-        settings = root / 'settings.json'
-        if not settings.is_file() or not json.loads(settings.read_text(encoding='utf-8')).get('enabled'):
-            return
+        settings(root)
         _last_wake = time.monotonic()
         flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
         _uploader = subprocess.Popen(
-            [sys.executable, '-m', 'src.runtime.diagnostic_uploader', '--root', str(root)],
+            [sys.executable, '-m', 'src.runtime.diagnostic_uploader', '--root', str(root), '--ensure-task'],
             cwd=str(Path(__file__).resolve().parents[2]), creationflags=flags,
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -45,7 +44,9 @@ def start_diagnostics(version, root=None):
     if _session is not None:
         return _session
     try:
-        session = DiagnosticSession(root or default_root(), version)
+        root = Path(root or default_root())
+        settings(root)
+        session = DiagnosticSession(root, version, source_root=REPO)
         session.on_batch_ready = lambda: wake_uploader(session.root)
         _session = session
         logging.getLogger().addHandler(session)

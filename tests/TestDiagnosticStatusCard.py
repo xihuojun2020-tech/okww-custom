@@ -29,7 +29,7 @@ class TestDiagnosticStatusCard(unittest.TestCase):
             try:
                 card.timer.stop()
                 self.wait(card)
-                card.enabled.setChecked(True)
+                self.assertFalse(hasattr(card, 'enabled'))
                 card.target.setText(str(Path(temp) / 'remote'))
                 card.save()
                 self.wait(card)
