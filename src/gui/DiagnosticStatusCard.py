@@ -17,7 +17,7 @@ from src.runtime.diagnostic_policy import settings, save_credentials
 def diagnostic_error_message(error):
     text = sanitize_text(error)
     if "No module named 'win32timezone'" in text:
-        return '诊断上传组件不完整；请升级到 1.41.02 或更高版本后重试'
+        return '旧诊断上传组件不完整；请重启程序以自动重建并重试'
     if 'NAS authentication failed' in text or '用户名或密码不正确' in text:
         return 'NAS 用户名或密码不正确；请重新填写密码并保存设置'
     return text

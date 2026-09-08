@@ -1,6 +1,6 @@
 """One in-flight disk operation, with results delivered on the owner's Qt thread."""
 
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, Qt, Signal, Slot
+from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Qt, Signal, Slot
 
 
 class _ResultSignals(QObject):
@@ -35,7 +35,7 @@ class BackgroundOperation(QObject):
         self._worker = None
         self._callbacks = None
 
-    def start(self, work, success, failure):
+    def start(self, work, success, failure, *, timeout_ms=None):
         if self.busy:
             return None
         self.request_id += 1
@@ -50,19 +50,32 @@ class BackgroundOperation(QObject):
         self._worker.signals.finished.connect(self._finish, Qt.QueuedConnection)
         self.busy_changed.emit(True)
         QThreadPool.globalInstance().start(self._worker)
+        if timeout_ms is not None:
+            QTimer.singleShot(timeout_ms, lambda request_id=self.request_id: self._timeout(request_id))
         return self.request_id
 
-    @Slot(int, object, object)
-    def _finish(self, request_id, value, error):
-        if request_id != self.request_id or not self.busy:
-            return
-        success, failure = self._callbacks
+    def _restore(self):
         self._callbacks = None
         self._worker = None
         self.busy = False
         for control, enabled in zip(self.controls, self._enabled):
             control.setEnabled(enabled)
         self.busy_changed.emit(False)
+
+    def _timeout(self, request_id):
+        if request_id != self.request_id or not self.busy:
+            return
+        failure = self._callbacks[1]
+        self.request_id += 1
+        self._restore()
+        failure(TimeoutError('操作超时，请检查网络后重试'))
+
+    @Slot(int, object, object)
+    def _finish(self, request_id, value, error):
+        if request_id != self.request_id or not self.busy:
+            return
+        success, failure = self._callbacks
+        self._restore()
         if error is None:
             success(value)
         else:

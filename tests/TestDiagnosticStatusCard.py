@@ -55,7 +55,7 @@ class TestDiagnosticStatusCard(unittest.TestCase):
                 self.app.processEvents()
 
     def test_upload_errors_have_actionable_messages(self):
-        self.assertIn('1.41.02', diagnostic_error_message("No module named 'win32timezone'"))
+        self.assertIn('重启程序', diagnostic_error_message("No module named 'win32timezone'"))
         self.assertIn('重新填写密码', diagnostic_error_message('NAS authentication failed, Windows code 86'))
 
 

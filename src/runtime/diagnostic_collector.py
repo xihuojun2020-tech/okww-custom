@@ -14,7 +14,9 @@ IMAGE_TYPES = {'.png', '.jpg', '.jpeg'}
 
 class FileCollector:
     def __init__(self, source, root):
-        self.source, self.root = Path(source).absolute(), Path(root)
+        # Resolve Windows 8.3 aliases (RUNNER~1 vs runneradmin) before
+        # comparing paths discovered by os.walk.
+        self.source, self.root = Path(source).resolve(), Path(root)
         self.path = self.root / 'source-cursors.json'
         if self.path.exists():
             self.cursors = json.loads(self.path.read_text(encoding='utf-8'))

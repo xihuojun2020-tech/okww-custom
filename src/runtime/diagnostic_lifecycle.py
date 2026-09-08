@@ -21,6 +21,18 @@ _last_wake = 0
 _wake_lock = threading.Lock()
 
 
+def reset_incomplete_runtime_retries(root):
+    for path in (Path(root) / 'states').glob('*.json'):
+        try:
+            state = json.loads(path.read_text(encoding='utf-8'))
+            if (state.get('status') == 'retrying'
+                    and "No module named 'win32timezone'" in state.get('last_error', '')):
+                state['next_retry'] = 0
+                atomic_json(path, state)
+        except (OSError, ValueError):
+            continue
+
+
 def wake_uploader(root=None):
     global _uploader, _last_wake
     import time
@@ -34,6 +46,9 @@ def wake_uploader(root=None):
         _last_wake = time.monotonic()
         from src.runtime.diagnostic_runtime import prepare_runtime, uploader_command, isolated_environment
         bundle = prepare_runtime(REPO)
+        # A repaired immutable runtime should retry batches that were waiting
+        # specifically because the previous bundle was incomplete.
+        reset_incomplete_runtime_retries(root)
         flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
         _uploader = subprocess.Popen(
             uploader_command(bundle, root), env=isolated_environment(),

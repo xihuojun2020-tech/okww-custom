@@ -56,13 +56,27 @@ class TestDiagnosticPolicy(unittest.TestCase):
         with self.assertRaises(ValueError):
             prepare_runtime(source, home=source / 'forbidden-background')
 
+    def test_repaired_runtime_retries_only_incomplete_bundle_failures(self):
+        from src.runtime.diagnostic_lifecycle import reset_incomplete_runtime_retries
+        states = self.root / 'states'
+        states.mkdir(parents=True)
+        incomplete = states / 'incomplete.json'
+        network = states / 'network.json'
+        incomplete.write_text(json.dumps({'status': 'retrying', 'next_retry': 99,
+                                          'last_error': "No module named 'win32timezone'"}))
+        network.write_text(json.dumps({'status': 'retrying', 'next_retry': 99,
+                                       'last_error': 'NAS authentication failed'}))
+        reset_incomplete_runtime_retries(self.root)
+        self.assertEqual(json.loads(incomplete.read_text())['next_retry'], 0)
+        self.assertEqual(json.loads(network.read_text())['next_retry'], 99)
+
     @unittest.skipUnless(os.name == 'nt', 'Windows scheduled task migration')
     def test_task_migration_rolls_back_on_failure_and_switches_on_success(self):
         script = Path(__file__).resolve().parents[1] / 'scripts/migrate_diagnostic_task.ps1'
         quote = lambda value: "'" + str(value).replace("'", "''") + "'"
         for fail in (True, False):
             with self.subTest(fail=fail), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
+                root = Path(directory).resolve()
                 bundle = root / 'bundle'
                 (bundle / 'src/runtime').mkdir(parents=True)
                 (bundle / 'ready.json').write_text(json.dumps({'source_repo': str(root)}))
@@ -99,8 +113,9 @@ catch { $failed=$true }
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp.name) / 'spool'
-        self.remote = Path(self.temp.name) / 'nas'
+        temporary_root = Path(self.temp.name).resolve()
+        self.root = temporary_root / 'spool'
+        self.remote = temporary_root / 'nas'
         self.session = DiagnosticSession(self.root, '1.37.00')
 
     def tearDown(self):

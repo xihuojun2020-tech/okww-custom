@@ -49,7 +49,7 @@ class LanUpdateCard(QWidget):
             self.status.setText(availability.message)
             self.action.setText("下载并安装" if self.release else "重新检查")
 
-        self.operation.start(work, complete, self._failed)
+        self.operation.start(work, complete, self._failed, timeout_ms=8000)
 
     def _download(self):
         if getattr(self.executor, "current_task", None) is not None:
