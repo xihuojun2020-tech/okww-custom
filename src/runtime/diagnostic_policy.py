@@ -12,7 +12,7 @@ from src.runtime.diagnostic_export import atomic_json
 
 POLICY = 'automatic-v1'
 SCHEDULER_REVISION = 3
-DEFAULT_TARGET = r'\\192.168.3.170\xihuojun 共享给我\AI诊断'
+DEFAULT_TARGET = r'\\192.168.3.161\xihuojun 共享给我\AI诊断'
 REPO = Path(__file__).resolve().parents[2]
 _binding = REPO / 'source.json'
 if _binding.is_file():

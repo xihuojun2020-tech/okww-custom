@@ -10,13 +10,16 @@ from unittest.mock import patch
 from types import SimpleNamespace
 
 from src.runtime.diagnostic_collector import FileCollector
-from src.runtime.diagnostic_policy import POLICY, settings
+from src.runtime.diagnostic_policy import DEFAULT_TARGET, POLICY, settings
 from src.runtime.diagnostic_session import DiagnosticSession
 from src.runtime.diagnostic_uploader import retry_pending, upload_one, validate_remote
 from src.runtime.diagnostic_retention import weekly_cleanup, purge_remote_logs, WEEK
 
 
 class TestDiagnosticPolicy(unittest.TestCase):
+    def test_default_nas_uses_current_smb_host(self):
+        self.assertEqual(r'\\192.168.3.161\xihuojun 共享给我\AI诊断', DEFAULT_TARGET)
+
     @unittest.skipUnless(os.name == 'nt', 'Windows isolated uploader runtime')
     def test_independent_runtime_preserves_source_identity_and_ignores_pythonpath(self):
         from src.runtime.diagnostic_runtime import prepare_runtime, check_runtime, isolated_environment

@@ -1,4 +1,5 @@
 import os
+import inspect
 import tempfile
 import unittest
 from pathlib import Path
@@ -6,9 +7,15 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from custom_ok.ok.gui.MainWindow import MainWindow
+from src.gui.GeneralSettingsTab import GeneralSettingsTab
 
 
 class TestLanUpdateUI(unittest.TestCase):
+    def test_general_settings_mounts_lan_update_card(self):
+        source = inspect.getsource(GeneralSettingsTab.__init__)
+        self.assertIn("self.lan_update_card = LanUpdateCard", source)
+        self.assertIn("behavior_layout.addWidget(self.lan_update_card)", source)
+
     @patch("custom_ok.ok.gui.MainWindow.subprocess.Popen")
     def test_schedule_starts_helper_before_quitting(self, popen):
         window = SimpleNamespace(app=Mock())
