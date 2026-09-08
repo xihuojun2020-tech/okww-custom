@@ -779,6 +779,48 @@ msgstr ""
 msgid "Toggle the levitator and verify if the character is floating"
 msgstr ""
 
+msgid "Weekly Boss Challenge"
+msgstr "週ボス挑戦"
+
+msgid "Weekly Boss"
+msgstr "対象の週ボス"
+
+msgid "Claim all remaining weekly rewards from one boss, then verify zero remaining. Current stamina only; keep default difficulty and team."
+msgstr "同じボスの残り週間報酬をすべて受け取り、残数ゼロを確認します。現在のスタミナのみ使用し、難易度とチームは変更しません。"
+
+msgid "Use this boss for every remaining reward this run. Does not change difficulty or team."
+msgstr "今回の残り報酬は同じボスで受け取ります。難易度とチームは変更しません。"
+
+msgid "weekly_fallen_court"
+msgstr "失坠困咎之庭"
+
+msgid "weekly_false_god"
+msgstr "虚妄诞生之种"
+
+msgid "weekly_star_gate"
+msgstr "星海迷途之扉"
+
+msgid "weekly_apocalypse"
+msgstr "烬夜天启之章"
+
+msgid "weekly_fate_wheel"
+msgstr "命途断章之轮"
+
+msgid "weekly_crimson_curtain"
+msgstr "彼世猩红之幕"
+
+msgid "weekly_temporal"
+msgstr "时序命定之争"
+
+msgid "weekly_crownless"
+msgstr "无冠巨像之心"
+
+msgid "weekly_border_flame"
+msgstr "无序边境之火"
+
+msgid "weekly_bell"
+msgstr "昔日咏叹之钟"
+
 msgid "Use Liberation"
 msgstr ""
 

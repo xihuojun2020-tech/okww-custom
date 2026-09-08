@@ -779,6 +779,48 @@ msgstr "기타"
 msgid "Toggle the levitator and verify if the character is floating"
 msgstr "레비테이터를 전환해 캐릭터가 떠 있는지 확인합니다"
 
+msgid "Weekly Boss Challenge"
+msgstr "주간 보스 도전"
+
+msgid "Weekly Boss"
+msgstr "대상 주간 보스"
+
+msgid "Claim all remaining weekly rewards from one boss, then verify zero remaining. Current stamina only; keep default difficulty and team."
+msgstr "같은 보스의 남은 주간 보상을 모두 수령한 후 잔여 횟수가 0인지 확인합니다. 현재 스태미나만 사용하며 난이도와 파티는 유지합니다."
+
+msgid "Use this boss for every remaining reward this run. Does not change difficulty or team."
+msgstr "이번 실행의 모든 잔여 보상은 같은 보스에서 수령합니다. 난이도와 파티는 변경하지 않습니다."
+
+msgid "weekly_fallen_court"
+msgstr "失坠困咎之庭"
+
+msgid "weekly_false_god"
+msgstr "虚妄诞生之种"
+
+msgid "weekly_star_gate"
+msgstr "星海迷途之扉"
+
+msgid "weekly_apocalypse"
+msgstr "烬夜天启之章"
+
+msgid "weekly_fate_wheel"
+msgstr "命途断章之轮"
+
+msgid "weekly_crimson_curtain"
+msgstr "彼世猩红之幕"
+
+msgid "weekly_temporal"
+msgstr "时序命定之争"
+
+msgid "weekly_crownless"
+msgstr "无冠巨像之心"
+
+msgid "weekly_border_flame"
+msgstr "无序边境之火"
+
+msgid "weekly_bell"
+msgstr "昔日咏叹之钟"
+
 msgid "Use Liberation"
 msgstr "공명 해방 사용"
 

@@ -756,6 +756,48 @@ msgstr "維里奈2鏈"
 msgid "Chisa DPS"
 msgstr "千咲主C"
 
+msgid "Weekly Boss Challenge"
+msgstr "週本挑戰"
+
+msgid "Weekly Boss"
+msgstr "目標週本"
+
+msgid "Claim all remaining weekly rewards from one boss, then verify zero remaining. Current stamina only; keep default difficulty and team."
+msgstr "領取同一週本的全部剩餘獎勵，結束後複核次數為零。僅使用目前體力；保留預設難度和目前隊伍。"
+
+msgid "Use this boss for every remaining reward this run. Does not change difficulty or team."
+msgstr "本輪所有剩餘次數挑戰同一週本，不調整難度或隊伍。"
+
+msgid "weekly_fallen_court"
+msgstr "失坠困咎之庭"
+
+msgid "weekly_false_god"
+msgstr "虚妄诞生之种"
+
+msgid "weekly_star_gate"
+msgstr "星海迷途之扉"
+
+msgid "weekly_apocalypse"
+msgstr "烬夜天启之章"
+
+msgid "weekly_fate_wheel"
+msgstr "命途断章之轮"
+
+msgid "weekly_crimson_curtain"
+msgstr "彼世猩红之幕"
+
+msgid "weekly_temporal"
+msgstr "时序命定之争"
+
+msgid "weekly_crownless"
+msgstr "无冠巨像之心"
+
+msgid "weekly_border_flame"
+msgstr "无序边境之火"
+
+msgid "weekly_bell"
+msgstr "昔日咏叹之钟"
+
 msgid "Use Liberation"
 msgstr "使用共鳴解放"
 
