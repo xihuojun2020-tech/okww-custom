@@ -1489,3 +1489,21 @@ msgstr "中央の塔3～4階 耐性属性2（メインアタッカーは極力�
 
 msgid "中塔3—4层逆属性2（主C尽量避开）；长期保存，本次运行中修改将在下次生效"
 msgstr "中央の塔3～4階 耐性属性2（メインアタッカーは極力回避）；設定を保存。実行中の変更は次回から適用"
+
+msgid "Piano Teaching"
+msgstr "ピアノレッスン"
+
+msgid "Open the piano teaching screen first; highlighted notes and chords are played automatically."
+msgstr "先にピアノレッスン画面を開いてください。ハイライトされた音符と和音を自動演奏します。"
+
+msgid "Sample Interval"
+msgstr "サンプリング間隔"
+
+msgid "Key Hold Time"
+msgstr "キー保持時間"
+
+msgid "Seconds between piano highlight samples (0.03–0.08)."
+msgstr "ピアノのハイライトを確認する間隔（秒、0.03～0.08）。"
+
+msgid "Seconds to hold every detected note or chord (0.02–0.08)."
+msgstr "検出した音符または和音を押し続ける時間（秒、0.02～0.08）。"

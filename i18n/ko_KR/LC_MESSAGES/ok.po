@@ -1492,3 +1492,21 @@ msgstr "중앙 탑 3~4층 저항 속성 2(메인 딜러 가급적 제외)"
 
 msgid "中塔3—4层逆属性2（主C尽量避开）；长期保存，本次运行中修改将在下次生效"
 msgstr "중앙 탑 3~4층 저항 속성 2(메인 딜러 가급적 제외)；설정을 저장합니다. 실행 중 변경은 다음 실행부터 적용됩니다"
+
+msgid "Piano Teaching"
+msgstr "피아노 레슨"
+
+msgid "Open the piano teaching screen first; highlighted notes and chords are played automatically."
+msgstr "먼저 피아노 레슨 화면을 여세요. 강조된 음과 화음을 자동으로 연주합니다."
+
+msgid "Sample Interval"
+msgstr "샘플 간격"
+
+msgid "Key Hold Time"
+msgstr "키 누름 시간"
+
+msgid "Seconds between piano highlight samples (0.03–0.08)."
+msgstr "피아노 강조 표시를 확인하는 간격(초, 0.03–0.08)."
+
+msgid "Seconds to hold every detected note or chord (0.02–0.08)."
+msgstr "감지된 음 또는 화음을 누르는 시간(초, 0.02–0.08)."

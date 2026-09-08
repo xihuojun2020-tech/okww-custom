@@ -1439,6 +1439,24 @@ msgstr ""
 "secundario)；Se guarda. Los cambios durante la ejecución se aplican en la "
 "siguiente"
 
+msgid "Piano Teaching"
+msgstr "Lección de piano"
+
+msgid "Open the piano teaching screen first; highlighted notes and chords are played automatically."
+msgstr "Abre primero la pantalla de lección de piano; las notas y acordes resaltados se tocarán automáticamente."
+
+msgid "Sample Interval"
+msgstr "Intervalo de muestreo"
+
+msgid "Key Hold Time"
+msgstr "Duración de la pulsación"
+
+msgid "Seconds between piano highlight samples (0.03–0.08)."
+msgstr "Segundos entre muestras del resaltado del piano (0.03–0.08)."
+
+msgid "Seconds to hold every detected note or chord (0.02–0.08)."
+msgstr "Segundos que se mantiene cada nota o acorde detectado (0.02–0.08)."
+
 msgid "Center Lower Resisted 2"
 msgstr ""
 "Torre central, pisos 1–2 Resistencia 2 (evitar DPS principal si es posible)"

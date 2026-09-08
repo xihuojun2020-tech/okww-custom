@@ -1,0 +1,122 @@
+"""Play notes highlighted by the Wuthering Waves piano teaching UI."""
+import time
+
+from ok import TaskDisabledException
+
+from src.task.BaseWWTask import BaseWWTask
+from src.task.WWOneTimeTask import WWOneTimeTask
+from src.task.piano import KEY_ORDER, PianoDetector, PianoStateMachine
+
+
+class PianoTeachingTask(WWOneTimeTask, BaseWWTask):
+    navigation_section = "tests"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.name = "Piano Teaching"
+        self.description = "Open the piano teaching screen first; highlighted notes and chords are played automatically."
+        self.group_name = "🧪 测试功能"
+        self.supported_languages = ["zh_CN"]
+        self.support_schedule_task = False
+        self.default_config.update({
+            "Sample Interval": 0.05,
+            "Key Hold Time": 0.03,
+        })
+        self.config_description.update({
+            "Sample Interval": "Seconds between piano highlight samples (0.03–0.08).",
+            "Key Hold Time": "Seconds to hold every detected note or chord (0.02–0.08).",
+        })
+        self._pressed_keys = []
+
+    def validate_config(self, key, value):
+        limits = {
+            "Sample Interval": (0.03, 0.08),
+            "Key Hold Time": (0.02, 0.08),
+        }
+        if key in limits and (type(value) not in (int, float) or not limits[key][0] <= value <= limits[key][1]):
+            return f"{key} must be between {limits[key][0]} and {limits[key][1]}"
+        return None
+
+    def _release_pressed(self):
+        for key in tuple(reversed(self._pressed_keys)):
+            try:
+                self.send_key_up(key)
+            except Exception as error:
+                self.log_warning(f"释放钢琴按键 {key.upper()} 失败: {error}")
+            else:
+                self._pressed_keys.remove(key)
+
+    def _press_event(self, event, hold_time):
+        if not event.keys or len(set(event.keys)) != len(event.keys) \
+                or any(key not in KEY_ORDER for key in event.keys):
+            raise ValueError("invalid piano chord")
+        try:
+            for key in event.keys:
+                lower = key.lower()
+                self._pressed_keys.append(lower)
+                self.send_key_down(lower)
+            self.sleep(hold_time)
+        finally:
+            self._release_pressed()
+        if self._pressed_keys:
+            raise RuntimeError("钢琴按键未能全部释放，任务已停止")
+
+    @staticmethod
+    def _diagnostic_crop(frame):
+        if frame is None:
+            return None
+        height, width = frame.shape[:2]
+        return frame[round(height * 0.64):round(height * 0.96),
+                     round(width * 0.26):round(width * 0.76)].copy()
+
+    def run(self):
+        WWOneTimeTask.run(self)
+        if self.game_lang != "zh_CN":
+            raise RuntimeError("弹琴教学首版仅支持简体中文游戏")
+        detector = PianoDetector()
+        tracker = PianoStateMachine()
+        interval = float(self.config.get("Sample Interval", 0.05))
+        hold_time = float(self.config.get("Key Hold Time", 0.03))
+        invalid_frames = 0
+        frame = None
+        self.info_set("弹琴状态", "等待高亮")
+        try:
+            while True:
+                started = time.monotonic()
+                frame = self.next_frame()
+                if frame is None:
+                    raise RuntimeError("无法取得游戏截图")
+                result = detector.analyze(frame)
+                if result.status == "invalid_roi":
+                    invalid_frames += 1
+                    self.info_set("弹琴状态", result.reason)
+                    if invalid_frames >= 3:
+                        raise RuntimeError(f"未找到有效钢琴界面: {result.reason}")
+                else:
+                    invalid_frames = 0
+                    event = tracker.step(result, time.monotonic())
+                    if event:
+                        label = "+".join(event.keys)
+                        self.info_set("弹琴状态", f"按下 {label}")
+                        self._press_event(event, hold_time)
+                    elif result.uncertain_keys:
+                        self.info_set("弹琴状态", "等待高亮稳定")
+                    else:
+                        self.info_set("弹琴状态", "等待高亮")
+                remaining = interval - (time.monotonic() - started)
+                if remaining > 0:
+                    self.sleep(remaining)
+        except TaskDisabledException:
+            raise
+        except Exception:
+            if (crop := self._diagnostic_crop(frame)) is not None and crop.size:
+                self.screenshot("piano_teaching_stopped", frame=crop)
+            raise
+        finally:
+            self._release_pressed()
+
+    def on_destroy(self):
+        self._release_pressed()
+        parent = getattr(super(), "on_destroy", None)
+        if parent:
+            parent()

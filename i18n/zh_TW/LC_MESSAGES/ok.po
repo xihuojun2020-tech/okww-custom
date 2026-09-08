@@ -1615,3 +1615,21 @@ msgstr "中塔3—4層 逆屬性2（主C盡量避開）"
 
 msgid "中塔3—4层逆属性2（主C尽量避开）；长期保存，本次运行中修改将在下次生效"
 msgstr "中塔3—4層 逆屬性2（主C盡量避開）；長期儲存，本次執行中修改將在下次生效"
+
+msgid "Piano Teaching"
+msgstr "彈琴教學"
+
+msgid "Open the piano teaching screen first; highlighted notes and chords are played automatically."
+msgstr "請先開啟彈琴教學介面；程式會自動彈奏高亮的音符與和弦。"
+
+msgid "Sample Interval"
+msgstr "取樣間隔"
+
+msgid "Key Hold Time"
+msgstr "按鍵持續時間"
+
+msgid "Seconds between piano highlight samples (0.03–0.08)."
+msgstr "兩次鋼琴高亮取樣之間的秒數（0.03–0.08）。"
+
+msgid "Seconds to hold every detected note or chord (0.02–0.08)."
+msgstr "每個已識別音符或和弦的按住秒數（0.02–0.08）。"
