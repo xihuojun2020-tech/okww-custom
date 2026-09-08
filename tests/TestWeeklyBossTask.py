@@ -126,6 +126,56 @@ class TestWeeklyBossFlow(unittest.TestCase):
 
 
 class TestWeeklyBossBoundaries(unittest.TestCase):
+    def combat_task(self, error):
+        task = self.task()
+        task.wait_until = Mock(return_value=True)
+        task.combat_once = Mock(side_effect=error)
+        task._release_movement = Mock()
+        task.reset_to_false = Mock()
+        task.combat_end = Mock()
+        task._battle_finished = Mock(return_value=True)
+        return task
+
+    def test_unknown_combat_recovers_only_after_victory_evidence(self):
+        from src.task.BaseCombatTask import CombatStateUnknown
+        task = self.combat_task(CombatStateUnknown('liberation timeout'))
+        task._battle_finished.side_effect = [None, True, True]
+        task._fight()
+        self.assertEqual(task._battle_finished.call_count, 3)
+        task.combat_end.assert_called_once()
+        self.assertTrue(task.skip_combat_check)
+        self.assertNotIn('已确认领奖', task.info)
+
+    def test_unknown_combat_without_evidence_remains_failure(self):
+        from src.task.BaseCombatTask import CombatStateUnknown
+        from src.task.WeeklyBossTask import WeeklyPageTimeout
+        error = CombatStateUnknown('liberation timeout')
+        task = self.combat_task(error)
+        task._stable_value = Mock(side_effect=WeeklyPageTimeout('no victory'))
+        with self.assertRaises(CombatStateUnknown) as caught:
+            task._fight()
+        self.assertIs(caught.exception, error)
+        task.combat_end.assert_not_called()
+
+    def test_death_stop_and_capture_loss_are_not_victory(self):
+        from ok import TaskDisabledException
+        from src.task.BaseCombatTask import CharDeadException
+        from src.runtime.game_runtime_errors import FrameUnavailable
+        for error in (CharDeadException(), TaskDisabledException(), FrameUnavailable('lost')):
+            task = self.combat_task(error)
+            with self.assertRaises(type(error)):
+                task._fight()
+            task._battle_finished.assert_not_called()
+
+    def test_stop_during_victory_verification_propagates(self):
+        from ok import TaskDisabledException
+        from src.task.BaseCombatTask import CombatStateUnknown
+        task = self.combat_task(CombatStateUnknown('timeout'))
+        task._battle_finished.side_effect = TaskDisabledException()
+        with self.assertRaises(TaskDisabledException):
+            task._fight()
+        task.combat_end.assert_not_called()
+
     def task(self):
         task = object.__new__(WeeklyBossTask)
         task.logger = Mock()

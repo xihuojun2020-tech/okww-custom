@@ -13,6 +13,7 @@ import numpy as np
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('captures', type=Path)
+    parser.add_argument('--victory', type=Path, help='Optional arena victory failure screenshot')
     args = parser.parse_args()
     output = Path(__file__).resolve().parents[1] / 'tests/images/weekly_boss'
     output.mkdir(parents=True, exist_ok=True)
@@ -27,8 +28,10 @@ def main():
         'settlement': ('11_10_54', [(0.4, 0.265, 0.6, 0.325), (0.24, 0.46, 0.765, 0.595),
                                       (0.28, 0.81, 0.73, 0.95)]),
     }
+    if args.victory:
+        samples['victory'] = (args.victory, [(0.4, 0.235, 0.6, 0.315)])
     for name, (stamp, regions) in samples.items():
-        source = args.captures / f'鸣潮   2026_9_8 {stamp}.png'
+        source = stamp if isinstance(stamp, Path) else args.captures / f'鸣潮   2026_9_8 {stamp}.png'
         frame = cv2.imdecode(np.fromfile(source, dtype=np.uint8), cv2.IMREAD_COLOR)
         if frame is None:
             raise ValueError(f'Cannot decode {source.name}')

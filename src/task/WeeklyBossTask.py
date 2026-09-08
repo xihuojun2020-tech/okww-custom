@@ -3,7 +3,7 @@ import re
 import time
 
 from ok import TaskDisabledException
-from src.task.BaseCombatTask import BaseCombatTask
+from src.task.BaseCombatTask import BaseCombatTask, CombatStateUnknown
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.weekly_boss import (
     WEEKLY_BOSSES, WeeklyBossResult, compact, boss_title, match_target_button,
@@ -28,6 +28,7 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
     EXIT = (0.285, 0.82, 0.465, 0.89)
     RETRY = (0.54, 0.82, 0.72, 0.89)
     SUCCESS = (0.4, 0.265, 0.6, 0.325)
+    VICTORY = (0.4, 0.235, 0.6, 0.315)
     REWARDS = (0.24, 0.46, 0.765, 0.595)
     COST = (0.914, 0.829, 0.967, 0.869)
     STAMINA = (0.78, 0.033, 0.89, 0.079)
@@ -49,7 +50,7 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         self.config_description['Weekly Boss'] = 'Use this boss for every remaining reward this run. Does not change difficulty or team.'
         self.target_enemy_time_out = 3
         self.switch_char_time_out = 5
-        self.combat_end_condition = self._reward_available
+        self.combat_end_condition = self._battle_finished
         self.last_result = None
 
     def _stage(self, message):
@@ -185,6 +186,11 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         claim = self._button((0.69, 0.49, 0.80, 0.545), '领取奖励', frame)
         return claim if f and claim and abs(f.y - claim.y) <= self.height * 0.015 else None
 
+    def _battle_finished(self):
+        # Arena victory is not a reward receipt. No input or claim accounting.
+        return bool(self._reward_available() or
+                    self._button(self.VICTORY, '挑战成功'))
+
     def on_combat_check(self):
         # FarmEcho's hook presses arbitrary F prompts; weekly rewards are only
         # claimed by the explicit post-combat state below.
@@ -212,6 +218,19 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         self.skip_combat_check = False
         try:
             self.combat_once(wait_combat_time=10, raise_if_not_found=True)
+        except CombatStateUnknown as error:
+            # A liberation can outlast the boss. Verify fresh victory evidence
+            # rather than treating every animation timeout as successful combat.
+            self.skip_combat_check = True
+            self._release_movement()
+            self._stage('战斗状态待确认：检查挑战成功或领奖交互')
+            try:
+                self._stable_value(lambda: True if self._battle_finished() else None,
+                                   '未确认周本胜利，保留战斗异常', timeout=5)
+            except WeeklyPageTimeout as verification_error:
+                raise error from verification_error
+            self.log_info('周本胜利已连续确认，恢复战后寻奖；尚未计入领奖次数')
+            self.combat_end()
         finally:
             self.skip_combat_check = True
         self.reset_to_false('weekly combat returned; verify reward')

@@ -44,6 +44,19 @@ class TestWeeklyBossImages(TaskTestCase):
     def test_claim_is_the_f_interaction(self):
         self.load('claim')
         self.assertTrue(self.task._reward_available())
+        self.assertTrue(self.task._battle_finished())
+
+    def test_arena_victory_is_combat_end_not_reward_receipt(self):
+        self.load('victory')
+        self.assertTrue(self.task._battle_finished())
+        self.assertFalse(self.task._reward_available())
+        self.assertFalse(self.task._settlement())
+        self.assertEqual(self.task.combat_end_condition, self.task._battle_finished)
+
+    def test_noncombat_pages_are_not_victory(self):
+        for name in ('list1', 'detail', 'team'):
+            self.load(name)
+            self.assertFalse(self.task._battle_finished(), name)
 
     def test_settlement_has_both_actions_rewards_and_stamina(self):
         self.load('settlement')
@@ -61,7 +74,7 @@ class TestWeeklyBossImages(TaskTestCase):
     def test_claim_and_result_at_other_16x9_resolutions(self):
         with tempfile.TemporaryDirectory() as directory:
             for height in (720, 1080, 2160):
-                for name in ('claim', 'settlement', 'detail'):
+                for name in ('claim', 'settlement', 'detail', 'victory'):
                     with self.subTest(height=height, name=name):
                         source = cv2.imread(f'tests/images/weekly_boss/{name}.png')
                         resized = cv2.resize(source, (height * 16 // 9, height))
@@ -73,6 +86,9 @@ class TestWeeklyBossImages(TaskTestCase):
                         elif name == 'settlement':
                             self.assertTrue(self.task._settlement())
                             self.assertEqual(self.task.get_settlement_stamina(), 169)
+                        elif name == 'victory':
+                            self.assertTrue(self.task._battle_finished())
+                            self.assertFalse(self.task._settlement())
                         else:
                             self.assertTrue(self.task._detail_ready(WEEKLY_BOSSES[1]))
                             self.assertEqual(parse_remaining(self.task._text(self.task.DETAIL_COUNT)), 3)
