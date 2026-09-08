@@ -12,6 +12,7 @@ from src.Labels import Labels
 from src.task.AutoAbyssTask import (
     AVAILABLE,
     AbyssTeamUnavailable,
+    AbyssCenterUnavailable,
     AutoAbyssTask,
     CENTER_TOWER_FIRST,
     CharacterScanRecord,
@@ -58,6 +59,69 @@ from src.task.BaseCombatTask import CharDeadException
 
 
 class TestAutoAbyssTask(unittest.TestCase):
+    def allocation_task(self, records, states, priority=CENTER_TOWER_FIRST, config=None):
+        from src.task.abyss_allocation import rules_from_config
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task._abyss_rules = rules_from_config(config or {})
+        task._allocation_context = ("深境之塔", first_available_floor(states), {"深境之塔": states}, priority)
+        task.sleep = lambda _: None
+        task.info_set = lambda *_: None
+        task.log_info = lambda *_: None
+        return task
+
+    def test_global_allocation_resumes_floor_three_with_upper_rules(self):
+        records = [CharacterScanRecord(x, x, 10, 90, .9, 1, i) for i, x in enumerate(
+            (Labels.char_qingxiao, Labels.char_denia, Labels.char_chisa, Labels.char_aemeath))]
+        task = self.allocation_task(records, (COMPLETED, COMPLETED, AVAILABLE, LOCKED),
+                                    config={"Center Upper Resisted 1": "气动"})
+        plan = task._allocate_remaining(records)
+        self.assertNotIn(Labels.char_qingxiao, plan.members)
+        self.assertEqual(set(task._scheduled_teams), {("深境之塔", 2), ("深境之塔", 3)})
+
+    def test_center_preflight_failure_stops_before_team_selection(self):
+        records = [CharacterScanRecord(x, x, 10, 90, .9, 1, i) for i, x in enumerate(
+            (Labels.char_qingxiao, Labels.char_denia, Labels.char_chisa))]
+        task = self.allocation_task(records, (AVAILABLE, LOCKED, LOCKED, LOCKED),
+                                    config={"Center Upper Resisted 1": "气动"})
+        with self.assertRaisesRegex(AbyssCenterUnavailable, "停止整个任务"):
+            task._allocate_remaining(records)
+
+    def test_actual_energy_refresh_replans_unfinished_floors(self):
+        records = [CharacterScanRecord(x, x, 10, 90, .9, 1, i) for i, x in enumerate(
+            (Labels.char_qingxiao, Labels.char_denia, Labels.char_chisa))]
+        task = self.allocation_task(records, (AVAILABLE, LOCKED))
+        task._allocate_remaining(records)
+        with self.assertRaisesRegex(AbyssCenterUnavailable, "体力"):
+            task._allocate_remaining([replace(r, energy=4) for r in records])
+
+    def test_planned_team_change_returns_even_with_sufficient_energy(self):
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task._scheduled_teams = {("深境之塔", 1): SimpleNamespace(members=("a", "b", "c")),
+                                 ("深境之塔", 2): SimpleNamespace(members=("d", "b", "c"))}
+        task._set_status = lambda *_: None
+        task._click_start_challenge = lambda: None
+        task._prepare_challenge_map = lambda *_: None
+        task._run_floor_combat = lambda *_: None
+        task._wait_abyss_result = lambda: ("continue", "continue-button")
+        task._wait_exact_text = lambda *_: "return-button"
+        clicks = []
+        task.click_box = lambda box, **_: clicks.append(box)
+        task._wait_for_tower_screen = lambda: None
+        self.assertEqual(task._fight_selected_tower("深境之塔", 1, 10), ("需要重新编队", 1))
+        self.assertEqual(clicks, ["return-button"])
+
+    def test_center_shortage_is_not_caught_as_skip_tower(self):
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task.config = {"Tower Priority": CENTER_TOWER_FIRST}
+        task._set_status = lambda *_: None
+        task._enter_and_scan_characters = lambda *_: []
+        task._plan_and_form_team = lambda *_args, **_kw: (_ for _ in ()).throw(AbyssTeamUnavailable("missing"))
+        returns = []
+        task._return_from_team_to_towers = lambda: returns.append(True)
+        with self.assertRaises(AbyssCenterUnavailable):
+            task._run_towers({"深境之塔": (AVAILABLE,), "残响之塔": (AVAILABLE,), "回音之塔": (AVAILABLE,)})
+        self.assertEqual(returns, [True])
+
     def test_qingxiao_character_scan_from_720p_through_4k(self):
         class OfflineAbyssTask(AutoAbyssTask):
             @property

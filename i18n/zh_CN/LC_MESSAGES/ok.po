@@ -1651,3 +1651,93 @@ msgid ""
 "Hotkey {key} unavailable (error {code}). Use the button or select another "
 "key."
 msgstr "快捷键 {key} 注册失败（错误 {code}）。请使用按钮或选择其他快捷键。"
+
+msgid "冷凝"
+msgstr "冷凝"
+
+msgid "热熔"
+msgstr "热熔"
+
+msgid "导电"
+msgstr "导电"
+
+msgid "气动"
+msgstr "气动"
+
+msgid "衍射"
+msgstr "衍射"
+
+msgid "湮灭"
+msgstr "湮灭"
+
+msgid "Left Favored"
+msgstr "左塔 顺属性"
+
+msgid "左塔顺属性；长期保存，本次运行中修改将在下次生效"
+msgstr "左塔 顺属性；长期保存，本次运行中修改将在下次生效"
+
+msgid "Left Resisted"
+msgstr "左塔 逆属性（允许兜底）"
+
+msgid "左塔逆属性（允许兜底）；长期保存，本次运行中修改将在下次生效"
+msgstr "左塔 逆属性（允许兜底）；长期保存，本次运行中修改将在下次生效"
+
+msgid "Right Favored"
+msgstr "右塔 顺属性"
+
+msgid "右塔顺属性；长期保存，本次运行中修改将在下次生效"
+msgstr "右塔 顺属性；长期保存，本次运行中修改将在下次生效"
+
+msgid "Right Resisted"
+msgstr "右塔 逆属性（允许兜底）"
+
+msgid "右塔逆属性（允许兜底）；长期保存，本次运行中修改将在下次生效"
+msgstr "右塔 逆属性（允许兜底）；长期保存，本次运行中修改将在下次生效"
+
+msgid "Center Lower Favored 1"
+msgstr "中塔1—2层 顺属性1"
+
+msgid "中塔1—2层顺属性1；长期保存，本次运行中修改将在下次生效"
+msgstr "中塔1—2层 顺属性1；长期保存，本次运行中修改将在下次生效"
+
+msgid "Center Lower Favored 2"
+msgstr "中塔1—2层 顺属性2（同优先级）"
+
+msgid "中塔1—2层顺属性2（同优先级）；长期保存，本次运行中修改将在下次生效"
+msgstr "中塔1—2层 顺属性2（同优先级）；长期保存，本次运行中修改将在下次生效"
+
+msgid "Center Lower Resisted 1"
+msgstr "中塔1—2层 逆属性1（禁止主C和副C）"
+
+msgid "中塔1—2层逆属性1（禁止主C和副C）；长期保存，本次运行中修改将在下次生效"
+msgstr "中塔1—2层 逆属性1（禁止主C和副C）；长期保存，本次运行中修改将在下次生效"
+
+msgid "Center Lower Resisted 2"
+msgstr "中塔1—2层 逆属性2（主C尽量避开）"
+
+msgid "中塔1—2层逆属性2（主C尽量避开）；长期保存，本次运行中修改将在下次生效"
+msgstr "中塔1—2层 逆属性2（主C尽量避开）；长期保存，本次运行中修改将在下次生效"
+
+msgid "Center Upper Favored 1"
+msgstr "中塔3—4层 顺属性1"
+
+msgid "中塔3—4层顺属性1；长期保存，本次运行中修改将在下次生效"
+msgstr "中塔3—4层 顺属性1；长期保存，本次运行中修改将在下次生效"
+
+msgid "Center Upper Favored 2"
+msgstr "中塔3—4层 顺属性2（同优先级）"
+
+msgid "中塔3—4层顺属性2（同优先级）；长期保存，本次运行中修改将在下次生效"
+msgstr "中塔3—4层 顺属性2（同优先级）；长期保存，本次运行中修改将在下次生效"
+
+msgid "Center Upper Resisted 1"
+msgstr "中塔3—4层 逆属性1（禁止主C和副C）"
+
+msgid "中塔3—4层逆属性1（禁止主C和副C）；长期保存，本次运行中修改将在下次生效"
+msgstr "中塔3—4层 逆属性1（禁止主C和副C）；长期保存，本次运行中修改将在下次生效"
+
+msgid "Center Upper Resisted 2"
+msgstr "中塔3—4层 逆属性2（主C尽量避开）"
+
+msgid "中塔3—4层逆属性2（主C尽量避开）；长期保存，本次运行中修改将在下次生效"
+msgstr "中塔3—4层 逆属性2（主C尽量避开）；长期保存，本次运行中修改将在下次生效"

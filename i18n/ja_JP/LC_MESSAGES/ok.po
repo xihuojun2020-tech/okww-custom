@@ -1354,3 +1354,96 @@ msgid ""
 "Hotkey {key} unavailable (error {code}). Use the button or select another "
 "key."
 msgstr "ホットキー {key} を登録できません（エラー {code}）。ボタンを使うか別のキーを選択してください。"
+
+msgid "无"
+msgstr "なし"
+
+msgid "冷凝"
+msgstr "凝縮"
+
+msgid "热熔"
+msgstr "焦熱"
+
+msgid "导电"
+msgstr "電導"
+
+msgid "气动"
+msgstr "気動"
+
+msgid "衍射"
+msgstr "回折"
+
+msgid "湮灭"
+msgstr "消滅"
+
+msgid "Left Favored"
+msgstr "左の塔 有利属性"
+
+msgid "左塔顺属性；长期保存，本次运行中修改将在下次生效"
+msgstr "左の塔 有利属性；設定を保存。実行中の変更は次回から適用"
+
+msgid "Left Resisted"
+msgstr "左の塔 耐性属性（最終候補として許可）"
+
+msgid "左塔逆属性（允许兜底）；长期保存，本次运行中修改将在下次生效"
+msgstr "左の塔 耐性属性（最終候補として許可）；設定を保存。実行中の変更は次回から適用"
+
+msgid "Right Favored"
+msgstr "右の塔 有利属性"
+
+msgid "右塔顺属性；长期保存，本次运行中修改将在下次生效"
+msgstr "右の塔 有利属性；設定を保存。実行中の変更は次回から適用"
+
+msgid "Right Resisted"
+msgstr "右の塔 耐性属性（最終候補として許可）"
+
+msgid "右塔逆属性（允许兜底）；长期保存，本次运行中修改将在下次生效"
+msgstr "右の塔 耐性属性（最終候補として許可）；設定を保存。実行中の変更は次回から適用"
+
+msgid "Center Lower Favored 1"
+msgstr "中央の塔1～2階 有利属性1"
+
+msgid "中塔1—2层顺属性1；长期保存，本次运行中修改将在下次生效"
+msgstr "中央の塔1～2階 有利属性1；設定を保存。実行中の変更は次回から適用"
+
+msgid "Center Lower Favored 2"
+msgstr "中央の塔1～2階 有利属性2（同優先度）"
+
+msgid "中塔1—2层顺属性2（同优先级）；长期保存，本次运行中修改将在下次生效"
+msgstr "中央の塔1～2階 有利属性2（同優先度）；設定を保存。実行中の変更は次回から適用"
+
+msgid "Center Lower Resisted 1"
+msgstr "中央の塔1～2階 耐性属性1（メイン・サブアタッカー禁止）"
+
+msgid "中塔1—2层逆属性1（禁止主C和副C）；长期保存，本次运行中修改将在下次生效"
+msgstr "中央の塔1～2階 耐性属性1（メイン・サブアタッカー禁止）；設定を保存。実行中の変更は次回から適用"
+
+msgid "Center Lower Resisted 2"
+msgstr "中央の塔1～2階 耐性属性2（メインアタッカーは極力回避）"
+
+msgid "中塔1—2层逆属性2（主C尽量避开）；长期保存，本次运行中修改将在下次生效"
+msgstr "中央の塔1～2階 耐性属性2（メインアタッカーは極力回避）；設定を保存。実行中の変更は次回から適用"
+
+msgid "Center Upper Favored 1"
+msgstr "中央の塔3～4階 有利属性1"
+
+msgid "中塔3—4层顺属性1；长期保存，本次运行中修改将在下次生效"
+msgstr "中央の塔3～4階 有利属性1；設定を保存。実行中の変更は次回から適用"
+
+msgid "Center Upper Favored 2"
+msgstr "中央の塔3～4階 有利属性2（同優先度）"
+
+msgid "中塔3—4层顺属性2（同优先级）；长期保存，本次运行中修改将在下次生效"
+msgstr "中央の塔3～4階 有利属性2（同優先度）；設定を保存。実行中の変更は次回から適用"
+
+msgid "Center Upper Resisted 1"
+msgstr "中央の塔3～4階 耐性属性1（メイン・サブアタッカー禁止）"
+
+msgid "中塔3—4层逆属性1（禁止主C和副C）；长期保存，本次运行中修改将在下次生效"
+msgstr "中央の塔3～4階 耐性属性1（メイン・サブアタッカー禁止）；設定を保存。実行中の変更は次回から適用"
+
+msgid "Center Upper Resisted 2"
+msgstr "中央の塔3～4階 耐性属性2（メインアタッカーは極力回避）"
+
+msgid "中塔3—4层逆属性2（主C尽量避开）；长期保存，本次运行中修改将在下次生效"
+msgstr "中央の塔3～4階 耐性属性2（メインアタッカーは極力回避）；設定を保存。実行中の変更は次回から適用"

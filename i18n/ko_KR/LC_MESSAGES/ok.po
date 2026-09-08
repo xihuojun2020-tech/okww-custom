@@ -1357,3 +1357,96 @@ msgid ""
 "Hotkey {key} unavailable (error {code}). Use the button or select another "
 "key."
 msgstr "단축키 {key} 등록 실패 (오류 {code}). 버튼을 사용하거나 다른 키를 선택하세요."
+
+msgid "无"
+msgstr "없음"
+
+msgid "冷凝"
+msgstr "응결"
+
+msgid "热熔"
+msgstr "용융"
+
+msgid "导电"
+msgstr "전도"
+
+msgid "气动"
+msgstr "기류"
+
+msgid "衍射"
+msgstr "회절"
+
+msgid "湮灭"
+msgstr "인멸"
+
+msgid "Left Favored"
+msgstr "왼쪽 탑 유리 속성"
+
+msgid "左塔顺属性；长期保存，本次运行中修改将在下次生效"
+msgstr "왼쪽 탑 유리 속성；설정을 저장합니다. 실행 중 변경은 다음 실행부터 적용됩니다"
+
+msgid "Left Resisted"
+msgstr "왼쪽 탑 저항 속성(최후 수단 허용)"
+
+msgid "左塔逆属性（允许兜底）；长期保存，本次运行中修改将在下次生效"
+msgstr "왼쪽 탑 저항 속성(최후 수단 허용)；설정을 저장합니다. 실행 중 변경은 다음 실행부터 적용됩니다"
+
+msgid "Right Favored"
+msgstr "오른쪽 탑 유리 속성"
+
+msgid "右塔顺属性；长期保存，本次运行中修改将在下次生效"
+msgstr "오른쪽 탑 유리 속성；설정을 저장합니다. 실행 중 변경은 다음 실행부터 적용됩니다"
+
+msgid "Right Resisted"
+msgstr "오른쪽 탑 저항 속성(최후 수단 허용)"
+
+msgid "右塔逆属性（允许兜底）；长期保存，本次运行中修改将在下次生效"
+msgstr "오른쪽 탑 저항 속성(최후 수단 허용)；설정을 저장합니다. 실행 중 변경은 다음 실행부터 적용됩니다"
+
+msgid "Center Lower Favored 1"
+msgstr "중앙 탑 1~2층 유리 속성 1"
+
+msgid "中塔1—2层顺属性1；长期保存，本次运行中修改将在下次生效"
+msgstr "중앙 탑 1~2층 유리 속성 1；설정을 저장합니다. 실행 중 변경은 다음 실행부터 적용됩니다"
+
+msgid "Center Lower Favored 2"
+msgstr "중앙 탑 1~2층 유리 속성 2(동일 우선순위)"
+
+msgid "中塔1—2层顺属性2（同优先级）；长期保存，本次运行中修改将在下次生效"
+msgstr "중앙 탑 1~2층 유리 속성 2(동일 우선순위)；설정을 저장합니다. 실행 중 변경은 다음 실행부터 적용됩니다"
+
+msgid "Center Lower Resisted 1"
+msgstr "중앙 탑 1~2층 저항 속성 1(메인·서브 딜러 금지)"
+
+msgid "中塔1—2层逆属性1（禁止主C和副C）；长期保存，本次运行中修改将在下次生效"
+msgstr "중앙 탑 1~2층 저항 속성 1(메인·서브 딜러 금지)；설정을 저장합니다. 실행 중 변경은 다음 실행부터 적용됩니다"
+
+msgid "Center Lower Resisted 2"
+msgstr "중앙 탑 1~2층 저항 속성 2(메인 딜러 가급적 제외)"
+
+msgid "中塔1—2层逆属性2（主C尽量避开）；长期保存，本次运行中修改将在下次生效"
+msgstr "중앙 탑 1~2층 저항 속성 2(메인 딜러 가급적 제외)；설정을 저장합니다. 실행 중 변경은 다음 실행부터 적용됩니다"
+
+msgid "Center Upper Favored 1"
+msgstr "중앙 탑 3~4층 유리 속성 1"
+
+msgid "中塔3—4层顺属性1；长期保存，本次运行中修改将在下次生效"
+msgstr "중앙 탑 3~4층 유리 속성 1；설정을 저장합니다. 실행 중 변경은 다음 실행부터 적용됩니다"
+
+msgid "Center Upper Favored 2"
+msgstr "중앙 탑 3~4층 유리 속성 2(동일 우선순위)"
+
+msgid "中塔3—4层顺属性2（同优先级）；长期保存，本次运行中修改将在下次生效"
+msgstr "중앙 탑 3~4층 유리 속성 2(동일 우선순위)；설정을 저장합니다. 실행 중 변경은 다음 실행부터 적용됩니다"
+
+msgid "Center Upper Resisted 1"
+msgstr "중앙 탑 3~4층 저항 속성 1(메인·서브 딜러 금지)"
+
+msgid "中塔3—4层逆属性1（禁止主C和副C）；长期保存，本次运行中修改将在下次生效"
+msgstr "중앙 탑 3~4층 저항 속성 1(메인·서브 딜러 금지)；설정을 저장합니다. 실행 중 변경은 다음 실행부터 적용됩니다"
+
+msgid "Center Upper Resisted 2"
+msgstr "중앙 탑 3~4층 저항 속성 2(메인 딜러 가급적 제외)"
+
+msgid "中塔3—4层逆属性2（主C尽量避开）；长期保存，本次运行中修改将在下次生效"
+msgstr "중앙 탑 3~4층 저항 속성 2(메인 딜러 가급적 제외)；설정을 저장합니다. 실행 중 변경은 다음 실행부터 적용됩니다"

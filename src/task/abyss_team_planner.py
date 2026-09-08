@@ -95,7 +95,7 @@ def effective_character_id(record):
     character_id = record.character_id
     if character_id in ROVER_CHARACTER_IDS:
         return getattr(record, "rover_form", None) or ROVER_UNKNOWN
-    return character_id
+    return char_dict.get(character_id, {}).get("canonical_name", character_id)
 
 
 def role_for_character(character_id):

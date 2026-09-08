@@ -1480,3 +1480,96 @@ msgid ""
 "Hotkey {key} unavailable (error {code}). Use the button or select another "
 "key."
 msgstr "快捷鍵 {key} 註冊失敗（錯誤 {code}）。請使用按鈕或選擇其他快捷鍵。"
+
+msgid "无"
+msgstr "無"
+
+msgid "冷凝"
+msgstr "冷凝"
+
+msgid "热熔"
+msgstr "熱熔"
+
+msgid "导电"
+msgstr "導電"
+
+msgid "气动"
+msgstr "氣動"
+
+msgid "衍射"
+msgstr "衍射"
+
+msgid "湮灭"
+msgstr "湮滅"
+
+msgid "Left Favored"
+msgstr "左塔 順屬性"
+
+msgid "左塔顺属性；长期保存，本次运行中修改将在下次生效"
+msgstr "左塔 順屬性；長期儲存，本次執行中修改將在下次生效"
+
+msgid "Left Resisted"
+msgstr "左塔 逆屬性（允許兜底）"
+
+msgid "左塔逆属性（允许兜底）；长期保存，本次运行中修改将在下次生效"
+msgstr "左塔 逆屬性（允許兜底）；長期儲存，本次執行中修改將在下次生效"
+
+msgid "Right Favored"
+msgstr "右塔 順屬性"
+
+msgid "右塔顺属性；长期保存，本次运行中修改将在下次生效"
+msgstr "右塔 順屬性；長期儲存，本次執行中修改將在下次生效"
+
+msgid "Right Resisted"
+msgstr "右塔 逆屬性（允許兜底）"
+
+msgid "右塔逆属性（允许兜底）；长期保存，本次运行中修改将在下次生效"
+msgstr "右塔 逆屬性（允許兜底）；長期儲存，本次執行中修改將在下次生效"
+
+msgid "Center Lower Favored 1"
+msgstr "中塔1—2層 順屬性1"
+
+msgid "中塔1—2层顺属性1；长期保存，本次运行中修改将在下次生效"
+msgstr "中塔1—2層 順屬性1；長期儲存，本次執行中修改將在下次生效"
+
+msgid "Center Lower Favored 2"
+msgstr "中塔1—2層 順屬性2（同優先級）"
+
+msgid "中塔1—2层顺属性2（同优先级）；长期保存，本次运行中修改将在下次生效"
+msgstr "中塔1—2層 順屬性2（同優先級）；長期儲存，本次執行中修改將在下次生效"
+
+msgid "Center Lower Resisted 1"
+msgstr "中塔1—2層 逆屬性1（禁止主C和副C）"
+
+msgid "中塔1—2层逆属性1（禁止主C和副C）；长期保存，本次运行中修改将在下次生效"
+msgstr "中塔1—2層 逆屬性1（禁止主C和副C）；長期儲存，本次執行中修改將在下次生效"
+
+msgid "Center Lower Resisted 2"
+msgstr "中塔1—2層 逆屬性2（主C盡量避開）"
+
+msgid "中塔1—2层逆属性2（主C尽量避开）；长期保存，本次运行中修改将在下次生效"
+msgstr "中塔1—2層 逆屬性2（主C盡量避開）；長期儲存，本次執行中修改將在下次生效"
+
+msgid "Center Upper Favored 1"
+msgstr "中塔3—4層 順屬性1"
+
+msgid "中塔3—4层顺属性1；长期保存，本次运行中修改将在下次生效"
+msgstr "中塔3—4層 順屬性1；長期儲存，本次執行中修改將在下次生效"
+
+msgid "Center Upper Favored 2"
+msgstr "中塔3—4層 順屬性2（同優先級）"
+
+msgid "中塔3—4层顺属性2（同优先级）；长期保存，本次运行中修改将在下次生效"
+msgstr "中塔3—4層 順屬性2（同優先級）；長期儲存，本次執行中修改將在下次生效"
+
+msgid "Center Upper Resisted 1"
+msgstr "中塔3—4層 逆屬性1（禁止主C和副C）"
+
+msgid "中塔3—4层逆属性1（禁止主C和副C）；长期保存，本次运行中修改将在下次生效"
+msgstr "中塔3—4層 逆屬性1（禁止主C和副C）；長期儲存，本次執行中修改將在下次生效"
+
+msgid "Center Upper Resisted 2"
+msgstr "中塔3—4層 逆屬性2（主C盡量避開）"
+
+msgid "中塔3—4层逆属性2（主C尽量避开）；长期保存，本次运行中修改将在下次生效"
+msgstr "中塔3—4層 逆屬性2（主C盡量避開）；長期儲存，本次執行中修改將在下次生效"

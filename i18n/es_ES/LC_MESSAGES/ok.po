@@ -1317,3 +1317,128 @@ msgid ""
 msgstr ""
 "La tecla {key} no está disponible (error {code}). Usa el botón o selecciona "
 "otra tecla."
+
+msgid "无"
+msgstr "Ninguno"
+
+msgid "冷凝"
+msgstr "Gelio"
+
+msgid "热熔"
+msgstr "Fusión"
+
+msgid "导电"
+msgstr "Electro"
+
+msgid "气动"
+msgstr "Aero"
+
+msgid "衍射"
+msgstr "Espectro"
+
+msgid "湮灭"
+msgstr "Destrucción"
+
+msgid "Left Favored"
+msgstr "Torre izquierda Elemento favorecido"
+
+msgid "左塔顺属性；长期保存，本次运行中修改将在下次生效"
+msgstr ""
+"Torre izquierda Elemento favorecido；Se guarda. Los cambios durante la "
+"ejecución se aplican en la siguiente"
+
+msgid "Left Resisted"
+msgstr "Torre izquierda Elemento resistido (último recurso permitido)"
+
+msgid "左塔逆属性（允许兜底）；长期保存，本次运行中修改将在下次生效"
+msgstr ""
+"Torre izquierda Elemento resistido (último recurso permitido)；Se guarda. Los"
+" cambios durante la ejecución se aplican en la siguiente"
+
+msgid "Right Favored"
+msgstr "Torre derecha Elemento favorecido"
+
+msgid "右塔顺属性；长期保存，本次运行中修改将在下次生效"
+msgstr ""
+"Torre derecha Elemento favorecido；Se guarda. Los cambios durante la "
+"ejecución se aplican en la siguiente"
+
+msgid "Right Resisted"
+msgstr "Torre derecha Elemento resistido (último recurso permitido)"
+
+msgid "右塔逆属性（允许兜底）；长期保存，本次运行中修改将在下次生效"
+msgstr ""
+"Torre derecha Elemento resistido (último recurso permitido)；Se guarda. Los "
+"cambios durante la ejecución se aplican en la siguiente"
+
+msgid "Center Lower Favored 1"
+msgstr "Torre central, pisos 1–2 Elemento favorecido 1"
+
+msgid "中塔1—2层顺属性1；长期保存，本次运行中修改将在下次生效"
+msgstr ""
+"Torre central, pisos 1–2 Elemento favorecido 1；Se guarda. Los cambios "
+"durante la ejecución se aplican en la siguiente"
+
+msgid "Center Lower Favored 2"
+msgstr "Torre central, pisos 1–2 Elemento favorecido 2 (igual prioridad)"
+
+msgid "中塔1—2层顺属性2（同优先级）；长期保存，本次运行中修改将在下次生效"
+msgstr ""
+"Torre central, pisos 1–2 Elemento favorecido 2 (igual prioridad)；Se guarda. "
+"Los cambios durante la ejecución se aplican en la siguiente"
+
+msgid "Center Lower Resisted 1"
+msgstr ""
+"Torre central, pisos 1–2 Resistencia 1 (prohíbe DPS principal y secundario)"
+
+msgid "中塔1—2层逆属性1（禁止主C和副C）；长期保存，本次运行中修改将在下次生效"
+msgstr ""
+"Torre central, pisos 1–2 Resistencia 1 (prohíbe DPS principal y "
+"secundario)；Se guarda. Los cambios durante la ejecución se aplican en la "
+"siguiente"
+
+msgid "Center Lower Resisted 2"
+msgstr ""
+"Torre central, pisos 1–2 Resistencia 2 (evitar DPS principal si es posible)"
+
+msgid "中塔1—2层逆属性2（主C尽量避开）；长期保存，本次运行中修改将在下次生效"
+msgstr ""
+"Torre central, pisos 1–2 Resistencia 2 (evitar DPS principal si es "
+"posible)；Se guarda. Los cambios durante la ejecución se aplican en la "
+"siguiente"
+
+msgid "Center Upper Favored 1"
+msgstr "Torre central, pisos 3–4 Elemento favorecido 1"
+
+msgid "中塔3—4层顺属性1；长期保存，本次运行中修改将在下次生效"
+msgstr ""
+"Torre central, pisos 3–4 Elemento favorecido 1；Se guarda. Los cambios "
+"durante la ejecución se aplican en la siguiente"
+
+msgid "Center Upper Favored 2"
+msgstr "Torre central, pisos 3–4 Elemento favorecido 2 (igual prioridad)"
+
+msgid "中塔3—4层顺属性2（同优先级）；长期保存，本次运行中修改将在下次生效"
+msgstr ""
+"Torre central, pisos 3–4 Elemento favorecido 2 (igual prioridad)；Se guarda. "
+"Los cambios durante la ejecución se aplican en la siguiente"
+
+msgid "Center Upper Resisted 1"
+msgstr ""
+"Torre central, pisos 3–4 Resistencia 1 (prohíbe DPS principal y secundario)"
+
+msgid "中塔3—4层逆属性1（禁止主C和副C）；长期保存，本次运行中修改将在下次生效"
+msgstr ""
+"Torre central, pisos 3–4 Resistencia 1 (prohíbe DPS principal y "
+"secundario)；Se guarda. Los cambios durante la ejecución se aplican en la "
+"siguiente"
+
+msgid "Center Upper Resisted 2"
+msgstr ""
+"Torre central, pisos 3–4 Resistencia 2 (evitar DPS principal si es posible)"
+
+msgid "中塔3—4层逆属性2（主C尽量避开）；长期保存，本次运行中修改将在下次生效"
+msgstr ""
+"Torre central, pisos 3–4 Resistencia 2 (evitar DPS principal si es "
+"posible)；Se guarda. Los cambios durante la ejecución se aplican en la "
+"siguiente"

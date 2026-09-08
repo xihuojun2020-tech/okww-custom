@@ -22,6 +22,10 @@ from src.task.abyss_team_planner import (
 from src.task.BaseCombatTask import BaseCombatTask, CharDeadException
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task_status import publish_task_status
+from src.task.abyss_allocation import (
+    CONFIG_FIELDS, OPTIONS, FloorRequest, allocate, rules_from_config,
+    candidate_teams, team_preference,
+)
 
 
 TOWER_NAMES = ("残响之塔", "深境之塔", "回音之塔")
@@ -58,6 +62,10 @@ SELECTION_MARKER_REGION = (0.00, 0.00, 1.00, 0.70)
 
 class AbyssTeamUnavailable(Exception):
     """The current account cannot form a team that covers this tower's remaining cost."""
+
+
+class AbyssCenterUnavailable(Exception):
+    """Stop the entire task when center allocation cannot be safely executed."""
 
 
 @dataclass(frozen=True)
@@ -553,6 +561,10 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             TOWER_PRIORITY: "两侧塔优先：残响→回音→深境；中间塔优先：深境→残响→回音",
             "清空当前账号识别结果": "只清空本次运行内存中的角色结果，关闭程序后也会自动清除",
         }
+        for key, label in CONFIG_FIELDS.items():
+            self.default_config[key] = "无"
+            self.config_type[key] = {"type": "drop_down", "options": list(OPTIONS)}
+            self.config_description[key] = label + "；长期保存，本次运行中修改将在下次生效"
         self._character_scan_results = {}
         self._avatar_orb = cv2.ORB_create(nfeatures=300, edgeThreshold=5, fastThreshold=5)
         self._avatar_matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
@@ -560,6 +572,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
 
     def run(self):
         WWOneTimeTask.run(self)
+        self._abyss_run_config = dict(self.config)
         self.log_info("自动深渊开始：先扫描三塔，再按设置逐塔扫描体力、编队和挑战")
         try:
             self._validate_runtime_resolution()
@@ -606,7 +619,12 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
 
     def _run_towers(self, scan_results):
         outcomes = {}
-        priority = self.config.get(TOWER_PRIORITY, SIDE_TOWERS_FIRST)
+        settings = getattr(self, "_abyss_run_config", dict(self.config))
+        priority = settings.get(TOWER_PRIORITY, SIDE_TOWERS_FIRST)
+        self._abyss_rules = rules_from_config(settings)
+        remaining = dict(scan_results)
+        self._allocation_context = None
+        self._scheduled_teams = {}
         for tower_name in tower_order(priority):
             states = scan_results[tower_name]
             if UNKNOWN in states:
@@ -630,16 +648,24 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                     f"{tower_name}第 {current_floor + 1} 层要求每名角色至少 {required_energy} 点体力",
                 )
                 records = self._enter_and_scan_characters(tower_name, current_states)
+                remaining[tower_name] = current_states
+                self._allocation_context = (tower_name, current_floor, remaining, priority)
                 try:
                     plan = self._plan_and_form_team(records, minimum_energy=required_energy)
                     team_energy = self._planned_team_energy(plan, records)
                 except AbyssTeamUnavailable as exc:
+                    if tower_name == TOWER_NAMES[1]:
+                        self._return_from_team_to_towers()
+                        raise AbyssCenterUnavailable(f"中塔无法编队，停止任务：{exc}") from exc
                     outcomes[tower_name] = (
                         f"完成{total_cleared}层后体力或角色不足" if total_cleared else "体力或角色不足"
                     )
                     self._set_status("跳过本塔", f"{tower_name}：{exc}")
                     self._return_from_team_to_towers()
                     break
+                except AbyssCenterUnavailable:
+                    self._return_from_team_to_towers()
+                    raise
 
                 result, cleared = self._fight_selected_tower(tower_name, current_floor, team_energy)
                 total_cleared += cleared
@@ -652,7 +678,63 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                     COMPLETED if index < current_floor else AVAILABLE if index == current_floor else LOCKED
                     for index in range(max(len(states), current_floor + 1))
                 )
+            remaining[tower_name] = ()
+        self._allocation_context = None
         return outcomes
+
+    def _allocate_remaining(self, records):
+        tower, index, remaining, priority = self._allocation_context
+        floors = []
+        for name in tower_order(priority):
+            states = remaining.get(name, ())
+            start = first_available_floor(states)
+            if start is None or UNKNOWN in states:
+                continue
+            for layer in range(start, len(states)):
+                group = ("Center Lower" if layer < 2 else "Center Upper") if name == TOWER_NAMES[1] else (
+                    "Left" if name == TOWER_NAMES[0] else "Right")
+                preferred = (name == TOWER_NAMES[1]) == (priority == CENTER_TOWER_FIRST)
+                floors.append(FloorRequest(name, layer, floor_energy_cost(name, layer), self._abyss_rules[group], preferred))
+        allocation = allocate(records, floors, checkpoint=lambda: self.sleep(0.001))
+        self._scheduled_teams = {(f.tower, f.index): p for f, p in allocation.assignments}
+        lines = []
+        candidates = candidate_teams(records)
+        for group, rule in self._abyss_rules.items():
+            excluded = sum(team_preference(p, rule) is None for p in candidates)
+            lines.append(
+                f"{group}：顺属性={'/'.join(rule.favored) or '无'}，"
+                f"硬禁={rule.hard or '无'}，逆属性兜底={rule.soft or '无'}；"
+                f"候选{len(candidates)}队，排除{excluded}队（输出属性未知或硬禁）"
+            )
+        for floor, plan in allocation.assignments:
+            if plan:
+                main_resisted, sub_resisted, favored = team_preference(plan, floor.rule)
+                reason = "主C逆属性兜底" if main_resisted else "副C逆属性兜底" if sub_resisted else "主C顺属性" if favored else "无逆属性输出"
+                detail = self._format_team_plan(plan, records) + "；" + reason
+            else:
+                detail = "未分配：角色、属性或共享体力受限"
+            lines.append(f"{floor.tower}第{floor.index + 1}层（每人{floor.cost}体力）：{detail}")
+        if allocation.approximate:
+            lines.append("候选较多，使用有界搜索；此方案不保证全局最优，未分配不代表绝对无解")
+        preview = "\n".join(lines)
+        self.info_set("全局配队计划", preview)
+        self.log_info(f"深塔全局配队预览（{priority}）：\n{preview}")
+        # Center-first reserves BOTH halves before spending any energy.
+        missing_center = [f for f, p in allocation.assignments if f.tower == TOWER_NAMES[1] and p is None]
+        if missing_center and (priority == CENTER_TOWER_FIRST or tower == TOWER_NAMES[1]):
+            target = missing_center[0]
+            legal = [p for p in candidates if team_preference(p, target.rule) is not None]
+            if not candidates:
+                reason = "识别不完整、等级不足或缺少能组成预设/同定位替补队的主C"
+            elif not legal:
+                reason = "输出属性未知或触及第一优先级逆属性禁用规则"
+            else:
+                reason = "共享角色剩余体力不足，或有界搜索未找到覆盖方案"
+            raise AbyssCenterUnavailable(f"中塔第{target.index + 1}层未能安全分配：{reason}；停止整个任务")
+        plan = self._scheduled_teams.get((tower, index))
+        if plan is None:
+            raise AbyssTeamUnavailable("全局资源分配未给当前层安排队伍，保留优先区域体力")
+        return plan
 
     def _set_status(self, stage, detail):
         self.info_set("状态", detail)
@@ -702,7 +784,8 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         )
         self.log_info(f"角色识别完成：{display}", notify=True)
 
-        plan = plan_team(available, minimum_energy=minimum_energy)
+        plan = (self._allocate_remaining(list(merged.values())) if getattr(self, "_allocation_context", None)
+                else plan_team(available, minimum_energy=minimum_energy))
         plan_text = self._format_team_plan(plan, merged.values())
         self.info_set("编队计划", plan_text)
         if not plan.executable:
@@ -1045,10 +1128,15 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                 if remaining_energy is not None:
                     remaining_energy -= floor_energy_cost(tower_name, floor_index)
                 next_cost = floor_energy_cost(tower_name, floor_index + 1)
-                if remaining_energy is not None and remaining_energy < next_cost:
+                schedule = getattr(self, "_scheduled_teams", {})
+                current_plan = schedule.get((tower_name, floor_index))
+                next_plan = schedule.get((tower_name, floor_index + 1))
+                change_team = bool(schedule) and (
+                    next_plan is None or current_plan is None or current_plan.members != next_plan.members)
+                if change_team or (remaining_energy is not None and remaining_energy < next_cost):
                     self._set_status(
                         "重新编队",
-                        f"{tower_name}第 {floor_number} 层完成，当前队伍剩余体力不足下一层",
+                        f"{tower_name}第 {floor_number} 层完成，按全局计划或体力要求重新扫描编队",
                     )
                     back = self._wait_exact_text("返回深塔", (0.20, 0.06, 0.82, 0.96), 3)
                     if back is None:
