@@ -47,3 +47,21 @@
 ## 后续接口约束
 
 第二阶段按 UUID 接入周一、周日独立检查，周日不因周一完成而跳过。位于普通体力任务之前，周本后重读体力与活跃度。每次单独选周本需新增明确模式与目标列表，并沿用本任务的游戏剩余次数与结算确认机制，不以目标列表长度充当本周额度。
+
+## 2026-09-08 多阶段战斗跟进
+
+`1.40.01` 已加入左侧任务提示三态复核：
+
+- `击败……`、`与岁主「角」对战`：战斗未完成；文字变化仍属于阶段切换，不领奖。
+- `领取奖励`、`离开……`：连续两帧确认后进入寻奖；“离开”只作战后信号，不直接退出副本。
+- 空白或陌生提示：有限等待；“挑战成功”和近身 F 领奖仅作辅助证据，不能覆盖明确的战斗提示。
+
+普通 `combat_once()` 返回和 `CombatStateUnknown` 已走同一复核，但实机历史故障 `not in_team while switching` 还存在一个未覆盖来源：战前或战后切治疗位于 `combat_once()` 自身的异常转换区间之外，可能直接抛出 `NotInCombatException`。建议后续补丁仅修改 `WeeklyBossTask`：
+
+1. `_fight()` 同时捕获 `CombatStateUnknown` 与 `NotInCombatException`，保存原异常后进入现有阶段复核。
+2. 复核为 combat 时等待 `in_combat(target=True)` 并继续循环，不增加领奖次数。
+3. 复核为 post 时进入寻奖；仅 `CombatStateUnknown` 需要补做其原有战斗状态清理，避免对已经执行过 `combat_end()` 的战后切治疗异常重复清理。
+4. 复核超时时重新抛出原异常；`CharDeadException`、`TaskDisabledException`、`FrameUnavailable`、`GameProcessLost` 和配置异常不得捕获。
+5. 增加两项回归：直接 `NotInCombatException('not in_team while switching')` 且提示为 combat 时继续下一阶段；提示始终未知时保留并抛出同一个原异常。
+
+该跟进尚未实现，不属于 `1.40.01` 已完成范围；实施时按补丁版本更新版本号、更新日志并重新执行周本专项、公共战斗、发布一致性及全量测试。
