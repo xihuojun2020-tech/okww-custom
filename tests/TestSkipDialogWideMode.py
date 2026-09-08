@@ -4,11 +4,13 @@ from unittest.mock import Mock
 from config import config
 from ok.test.TaskTestCase import TaskTestCase
 from src.task.SkipDialogTask import AutoDialogTask
-from tests.fixture_support import require_fixture
+from tests.fixture_support import REPOSITORY_ROOT, require_fixture
 
 config['debug'] = True
 
 
+@unittest.skipUnless((REPOSITORY_ROOT / 'ok_templates/19.png').is_file(),
+                     'local wide-dialog image fixture is unavailable')
 class TestSkipDialogWideMode(TaskTestCase):
     task_class = AutoDialogTask
     config = config
