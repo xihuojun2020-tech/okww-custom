@@ -285,6 +285,31 @@ class TestWeeklyBossBoundaries(unittest.TestCase):
         task.combat_end.assert_not_called()
         self.assertNotIn('已确认领奖', task.info)
 
+    def test_switch_team_loss_with_combat_hint_continues_next_phase(self):
+        from src.task.BaseCombatTask import NotInCombatException
+        error = NotInCombatException('not in_team while switching')
+        task = self.combat_task(None)
+        task.combat_once.side_effect = [error, None]
+        task._wait_combat_phase.side_effect = ['combat', 'post']
+        task._wait_for = Mock(return_value=True)
+        task.in_combat = Mock(return_value=True)
+        task._fight()
+        self.assertEqual(task.combat_once.call_count, 2)
+        task._wait_for.assert_called_once()
+        task.combat_end.assert_not_called()
+        self.assertNotIn('已确认领奖', task.info)
+
+    def test_switch_team_loss_with_unknown_hint_preserves_original_error(self):
+        from src.task.BaseCombatTask import NotInCombatException
+        from src.task.WeeklyBossTask import WeeklyPageTimeout
+        error = NotInCombatException('not in_team while switching')
+        task = self.combat_task(error)
+        task._wait_combat_phase.side_effect = WeeklyPageTimeout('unknown')
+        with self.assertRaises(NotInCombatException) as caught:
+            task._fight()
+        self.assertIs(caught.exception, error)
+        task.combat_end.assert_not_called()
+
     def test_battle_hint_overrides_victory_and_reward_auxiliary_signals(self):
         task = self.task()
         task._text = Mock(return_value='击败伤痕')

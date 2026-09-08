@@ -3,7 +3,9 @@ import re
 import time
 
 from ok import TaskDisabledException
-from src.task.BaseCombatTask import BaseCombatTask, CombatStateUnknown
+from src.task.BaseCombatTask import (
+    BaseCombatTask, CharDeadException, CombatStateUnknown, NotInCombatException,
+)
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.weekly_boss import (
     WEEKLY_BOSSES, WeeklyBossResult, compact, boss_title, match_target_button,
@@ -240,7 +242,9 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
             combat_error = None
             try:
                 self.combat_once(wait_combat_time=10, raise_if_not_found=True)
-            except CombatStateUnknown as error:
+            except CharDeadException:
+                raise
+            except (CombatStateUnknown, NotInCombatException) as error:
                 combat_error = error
             finally:
                 self.skip_combat_check = True
@@ -254,7 +258,7 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
                     raise combat_error from verification_error
                 raise
             if phase == 'post':
-                if combat_error:
+                if isinstance(combat_error, CombatStateUnknown):
                     self.combat_end()
                 self.log_info('周本战后阶段已连续确认；尚未计入领奖次数')
                 break

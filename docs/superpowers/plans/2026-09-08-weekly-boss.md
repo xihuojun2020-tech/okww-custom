@@ -64,4 +64,4 @@
 4. 复核超时时重新抛出原异常；`CharDeadException`、`TaskDisabledException`、`FrameUnavailable`、`GameProcessLost` 和配置异常不得捕获。
 5. 增加两项回归：直接 `NotInCombatException('not in_team while switching')` 且提示为 combat 时继续下一阶段；提示始终未知时保留并抛出同一个原异常。
 
-该跟进尚未实现，不属于 `1.40.01` 已完成范围；实施时按补丁版本更新版本号、更新日志并重新执行周本专项、公共战斗、发布一致性及全量测试。
+该跟进不属于 `1.40.01` 已完成范围，已在 `1.40.02` 实施。实现时发现 `CharDeadException` 继承 `NotInCombatException`，因此最终捕获顺序先显式传播死亡/复活异常，再复核普通切人失配；对应回归先失败后通过。周本专项、公共战斗、发布一致性及全量测试结果记录在本次发布验证中。
