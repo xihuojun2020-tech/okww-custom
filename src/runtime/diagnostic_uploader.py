@@ -183,7 +183,7 @@ def retry_pending(root, target, *, timeout=30, now=None, transfer=None):
 
 
 def bounded_upload(batch, target, timeout):
-    command = [sys.executable, '-m', 'src.runtime.diagnostic_uploader', '--upload-one', str(batch), '--target', str(target)]
+    command = [sys.executable, '-E', '-s', '-m', 'src.runtime.diagnostic_uploader', '--upload-one', str(batch), '--target', str(target)]
     flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
     try:
         result = subprocess.run(command, cwd=str(Path(__file__).resolve().parents[2]),

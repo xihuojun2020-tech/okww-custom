@@ -11,9 +11,12 @@ from pathlib import Path
 from src.runtime.diagnostic_export import atomic_json
 
 POLICY = 'automatic-v1'
-SCHEDULER_REVISION = 2
+SCHEDULER_REVISION = 3
 DEFAULT_TARGET = r'\\192.168.3.170\xihuojun 共享给我\AI诊断'
 REPO = Path(__file__).resolve().parents[2]
+_binding = REPO / 'source.json'
+if _binding.is_file():
+    REPO = Path(json.loads(_binding.read_text(encoding='utf-8'))['source_repo']).resolve()
 
 
 def installation_id(repo=REPO):
@@ -87,8 +90,9 @@ def ensure_task(root):
                 and time.time() - state.get('checked_at', 0) < 86400):
             return
         result = subprocess.run(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
-                                 '-File', str(REPO / 'src/runtime/install_diagnostic_task.ps1'),
+                                 '-File', str(Path(__file__).with_name('install_diagnostic_task.ps1')),
                                  '-PythonExe', sys.executable, '-Root', str(root),
+                                 '-SourceRepo', str(REPO),
                                  '-TaskName', 'okww-diagnostics-' + installation_id()],
                                 capture_output=True, timeout=20, creationflags=subprocess.CREATE_NO_WINDOW)
         atomic_json(path, {'status': 'installed' if result.returncode == 0 else 'failed',

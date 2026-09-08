@@ -17,6 +17,82 @@ from src.runtime.diagnostic_retention import weekly_cleanup, purge_remote_logs, 
 
 
 class TestDiagnosticPolicy(unittest.TestCase):
+    @unittest.skipUnless(os.name == 'nt', 'Windows isolated uploader runtime')
+    def test_independent_runtime_preserves_source_identity_and_ignores_pythonpath(self):
+        from src.runtime.diagnostic_runtime import prepare_runtime, check_runtime, isolated_environment
+        source = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory(dir='E:/OKWW-Test' if Path('E:/OKWW-Test').is_dir() else None,
+                                         prefix='runtime-probe-') as directory:
+            with patch.dict(os.environ, {'PYTHONPATH': str(source), 'PYAPPIFY_PID': '123'}):
+                bundle = prepare_runtime(source, home=directory)
+                check_runtime(bundle)
+                self.assertNotIn('PYTHONPATH', isolated_environment())
+                self.assertNotIn('PYAPPIFY_PID', isolated_environment())
+            command = [str(bundle / 'python/python.exe'), '-E', '-s', '-c',
+                       'from src.runtime.diagnostic_policy import REPO, installation_id; print(str(REPO)); print(installation_id())']
+            result = subprocess.run(command, cwd=bundle, capture_output=True, text=True, check=True,
+                                    creationflags=subprocess.CREATE_NO_WINDOW)
+            from src.runtime.diagnostic_policy import installation_id
+            self.assertEqual(result.stdout.splitlines(), [str(source), installation_id(source)])
+            self.assertEqual(prepare_runtime(source, home=directory), bundle)
+            self.assertFalse(bundle.is_relative_to(source))
+            self.session.record_event('isolated-worker-probe', {})
+            self.session.finish(timeout=5)
+            batch = next(self.session.run.glob('batches/*/_READY')).parent
+            result = subprocess.run([str(bundle / 'python/python.exe'), '-E', '-s', '-m',
+                                     'src.runtime.diagnostic_uploader', '--upload-one', str(batch),
+                                     '--target', str(self.remote)], cwd=bundle,
+                                    capture_output=True, timeout=20, creationflags=subprocess.CREATE_NO_WINDOW)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(list(self.remote.rglob('_UPLOAD_COMPLETE')))
+
+    def test_background_runtime_cannot_be_installed_inside_application(self):
+        from src.runtime.diagnostic_runtime import prepare_runtime
+        source = Path(__file__).resolve().parents[1]
+        with self.assertRaises(ValueError):
+            prepare_runtime(source, home=source / 'forbidden-background')
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows scheduled task migration')
+    def test_task_migration_rolls_back_on_failure_and_switches_on_success(self):
+        script = Path(__file__).resolve().parents[1] / 'scripts/migrate_diagnostic_task.ps1'
+        quote = lambda value: "'" + str(value).replace("'", "''") + "'"
+        for fail in (True, False):
+            with self.subTest(fail=fail), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                bundle = root / 'bundle'
+                (bundle / 'src/runtime').mkdir(parents=True)
+                (bundle / 'ready.json').write_text(json.dumps({'source_repo': str(root)}))
+                (bundle / 'src/runtime/install_diagnostic_task.ps1').write_text(
+                    "throw 'synthetic install failure'" if fail else
+                    "$global:action = Join-Path $global:bundlePath 'python/pythonw.exe'", encoding='utf-8')
+                wrapper = root / 'probe.ps1'
+                wrapper.write_text('''
+$ErrorActionPreference = 'Stop'
+$global:restored = $false
+$global:action = 'old-python.exe'
+$global:bundlePath = BUNDLE
+function Get-ScheduledTask { [pscustomobject]@{Description=DESCRIPTION;Actions=[pscustomobject]@{Execute=$global:action}} }
+function Export-ScheduledTask { '<original-task />' }
+function Disable-ScheduledTask { }
+function Enable-ScheduledTask { }
+function Stop-ScheduledTask { }
+function Get-CimInstance { }
+function Register-ScheduledTask { param($TaskName,$Xml,[switch]$Force); if ($Xml -ne '<original-task />') { throw 'bad rollback' }; $global:restored=$true }
+$failed = $false
+try { & SCRIPT -SourceRepo SOURCE -Root SPOOL -Bundle BUNDLE -TaskName 'fake-owned-task' | Out-Null }
+catch { $failed=$true }
+@{failed=$failed; restored=$global:restored; action=$global:action} | ConvertTo-Json
+'''.replace('DESCRIPTION', quote('okww diagnostics uploader owned by ' + str(root)))
+                    .replace('SCRIPT', quote(script)).replace('SOURCE', quote(root))
+                    .replace('SPOOL', quote(root / 'spool')).replace('BUNDLE', quote(bundle)), encoding='utf-8-sig')
+                result = subprocess.run(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(wrapper)],
+                                        capture_output=True, text=True, timeout=20, creationflags=subprocess.CREATE_NO_WINDOW)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                state = json.loads(result.stdout)
+                self.assertEqual(state['failed'], fail)
+                self.assertEqual(state['restored'], fail)
+                self.assertTrue(list((bundle / 'migration').glob('*.xml')))
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name) / 'spool'

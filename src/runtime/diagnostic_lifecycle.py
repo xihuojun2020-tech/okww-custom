@@ -32,10 +32,12 @@ def wake_uploader(root=None):
             return
         settings(root)
         _last_wake = time.monotonic()
+        from src.runtime.diagnostic_runtime import prepare_runtime, uploader_command, isolated_environment
+        bundle = prepare_runtime(REPO)
         flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
         _uploader = subprocess.Popen(
-            [sys.executable, '-m', 'src.runtime.diagnostic_uploader', '--root', str(root), '--ensure-task'],
-            cwd=str(Path(__file__).resolve().parents[2]), creationflags=flags,
+            uploader_command(bundle, root), env=isolated_environment(),
+            cwd=str(bundle), creationflags=flags,
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 

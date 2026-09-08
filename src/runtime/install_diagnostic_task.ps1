@@ -3,7 +3,8 @@ param(
     [switch]$Preview,
     [string]$TaskName = 'okww-custom-diagnostics-v1',
     [string]$PythonExe,
-    [string]$Root
+    [string]$Root,
+    [string]$SourceRepo
 )
 $ErrorActionPreference = 'Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
@@ -12,7 +13,9 @@ if (-not (Test-Path -LiteralPath $pythonExe -PathType Leaf)) {
     throw 'Local .venv Python is required.'
 }
 $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
-$description = "okww diagnostics uploader owned by $repo"
+if (-not $SourceRepo) { $SourceRepo = $repo }
+$SourceRepo = [IO.Path]::GetFullPath($SourceRepo)
+$description = "okww diagnostics uploader owned by $SourceRepo"
 if ($existing -and $existing.Description -ne $description) {
     throw 'Task name belongs to another installation. Export and inspect it before migration.'
 }
@@ -25,7 +28,7 @@ if (-not (Test-Path -LiteralPath $silentPython -PathType Leaf)) {
     throw 'pythonw.exe is required for background upload without console windows.'
 }
 $PythonExe = [IO.Path]::GetFullPath($silentPython)
-$arguments = '-m src.runtime.diagnostic_uploader'
+$arguments = '-E -s -m src.runtime.diagnostic_uploader'
 if ($Root) {
     if ($Root.Contains('"')) { throw 'Invalid spool path.' }
     $arguments += ' --root "' + [IO.Path]::GetFullPath($Root) + '"'

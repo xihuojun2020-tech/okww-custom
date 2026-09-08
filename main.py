@@ -10,6 +10,7 @@ import shutil
 import sys
 import atexit
 import time
+from pathlib import Path
 
 
 def _load_pth_paths():
@@ -206,13 +207,29 @@ def _exit_cleanup(owned_launcher=None):
         for process in reversed(descendants):
             if process.pid in interpreter_chain:
                 continue
+            # Detached diagnostic workers own a separate runtime and must survive
+            # application exit. Verify their bundle binding, not just their name.
+            try:
+                command = process.cmdline()
+                executable = Path(process.exe()).resolve()
+                bundle = executable.parent.parent
+                binding = bundle / 'ready.json'
+                if ('src.runtime.diagnostic_uploader' in command and binding.is_file()
+                        and not executable.is_relative_to(Path(__file__).resolve().parent)):
+                    import json
+                    source = Path(json.loads(binding.read_text(encoding='utf-8'))['source_repo']).resolve()
+                    if source == Path(__file__).resolve().parent:
+                        continue
+            except (psutil.Error, OSError, ValueError, KeyError):
+                pass
             try:
                 process.terminate()
             except psutil.Error:
                 pass
         launcher.terminate()
-    except Exception:
-        pass
+    except Exception as error:
+        import logging
+        logging.getLogger(__name__).warning('Exit: owned launcher cleanup failed: %s', type(error).__name__)
 
 
 def _set_owned_git_proxy(git_config, proxy):

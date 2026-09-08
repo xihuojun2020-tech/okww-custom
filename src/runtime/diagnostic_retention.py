@@ -57,7 +57,7 @@ def purge_remote_logs(batch, target, *, now=None):
 
 
 def bounded_purge(batch, target):
-    result = subprocess.run([sys.executable, '-m', 'src.runtime.diagnostic_uploader',
+    result = subprocess.run([sys.executable, '-E', '-s', '-m', 'src.runtime.diagnostic_uploader',
                              '--cleanup-one', str(batch), '--target', str(target)],
                             cwd=str(Path(__file__).resolve().parents[2]), capture_output=True,
                             timeout=30, creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)

@@ -5,6 +5,9 @@ import sys
 import tempfile
 import time
 import unittest
+from types import SimpleNamespace
+import threading
+import json
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -15,6 +18,50 @@ from custom_ok.ok.gui.MainWindow import MainWindow
 
 class TestMainWindowStartup(unittest.TestCase):
     """Regression tests for the post-show integrity gate."""
+
+    def test_close_continues_after_executor_and_app_errors_without_killing_launcher(self):
+        event = Mock()
+        app = Mock(exit_event=threading.Event())
+        app.quit.side_effect = RuntimeError('synthetic app failure')
+        task = SimpleNamespace(app=app, exit_event=app.exit_event, do_not_quit=False,
+                               basic_global_config={}, executor=Mock())
+        task.executor.destroy.side_effect = RuntimeError('synthetic cleanup failure')
+        with patch('custom_ok.ok.gui.MainWindow.QApplication') as qt, patch('custom_ok.ok.gui.MainWindow.pyappify.kill_pyappify') as kill:
+            MainWindow.closeEvent(task, event)
+            qt.instance.return_value.exit.assert_called_once()
+            kill.assert_not_called()
+        event.accept.assert_called_once()
+        self.assertTrue(app.exit_event.is_set())
+
+    def test_close_to_tray_preserves_running_application(self):
+        event = Mock()
+        app = Mock(exit_event=threading.Event())
+        task = SimpleNamespace(app=app, do_not_quit=False, hide=Mock(), executor=Mock(),
+                               basic_global_config={'Minimize Window to System Tray when Closing': True})
+        MainWindow.closeEvent(task, event)
+        event.ignore.assert_called_once()
+        task.hide.assert_called_once()
+        task.executor.destroy.assert_not_called()
+        self.assertFalse(app.exit_event.is_set())
+
+    def test_launcher_cleanup_preserves_verified_independent_uploader(self):
+        import main
+        with tempfile.TemporaryDirectory() as directory:
+            bundle = Path(directory)
+            (bundle / 'ready.json').write_text(json.dumps({'source_repo': str(Path(main.__file__).parent)}))
+            worker = Mock(pid=23456)
+            worker.cmdline.return_value = ['pythonw.exe', '-m', 'src.runtime.diagnostic_uploader']
+            worker.exe.return_value = str(bundle / 'python/pythonw.exe')
+            launcher = Mock(pid=23455)
+            launcher.is_running.return_value = True
+            launcher.exe.return_value = str(bundle / 'launcher.exe')
+            launcher.children.return_value = [worker]
+            process = Mock()
+            process.parents.return_value = []
+            with patch('psutil.Process', return_value=process):
+                main._exit_cleanup((launcher, os.path.normcase(os.path.realpath(launcher.exe()))))
+            worker.terminate.assert_not_called()
+            launcher.terminate.assert_called_once()
 
     def test_launcher_cleanup_preserves_other_same_named_installation(self):
         compiler = Path(os.environ.get('WINDIR', 'C:/Windows')) / 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'

@@ -941,13 +941,18 @@ class MainWindow(FluentWindow):
                 return
             if not self.do_not_quit:
                 self.exit_event.set()
-                self.executor.destroy()
+                try:
+                    self.executor.destroy()
+                except Exception:
+                    logger.error('Exit: executor cleanup failed; continuing Qt shutdown')
             event.accept()
             if not self.do_not_quit:
-                pyappify.kill_pyappify()
-                # 强制退出应用：防止窗口关闭后 python 进程残留（okww 修改版修复）
+                # main._exit_cleanup verifies the owned launcher after Python cleanup.
+                # Never block the GUI on pyappify's PID-only, 30-second termination.
                 try:
                     self.app.quit()
                 except Exception:
-                    pass
-                QApplication.instance().exit()
+                    logger.error('Exit: app quit failed; continuing Qt shutdown')
+                finally:
+                    logger.info('Exit: leaving Qt event loop')
+                    QApplication.instance().exit()
