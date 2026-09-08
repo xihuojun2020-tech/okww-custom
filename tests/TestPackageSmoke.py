@@ -8,6 +8,10 @@ from scripts.package_smoke import inspect_distribution, NOTIFICATION_TEMPLATE
 
 
 class TestPackageSmoke(unittest.TestCase):
+    def test_large_installer_extraction_allows_slow_github_runner(self):
+        from scripts.inspect_installer import INSTALLER_EXTRACT_TIMEOUT_SECONDS
+        self.assertEqual(INSTALLER_EXTRACT_TIMEOUT_SECONDS, 600)
+
     def test_installer_source_layout_preserves_runtime_data_checks(self):
         from scripts.inspect_installer import inspect_extracted
         with tempfile.TemporaryDirectory() as temp:

@@ -12,6 +12,8 @@ from pathlib import Path, PurePosixPath
 
 from scripts.package_smoke import inspect_member
 
+INSTALLER_EXTRACT_TIMEOUT_SECONDS = 600
+
 
 def logical_payload_path(name: str) -> str | None:
     """Only pyappify's verified layout may contain a source working tree/Git log."""
@@ -89,7 +91,8 @@ def main():
         raise ValueError('安装器包含链接')
     with tempfile.TemporaryDirectory(prefix='okww-installer-') as temp:
         subprocess.run([command, 'x', '-y', '-sccUTF-8', str(installer), '-o' + temp],
-                       check=True, stdout=subprocess.DEVNULL, timeout=180)
+                       check=True, stdout=subprocess.DEVNULL,
+                       timeout=INSTALLER_EXTRACT_TIMEOUT_SECONDS)
         report = inspect_extracted(Path(temp), reference, version)
     if 'online' not in installer.name.lower() and report['bootstrap_only']:
         raise ValueError('离线安装器缺少实际源码树')
