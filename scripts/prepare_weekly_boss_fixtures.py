@@ -14,6 +14,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('captures', type=Path)
     parser.add_argument('--victory', type=Path, help='Optional arena victory failure screenshot')
+    parser.add_argument('--confirmation', type=Path, help='Optional reward confirmation screenshot')
     args = parser.parse_args()
     output = Path(__file__).resolve().parents[1] / 'tests/images/weekly_boss'
     output.mkdir(parents=True, exist_ok=True)
@@ -30,6 +31,9 @@ def main():
     }
     if args.victory:
         samples['victory'] = (args.victory, [(0.4, 0.235, 0.6, 0.315)])
+    if args.confirmation:
+        samples['confirmation'] = (args.confirmation, [(0.22, 0.29, 0.78, 0.71),
+                                                       (0.735, 0.035, 0.805, 0.078)])
     for name, (stamp, regions) in samples.items():
         source = stamp if isinstance(stamp, Path) else args.captures / f'鸣潮   2026_9_8 {stamp}.png'
         frame = cv2.imdecode(np.fromfile(source, dtype=np.uint8), cv2.IMREAD_COLOR)

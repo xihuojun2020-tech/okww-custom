@@ -32,6 +32,11 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
     REWARDS = (0.24, 0.46, 0.765, 0.595)
     COST = (0.914, 0.829, 0.967, 0.869)
     STAMINA = (0.78, 0.033, 0.89, 0.079)
+    CLAIM_TITLE = (0.23, 0.30, 0.36, 0.35)
+    CLAIM_MESSAGE = (0.30, 0.45, 0.70, 0.51)
+    CLAIM_CONFIRM = (0.56, 0.60, 0.75, 0.66)
+    CLAIM_CANCEL = (0.24, 0.60, 0.43, 0.66)
+    CLAIM_STAMINA = (0.735, 0.035, 0.805, 0.078)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -245,6 +250,44 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         quantities = sum(bool(re.fullmatch(r'[xX×]\d+', compact(b.name))) for b in rewards)
         return (exit_button, retry_button) if exit_button and retry_button and quantities >= 2 else None
 
+    def _claim_confirmation(self):
+        frame = self.frame
+        if compact(self._text(self.CLAIM_TITLE, frame)) != '领取奖励':
+            return None
+        message = compact(self._text(self.CLAIM_MESSAGE, frame))
+        match = re.fullmatch(r'领取奖励需消耗(\d{1,3})点结晶波片[,，]请确认是否领取[?？]', message)
+        confirm = self._button(self.CLAIM_CONFIRM, '确认', frame)
+        cancel = self._button(self.CLAIM_CANCEL, '取消', frame)
+        stamina = parse_stamina(self._text(self.CLAIM_STAMINA, frame))
+        if match and 0 < int(match[1]) <= 240 and confirm and cancel and stamina is not None:
+            return int(match[1]), stamina, confirm
+        return None
+
+    def _confirm_claim_if_needed(self, cost):
+        self._stage('检查领奖费用确认弹窗或结算页')
+        previous = None
+
+        def read():
+            nonlocal previous
+            if self._settlement():
+                return ('settled', None)
+            dialog = self._claim_confirmation()
+            resources = dialog[:2] if dialog else None
+            stable = resources is not None and resources == previous
+            previous = resources
+            return ('confirm', dialog) if stable else None
+
+        state, dialog = self._wait_for(read, '未确认领奖弹窗或结算页，未点击确认', 20)
+        if state == 'settled':
+            return
+        actual_cost, stamina, button = dialog
+        if actual_cost != cost:
+            raise RuntimeError(f'领奖费用不一致：预期 {cost}，弹窗 {actual_cost}；未确认领取')
+        if stamina < actual_cost:
+            raise RuntimeError(f'领奖体力不足：当前 {stamina}，需要 {actual_cost}；未确认领取')
+        self.log_info(f'周本领奖确认：费用 {actual_cost}，当前体力 {stamina}；仅点击一次确认')
+        self.click_box(button)
+
     def _fight_and_claim(self, cost):
         self._fight()
         self._stage('寻找领取奖励交互')
@@ -256,8 +299,10 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
                 self._release_movement()
         self._wait_for(self._reward_available, '战后未找到领取奖励交互')
         self.send_key('f')
-        # No generic claim handler here: it presses Escape. Also no double-
-        # reward/reserve dialog clicks; an unexpected page leaves this pending.
+        # Only the verified current-stamina confirmation is supported. Never
+        # use the generic cancellation handler or click replenishment dialogs.
+        self._confirm_claim_if_needed(cost)
+        self._stage('等待领奖结算，不重复确认')
         self._wait_for(self._settlement, '领奖结果未确认，停止再次挑战', 20)
         self._stage('已进入领奖结算页')
         # The result page hides the top bar; use the existing anchored reader.

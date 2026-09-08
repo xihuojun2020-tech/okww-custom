@@ -63,6 +63,15 @@ class TestWeeklyBossImages(TaskTestCase):
         self.assertTrue(self.task._settlement())
         self.assertEqual(self.task.get_settlement_stamina(), 169)
 
+    def test_confirmation_requires_cost_stamina_and_both_buttons(self):
+        self.load('confirmation')
+        cost, stamina, button = self.task._claim_confirmation()
+        self.assertEqual((cost, stamina, button.name), (60, 123, '确认'))
+        self.assertFalse(self.task._settlement())
+        for name in ('claim', 'settlement', 'detail', 'team', 'victory'):
+            self.load(name)
+            self.assertIsNone(self.task._claim_confirmation(), name)
+
     def test_real_task_has_only_weekly_controls(self):
         from src.gui.navigation_sections import classify_task
         self.assertEqual(classify_task(self.task), 'tests')
@@ -74,7 +83,7 @@ class TestWeeklyBossImages(TaskTestCase):
     def test_claim_and_result_at_other_16x9_resolutions(self):
         with tempfile.TemporaryDirectory() as directory:
             for height in (720, 1080, 2160):
-                for name in ('claim', 'settlement', 'detail', 'victory'):
+                for name in ('claim', 'settlement', 'detail', 'victory', 'confirmation'):
                     with self.subTest(height=height, name=name):
                         source = cv2.imread(f'tests/images/weekly_boss/{name}.png')
                         resized = cv2.resize(source, (height * 16 // 9, height))
@@ -89,6 +98,9 @@ class TestWeeklyBossImages(TaskTestCase):
                         elif name == 'victory':
                             self.assertTrue(self.task._battle_finished())
                             self.assertFalse(self.task._settlement())
+                        elif name == 'confirmation':
+                            cost, stamina, button = self.task._claim_confirmation()
+                            self.assertEqual((cost, stamina, button.name), (60, 123, '确认'))
                         else:
                             self.assertTrue(self.task._detail_ready(WEEKLY_BOSSES[1]))
                             self.assertEqual(parse_remaining(self.task._text(self.task.DETAIL_COUNT)), 3)

@@ -126,6 +126,96 @@ class TestWeeklyBossFlow(unittest.TestCase):
 
 
 class TestWeeklyBossBoundaries(unittest.TestCase):
+    def confirmation_task(self, cost=60, stamina=123):
+        task = self.task()
+        task._settlement = Mock(return_value=None)
+        task.confirm_button = box('确认')
+        task._claim_confirmation = Mock(return_value=(cost, stamina, task.confirm_button))
+        task.click_box = Mock()
+        return task
+
+    def test_reward_confirmation_clicks_once_after_stable_resources(self):
+        task = self.confirmation_task()
+        task._confirm_claim_if_needed(60)
+        self.assertEqual(task._claim_confirmation.call_count, 2)
+        task.click_box.assert_called_once_with(task.confirm_button)
+        self.assertNotIn('已确认领奖', task.info)
+
+    def test_reward_confirmation_rejects_cost_mismatch_and_low_stamina(self):
+        for cost, stamina in ((120, 123), (60, 59)):
+            task = self.confirmation_task(cost, stamina)
+            with self.assertRaises(RuntimeError):
+                task._confirm_claim_if_needed(60)
+            task.click_box.assert_not_called()
+
+    def test_direct_settlement_needs_no_confirmation_click(self):
+        task = self.confirmation_task()
+        task._settlement.return_value = (object(), object())
+        task._confirm_claim_if_needed(60)
+        task.click_box.assert_not_called()
+        task._claim_confirmation.assert_not_called()
+
+    def test_unrecognized_confirmation_does_not_click(self):
+        from src.task.WeeklyBossTask import WeeklyPageTimeout
+        task = self.confirmation_task()
+        task._claim_confirmation.return_value = None
+        with patch('src.task.WeeklyBossTask.time.monotonic', side_effect=[0, 1, 21]):
+            with self.assertRaises(WeeklyPageTimeout):
+                task._confirm_claim_if_needed(60)
+        task.click_box.assert_not_called()
+
+    def test_confirmation_is_not_repeated_when_settlement_times_out(self):
+        from src.task.WeeklyBossTask import WeeklyPageTimeout
+        task = self.confirmation_task()
+        task._fight = Mock()
+        task._reward_available = Mock(return_value=True)
+        task.send_key = Mock()
+        task._settlement.side_effect = [None, None, WeeklyPageTimeout('no settlement')]
+        with self.assertRaises(WeeklyPageTimeout):
+            task._fight_and_claim(60)
+        task.click_box.assert_called_once_with(task.confirm_button)
+        task.send_key.assert_called_once_with('f')
+
+    def test_confirmation_then_settlement_returns_balance(self):
+        task = self.confirmation_task()
+        task._fight = Mock()
+        task._reward_available = Mock(return_value=True)
+        task.send_key = Mock()
+        task.get_settlement_stamina = Mock(return_value=63)
+        task._settlement.side_effect = lambda: (object(), object()) if task.click_box.called else None
+        self.assertEqual(task._fight_and_claim(60), 63)
+        task.click_box.assert_called_once_with(task.confirm_button)
+        self.assertNotIn('已确认领奖', task.info)
+
+    def test_confirmation_capture_loss_and_stop_never_click(self):
+        from ok import TaskDisabledException
+        from src.runtime.game_runtime_errors import FrameUnavailable
+        for error in (TaskDisabledException(), FrameUnavailable('lost')):
+            task = self.confirmation_task()
+            task._claim_confirmation.side_effect = error
+            with self.assertRaises(type(error)):
+                task._confirm_claim_if_needed(60)
+            task.click_box.assert_not_called()
+
+    def test_confirmation_parser_rejects_other_spending_dialogs(self):
+        task = self.task()
+        valid = '领取奖励需消耗60点结晶波片，请确认是否领取？'
+        for message, stamina, missing in (
+                (valid, '123/240', None), (valid, '0/240', None),
+                ('领取奖励需消耗60点星声，请确认是否领取？', '123/240', None),
+                (valid + '补充体力', '123/240', None), (valid, '123', None),
+                (valid.replace('60', '0'), '123/240', None),
+                (valid, '123/240', '确认'), (valid, '123/240', '取消')):
+            task._text = Mock(side_effect=lambda region, frame: {
+                task.CLAIM_TITLE: '领取奖励', task.CLAIM_MESSAGE: message,
+                task.CLAIM_STAMINA: stamina}[region])
+            task._button = Mock(side_effect=lambda region, text, frame: None if text == missing else box(text))
+            result = task._claim_confirmation()
+            if message == valid and stamina in ('123/240', '0/240') and missing is None:
+                self.assertEqual(result[:2], (60, int(stamina.split('/')[0])))
+            else:
+                self.assertIsNone(result)
+
     def combat_task(self, error):
         task = self.task()
         task.wait_until = Mock(return_value=True)
@@ -239,6 +329,7 @@ class TestWeeklyBossBoundaries(unittest.TestCase):
         task._fight = Mock()
         task._reward_available = Mock(return_value=True)
         task._wait_for = Mock(return_value=True)
+        task._confirm_claim_if_needed = Mock()
         task.send_key = Mock()
         task._stable_value = Mock(side_effect=FrameUnavailable('lost'))
         with self.assertRaises(FrameUnavailable):
