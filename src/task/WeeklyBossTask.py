@@ -7,7 +7,7 @@ from src.task.BaseCombatTask import BaseCombatTask, CombatStateUnknown
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.weekly_boss import (
     WEEKLY_BOSSES, WeeklyBossResult, compact, boss_title, match_target_button,
-    parse_cost, parse_remaining, parse_stamina,
+    combat_phase, parse_cost, parse_remaining, parse_stamina,
 )
 
 
@@ -37,6 +37,7 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
     CLAIM_CONFIRM = (0.56, 0.60, 0.75, 0.66)
     CLAIM_CANCEL = (0.24, 0.60, 0.43, 0.66)
     CLAIM_STAMINA = (0.735, 0.035, 0.805, 0.078)
+    TASK_HINT = (0.01, 0.12, 0.28, 0.30)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -192,9 +193,23 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         return claim if f and claim and abs(f.y - claim.y) <= self.height * 0.015 else None
 
     def _battle_finished(self):
-        # Arena victory is not a reward receipt. No input or claim accounting.
-        return bool(self._reward_available() or
+        # A phase transition can briefly look out of combat or show victory.
+        # The left objective is authoritative while it still says to fight.
+        phase = combat_phase(self._text(self.TASK_HINT))
+        if phase == 'combat':
+            return False
+        return bool(phase == 'post' or self._reward_available() or
                     self._button(self.VICTORY, '挑战成功'))
+
+    def _wait_combat_phase(self, timeout=30):
+        def read():
+            phase = combat_phase(self._text(self.TASK_HINT))
+            if phase:
+                return phase
+            if self._reward_available() or self._button(self.VICTORY, '挑战成功'):
+                return 'post'
+            return None
+        return self._stable_value(read, '过场后无法确认周本战斗阶段', timeout)
 
     def on_combat_check(self):
         # FarmEcho's hook presses arbitrary F prompts; weekly rewards are only
@@ -220,24 +235,32 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
                                running=True, target=True, raise_if_not_found=True)
             finally:
                 self._release_movement()
-        self.skip_combat_check = False
-        try:
-            self.combat_once(wait_combat_time=10, raise_if_not_found=True)
-        except CombatStateUnknown as error:
-            # A liberation can outlast the boss. Verify fresh victory evidence
-            # rather than treating every animation timeout as successful combat.
-            self.skip_combat_check = True
-            self._release_movement()
-            self._stage('战斗状态待确认：检查挑战成功或领奖交互')
+        while True:
+            self.skip_combat_check = False
+            combat_error = None
             try:
-                self._stable_value(lambda: True if self._battle_finished() else None,
-                                   '未确认周本胜利，保留战斗异常', timeout=5)
+                self.combat_once(wait_combat_time=10, raise_if_not_found=True)
+            except CombatStateUnknown as error:
+                combat_error = error
+            finally:
+                self.skip_combat_check = True
+                self._release_movement()
+
+            self._stage('战斗状态待确认：检查左侧任务提示')
+            try:
+                phase = self._wait_combat_phase()
             except WeeklyPageTimeout as verification_error:
-                raise error from verification_error
-            self.log_info('周本胜利已连续确认，恢复战后寻奖；尚未计入领奖次数')
-            self.combat_end()
-        finally:
-            self.skip_combat_check = True
+                if combat_error:
+                    raise combat_error from verification_error
+                raise
+            if phase == 'post':
+                if combat_error:
+                    self.combat_end()
+                self.log_info('周本战后阶段已连续确认；尚未计入领奖次数')
+                break
+            self._stage('周本仍需击败敌人，等待下一阶段')
+            self._wait_for(lambda: self.in_combat(target=True),
+                           '下一阶段 Boss 未出现', 45)
         self.reset_to_false('weekly combat returned; verify reward')
 
     def _settlement(self):

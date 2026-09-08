@@ -3,7 +3,8 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from src.task.weekly_boss import (
-    WEEKLY_BOSSES, parse_remaining, parse_cost, parse_stamina, match_target_button,
+    WEEKLY_BOSSES, combat_phase, parse_remaining, parse_cost, parse_stamina,
+    match_target_button,
 )
 from src.task.WeeklyBossTask import WeeklyBossTask
 
@@ -44,6 +45,14 @@ class TestWeeklyBossParsing(unittest.TestCase):
         self.assertIs(match_target_button([title, wrong, right], name, 1152), right)
         self.assertIsNone(match_target_button([title, wrong], name, 1152))
         self.assertIsNone(match_target_button([title, right, box('直接挑战', 1750, 645)], name, 1152))
+
+    def test_combat_phase_uses_objective_meaning_not_text_change(self):
+        for text in ('击败敌人', '击败伤痕', '与岁主「角」对战'):
+            self.assertEqual(combat_phase(text), 'combat')
+        for text in ('领取奖励', '离开某地'):
+            self.assertEqual(combat_phase(text), 'post')
+        for text in ('', '剧情过场', '无法识别'):
+            self.assertIsNone(combat_phase(text))
 
 
 class TestWeeklyBossFlow(unittest.TestCase):
@@ -223,15 +232,14 @@ class TestWeeklyBossBoundaries(unittest.TestCase):
         task._release_movement = Mock()
         task.reset_to_false = Mock()
         task.combat_end = Mock()
-        task._battle_finished = Mock(return_value=True)
+        task._wait_combat_phase = Mock(return_value='post')
         return task
 
     def test_unknown_combat_recovers_only_after_victory_evidence(self):
         from src.task.BaseCombatTask import CombatStateUnknown
         task = self.combat_task(CombatStateUnknown('liberation timeout'))
-        task._battle_finished.side_effect = [None, True, True]
         task._fight()
-        self.assertEqual(task._battle_finished.call_count, 3)
+        task._wait_combat_phase.assert_called_once_with()
         task.combat_end.assert_called_once()
         self.assertTrue(task.skip_combat_check)
         self.assertNotIn('已确认领奖', task.info)
@@ -241,7 +249,7 @@ class TestWeeklyBossBoundaries(unittest.TestCase):
         from src.task.WeeklyBossTask import WeeklyPageTimeout
         error = CombatStateUnknown('liberation timeout')
         task = self.combat_task(error)
-        task._stable_value = Mock(side_effect=WeeklyPageTimeout('no victory'))
+        task._wait_combat_phase.side_effect = WeeklyPageTimeout('no victory')
         with self.assertRaises(CombatStateUnknown) as caught:
             task._fight()
         self.assertIs(caught.exception, error)
@@ -255,16 +263,42 @@ class TestWeeklyBossBoundaries(unittest.TestCase):
             task = self.combat_task(error)
             with self.assertRaises(type(error)):
                 task._fight()
-            task._battle_finished.assert_not_called()
+            task._wait_combat_phase.assert_not_called()
 
     def test_stop_during_victory_verification_propagates(self):
         from ok import TaskDisabledException
         from src.task.BaseCombatTask import CombatStateUnknown
         task = self.combat_task(CombatStateUnknown('timeout'))
-        task._battle_finished.side_effect = TaskDisabledException()
+        task._wait_combat_phase.side_effect = TaskDisabledException()
         with self.assertRaises(TaskDisabledException):
             task._fight()
         task.combat_end.assert_not_called()
+
+    def test_normal_combat_return_with_next_phase_continues_without_claim(self):
+        task = self.combat_task(None)
+        task._wait_combat_phase.side_effect = ['combat', 'post']
+        task._wait_for = Mock(return_value=True)
+        task.in_combat = Mock(return_value=True)
+        task._fight()
+        self.assertEqual(task.combat_once.call_count, 2)
+        task._wait_for.assert_called_once()
+        task.combat_end.assert_not_called()
+        self.assertNotIn('已确认领奖', task.info)
+
+    def test_battle_hint_overrides_victory_and_reward_auxiliary_signals(self):
+        task = self.task()
+        task._text = Mock(return_value='击败伤痕')
+        task._reward_available = Mock(return_value=object())
+        task._button = Mock(return_value=object())
+        self.assertFalse(task._battle_finished())
+
+    def test_unknown_phase_after_normal_return_stops(self):
+        from src.task.WeeklyBossTask import WeeklyPageTimeout
+        task = self.combat_task(None)
+        task._wait_combat_phase.side_effect = WeeklyPageTimeout('unknown')
+        with self.assertRaises(WeeklyPageTimeout):
+            task._fight()
+        self.assertEqual(task.combat_once.call_count, 1)
 
     def task(self):
         task = object.__new__(WeeklyBossTask)

@@ -59,6 +59,15 @@ def parse_stamina(text):
     return int(match[1]) if match else None
 
 
+def combat_phase(text):
+    text = compact(text).replace('「', '').replace('」', '')
+    if text.startswith('击败') or text.startswith('与岁主角对战'):
+        return 'combat'
+    if text.startswith('领取奖励') or text.startswith('离开'):
+        return 'post'
+    return None
+
+
 def match_target_button(boxes, target_name, height):
     titles = [b for b in boxes if boss_title(b.name) == target_name]
     if len(titles) != 1:
