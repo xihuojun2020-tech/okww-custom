@@ -2,6 +2,8 @@
 
 适用版本：**1.37.00 起**。本版按所有者的明确要求自动上传日志和截图，不再使用 1.36.00 的默认关闭或逐张审核策略。
 
+本文已同步 **1.38.01** 的独立后台与旧任务迁移机制。自动上传策略不变，后台运行环境与主程序更新目录分离。
+
 ## 使用规则
 
 - 每个安装目录更新到本版并首次启动后，自动建立独立队列、设备标识和计划任务。仍停留在旧版本的程序不能远程获得新行为，必须更新并运行一次。
@@ -20,7 +22,7 @@ NAS 目录：`\\192.168.3.170\xihuojun 共享给我\AI诊断`，用户名：`ai-
 
 ```powershell
 .\.venv\Scripts\python.exe -m src.runtime.diagnostic_uploader --save-credentials
-.\.venv\Scripts\python.exe -m src.runtime.diagnostic_uploader --ensure-task
+.\.venv\Scripts\python.exe scripts/repair_diagnostic_runtime.py --source . --apply
 .\.venv\Scripts\python.exe -m src.runtime.diagnostic_uploader --status
 ```
 
@@ -40,11 +42,26 @@ NAS 目录：`\\192.168.3.170\xihuojun 共享给我\AI诊断`，用户名：`ai-
 
 ## 计划任务
 
-从 1.37.01 起，补传任务使用同一 Python 环境的 `pythonw.exe` 静默执行，避免每分钟控制台闪现。升级后首次启动按任务修订号立即修正旧定义，不等待 24 小时检查缓存。安装脚本的 `-Preview` 参数只输出动作定义，不注册或修改任务。
+从 1.38.01 起，补传任务使用独立后台快照的 `pythonw.exe` 静默执行。快照位于安装盘根目录 `OKWW-Background/<安装ID>/<代码指纹>`，含独立Python、必要依赖和诊断代码；不依赖正在更新的程序目录。此前1.37.01仅解决闪窗，仍复用主程序Python，可能被启动器判为应用未退出。
+
+升级后首次启动按任务修订号修正旧定义，不等待24小时缓存。主程序唤醒后台、系统补传及上传/清理子进程都使用隔离环境；快照中的来源绑定继续指向原日志和截图目录。安装脚本的 `-Preview` 参数只输出动作定义，不注册或修改任务。
 
 启动后台上传器自动执行 `src/runtime/install_diagnostic_task.ps1`，创建 `okww-diagnostics-安装目录标识`。每个安装目录使用不同名称。仅更新自己拥有的任务；同名其他来源的任务拒绝覆盖。
 
-任务使用当前用户的交互登录权限和本机 Python，每分钟执行一次。设置页显示安装状态；失败时需检查当前 Windows 用户是否允许创建计划任务。没有安装成功时，程序运行中的上传继续，但不能声称退出后已有系统补传。
+任务使用当前用户的交互登录权限和独立后台Python，每分钟执行一次。设置页显示安装状态；失败时需检查当前 Windows 用户是否允许创建计划任务。后台准备、自检或计划任务安装失败不等于已具备退出后的补传能力，应检查诊断状态。
+
+## 旧安装无法更新时的迁移
+
+如果启动器提示应用仍在运行，应核对列出的进程是否为旧诊断上传模块。旧计划任务会每分钟重启，因此只结束一次Python不能根治。使用新版源码的修复工具，明确指定旧安装的 working 目录：
+
+```powershell
+.\.venv\Scripts\python.exe scripts/repair_diagnostic_runtime.py --source 'E:\game\okww owener\data\apps\okww-custom\working'
+.\.venv\Scripts\python.exe scripts/repair_diagnostic_runtime.py --source 'E:\game\okww owener\data\apps\okww-custom\working' --apply
+```
+
+第一条仅准备独立后台并自检，第二条执行迁移。工具核验任务归属，导出XML备份、暂停对应旧任务，仅停止同安装Python目录内且指向同日志队列的上传进程，随后切换任务；失败恢复原定义。不删除待传资料、不搬迁Windows凭据、不修改账号配置。备份位于后台快照的 `migration/*.xml`；详细回滚说明见 [实施记录](superpowers/plans/2026-09-08-exit-background-isolation.md)。
+
+当前设备该迁移已完成，不需要重复执行。主界面退出修复仍需安装1.38.01后手动验收；任务返回码0只说明该次后台任务正常结束，不代表所有历史资料均已交付。
 
 ## NAS 完整性与日志清理
 
