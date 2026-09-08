@@ -218,10 +218,70 @@ class TestWeeklyBossBoundaries(unittest.TestCase):
         task._ocr = Mock(return_value=[box('other title')])
         task._executor.method = SimpleNamespace(height=1440)
         task.click_box = Mock()
-        with self.assertRaisesRegex(RuntimeError, '未找到'):
+        task.click_relative = Mock()
+        with self.assertRaisesRegex(RuntimeError, '未确认列表翻页'):
             task._select_target(WEEKLY_BOSSES[0])
         task.click_box.assert_not_called()
         self.assertLessEqual(task.scroll_relative.call_count, 4)
+        self.assertEqual(task.click_relative.call_count, 14)
+        self.assertAlmostEqual(task.click_relative.call_args.args[1], 0.88)
+
+    def test_stuck_wheel_uses_scrollbar_until_target_appears(self):
+        task = self.task()
+        task._executor.method = SimpleNamespace(height=1440)
+        task.scroll_relative = Mock()
+        task.click_relative = Mock()
+        task.click_box = Mock()
+        task._wait_for = Mock()
+        boss = WEEKLY_BOSSES[8]
+        title = box(boss.name + '·战歌重奏', 900, 600, 350)
+        button = box('直接挑战', 1750, 640)
+        # The first several track clicks can hit the same scrollbar thumb.
+        task._ocr = Mock(side_effect=lambda *_: [title, button]
+                         if task.click_relative.call_count >= 10 else [box('other title')])
+        task._select_target(boss)
+        self.assertEqual(task.click_relative.call_count, 10)
+        task.click_box.assert_called_once_with(button)
+        task._wait_for.assert_called_once()
+
+    def test_wheel_can_find_target_without_scrollbar(self):
+        task = self.task()
+        task._executor.method = SimpleNamespace(height=1440)
+        task.scroll_relative = Mock()
+        task.click_relative = Mock()
+        task.click_box = Mock()
+        task._wait_for = Mock()
+        boss = WEEKLY_BOSSES[8]
+        button = box('直接挑战', 1750, 640)
+        task._ocr = Mock(side_effect=[[box('other title')],
+                        [box(boss.name, 900, 600, 350), button]])
+        task._select_target(boss)
+        task.click_box.assert_called_once_with(button)
+        task.click_relative.assert_not_called()
+
+    def test_scrollbar_scan_with_progress_but_no_target_is_bounded(self):
+        task = self.task()
+        task._executor.method = SimpleNamespace(height=1440)
+        task.scroll_relative = Mock()
+        task.click_relative = Mock()
+        task.click_box = Mock()
+        task._ocr = Mock(side_effect=lambda *_: [box(f'other {task.click_relative.call_count}')])
+        with self.assertRaisesRegex(RuntimeError, '分段搜索.*未找到'):
+            task._select_target(WEEKLY_BOSSES[8])
+        self.assertEqual(task.click_relative.call_count, 14)
+        task.click_box.assert_not_called()
+
+    def test_stop_during_scrollbar_scan_propagates(self):
+        from ok import TaskDisabledException
+        task = self.task()
+        task._executor.method = SimpleNamespace(height=1440)
+        task.scroll_relative = Mock()
+        task.click_relative = Mock(side_effect=TaskDisabledException())
+        task.click_box = Mock()
+        task._ocr = Mock(return_value=[box('other title')])
+        with self.assertRaises(TaskDisabledException):
+            task._select_target(WEEKLY_BOSSES[8])
+        task.click_box.assert_not_called()
 
     def test_navigation_and_registration(self):
         from config import config

@@ -101,26 +101,57 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
 
     def _select_target(self, boss):
         self._stage(f'寻找周本：{boss.name}')
+
+        def scan(label):
+            self.next_frame()
+            boxes = self._ocr(self.LIST)
+            signature = tuple((compact(b.name), round(b.y / self.height, 2)) for b in boxes)
+            titles = [boss_title(b.name) for b in boxes if '战歌重奏' in compact(b.name)]
+            self.log_info(f'周本搜索 {label}：可见标题={titles}，OCR框数={len(boxes)}')
+            target = match_target_button(boxes, boss.name, self.height)
+            if target:
+                self.log_info(f'周本目标与同行挑战按钮已确认：{boss.name}')
+                self.click_box(target)
+                self._wait_for(lambda: self._detail_ready(boss), '挑战页面与所选周本不一致')
+            return target is not None, signature
+
+        self.log_info('周本列表：滚轮回顶 x=0.92 y=0.50 count=30')
         self.scroll_relative(0.92, 0.5, 30)
         self.sleep(1)
         previous = None
         unchanged = 0
-        for _ in range(16):
-            self.next_frame()
-            boxes = self._ocr(self.LIST)
-            target = match_target_button(boxes, boss.name, self.height)
-            if target:
-                self.click_box(target)
-                self._wait_for(lambda: self._detail_ready(boss), '挑战页面与所选周本不一致')
+        for index in range(16):
+            found, signature = scan(f'滚轮第{index + 1}轮')
+            if found:
                 return
-            signature = tuple((compact(b.name), round(b.y / self.height, 2)) for b in boxes)
             unchanged = unchanged + 1 if signature and signature == previous else 0
+            self.log_info(f'周本列表：连续未变化={unchanged}')
             if unchanged >= 2:
                 break
             previous = signature
+            self.log_info('周本列表：滚轮下翻 x=0.92 y=0.50 count=-3')
             self.scroll_relative(0.92, 0.5, -3)
             self.sleep(0.7)
-        raise RuntimeError(f'列表中未找到周本：{boss.name}，未选择其他目标')
+
+        # Same track x as BaseWWTask.click_on_book_target; small overlapping
+        # steps avoid skipping rows. A click inside the thumb need not move it.
+        self.log_info('周本滚轮搜索未定位目标，改用右侧滚动条从上到下分段搜索')
+        progressed = False
+        for index in range(14):
+            y = min(0.25 + index * 0.05, 0.88)
+            self.log_info(f'周本滚动条：第{index + 1}/14段 x=0.973 y={y:.3f}')
+            self.click_relative(0.973, y)
+            self.sleep(0.7)
+            found, signature = scan(f'滚动条第{index + 1}段')
+            if found:
+                return
+            changed = bool(signature and previous and signature != previous)
+            progressed = progressed or changed
+            self.log_info(f'周本滚动条：页面内容变化={changed}')
+            previous = signature
+        if not progressed:
+            raise RuntimeError(f'未确认列表翻页，无法完成周本搜索：{boss.name}；未选择其他目标')
+        raise RuntimeError(f'滚动条分段搜索后仍未找到周本：{boss.name}，未选择其他目标')
 
     def _detail_ready(self, boss):
         frame = self.frame
