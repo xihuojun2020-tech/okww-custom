@@ -197,6 +197,27 @@ catch { $failed=$true }
         FileCollector(source, self.root).collect(self.session.run)
         self.assertEqual(len(list(self.session.run.glob('batches/*/manifest.json'))), len(manifests))
 
+    def test_truncated_image_is_skipped_then_retried_after_repair(self):
+        from PIL import Image
+        source = Path(self.temp.name) / 'app'
+        (source / 'logs').mkdir(parents=True)
+        pictures = source / 'screenshots'
+        pictures.mkdir()
+        collector = FileCollector(source, self.root)
+        log = source / 'logs' / 'app.log'
+        log.write_text('still uploads\n', encoding='utf-8')
+        broken = pictures / 'broken.png'
+        broken.write_bytes(b'not-a-complete-png')
+        collector.collect(self.session.run)
+        warning = self.root / 'collector-error.json'
+        self.assertTrue(warning.exists())
+        self.assertFalse(list(self.session.run.glob('batches/*/截图/**/*.png')))
+        self.assertTrue(list(self.session.run.glob('batches/*/日志/**/*.log')))
+        Image.new('RGB', (5, 5), 'green').save(broken)
+        collector.collect(self.session.run)
+        self.assertFalse(warning.exists())
+        self.assertTrue(list(self.session.run.glob('batches/*/截图/**/*.png')))
+
     def test_weekly_cleanup_retains_images_pending_and_unrelated_files(self):
         from PIL import Image
         self.session.record_event('new-log', {'text': 'diagnostic evidence'})

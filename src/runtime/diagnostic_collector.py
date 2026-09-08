@@ -46,16 +46,18 @@ class FileCollector:
                 'offset': stat.st_size, 'prefix_size': len(prefix), 'prefix_hash': digest(prefix)}
 
     def collect(self, run):
-        changed = 0
+        changed, failed = 0, False
         for name, path in self.files():
             if changed >= 32:
                 break
             try:
                 changed += bool(self._collect_file(run, name, path))
             except (OSError, ValueError) as error:
+                failed = True
                 # One malformed/newly-written file must not block the other evidence.
                 from src.runtime.diagnostic_export import sanitize_text
-                atomic_json(self.root / 'collector-error.json', {'error': sanitize_text(error), 'time': time.time()})
+                atomic_json(self.root / 'collector-error.json', {
+                    'error': sanitize_text(error), 'file': sanitize_text(name), 'time': time.time()})
                 try:
                     self.cursors.setdefault(name, {})['failed_stamp'] = self.stamp(path)
                     atomic_json(self.path, self.cursors)
@@ -63,6 +65,8 @@ class FileCollector:
                     pass
         if changed:
             atomic_json(self.path, self.cursors)
+            if not failed:
+                (self.root / 'collector-error.json').unlink(missing_ok=True)
 
     def _collect_file(self, run, name, path):
         from src.runtime.diagnostic_session import seal_run

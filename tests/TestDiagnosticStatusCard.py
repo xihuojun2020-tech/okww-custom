@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 from PySide6.QtWidgets import QApplication
-from src.gui.DiagnosticStatusCard import DiagnosticStatusCard, diagnostic_error_message
+from src.gui.DiagnosticStatusCard import DiagnosticStatusCard, diagnostic_error_message, diagnostic_status_text
 
 
 class TestDiagnosticStatusCard(unittest.TestCase):
@@ -57,6 +57,22 @@ class TestDiagnosticStatusCard(unittest.TestCase):
     def test_upload_errors_have_actionable_messages(self):
         self.assertIn('重启程序', diagnostic_error_message("No module named 'win32timezone'"))
         self.assertIn('重新填写密码', diagnostic_error_message('NAS authentication failed, Windows code 86'))
+
+    def test_collection_warning_does_not_replace_upload_status(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            batch = root / 'run' / 'batches' / 'batch'
+            batch.mkdir(parents=True)
+            (batch / '_READY').touch()
+            states = root / 'states'
+            states.mkdir()
+            (states / 'run--batch.json').write_text(json.dumps({
+                'status': 'retrying', 'last_error': 'SMB worker timed out'}), encoding='utf-8')
+            (root / 'collector-error.json').write_text(json.dumps({
+                'error': 'image file is truncated'}), encoding='utf-8')
+            status = diagnostic_status_text(root)
+            self.assertIn('最近上传错误：SMB worker timed out', status)
+            self.assertIn('最近采集警告：image file is truncated', status)
 
 
 if __name__ == '__main__':

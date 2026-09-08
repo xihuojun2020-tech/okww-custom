@@ -23,6 +23,34 @@ def diagnostic_error_message(error):
     return text
 
 
+def diagnostic_status_text(root):
+    counts, upload_error, last_success = Counter(), '', 0
+    for ready in root.glob('*/batches/*/_READY'):
+        state_path = root / 'states' / (ready.parents[2].name + '--' + ready.parent.name + '.json')
+        try:
+            state = json.loads(state_path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            state = {'status': 'pending'}
+        counts[state.get('status', 'pending')] += 1
+        upload_error = state.get('last_error') or upload_error
+        last_success = max(last_success, state.get('uploaded_at', 0))
+    from datetime import datetime
+    success = datetime.fromtimestamp(last_success).isoformat(timespec='seconds') if last_success else '无'
+    scheduler_path = root / 'scheduler.json'
+    scheduler = json.loads(scheduler_path.read_text(encoding='utf-8')).get('status') if scheduler_path.exists() else '待安装'
+    collector_error = root / 'collector-error.json'
+    warning = ''
+    if collector_error.exists():
+        try:
+            value = json.loads(collector_error.read_text(encoding='utf-8'))
+            warning = value.get('error', '')
+        except (OSError, ValueError):
+            warning = '采集警告状态无法读取'
+    return (f'批次：{dict(counts)}\n最后成功：{success}\n退出后补传任务：{scheduler}'
+            f'\n最近上传错误：{diagnostic_error_message(upload_error) or "无"}'
+            f'\n最近采集警告：{diagnostic_error_message(warning) or "无"}')
+
+
 class DiagnosticStatusCard(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -63,24 +91,7 @@ class DiagnosticStatusCard(QWidget):
     def refresh(self):
         root = self.root
         def read():
-            counts, last_error, last_success = Counter(), '', 0
-            for ready in root.glob('*/batches/*/_READY'):
-                state_path = root / 'states' / (ready.parents[2].name + '--' + ready.parent.name + '.json')
-                try:
-                    state = json.loads(state_path.read_text(encoding='utf-8'))
-                except (OSError, ValueError):
-                    state = {'status': 'pending'}
-                counts[state.get('status', 'pending')] += 1
-                last_error = state.get('last_error') or last_error
-                last_success = max(last_success, state.get('uploaded_at', 0))
-            from datetime import datetime
-            success = datetime.fromtimestamp(last_success).isoformat(timespec='seconds') if last_success else '无'
-            scheduler_path = root / 'scheduler.json'
-            scheduler = json.loads(scheduler_path.read_text(encoding='utf-8')).get('status') if scheduler_path.exists() else '待安装'
-            collector_error = root / 'collector-error.json'
-            if collector_error.exists():
-                last_error = json.loads(collector_error.read_text(encoding='utf-8')).get('error') or last_error
-            return f'批次：{dict(counts)}\n最后成功：{success}\n退出后补传任务：{scheduler}\n最近错误：{diagnostic_error_message(last_error) or "无"}'
+            return diagnostic_status_text(root)
         self.operation.start(read, self.status.setText, lambda e: self.status.setText(sanitize_text(e)))
 
     def save(self):
