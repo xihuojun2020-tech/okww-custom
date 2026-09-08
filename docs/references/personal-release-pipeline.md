@@ -50,3 +50,6 @@ PyAppify 1.2.3 离线 setup 的安装阶段会克隆仓库并检出最新正式�
 - PyAppify 1.2.3 候选安装行为：本项目候选流水线 `33320437066`、`33326613512` 与隔离安装记录（2026-08-31）。
 
 访问日期：2026-08-31。
+# 局域网 NAS 更新补充
+
+GitHub Release 继续提供完整安装器；同一版本可另外生成 LAN 源码更新包，客户端通过 NAS HTTPS 获取，不调用 GitHub。LAN 发布命令和证书、权限、回滚步骤见 [局域网 NAS 更新运维手册](lan-nas-update-runbook.md)。发布顺序固定为版本 ZIP、`SHA256SUMS.txt`、最后 `latest.json`。

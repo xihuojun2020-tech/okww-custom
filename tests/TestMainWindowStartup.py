@@ -19,6 +19,23 @@ from custom_ok.ok.gui.MainWindow import MainWindow
 class TestMainWindowStartup(unittest.TestCase):
     """Regression tests for the post-show integrity gate."""
 
+    def test_exit_cleanup_preserves_bound_lan_update_helper(self):
+        from main import _exit_cleanup
+        root = Path(__file__).resolve().parents[1]
+        request = root / 'configs' / 'update-staging' / 'v1.41.00' / 'apply-request.json'
+        launcher = Mock(pid=50)
+        launcher.is_running.return_value = True
+        launcher.exe.return_value = str(root / 'launcher.exe')
+        helper = Mock(pid=51)
+        helper.cmdline.return_value = ['python.exe', '-m', 'src.update.lan_apply', str(request)]
+        launcher.children.return_value = [helper]
+        with patch('main.os.path.realpath', return_value=str(root / 'launcher.exe')), \
+                patch('psutil.Process') as current:
+            current.return_value.parents.return_value = []
+            _exit_cleanup((launcher, os.path.normcase(str(root / 'launcher.exe'))))
+        helper.terminate.assert_not_called()
+        launcher.terminate.assert_called_once_with()
+
     def test_close_continues_after_executor_and_app_errors_without_killing_launcher(self):
         event = Mock()
         app = Mock(exit_event=threading.Event())

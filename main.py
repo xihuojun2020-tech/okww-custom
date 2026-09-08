@@ -207,6 +207,18 @@ def _exit_cleanup(owned_launcher=None):
         for process in reversed(descendants):
             if process.pid in interpreter_chain:
                 continue
+            # The LAN update helper is deliberately launched before Qt exits,
+            # then waits for this process to release source files. Preserve
+            # only a helper whose request is bound to this installation.
+            try:
+                command = process.cmdline()
+                marker = command.index('src.update.lan_apply')
+                request = Path(command[marker + 1]).resolve()
+                staging = Path(__file__).resolve().parent / 'configs' / 'update-staging'
+                if request.is_relative_to(staging.resolve()):
+                    continue
+            except (psutil.Error, OSError, ValueError, IndexError):
+                pass
             # Detached diagnostic workers own a separate runtime and must survive
             # application exit. Verify their bundle binding, not just their name.
             try:

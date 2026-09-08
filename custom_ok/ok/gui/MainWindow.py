@@ -1,4 +1,6 @@
 import os
+import subprocess
+import sys
 import threading
 import time
 
@@ -125,6 +127,7 @@ class MainWindow(FluentWindow):
         from src.gui.TestHubTab import TestHubTab
 
         self.general_settings_tab = GeneralSettingsTab(config, exit_event, executor, global_config)
+        self.general_settings_tab.lan_update_card.apply_requested.connect(self.schedule_lan_update)
         self.account_settings_tab = AccountSettingsTab()
         self.task_hub_tab = TaskHubTab()
         self.activity_hub_tab = ActivityHubTab()
@@ -482,6 +485,23 @@ class MainWindow(FluentWindow):
             logger.error('restart relayer start failed', e)
 
         # 正常退出当前进程（配置自动保存），重启器稍后拉起新实例
+        self.app.quit()
+
+    def schedule_lan_update(self, request_path):
+        """Start a loaded update helper, then let the application exit normally."""
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        command = [sys.executable, '-m', 'src.update.lan_apply', os.path.abspath(str(request_path))]
+        try:
+            subprocess.Popen(
+                command, cwd=root,
+                creationflags=0x08000000 if os.name == 'nt' else 0,
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        except OSError as error:
+            logger.error('LAN update helper start failed', error)
+            InfoBar.error(self.tr('更新启动失败'), self.tr('当前版本未改变，请查看日志'),
+                          duration=3000, parent=self)
+            return
         self.app.quit()
 
     def on_tray_icon_activated(self, reason):

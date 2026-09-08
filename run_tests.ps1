@@ -25,6 +25,8 @@ $groups = @{
     "TestDiagnosisTask.py", "TestDomainRecoveryLoop.py", "TestForgeryDomainLabels.py",
     "TestLoggingRedaction.py", "TestMainProxyConfig.py",
     "TestObservability.py", "TestPackageSmoke.py", "TestReleaseReadiness.py", "TestRuntimeServices.py",
+    "TestLanUpdateManifest.py", "TestLanUpdateTransport.py", "TestLanUpdatePackage.py",
+    "TestLanUpdatePublisher.py", "TestLanUpdateService.py", "TestLanUpdateApply.py",
     "TestScheduleSupport.py", "TestSecurityBaseline.py", "TestSensitiveIdentifierScan.py",
     "TestTaskStatus.py", "TestLogoutCapture.py", "TestDailyTaskStatus.py", "TestDailyActivityFlow.py", "TestStaminaAccounting.py",
     "TestSequenceRepository.py", "TestTestGroups.py", "TestTestRunner.py", "TestGameRuntimeErrors.py", "TestUpstreamCharacterPort.py", "TestWaitLogin.py",
@@ -41,7 +43,7 @@ $groups = @{
     "TestDiagnosticStatusCard.py",
     "TestDailyRunConfirmation.py",
     "TestAccountManagementTabs.py", "TestCodexLightUI.py", "TestFiveSectionMainWindow.py",
-    "TestMainWindowStartup.py", "TestNavigationSections.py", "TestTaskNavigationClassification.py",
+    "TestMainWindowStartup.py", "TestLanUpdateUI.py", "TestNavigationSections.py", "TestTaskNavigationClassification.py",
     "TestCharacterCodeTab.py", "TestEnhanceEchoStatusBox.py", "TestSkipDialogConfirm.py",
     "TestSkipDialogWideMode.py", "TestTaskStatusWindow.py", "TestUsabilityUI.py"
   )

@@ -1,5 +1,7 @@
 """One page containing every general automation setting."""
 
+from pathlib import Path
+
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import FluentIcon
 
@@ -27,6 +29,12 @@ class GeneralSettingsTab(CustomTab):
         behavior_layout.setContentsMargins(12, 12, 12, 12)
         from src.gui.DiagnosticStatusCard import DiagnosticStatusCard
         behavior_layout.addWidget(DiagnosticStatusCard(behavior_tab))
+        from config import version
+        from src.gui.LanUpdateCard import LanUpdateCard
+        self.lan_update_card = LanUpdateCard(
+            Path(__file__).resolve().parents[2] / "configs" / "lan_update.json",
+            version, executor, behavior_tab)
+        behavior_layout.addWidget(self.lan_update_card)
         self.hotkey_config = None
         self.basic_config = None
         for name, config_obj, option in global_config.get_all_visible_configs():
