@@ -66,7 +66,7 @@ def prepare_runtime(source_repo=None, *, home=None, code_repo=CODE_ROOT):
             pillow_libs = Path(PIL.__file__).parent.parent / 'pillow.libs'
             if pillow_libs.exists():
                 shutil.copytree(pillow_libs, packages / pillow_libs.name)
-            for name in ('win32cred', 'win32wnet'):
+            for name in ('win32cred', 'win32wnet', 'win32timezone', 'win32api'):
                 spec = importlib.util.find_spec(name)
                 shutil.copy2(spec.origin, packages / Path(spec.origin).name)
             import pywintypes
@@ -93,7 +93,7 @@ def prepare_runtime(source_repo=None, *, home=None, code_repo=CODE_ROOT):
 
 def check_runtime(bundle):
     bundle = Path(bundle).resolve()
-    probe = ("import sys,json,win32cred,win32wnet,pywintypes; from PIL import Image; "
+    probe = ("import sys,json,win32cred,win32wnet,win32timezone,win32api,pywintypes; from PIL import Image; "
              "from src.runtime import diagnostic_uploader,diagnostic_retention; "
              "print(json.dumps(sys.path))")
     result = subprocess.run([str(bundle / 'python/python.exe'), '-E', '-s', '-c', probe],

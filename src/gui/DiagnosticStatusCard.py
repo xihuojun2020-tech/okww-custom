@@ -14,6 +14,15 @@ from src.runtime.diagnostic_uploader import DEFAULT_TARGET
 from src.runtime.diagnostic_policy import settings, save_credentials
 
 
+def diagnostic_error_message(error):
+    text = sanitize_text(error)
+    if "No module named 'win32timezone'" in text:
+        return '诊断上传组件不完整；请升级到 1.41.02 或更高版本后重试'
+    if 'NAS authentication failed' in text or '用户名或密码不正确' in text:
+        return 'NAS 用户名或密码不正确；请重新填写密码并保存设置'
+    return text
+
+
 class DiagnosticStatusCard(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -71,7 +80,7 @@ class DiagnosticStatusCard(QWidget):
             collector_error = root / 'collector-error.json'
             if collector_error.exists():
                 last_error = json.loads(collector_error.read_text(encoding='utf-8')).get('error') or last_error
-            return f'批次：{dict(counts)}\n最后成功：{success}\n退出后补传任务：{scheduler}\n最近阻塞：{sanitize_text(last_error) or "无"}'
+            return f'批次：{dict(counts)}\n最后成功：{success}\n退出后补传任务：{scheduler}\n最近错误：{diagnostic_error_message(last_error) or "无"}'
         self.operation.start(read, self.status.setText, lambda e: self.status.setText(sanitize_text(e)))
 
     def save(self):
@@ -86,6 +95,13 @@ class DiagnosticStatusCard(QWidget):
             value = settings(root)
             value['target'] = target
             atomic_json(root / 'settings.json', value)
+            if secret:
+                with FileLease(root / '.uploader.lock'):
+                    for path in (root / 'states').glob('*.json'):
+                        state = json.loads(path.read_text(encoding='utf-8'))
+                        if state.get('status') == 'retrying':
+                            state['next_retry'] = 0
+                            atomic_json(path, state)
             wake_uploader(root)
         self.operation.start(write, lambda _: (self.password.clear(), self.refresh()),
                              lambda e: (self.password.clear(), self.status.setText(sanitize_text(e))))

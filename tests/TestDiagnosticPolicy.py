@@ -39,6 +39,7 @@ class TestDiagnosticPolicy(unittest.TestCase):
             self.assertEqual(result.stdout.splitlines(), [str(source), installation_id(source)])
             self.assertEqual(prepare_runtime(source, home=directory), bundle)
             self.assertFalse(bundle.is_relative_to(source))
+            self.assertTrue((bundle / 'python/Lib/site-packages/win32timezone.py').is_file())
             self.session.record_event('isolated-worker-probe', {})
             self.session.finish(timeout=5)
             batch = next(self.session.run.glob('batches/*/_READY')).parent

@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 from PySide6.QtWidgets import QApplication
-from src.gui.DiagnosticStatusCard import DiagnosticStatusCard
+from src.gui.DiagnosticStatusCard import DiagnosticStatusCard, diagnostic_error_message
 
 
 class TestDiagnosticStatusCard(unittest.TestCase):
@@ -43,9 +43,20 @@ class TestDiagnosticStatusCard(unittest.TestCase):
                 self.assertEqual(json.loads((states / 'blocked.json').read_text())['next_retry'], 123)
                 self.assertEqual(json.loads((states / 'retrying.json').read_text())['next_retry'], 0)
                 self.assertTrue(wake.called)
+                (states / 'retrying.json').write_text(json.dumps({'status': 'retrying', 'next_retry': 123}))
+                card.password.setText('not-a-real-password')
+                with patch('src.gui.DiagnosticStatusCard.save_credentials') as save_credentials:
+                    card.save()
+                    self.wait(card)
+                self.assertTrue(save_credentials.called)
+                self.assertEqual(json.loads((states / 'retrying.json').read_text())['next_retry'], 0)
             finally:
                 card.deleteLater()
                 self.app.processEvents()
+
+    def test_upload_errors_have_actionable_messages(self):
+        self.assertIn('1.41.02', diagnostic_error_message("No module named 'win32timezone'"))
+        self.assertIn('重新填写密码', diagnostic_error_message('NAS authentication failed, Windows code 86'))
 
 
 if __name__ == '__main__':
