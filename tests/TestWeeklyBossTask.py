@@ -512,7 +512,7 @@ class TestWeeklyBossBoundaries(unittest.TestCase):
         from config import config
         from src.gui.navigation_sections import classify_task
         self.assertIn(['src.task.WeeklyBossTask', 'WeeklyBossTask'], config['onetime_tasks'])
-        self.assertEqual(classify_task(self.task()), 'tests')
+        self.assertEqual(classify_task(self.task()), 'tasks')
 
 
 if __name__ == '__main__':

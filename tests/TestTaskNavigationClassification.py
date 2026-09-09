@@ -15,6 +15,7 @@ class TestTaskNavigationClassification(unittest.TestCase):
         self.assertEqual(classify_task(object.__new__(TestAccountSwitchTask)), TESTS)
         self.assertEqual(classify_task(object.__new__(AutoAbyssTask)), TESTS)
         self.assertIn("多账号每日任务", inspect.getsource(TestAccountSwitchTask.__init__))
+        self.assertIn('self.visible = False', inspect.getsource(TestAccountSwitchTask.__init__))
         self.assertTrue(issubclass(AutoAbyssTask, BaseCombatTask))
         self.assertIn("逐塔重新识别角色体力", inspect.getsource(AutoAbyssTask.__init__))
         self.assertIn("combat_once", inspect.getsource(AutoAbyssTask._run_floor_combat))

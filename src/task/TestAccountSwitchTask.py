@@ -40,6 +40,7 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
             "不执行每日任务，仅验证 登录识别→下拉框→选号→登录 全链路。"
         )
         self.group_name = "🧪 测试功能"
+        self.visible = False
         self.group_icon = Icon.DEVELOPER_TOOLS
         self._account_refresh_pending = False
 

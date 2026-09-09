@@ -185,11 +185,6 @@ class MainWindow(FluentWindow):
         self.addSubInterface(self.setting_tab, FluentIcon.SETTING, self.tr('程序设置'),
                              position=NavigationItemPosition.BOTTOM)
 
-        from ok.gui.about.AboutTab import AboutTab
-        self.about_tab = AboutTab(config)
-        self.addSubInterface(self.about_tab, FluentIcon.QUESTION, self.tr('About'),
-                             position=NavigationItemPosition.BOTTOM)
-
         dev = self.tr('Debug')
         profile = config.get('profile', "")
         self.setWindowTitle(f'{title} {version} {profile} {dev if debug else ""}')
@@ -558,15 +553,15 @@ class MainWindow(FluentWindow):
         w.cancelButton.setVisible(False)
         w.setContentCopyable(True)
         w.exec()
-        self.switchTo(self.about_tab)
 
     def show_startup_version_change_notice(self):
         version_change = get_startup_version_change()
         if not version_change:
             return
 
-        logger.info(f'show startup version change on about tab {version_change.title}')
-        self.switchTo(self.about_tab)
+        logger.info(f'show startup version change notification {version_change.title}')
+        InfoBar.info(title=version_change.title, content='', parent=self,
+                     duration=5000, position=InfoBarPosition.TOP)
 
     def showEvent(self, event):
         first_show = event.type() == QEvent.Show and not self.shown
@@ -631,7 +626,7 @@ class MainWindow(FluentWindow):
                 logger.info('update success, show copyright')
                 self.handler.post(lambda: communicate.copyright.emit(), delay=1)
             elif startup_version_change:
-                logger.info('skip copyright dialog because startup version change is shown on about tab')
+                logger.info('skip copyright dialog because startup version change notification is scheduled')
         args = self._startup_args
         if args.get('task', 0) > 0:
             task_index = args.get('task') - 1
@@ -901,8 +896,6 @@ class MainWindow(FluentWindow):
         page = getattr(self, route_attributes.get(index, ""), None)
         if page is not None:
             self.switchTo(page)
-        elif index == "about" and self.about_tab is not None:
-            self.switchTo(self.about_tab)
 
     def startup_task_tab(self):
         """Return the top-level task page used after execution starts."""

@@ -1,6 +1,7 @@
 import inspect
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
+from types import SimpleNamespace
 
 from custom_ok.ok.gui.MainWindow import MainWindow
 from src.gui.GeneralSettingsTab import GeneralSettingsTab
@@ -12,6 +13,19 @@ from src.gui.navigation_sections import build_navigation_manifest
 
 
 class TestFiveSectionMainWindow(unittest.TestCase):
+    def test_about_removed_and_upgrade_notice_keeps_current_page(self):
+        self.assertNotIn('AboutTab', inspect.getsource(MainWindow.__init__))
+        window = MainWindow.__new__(MainWindow)
+        window.switchTo = Mock()
+        window.navigate_tab('about')
+        window.switchTo.assert_not_called()
+        with patch('custom_ok.ok.gui.MainWindow.get_startup_version_change',
+                   return_value=SimpleNamespace(title='1.43.01')), \
+                patch('custom_ok.ok.gui.MainWindow.InfoBar.info') as notice:
+            window.show_startup_version_change_notice()
+            notice.assert_called_once()
+        window.switchTo.assert_not_called()
+
     def test_main_window_wires_exactly_five_project_hubs(self):
         source = inspect.getsource(MainWindow.__init__)
         for class_name in ("GeneralSettingsTab", "AccountSettingsTab", "TaskHubTab",

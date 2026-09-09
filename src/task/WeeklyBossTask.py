@@ -18,7 +18,7 @@ class WeeklyPageTimeout(RuntimeError):
 
 
 class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
-    navigation_section = 'tests'
+    navigation_section = 'tasks'
     owns_switch_healer_config = True
 
     BOOK_COUNT = (0.365, 0.13, 0.68, 0.18)
@@ -45,7 +45,7 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         super().__init__(*args, **kwargs)
         self.name = 'Weekly Boss Challenge'
         self.description = 'Claim all remaining weekly rewards from one boss, then verify zero remaining. Current stamina only; keep default difficulty and team.'
-        self.group_name = '🧪 测试功能'
+        self.group_name = None
         self.supported_languages = ['zh_CN']
         self.default_config.update({
             'Weekly Boss': WEEKLY_BOSSES[0].key,
