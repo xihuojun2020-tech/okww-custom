@@ -200,7 +200,47 @@ class TestFlatUI(unittest.TestCase):
             tab.card_widgets[0].setExpand(True)
             tab.refresh_ui()
             self.assertTrue(tab.card_widgets[0].isExpand)
+            tab.timer.stop()
             tab.deleteLater()
+
+    def test_category_headers_filter_hidden_tasks_and_survive_refresh(self):
+        from ok.gui.tasks.OneTimeTaskTab import OneTimeTaskTab
+        from ok.gui.tasks.TriggerTaskTab import TriggerTaskTab
+        def sample(name, section='tasks', visible=True):
+            task = type(name, (), {})()
+            task.__dict__.update(vars(example_task()))
+            task.navigation_section, task.visible = section, visible
+            return task
+        daily, weekly, hidden = sample('DailyTask'), sample('WeeklyBossTask'), sample('TacetTask', visible=False)
+        experiment, activity = sample('AutoAbyssTask', 'tests'), sample('EventTask', 'activities')
+        activity.activity_category = '常驻活动'
+        helper = sample('AutoCombatTask')
+        helper.enabled = True
+        helper.enable = Mock()
+        with patch.object(og, 'app', SimpleNamespace(tr=str)), \
+                patch.object(og, 'executor', SimpleNamespace(onetime_tasks=[weekly, experiment, hidden, activity, daily],
+                    trigger_tasks=[helper], current_task=None, waiting_for_task=lambda _: '')), \
+                patch.object(og, 'task_manager', SimpleNamespace(imported_scripts={})):
+            tasks = OneTimeTaskTab(section='tasks', group_tasks=True)
+            tools = OneTimeTaskTab(section='tests')
+            helpers = TriggerTaskTab()
+            self.assertEqual([card.task for card in tasks.card_widgets], [daily, weekly, activity])
+            self.assertEqual([label.text() for label in tasks._category_labels], ['每日执行', '每周任务', '活动'])
+            self.assertEqual([card.task for card in tools.card_widgets], [experiment])
+            helpers.card_widgets[0].setExpand(True)
+            tasks.refresh_ui()
+            helpers.refresh_ui()
+            self.assertEqual(len(tasks._category_labels), 3)
+            self.assertEqual([label.text() for label in helpers._category_labels], ['战斗与拾取'])
+            self.assertTrue(helpers.card_widgets[0].isExpand)
+            self.assertTrue(helper.enabled)
+            helper.enable.assert_not_called()
+            helper.disable.assert_not_called()
+            helpers.card_widgets[0].enable_button.setChecked(False)
+            helper.disable.assert_called_once()
+            for tab in (tasks, tools, helpers):
+                tab.timer.stop()
+                tab.deleteLater()
 
     def test_settings_header_action_and_account_groups(self):
         from src.gui.FlatSettingGroup import FlatActionSettingCard
@@ -284,6 +324,49 @@ class TestFlatUI(unittest.TestCase):
         self.assertLessEqual(minimum.height(), screen.height())
         geometry = QRect(*window.setGeometry.call_args.args)
         self.assertTrue(screen.contains(geometry))
+
+    def test_account_categories_keep_values_and_identity_controls_unique(self):
+        with tempfile.TemporaryDirectory() as temp:
+            env = make_account_environment(Path(temp))
+            tab = AccountConfigTab(AccountConfigEditor(env.repository))
+            tab.draft.tasks.update({'Weekly Garden Check Day': 'Monday', 'Merge Echo on Sunday': True,
+                                    'Logout After Daily Task': True, 'Weekly Boss Target': '无',
+                                    '备用识别名称': True, '备用识别名称内容': 'fixture'})
+            before = dict(tab.draft.tasks)
+            tab._render_form()
+            for index, title in ((1, '清理体力'), (2, '周本挑战'), (3, '周常安排'), (4, '收尾行为')):
+                section = tab.form_sections[index]
+                self.assertEqual(section.title_label.text(), title)
+                self.assertFalse(section.toggle_button.isChecked())
+            for key in ('Weekly Garden Check Day', 'Merge Echo on Sunday'):
+                self.assertTrue(tab.form_sections[3].isAncestorOf(tab.form_widgets[key]))
+            self.assertTrue(tab.form_sections[4].isAncestorOf(tab.form_widgets['Logout After Daily Task']))
+            self.assertTrue(tab.identity_group.isAncestorOf(tab.form_widgets['备用识别名称内容']))
+            self.assertEqual(tab.draft.tasks, before)
+            tab.deleteLater()
+
+    def test_task_management_buttons_navigate_without_mutating_task_metadata_or_draft(self):
+        from ok.gui.tasks.TaskCard import TaskCard
+        for name, key, callback in (('DailyTask', 'Manage Daily Profiles', 'open_account_editor'),
+                                    ('MultiAccountDailyTask', '管理序列', 'open_sequence_editor')):
+            task = type(name, (), {})()
+            task.__dict__.update(vars(example_task()))
+            original = dict(task.config_type)
+            draft = object()
+            window = SimpleNamespace(navigate_tab=Mock(), account_settings_tab=SimpleNamespace(
+                account_tab=SimpleNamespace(profile_combo=QLabel(), draft=draft), section_panels=[QLabel(), QLabel()]))
+            with patch.object(og, 'app', SimpleNamespace(tr=str)), \
+                    patch.object(og, 'executor', SimpleNamespace(waiting_for_task=lambda _: '')), \
+                    patch.object(og, 'main_window', window), patch('src.gui.SectionPanel.reveal_widget') as reveal:
+                card = TaskCard(task, True)
+                self.assertIn(key, card.config_widget_by_key)
+                card.config_type[key]['callback']()
+                window.navigate_tab.assert_called_once_with('accounts')
+                reveal.assert_called_once()
+                self.assertEqual(task.config_type, original)
+                self.assertIs(window.account_settings_tab.account_tab.draft, draft)
+                self.assertFalse(card.isExpand)
+                card.deleteLater()
 
 
 if __name__ == '__main__':

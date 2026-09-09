@@ -13,7 +13,9 @@ Navigation and theme settings live in `mkdocs.yml` at the repository root.
 
 ## Architecture and code review
 
-- [程序结构说明（1.31.15）](程序结构说明.md)
+- [程序结构说明（1.47.00）](程序结构说明.md)
+- [功能分类与界面操作（1.47.00）](references/flat-ui.md)
+- [UI 验收记录](references/ui-disclosure-verification.md)
 - [全面代码审查报告（2026-09-06）](reviews/2026-09-06全面代码审查.md)
 - [审查整改实施计划（2026-09-06）](superpowers/plans/2026-09-06-review-remediation-plan.md)
 

@@ -30,7 +30,7 @@ class TestCodexLightUI(unittest.TestCase):
 
         self.assertEqual(
             [item["title"] for item in build_navigation_manifest()],
-            ["通用设置", "账号设置", "任务", "活动", "测试功能"],
+            ["任务", "账号", "自动辅助", "工具", "设置"],
         )
         self.assertIn("self.section_panels", inspect.getsource(GeneralSettingsTab))
 

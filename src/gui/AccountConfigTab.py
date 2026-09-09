@@ -206,6 +206,10 @@ class AccountConfigTab(CustomTab):
         self.feature_code_label = QLabel("未记录（当前不参与任务）", self.identity_group)
         self.feature_code_label.setToolTip("来自游戏防 OLED 烧屏遮罩区域；当前只记录，不参与任务")
         self.identity_layout.addRow(FlatSettingRow("游戏内特征码（只读）", self.feature_code_label, parent=self.identity_group))
+        self.identity_task_fields = QWidget(self.identity_group)
+        self.identity_task_layout = QVBoxLayout(self.identity_task_fields)
+        self.identity_task_layout.setContentsMargins(0, 0, 0, 0)
+        self.identity_group.content_layout.addWidget(self.identity_task_fields)
         layout.addWidget(self.identity_group)
         self.sequence_group = QGroupBox("所属序列（勾选后保存即可调整当前账号归属）", root)
         self.sequence_layout = QVBoxLayout(self.sequence_group)
@@ -458,18 +462,28 @@ class AccountConfigTab(CustomTab):
             self.form_layout.removeRow(0)
         self.form_sections = {}
         self.form_widgets.clear()
+        while self.identity_task_layout.count():
+            item = self.identity_task_layout.takeAt(0)
+            if item.widget(): item.widget().deleteLater()
         stamina = {'Which to Farm', 'Which Tacet Suppression to Farm', 'Which Forgery Challenge to Farm',
                    'Material Selection'}
         daily = {'Farm Nightmare Nest for Daily Echo', 'Nightmare Which to Farm', 'Tacet Discord Nests to Farm',
-                 'Auto Farm all Nightmare Nest', 'Weekly Garden Check Day', 'Merge Echo on Sunday'}
+                 'Auto Farm all Nightmare Nest'}
+        weekly = {'Weekly Garden Check Day', 'Merge Echo on Sunday'}
         def group(field):
-            return 2 if field.key == 'Weekly Boss Target' else 1 if field.key in stamina else 0 if field.key in daily else 3
+            if field.key == 'Weekly Boss Target': return 2
+            if field.key in stamina: return 1
+            if field.key in daily: return 0
+            if field.key in weekly: return 3
+            if field.key == 'Logout After Daily Task': return 4
+            return 5
         last_group = None
         fields = sorted(account_field_metadata(self.draft.tasks), key=group)
         for field in fields:
-            if group(field) != last_group:
+            identity_field = field.key in ('备用识别名称', '备用识别名称内容')
+            if not identity_field and group(field) != last_group:
                 last_group = group(field)
-                heading = SectionPanel(('每日任务', '清理体力', '周本挑战', '其他选项')[last_group],
+                heading = SectionPanel(('日常与声骸', '清理体力', '周本挑战', '周常安排', '收尾行为', '高级任务参数')[last_group],
                                        parent=self.form_host, collapsible=True,
                                        expanded=states.get(last_group, False))
                 self.form_sections[last_group] = heading
@@ -492,7 +506,11 @@ class AccountConfigTab(CustomTab):
             widget.setEnabled(not field.read_only)
             widget.setToolTip(field.help_text)
             self.form_widgets[field.key] = widget
-            heading.add_row(field.label, widget, field.help_text)
+            if identity_field:
+                self.identity_task_layout.addWidget(FlatSettingRow(field.label, widget, field.help_text,
+                                                                  self.identity_task_fields))
+            else:
+                heading.add_row(field.label, widget, field.help_text)
             if isinstance(widget, QCheckBox):
                 widget.toggled.connect(self._mark_draft_edited)
             elif isinstance(widget, QComboBox):
@@ -508,7 +526,7 @@ class AccountConfigTab(CustomTab):
                 self.form_sections[2].set_summary('已关闭' if target.currentData() == '无' else f'目标：{value}；周一检查，周二至周六补检，周日复检')
             target.currentTextChanged.connect(update_summary)
             update_summary()
-        for key, field_key in ((0, 'Weekly Garden Check Day'), (1, 'Which to Farm')):
+        for key, field_key in ((3, 'Weekly Garden Check Day'), (1, 'Which to Farm')):
             widget = self.form_widgets.get(field_key)
             if key in self.form_sections and isinstance(widget, QComboBox):
                 def update_group_summary(*_, key=key, widget=widget):

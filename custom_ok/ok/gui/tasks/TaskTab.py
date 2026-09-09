@@ -43,6 +43,8 @@ class TaskTab(Tab):
         self.taskCardLayout.setContentsMargins(0, 0, 0, 0)
         self.taskCardLayout.setSpacing(16)
         self._card_expansion = {}
+        self._category_labels = []
+        self._last_category = None
         self.vBoxLayout.addWidget(self.task_cards_view)
 
         self.task_info_labels = [self.tr('Info'), self.tr('Value')]
@@ -81,7 +83,20 @@ class TaskTab(Tab):
     def in_current_list(self, task):
         return True
 
-    def add_task_card(self, card):
+    def reset_task_groups(self):
+        for label in self._category_labels:
+            self.taskCardLayout.removeWidget(label)
+            label.deleteLater()
+        self._category_labels.clear()
+        self._last_category = None
+
+    def add_task_card(self, card, category=None):
+        if category and category != self._last_category:
+            label = QLabel(category, self.task_cards_view)
+            label.setProperty('role', 'sectionTitle')
+            self.taskCardLayout.addWidget(label)
+            self._category_labels.append(label)
+            self._last_category = category
         previous = self._card_expansion.get(id(card.task))
         if previous and previous[0] is card.task:
             card.setExpand(previous[1])

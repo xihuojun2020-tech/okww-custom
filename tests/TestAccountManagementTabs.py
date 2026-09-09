@@ -240,7 +240,7 @@ class TestAccountManagementTabs(unittest.TestCase):
         source = inspect.getsource(MainWindow.__init__)
         self.assertIn("AccountSettingsTab", source)
         self.assertNotIn("ScheduleTaskTab", source)
-        self.assertEqual(AccountSettingsTab.name.fget(None), "账号设置")
+        self.assertEqual(AccountSettingsTab.name.fget(None), "账号")
 
     def test_user_facing_names_are_distinct(self):
         self.assertEqual(AccountConfigTab.name.fget(None), "账号配置")

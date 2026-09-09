@@ -45,8 +45,6 @@ class SettingTab(Tab):
         # 数据设置：账号配置导出/导入
         self.data_group = SettingCardGroup(
             self.tr('Data Config'))
-        if account_maintenance_only:
-            self.vBoxLayout.addWidget(self.data_group)
 
         self.export_account_card = PushSettingCard(
             self.tr('导出账号配置'),
@@ -87,17 +85,15 @@ class SettingTab(Tab):
             parent=self.data_group
         )
         # 配置自动备份目录（每天首次启动自动备份所有配置）
-        self.backup_config_card = GlobalConfigCard(
-            og.executor.global_config.get_config('Config Backup'),
-            __import__('config', fromlist=['config_backup_option']).config_backup_option,
-        )
-        self.backup_config_card.setParent(self.data_group)
-        self.data_group.addSettingCard(self.backup_config_card)
+        self.backup_config_card = None
+        if account_maintenance_only:
+            self.backup_config_card = GlobalConfigCard(
+                og.executor.global_config.get_config('Config Backup'),
+                __import__('config', fromlist=['config_backup_option']).config_backup_option,
+            )
         self.config_groups = []
         from qfluentwidgets import BodyLabel
         self.maintenance_status = BodyLabel('等待操作', self)
-        if account_maintenance_only:
-            self.vBoxLayout.addWidget(self.maintenance_status)
         self.operation = BackgroundOperation(self, (
             self.export_account_card, self.import_account_card, self.verify_backup_card,
             self.restore_backup_card, self.repair_sequences_card, self.integrity_card))
@@ -110,12 +106,17 @@ class SettingTab(Tab):
 
     def __initLayout(self):
         if self.account_maintenance_only:
-            self.data_group.addSettingCard(self.export_account_card)
-            self.data_group.addSettingCard(self.import_account_card)
-            self.data_group.addSettingCard(self.verify_backup_card)
-            self.data_group.addSettingCard(self.restore_backup_card)
-            self.data_group.addSettingCard(self.repair_sequences_card)
-            self.data_group.addSettingCard(self.integrity_card)
+            self.maintenance_groups = []
+            for title, cards in (
+                    ('数据备份', (self.backup_config_card, self.export_account_card, self.verify_backup_card)),
+                    ('导入与恢复', (self.import_account_card, self.restore_backup_card, self.repair_sequences_card)),
+                    ('完整性检查', (self.integrity_card,))):
+                group = SettingCardGroup(title)
+                for card in cards:
+                    group.addSettingCard(card)
+                self.maintenance_groups.append(group)
+                self.vBoxLayout.addWidget(group)
+            self.vBoxLayout.addWidget(self.maintenance_status)
         else:
             self.basic_group.addSettingCard(self.themeCard)
             self.basic_group.addSettingCard(self.languageCard)
@@ -209,15 +210,17 @@ class SettingTab(Tab):
             refresh()
 
     def goto_config(self, key):
-        to_scroll = None
+        from src.gui.SectionPanel import reveal_widget
+        if self.backup_config_card is not None and (key == 'Config Backup' or self.backup_config_card.has_key(key)):
+            self.backup_config_card.setExpand(True)
+            reveal_widget(self.backup_config_card)
+            return True
         for config in self.config_groups:
             if key == 'Basic Options' or config.has_key(key):
                 config.setExpand(True)
-                to_scroll = config
-            else:
-                config.setExpand(False)
-        # if to_scroll:
-        #     self.scroll()
+                reveal_widget(config)
+                return True
+        return False
 
     def add_global_config(self):
         if self.account_maintenance_only:
@@ -233,6 +236,10 @@ class SettingTab(Tab):
                 if getattr(option, 'show_at_tab', False):
                     continue
                 card = GlobalConfigCard(config, option)
+                # The single editable Start/Stop control lives in settings/hotkeys.
+                hotkey_widget = card.config_widget_by_key.get('Start/Stop')
+                if hotkey_widget is not None:
+                    hotkey_widget.hide()
                 self.basic_group.addSettingCard(card)
                 self.config_groups.append(card)
 

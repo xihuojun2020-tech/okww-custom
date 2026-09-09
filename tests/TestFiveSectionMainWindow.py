@@ -7,8 +7,8 @@ from custom_ok.ok.gui.MainWindow import MainWindow
 from src.gui.GeneralSettingsTab import GeneralSettingsTab
 from src.gui.SectionPanel import SectionPanel
 from src.gui.TaskHubTab import TaskHubTab
-from src.gui.ActivityHubTab import ActivityHubTab
-from src.gui.TestHubTab import TestHubTab
+from src.gui.AssistantHubTab import AssistantHubTab
+from src.gui.ToolsHubTab import ToolsHubTab
 from src.gui.navigation_sections import build_navigation_manifest
 
 
@@ -29,11 +29,12 @@ class TestFiveSectionMainWindow(unittest.TestCase):
     def test_main_window_wires_exactly_five_project_hubs(self):
         source = inspect.getsource(MainWindow.__init__)
         for class_name in ("GeneralSettingsTab", "AccountSettingsTab", "TaskHubTab",
-                           "ActivityHubTab", "TestHubTab"):
-            self.assertEqual(source.count(f"{class_name}()") + source.count(f"{class_name}(config"), 1)
+                           "AssistantHubTab", "ToolsHubTab"):
+            self.assertEqual(source.count(f"= {class_name}("), 1)
         self.assertEqual(len(build_navigation_manifest()), 5)
         self.assertNotIn("ScheduleTaskTab", source)
-        self.assertIn("程序设置", source)
+        self.assertNotIn("self.setting_tab = SettingTab()", source)
+        self.assertIn("item['position'] == 'bottom'", source)
 
     def test_general_settings_is_one_continuous_page_without_inner_tabs(self):
         source = inspect.getsource(GeneralSettingsTab.__init__)
@@ -67,20 +68,23 @@ class TestFiveSectionMainWindow(unittest.TestCase):
             "general_settings_tab": object(),
             "account_settings_tab": object(),
             "task_hub_tab": object(),
-            "activity_hub_tab": object(),
-            "test_hub_tab": object(),
+            "assistant_hub_tab": object(),
+            "tools_hub_tab": object(),
         }
         window.__dict__.update(pages)
         window.switchTo = Mock()
 
         expected = {
             "start": pages["general_settings_tab"],
-            "trigger": pages["general_settings_tab"],
+            "trigger": pages["assistant_hub_tab"],
+            "assistant": pages["assistant_hub_tab"],
+            "settings": pages["general_settings_tab"],
             "account": pages["account_settings_tab"],
             "onetime": pages["task_hub_tab"],
             "schedule": pages["task_hub_tab"],
-            "activity": pages["activity_hub_tab"],
-            "test": pages["test_hub_tab"],
+            "activity": pages["task_hub_tab"],
+            "test": pages["tools_hub_tab"],
+            "tools": pages["tools_hub_tab"],
         }
         for route, page in expected.items():
             window.navigate_tab(route)
@@ -103,7 +107,7 @@ class TestFiveSectionMainWindow(unittest.TestCase):
         self.assertIn("takeWidget", section_source)
         self.assertIn("self.add_widget(content, stretch)", section_source)
         self.assertIn("add_embedded_widget", inspect.getsource(GeneralSettingsTab.add_card))
-        for hub in (TaskHubTab, ActivityHubTab, TestHubTab):
+        for hub in (TaskHubTab, AssistantHubTab, ToolsHubTab):
             self.assertIn("add_embedded_widget", inspect.getsource(hub.__init__))
 
 

@@ -22,7 +22,7 @@ class TestLanUpdateUI(unittest.TestCase):
     def test_general_settings_mounts_lan_update_card(self):
         source = inspect.getsource(GeneralSettingsTab.__init__)
         self.assertIn("self.lan_update_card = LanUpdateCard", source)
-        self.assertIn("self.lan_update_card, behavior_tab", source)
+        self.assertIn("self.preferences, self.lan_update_card", source)
         self.assertIn('版本与更新', GeneralSettingsTab.section_titles)
 
     @patch("custom_ok.ok.gui.MainWindow.subprocess.Popen")

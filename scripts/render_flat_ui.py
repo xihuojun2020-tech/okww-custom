@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import tempfile
 import threading
 import gettext
+import importlib
 from contextlib import ExitStack
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -14,6 +15,7 @@ from PySide6.QtWidgets import QApplication, QWidget, QScrollBar, QPushButton
 from PySide6.QtCore import QPoint, QTranslator, QLocale
 from qfluentwidgets import FluentTranslator
 from PySide6.QtGui import QFontDatabase, QFont
+from PySide6.QtGui import QIcon
 from ok import og
 from tests.TestFlatUI import MemoryConfig, example_task
 from tests.fixture_support import make_account_environment
@@ -49,11 +51,14 @@ def render(output):
             get_preferred_device=lambda: device, get_devices=lambda: [device],
             get_preferred_capture=lambda: 'WGC', set_capture=Mock(), set_interaction=Mock(),
             set_preferred_device=Mock(), refresh=Mock())
-        hotkeys = MemoryConfig({'Echo Key': 'Q', 'Liberation Key': 'R'})
-        basic = MemoryConfig({'Start/Stop': 'F9'})
-        option = SimpleNamespace(name='游戏快捷键', description='', default_config=dict(hotkeys), config_description={}, config_type={}, icon=None)
-        global_config = SimpleNamespace(get_all_visible_configs=lambda: [('Game Hotkey', hotkeys, option), ('Basic Options', basic, option)],
-                                        get_config=lambda _: MemoryConfig())
+        from config import config, version
+        from ok.util.GlobalConfig import basic_options, create_notification_options
+        options = config['global_configs'] + [basic_options, create_notification_options()]
+        global_entries = [(option.name, MemoryConfig(option.default_config), option) for option in options]
+        configs = {name: value for name, value, _ in global_entries}
+        basic = configs['Basic Options']
+        global_config = SimpleNamespace(get_all_visible_configs=lambda: list(global_entries),
+            get_config=lambda key: configs.get(key if isinstance(key, str) else key.name, MemoryConfig()))
         executor = SimpleNamespace(scene=None, text_fix={}, trigger_tasks=[], onetime_tasks=[task], current_task=None, paused=True,
                                    basic_options=basic, global_config=global_config, waiting_for_task=lambda _: '')
         from config import version
@@ -62,7 +67,7 @@ def render(output):
         for name, value in [('app', fake_app), ('executor', executor), ('device_manager', manager),
                             ('config', {'gui_icon': None}), ('task_manager', SimpleNamespace(imported_scripts={}))]:
             stack.enter_context(patch.object(og, name, value))
-        stack.enter_context(patch('ok.gui.start.StartCard.Handler', Mock()))
+        hotkey_handler = stack.enter_context(patch('ok.gui.start.StartCard.Handler', Mock()))
         stack.enter_context(patch('src.gui.AccountConfigTab.get_default_repository', return_value=env.repository))
         stack.enter_context(patch('src.gui.SequenceManagementTab.get_default_repository', return_value=env.repository))
         stack.enter_context(patch('src.gui.DiagnosticStatusCard.default_root', return_value=Path(temp) / 'diagnostics'))
@@ -74,29 +79,59 @@ def render(output):
             stack.enter_context(patch(cls.__module__ + '.get_default_service', return_value=env.integrity))
             stack.enter_context(patch(cls.__module__ + '.get_default_repository', return_value=env.repository))
         executor.onetime_tasks = []
-        for cls in (DailyTask, MultiAccountDailyTask, WeeklyBossTask):
-            instance = cls(executor=executor, app=None)
-            instance.config = MemoryConfig(instance.default_config)
-            executor.onetime_tasks.append(instance)
-        # Synthetic entries exercise shared task headers outside the main task page.
-        # They are render-only fixtures, never registered with the application.
-        for title, section, group in (('模拟限时活动', 'activities', '限时活动'),
-                                      ('模拟常驻活动', 'activities', '常驻活动'),
-                                      ('模拟测试任务', 'tests', None)):
-            sample = example_task(title)
-            sample.navigation_section, sample.group_name = section, group
-            executor.onetime_tasks.append(sample)
-        executor.trigger_tasks = [example_task('模拟实时功能')]
+        from config import config
+        for collection in ('onetime_tasks', 'trigger_tasks'):
+            instances = []
+            for module, name in config[collection]:
+                cls = getattr(importlib.import_module(module), name)
+                instance = cls(executor=executor, app=None)
+                instance.config = MemoryConfig(instance.default_config)
+                instances.append(instance)
+            setattr(executor, collection, instances)
         from src.gui.GeneralSettingsTab import GeneralSettingsTab
         from src.gui.AccountSettingsTab import AccountSettingsTab
         from src.gui.TaskHubTab import TaskHubTab
-        from src.gui.ActivityHubTab import ActivityHubTab
-        from src.gui.TestHubTab import TestHubTab
-        pages = [GeneralSettingsTab({'windows': {'exe': 'fake'}}, threading.Event(), executor, global_config),
-                 AccountSettingsTab(), TaskHubTab(), ActivityHubTab(), TestHubTab()]
-        pages[0].diagnostic_panel._show_status('最后成功：无\n最近上传错误：无\n最近采集警告：无')
+        from src.gui.AssistantHubTab import AssistantHubTab
+        from src.gui.ToolsHubTab import ToolsHubTab
+        from ok.gui.MainWindow import MainWindow
+        for method in ('auto_backup_config', '_start_backup_cleanup_timer', '_handle_first_show'):
+            stack.enter_context(patch.object(MainWindow, method))
+        stack.enter_context(patch('ok.gui.MainWindow.Config', side_effect=lambda name, defaults: InertConfig(defaults)))
+        stack.enter_context(patch('ok.gui.MainWindow.QSystemTrayIcon'))
+        stack.enter_context(patch('ok.notification.NotificationManager'))
+        stack.enter_context(patch('src.gui.TaskStatusWindow.TaskStatusWindow'))
+        window = MainWindow(fake_app, {'windows': {'exe': 'fake'}}, InertConfig(), QIcon(), 'OK-WW', version,
+                            exit_event=threading.Event(), global_config=global_config, executor=executor, handler=Mock())
+        stack.enter_context(patch.object(og, 'main_window', window))
+        settings = window.general_settings_tab
+        pages = [window.task_hub_tab, window.account_settings_tab, window.assistant_hub_tab,
+                 window.tools_hub_tab, settings]
+        hotkey_handler.assert_called_once()
+        from src.gui.navigation_sections import build_navigation_manifest
+        nav = window.navigationInterface.panel
+        assert len(nav.items) == 5, 'Unexpected navigation destination'
+        for page, item in zip(pages, build_navigation_manifest()):
+            widget = nav.items[page.objectName()].widget
+            assert (nav.bottomLayout.indexOf(widget) >= 0) == (item['position'] == 'bottom')
+        assert window.stackedWidget.currentWidget() is pages[0], 'Default page must be tasks'
+        assert settings.preferences.backup_config_card is None
+        assert pages[3].maintenance_tab.backup_config_card.has_key('Config Backup Directory')
+        pages[3].diagnostic_panel._show_status('最后成功：无\n最近上传错误：无\n最近采集警告：无')
+        actual = [card.task for page in (pages[0].task_tab, pages[2].trigger_panel, pages[3].experiments)
+                  for card in page.card_widgets]
+        expected = [task for task in executor.onetime_tasks + executor.trigger_tasks if task.visible]
+        assert sorted(map(id, actual)) == sorted(map(id, expected)), 'Missing or duplicated task cards'
         apply_codex_light_theme(app)
+        # Detach pages for content-width checks only after checking the real shell.
+        window.resize(1200, 800)
+        window.show()
+        for _ in range(8): app.processEvents()
+        window.grab().save(str(output / 'MainWindow.png'))
+        window.hide()
+        window.stackedWidget.currentChanged.disconnect(window._onCurrentInterfaceChanged)
         for page in pages:
+            window.stackedWidget.removeWidget(page)
+            page.setParent(None)
             if os.environ.get('OKWW_UI_EXPAND_ALL'):
                 from src.gui.SectionPanel import SectionPanel
                 from ok.gui.tasks.ConfigCard import ConfigCard
@@ -130,6 +165,7 @@ def render(output):
         for page in pages:
             page.close()
             page.deleteLater()
+        window.deleteLater()
         from src.gui.AccountConfigTab import AccountTemplateDialog, NewAccountDialog
         for dialog in (AccountTemplateDialog(dict(executor.onetime_tasks[0].default_config)),
                        NewAccountDialog(['S1', 'S2'])):

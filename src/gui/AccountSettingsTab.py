@@ -1,4 +1,4 @@
-"""Integrated account configuration, sequences, and maintenance page."""
+"""The single account-plan and sequence editor."""
 
 from PySide6.QtCore import Signal
 from qfluentwidgets import FluentIcon
@@ -13,19 +13,16 @@ from src.gui.AccountChangeEvent import AccountChangeEvent
 class AccountSettingsTab(CustomTab):
     account_changed = Signal(object)
 
-    def __init__(self, maintenance_tab=None):
+    def __init__(self):
         super().__init__()
-        from ok.gui.settings.SettingTab import SettingTab
         self.account_tab = AccountConfigTab()
         self.sequence_tab = SequenceManagementTab()
         self.account_tab.changed.connect(self._on_account_changed)
         self.sequence_tab.changed.connect(self._on_account_changed)
-        self.maintenance_tab = maintenance_tab or SettingTab(account_maintenance_only=True)
         self.section_panels = []
         for title, widget in (
                 ("账号配置", self.account_tab),
-                ("序列配置", self.sequence_tab),
-                ("导入导出、备份与完整性", self.maintenance_tab)):
+                ("账号序列", self.sequence_tab)):
             section = SectionPanel(title, parent=self.view)
             section.add_embedded_widget(widget)
             self.section_panels.append(section)
@@ -50,7 +47,7 @@ class AccountSettingsTab(CustomTab):
         self.account_changed.emit(AccountChangeEvent("graph_refreshed"))
 
     @property
-    def name(self): return "账号设置"
+    def name(self): return "账号"
 
     @property
     def icon(self): return FluentIcon.PEOPLE

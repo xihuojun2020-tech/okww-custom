@@ -123,25 +123,33 @@ class MainWindow(FluentWindow):
         from src.gui.GeneralSettingsTab import GeneralSettingsTab
         from src.gui.AccountSettingsTab import AccountSettingsTab
         from src.gui.TaskHubTab import TaskHubTab
-        from src.gui.ActivityHubTab import ActivityHubTab
-        from src.gui.TestHubTab import TestHubTab
+        from src.gui.AssistantHubTab import AssistantHubTab
+        from src.gui.ToolsHubTab import ToolsHubTab
+        from src.gui.navigation_sections import build_navigation_manifest
 
         self.general_settings_tab = GeneralSettingsTab(config, exit_event, executor, global_config)
         self.general_settings_tab.lan_update_card.apply_requested.connect(self.schedule_lan_update)
         self.account_settings_tab = AccountSettingsTab()
         self.task_hub_tab = TaskHubTab()
-        self.activity_hub_tab = ActivityHubTab()
-        self.test_hub_tab = TestHubTab()
+        self.assistant_hub_tab = AssistantHubTab(self.general_settings_tab.start_panel)
+        self.tools_hub_tab = ToolsHubTab(self.general_settings_tab.start_panel)
+        self.activity_hub_tab = self.task_hub_tab
+        self.test_hub_tab = self.tools_hub_tab
         self.account_settings_tab.account_changed.connect(self.refresh_account_consumers)
         self.start_tab = self.general_settings_tab.start_panel
-        self.trigger_tab = self.general_settings_tab.trigger_panel
+        self.trigger_tab = self.assistant_hub_tab.trigger_panel
         self.onetime_tab = self.task_hub_tab.task_tab
+        self.setting_tab = self.general_settings_tab.preferences
         self.imported_tabs = {}
-        for tab_obj in (self.general_settings_tab, self.account_settings_tab, self.task_hub_tab,
-                        self.activity_hub_tab, self.test_hub_tab):
+        pages = dict(tasks=self.task_hub_tab, accounts=self.account_settings_tab,
+                     assistant=self.assistant_hub_tab, tools=self.tools_hub_tab,
+                     settings=self.general_settings_tab)
+        for item in build_navigation_manifest():
+            tab_obj = pages[item['route']]
             tab_obj.executor = executor
             self.addSubInterface(tab_obj, tab_obj.icon, self.app.tr(tab_obj.name),
-                                 position=NavigationItemPosition.SCROLL)
+                                 position=(NavigationItemPosition.BOTTOM if item['position'] == 'bottom'
+                                           else NavigationItemPosition.SCROLL))
         if debug:
             from ok.gui.debug.DebugTab import DebugTab
             debug_tab = DebugTab(config, exit_event)
@@ -170,23 +178,14 @@ class MainWindow(FluentWindow):
         
         notification_tab = None
 
-        # 一键重启（在通知/设置上方，方便修改配置后快速重启生效）
+        # Restart is an action in preferences, not another navigation destination.
         try:
-            self.navigationInterface.addItem(
-                routeKey='restart_app',
-                icon=FluentIcon.SYNC,
-                text=self.tr('重启程序'),
-                onClick=self.restart_app,
-                position=NavigationItemPosition.BOTTOM,
-                tooltip=self.tr('重启程序'),
-            )
+            from qfluentwidgets import PushButton
+            self.restart_button = PushButton(FluentIcon.SYNC, self.tr('重启程序'))
+            self.restart_button.clicked.connect(self.restart_app)
+            self.setting_tab.add_widget(self.restart_button)
         except Exception as e:
             logger.error('add restart nav item failed', e)
-
-        from ok.gui.settings.SettingTab import SettingTab
-        self.setting_tab = SettingTab()
-        self.addSubInterface(self.setting_tab, FluentIcon.SETTING, self.tr('程序设置'),
-                             position=NavigationItemPosition.BOTTOM)
 
         dev = self.tr('Debug')
         profile = config.get('profile', "")
@@ -536,6 +535,9 @@ class MainWindow(FluentWindow):
                 logger.debug(f'bring_to_front native activation failed: {e}')
 
     def goto_global_config(self, key):
+        if self.tools_hub_tab.goto_config(key):
+            self.switchTo(self.tools_hub_tab)
+            return
         if self.general_settings_tab.goto_config(key):
             self.switchTo(self.general_settings_tab)
             return
@@ -543,8 +545,7 @@ class MainWindow(FluentWindow):
             if config_tab.has_key(key):
                 self.switchTo(config_tab)
                 return
-        self.switchTo(self.setting_tab)
-        self.setting_tab.goto_config(key)
+        self.switchTo(self.general_settings_tab)
 
     def tray_quit(self):
         logger.info('main window tray_quit')
@@ -895,17 +896,20 @@ class MainWindow(FluentWindow):
         logger.debug(f'navigate_tab {index}')
         route_attributes = {
             "start": "general_settings_tab",
-            "trigger": "general_settings_tab",
+            "trigger": "assistant_hub_tab",
+            "assistant": "assistant_hub_tab",
             "general": "general_settings_tab",
+            "settings": "general_settings_tab",
             "account": "account_settings_tab",
             "accounts": "account_settings_tab",
             "onetime": "task_hub_tab",
             "schedule": "task_hub_tab",
             "tasks": "task_hub_tab",
-            "activity": "activity_hub_tab",
-            "activities": "activity_hub_tab",
-            "test": "test_hub_tab",
-            "tests": "test_hub_tab",
+            "activity": "task_hub_tab",
+            "activities": "task_hub_tab",
+            "test": "tools_hub_tab",
+            "tests": "tools_hub_tab",
+            "tools": "tools_hub_tab",
         }
         page = getattr(self, route_attributes.get(index, ""), None)
         if page is not None:

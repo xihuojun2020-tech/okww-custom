@@ -7,12 +7,13 @@ logger = Logger.get_logger(__name__)
 
 
 class OneTimeTaskTab(TaskTab):
-    def __init__(self, is_standalone=True, group_name=None, section=None, activity_category=None):
+    def __init__(self, is_standalone=True, group_name=None, section=None, activity_category=None, group_tasks=False):
         super().__init__()
         self.is_standalone = is_standalone
         self.group_name = group_name
         self.section = section
         self.activity_category = activity_category
+        self.group_tasks = group_tasks
         self.card_widgets = []
         self.keep_info_when_done = True
         from PySide6.QtWidgets import QLabel
@@ -65,6 +66,7 @@ class OneTimeTaskTab(TaskTab):
             self.remove_task_card(w)
             w.deleteLater()
         self.card_widgets.clear()
+        self.reset_task_groups()
         
         self.tasks = []
         for task in og.executor.onetime_tasks:
@@ -72,8 +74,8 @@ class OneTimeTaskTab(TaskTab):
                 continue
             task_group = getattr(task, 'group_name', None)
             if self.section:
-                from src.gui.navigation_sections import classify_task
-                if classify_task(task) == self.section and (
+                from src.gui.navigation_sections import classify_task, canonical_section
+                if classify_task(task) == canonical_section(self.section) and (
                         self.activity_category is None or
                         getattr(task, 'activity_category', task_group) == self.activity_category):
                     self.tasks.append(task)
@@ -83,10 +85,15 @@ class OneTimeTaskTab(TaskTab):
                 self.tasks.append(task)
                 
         self.empty_label.setVisible(not self.tasks)
+        from src.gui.navigation_sections import task_category, TASK_CATEGORIES
+        if self.group_tasks:
+            self.tasks.sort(key=lambda task: TASK_CATEGORIES.index(task_category(task)))
         for task in self.tasks:
             task_card = TaskCard(task, True)
+            if task_category(task) == '活动':
+                task_card.card.set_summary(getattr(task, 'activity_category', getattr(task, 'group_name', '活动')))
             self.card_widgets.append(task_card)
-            self.add_task_card(task_card)
+            self.add_task_card(task_card, task_category(task) if self.group_tasks else None)
 
     def in_current_list(self, task):
         return getattr(self, 'tasks', None) and task in self.tasks

@@ -1,131 +1,112 @@
-"""One page containing every general automation setting."""
-
+"""Global settings only: connection, keys, preferences and updates."""
 from pathlib import Path
-
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from qfluentwidgets import FluentIcon
-
 from ok.gui.widget.CustomTab import CustomTab
-from src.gui.SectionPanel import SectionPanel
+from src.gui.SectionPanel import SectionPanel, reveal_widget
 
 
 class GeneralSettingsTab(CustomTab):
-    section_titles = ("连接与运行", "启动与实时功能", "快捷键", "日志与诊断", "版本与更新", "其他全局设置")
+    section_titles = ('游戏连接', '运行与按键', '程序偏好', '版本与更新')
 
     def __init__(self, config, exit_event, executor, global_config):
         super().__init__()
         from ok.gui.start.StartTab import StartTab
-        from ok.gui.tasks.TriggerTaskTab import TriggerTaskTab
         from ok.gui.settings.GlobalConfigTab import GlobalConfigTab
         from ok.gui.settings.GlobalConfigCard import GlobalConfigCard
-
-        self.start_panel = StartTab(config, exit_event)
-        self.trigger_panel = TriggerTaskTab()
-        self.trigger_tasks = tuple(task for task in executor.trigger_tasks if getattr(task, "visible", True))
-        hotkey_tab = QWidget(self.view)
-        hotkey_layout = QVBoxLayout(hotkey_tab)
-        behavior_tab = QWidget(self.view)
-        behavior_layout = QVBoxLayout(behavior_tab)
-        behavior_layout.setContentsMargins(0, 0, 0, 0)
-        from src.gui.DiagnosticStatusCard import DiagnosticStatusCard
-        self.diagnostic_panel = DiagnosticStatusCard(self.view)
-        from config import version
+        from ok.gui.settings.SettingTab import SettingTab
         from src.gui.LanUpdateCard import LanUpdateCard
+        from config import version
+        # Assistant and tools reparent existing widgets, never create another handler.
+        self.start_panel = StartTab(config, exit_event)
+        self.preferences = SettingTab()
+        self.preferences.basic_group.title_label.hide()
+        self.preferences.add_widget(self.start_panel.open_install_folder_button)
         self.lan_update_card = LanUpdateCard(
-            Path(__file__).resolve().parents[2] / "configs" / "lan_update.json",
-            version, executor, behavior_tab)
+            Path(__file__).resolve().parents[2] / 'configs' / 'lan_update.json', version, executor, self.view)
         self.hotkey_config = None
         self.basic_config = None
         self.config_cards = {}
+        self.section_panels = []
+        runtime = QWidget(self.view)
+        runtime_layout = QVBoxLayout(runtime)
+        runtime_layout.setContentsMargins(0, 0, 0, 0)
+        self.hotkey_section = SectionPanel('快捷键', parent=runtime, collapsible=True)
+        runtime_layout.addWidget(self.hotkey_section)
         for name, config_obj, option in global_config.get_all_visible_configs():
-            if name == "Game Hotkey":
+            if name == 'Game Hotkey':
                 self.hotkey_config = config_obj
                 self.hotkey_panel = GlobalConfigTab(config_obj, option)
-                content = self.hotkey_panel.takeWidget()
-                self.hotkey_content = content
-                content.layout().setContentsMargins(0, 0, 0, 0)
-                hotkey_layout.addWidget(content)
-            elif name == "Basic Options":
+                self.hotkey_content = self.hotkey_panel.view
+                self.hotkey_section.add_embedded_widget(self.hotkey_panel)
+            elif name == 'Basic Options':
                 self.basic_config = config_obj
-            else:
+            elif name != 'Config Backup':
                 card = GlobalConfigCard(config_obj, option)
                 self.config_cards[name] = card
-                behavior_layout.addWidget(card)
-        start_stop_row = QWidget(hotkey_tab)
-        start_stop_layout = QHBoxLayout(start_stop_row)
-        start_stop_layout.setContentsMargins(12, 8, 12, 8)
+                if name in ('数据仓库文件夹', 'Notification', 'App Launcher'):
+                    self.preferences.add_widget(card)
+                else:
+                    runtime_layout.addWidget(card)
+        start_stop_row = QWidget(runtime)
+        row = QHBoxLayout(start_stop_row)
         self.start_stop_status = QLabel(start_stop_row)
         self.start_stop_status.setWordWrap(True)
         self.start_stop_combo = QComboBox(start_stop_row)
-        self.start_stop_combo.addItems(["None", "F9", "F10", "F11", "F12"])
-        current_hotkey = str(self.basic_config.get("Start/Stop") if self.basic_config else "F9")
-        self.start_stop_combo.setCurrentText(current_hotkey)
+        self.start_stop_combo.setAccessibleName('程序启停快捷键')
+        self.start_stop_combo.addItems(['None', 'F9', 'F10', 'F11', 'F12'])
+        current = str(self.basic_config.get('Start/Stop') if self.basic_config else 'F9')
+        self.start_stop_combo.setCurrentText(current)
         self.start_stop_combo.currentTextChanged.connect(self._update_start_stop_hotkey)
-        start_stop_layout.addWidget(self.start_stop_status, 1)
-        start_stop_layout.addWidget(self.start_stop_combo)
-        hotkey_layout.insertWidget(0, start_stop_row)
-        self._update_start_stop_hotkey(current_hotkey)
-        self.section_panels = []
+        row.addWidget(self.start_stop_status, 1)
+        row.addWidget(self.start_stop_combo)
+        self.hotkey_section.content_layout.insertWidget(0, start_stop_row)
+        self._update_start_stop_hotkey(current)
         for title, panel in zip(self.section_titles, (
-                self.start_panel, self.trigger_panel, hotkey_tab, self.diagnostic_panel,
-                self.lan_update_card, behavior_tab)):
+                self.start_panel, runtime, self.preferences, self.lan_update_card)):
             self.add_card(title, panel)
 
     def _update_start_stop_hotkey(self, value):
         if self.basic_config is not None:
-            self.basic_config["Start/Stop"] = value
-        game_keys = {
-            str(self.hotkey_config.get(key) or "").casefold()
-            for key in ("Echo Key", "Liberation Key", "Resonance Key", "Tool Key",
-                        "Jump Key", "Dodge Key", "Wheel Key", "Guidebook Key", "Bag Key")
-        } if self.hotkey_config is not None else set()
-        conflict = value.casefold() in game_keys and value != "None"
-        state = "与游戏快捷键冲突，请更换" if conflict else ("已停用" if value == "None" else "已启用")
-        self.start_stop_status.setText(f"程序启停快捷键：{value}（{state}）")
-        for section in getattr(self, 'section_panels', ()):
-            if section.title == '快捷键':
-                section.set_summary(self.start_stop_status.text())
+            self.basic_config['Start/Stop'] = value
+        game_keys = {str(self.hotkey_config.get(key) or '').casefold() for key in (
+            'Echo Key', 'Liberation Key', 'Resonance Key', 'Tool Key', 'Jump Key',
+            'Dodge Key', 'Wheel Key', 'Guidebook Key', 'Bag Key')} if self.hotkey_config is not None else set()
+        conflict = value != 'None' and value.casefold() in game_keys
+        state = '与游戏快捷键冲突，请更换' if conflict else '已停用' if value == 'None' else '已启用'
+        text = f'程序启停快捷键：{value}（{state}）'
+        self.start_stop_status.setText(text)
+        self.hotkey_section.set_summary(text)
 
     def goto_config(self, key):
-        from src.gui.SectionPanel import reveal_widget
-        if self.hotkey_config is not None and (key == 'Game Hotkey' or key in self.hotkey_config):
-            reveal_widget(self.hotkey_content)
-            self.ensureWidgetVisible(self.hotkey_content)
+        if key in ('Start/Stop', 'Game Hotkey') or (self.hotkey_config is not None and key in self.hotkey_config):
+            self.hotkey_section.set_expanded(True)
+            reveal_widget(self.start_stop_combo)
             return True
         for name, card in self.config_cards.items():
             if key == name or card.has_key(key):
                 card.setExpand(True)
                 reveal_widget(card)
-                self.ensureWidgetVisible(card)
                 return True
-        return False
+        return self.preferences.goto_config(key)
 
     def add_card(self, title, widget, stretch=0, parent=None):
-        """Keep the old call site while using the shared flat section shell."""
         if isinstance(widget, SectionPanel):
-            self.section_panels.append(widget)
-            self.add_widget(widget, stretch)
-            return widget
-        section = SectionPanel(title, parent=self.view,
-                               collapsible=title in ('连接与运行', '快捷键'))
-        section.add_embedded_widget(widget)
-        if title == '连接与运行':
+            section = widget
+        else:
+            section = SectionPanel(title, parent=self.view, collapsible=title == '游戏连接')
+            section.add_embedded_widget(widget)
+        if title == '游戏连接':
             card = self.start_panel.start_card
-            for button in (card.refresh_button, card.start_button):
-                section.add_action(button)
+            section.add_action(card.refresh_button)
             card.disclosure_header = section.header
             card.update_status()
-        elif title == '快捷键':
-            section.set_summary(self.start_stop_status.text())
         self.section_panels.append(section)
         self.add_widget(section, stretch)
         return section
 
     @property
-    def name(self): return "通用设置"
+    def name(self): return '设置'
 
     @property
-    def icon(self): return FluentIcon.HOME
-
-
-__all__ = ["GeneralSettingsTab"]
+    def icon(self): return FluentIcon.SETTING

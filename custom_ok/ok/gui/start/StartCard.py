@@ -25,7 +25,7 @@ class StartCard(QWidget):
         super().__init__()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        heading = QLabel('游戏连接与运行控制', self)
+        heading = QLabel('运行控制', self)
         heading.setProperty('role', 'sectionTitle')
         layout.addWidget(heading)
         self.iconLabel = QLabel(self)

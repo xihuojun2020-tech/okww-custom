@@ -108,6 +108,7 @@ class StartTab(Tab):
         diagnostic_layout.addWidget(self.debug_widget)
         tools_button = PushButton("诊断工具", self)
         tools_button.clicked.connect(self.diagnostic_dialog.show)
+        self.tools_button = tools_button
         self.add_widget(tools_button)
 
         self.overlay_widget = QWidget()
@@ -126,7 +127,7 @@ class StartTab(Tab):
         og.app.ok_config['show_overlay_logs'] = False
         og.app.ok_config.save_file()
         self.overlay_layout.addStretch(1)
-        self.add_card(self.tr("Debug Overlay"), self.overlay_widget)
+        self.overlay_card = self.add_card(self.tr("Debug Overlay"), self.overlay_widget)
 
 
         self.closed_by_finish_loading = False

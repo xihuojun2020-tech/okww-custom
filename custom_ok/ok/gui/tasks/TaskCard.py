@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSignalBlocker
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget, QSizePolicy
 from qfluentwidgets import FluentIcon, PrimaryPushButton, PushButton, SwitchButton, MessageBox
 
@@ -12,8 +12,15 @@ logger = Logger.get_logger(__name__)
 
 class TaskCard(ConfigCard):
     def __init__(self, task: BaseTask, onetime):
+        config_type = dict(task.config_type or {})
+        if type(task).__name__ == 'DailyTask':
+            config_type['Manage Daily Profiles'] = {'type': 'button', 'text': '编辑账号计划',
+                                                   'callback': self.open_account_editor}
+        elif type(task).__name__ == 'MultiAccountDailyTask':
+            config_type['管理序列'] = {'type': 'button', 'text': '编辑账号序列',
+                                      'callback': self.open_sequence_editor}
         super().__init__(task, task.name, task.config, task.description, task.default_config, task.config_description,
-                         task.config_type, config_icon=task.icon or FluentIcon.INFO)
+                         config_type, config_icon=task.icon or FluentIcon.INFO)
         self.task = task
         self.onetime = onetime
         self._compact_header()
@@ -82,6 +89,17 @@ class TaskCard(ConfigCard):
 
         self.update_buttons(self.task)
         communicate.task.connect(self.update_buttons)
+
+    def open_account_editor(self):
+        # Navigation only: never reload the selected account or discard a draft.
+        og.main_window.navigate_tab('accounts')
+        from src.gui.SectionPanel import reveal_widget
+        reveal_widget(og.main_window.account_settings_tab.account_tab.profile_combo)
+
+    def open_sequence_editor(self):
+        og.main_window.navigate_tab('accounts')
+        from src.gui.SectionPanel import reveal_widget
+        reveal_widget(og.main_window.account_settings_tab.section_panels[1])
 
     def _compact_header(self):
         """Use a wrapping title and description, not a fixed-height header."""
@@ -207,7 +225,8 @@ class TaskCard(ConfigCard):
                     self.stop_button.setVisible(False)
             else:
                 if self.enable_button:
-                    self.enable_button.setChecked(task.enabled)
+                    with QSignalBlocker(self.enable_button):
+                        self.enable_button.setChecked(task.enabled)
 
             self._rebuild_button_layout()
 
