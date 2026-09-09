@@ -131,6 +131,27 @@ catch { $failed=$true }
         self.assertEqual(first['started_at'], second['started_at'])
         self.assertEqual(first['device_id'], second['device_id'])
 
+    def test_legacy_official_nas_targets_migrate_without_resetting_identity(self):
+        for target in (r'\\192.168.3.170\xihuojun 共享给我\AI诊断',
+                       r'\\192.168.3.170\AI诊断'):
+            with self.subTest(target=target):
+                value = {'policy': POLICY, 'started_at': 123.0, 'device_id': 'device',
+                         'target': target, 'enabled': True}
+                (self.root / 'settings.json').parent.mkdir(parents=True, exist_ok=True)
+                (self.root / 'settings.json').write_text(json.dumps(value), encoding='utf-8')
+                migrated = settings(self.root)
+                self.assertEqual(migrated['target'], DEFAULT_TARGET)
+                self.assertEqual(migrated['started_at'], 123.0)
+                self.assertEqual(migrated['device_id'], 'device')
+
+    def test_custom_nas_target_is_not_migrated(self):
+        target = r'\\nas.lan\custom\diagnostics'
+        value = {'policy': POLICY, 'started_at': 123.0, 'device_id': 'device',
+                 'target': target, 'enabled': True}
+        (self.root / 'settings.json').parent.mkdir(parents=True, exist_ok=True)
+        (self.root / 'settings.json').write_text(json.dumps(value), encoding='utf-8')
+        self.assertEqual(settings(self.root)['target'], target)
+
     @unittest.skipUnless(os.name == 'nt', 'Windows scheduled task')
     def test_scheduler_revision_migrates_cached_console_task(self):
         from src.runtime.diagnostic_policy import ensure_task, SCHEDULER_REVISION

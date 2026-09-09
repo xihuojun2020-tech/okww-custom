@@ -13,6 +13,10 @@ from src.runtime.diagnostic_export import atomic_json
 POLICY = 'automatic-v1'
 SCHEDULER_REVISION = 4
 DEFAULT_TARGET = r'\\192.168.3.161\xihuojun 共享给我\AI诊断'
+LEGACY_TARGETS = {
+    r'\\192.168.3.170\xihuojun 共享给我\AI诊断',
+    r'\\192.168.3.170\AI诊断',
+}
 REPO = Path(__file__).resolve().parents[2]
 _binding = REPO / 'source.json'
 if _binding.is_file():
@@ -30,6 +34,9 @@ def settings(root):
     if changed:
         value = {'policy': POLICY, 'started_at': time.time(), 'device_id': uuid.uuid4().hex,
                  'target': DEFAULT_TARGET}
+    elif value.get('target') in LEGACY_TARGETS:
+        value['target'] = DEFAULT_TARGET
+        changed = True
     # The owner's mandatory upload policy supersedes the former opt-in flag.
     if changed or value.get('enabled') is not True:
         value['enabled'] = True
