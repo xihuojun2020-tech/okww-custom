@@ -253,6 +253,25 @@ catch { $failed=$true }
         FileCollector(source, self.root).collect(self.session.run)
         self.assertEqual(len(list(self.session.run.glob('batches/*/manifest.json'))), len(manifests))
 
+    def test_first_collection_includes_logs_written_during_current_startup(self):
+        source = Path(self.temp.name) / 'app'
+        logs, pictures = source / 'logs', source / 'screenshots'
+        logs.mkdir(parents=True)
+        pictures.mkdir()
+        old = logs / 'old.log'
+        startup = logs / 'launcher.log'
+        old.write_text('HISTORICAL\n', encoding='utf-8')
+        started_at = time.time()
+        os.utime(old, (started_at - 60, started_at - 60))
+        startup.write_text('CURRENT_STARTUP\n', encoding='utf-8')
+        os.utime(startup, (started_at - 2, started_at - 2))  # launcher may write before Python starts
+        collector = FileCollector(source, self.root, current_run_started_at=started_at)
+        collector.collect(self.session.run)
+        payload = b''.join(
+            p.read_bytes() for p in self.session.run.glob('batches/*/日志/*/*/*/*/*.log'))
+        self.assertIn(b'CURRENT_STARTUP', payload)
+        self.assertNotIn(b'HISTORICAL', payload)
+
     def test_truncated_image_is_skipped_then_retried_after_repair(self):
         from PIL import Image
         source = Path(self.temp.name) / 'app'

@@ -13,7 +13,7 @@ IMAGE_TYPES = {'.png', '.jpg', '.jpeg'}
 
 
 class FileCollector:
-    def __init__(self, source, root):
+    def __init__(self, source, root, *, current_run_started_at=None):
         # Resolve Windows 8.3 aliases (RUNNER~1 vs runneradmin) before
         # comparing paths discovered by os.walk.
         self.source, self.root = Path(source).resolve(), Path(root)
@@ -23,6 +23,11 @@ class FileCollector:
         else:
             # Taken before the first new-policy run; never backfill old files.
             self.cursors = {name: dict(self.stamp(path), pre_policy=True) for name, path in self.files()}
+            for name, path in self.files():
+                if (current_run_started_at is not None and path.suffix.lower() in LOG_TYPES
+                        and path.stat().st_mtime >= current_run_started_at - 5):
+                    self.cursors[name].update(offset=0, prefix_size=0, prefix_hash=digest(b''),
+                                              mtime=0, pre_policy=False)
             atomic_json(self.path, self.cursors)
 
     def files(self):

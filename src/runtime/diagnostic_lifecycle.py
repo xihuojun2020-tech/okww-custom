@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 import traceback
 from pathlib import Path
 
@@ -35,7 +36,6 @@ def reset_incomplete_runtime_retries(root):
 
 def wake_uploader(root=None):
     global _uploader, _last_wake
-    import time
     root = Path(root or default_root())
     with _wake_lock:
         if _uploader is not None and _uploader.poll() is None:
@@ -63,7 +63,13 @@ def start_diagnostics(version, root=None):
     try:
         root = Path(root or default_root())
         settings(root)
-        session = DiagnosticSession(root, version, source_root=REPO)
+        try:
+            import psutil
+            process_started_at = psutil.Process(os.getpid()).create_time()
+        except Exception:
+            process_started_at = time.time()
+        session = DiagnosticSession(root, version, source_root=REPO,
+                                    current_run_started_at=process_started_at)
         session.on_batch_ready = lambda: wake_uploader(session.root)
         _session = session
         logging.getLogger().addHandler(session)

@@ -53,6 +53,8 @@ UNC 模式依赖 Windows SMB 身份认证和共享权限；HTTPS 模式要求有
 
 发布器写入 `stable/releases/v1.41.00/`，最后才替换 `stable/latest.json`。不得手工提前复制 `latest.json`。重复发布完全相同的包安全；同版本不同内容会被拒绝。
 
+推送 GitHub 标签不更新 NAS，软件内“检查局域网更新”也不会读取 GitHub Release。每个版本必须单独执行上述 NAS 构建、验证和发布命令；发布后重新读取 `stable/latest.json`，核对版本、大小与 SHA-256，再推送或核对同版本 GitHub 标签。`1.42.03` 曾因只推 GitHub 而遗漏 NAS，已在 `1.42.04` 发布流程中纠正。
+
 ## 客户端验收
 
 在非主用客户端依次验证：

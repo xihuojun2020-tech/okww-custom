@@ -140,7 +140,7 @@ def seal_pending(run, kind, *, sizes=None):
 
 
 class DiagnosticSession(logging.Handler):
-    def __init__(self, root, version, *, source_root=None):
+    def __init__(self, root, version, *, source_root=None, current_run_started_at=None):
         super().__init__()
         self.root = Path(root).absolute()
         self.root.mkdir(parents=True, exist_ok=True)
@@ -164,7 +164,8 @@ class DiagnosticSession(logging.Handler):
         self.collector = None
         if source_root is not None:
             from src.runtime.diagnostic_collector import FileCollector
-            self.collector = FileCollector(source_root, self.root)
+            self.collector = FileCollector(source_root, self.root,
+                                           current_run_started_at=current_run_started_at)
         self.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(name)s %(message)s'))
         self._save_metadata()
         self.worker = threading.Thread(target=self._work, name='diagnostic-local', daemon=True)
