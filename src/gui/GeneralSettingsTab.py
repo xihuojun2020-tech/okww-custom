@@ -84,19 +84,23 @@ class GeneralSettingsTab(CustomTab):
         self.start_stop_status.setText(f"程序启停快捷键：{value}（{state}）")
 
     def goto_config(self, key):
+        from src.gui.SectionPanel import reveal_widget
         if self.hotkey_config is not None and (key == 'Game Hotkey' or key in self.hotkey_config):
+            reveal_widget(self.hotkey_content)
             self.ensureWidgetVisible(self.hotkey_content)
             return True
         for name, card in self.config_cards.items():
             if key == name or card.has_key(key):
                 card.setExpand(True)
+                reveal_widget(card)
                 self.ensureWidgetVisible(card)
                 return True
         return False
 
     def add_card(self, title, widget, stretch=0, parent=None):
         """Keep the old call site while using the shared flat section shell."""
-        section = SectionPanel(title, parent=self.view)
+        section = SectionPanel(title, parent=self.view,
+                               collapsible=title in ('快捷键', '其他全局设置'))
         section.add_embedded_widget(widget)
         self.section_panels.append(section)
         self.add_widget(section, stretch)

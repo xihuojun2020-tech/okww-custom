@@ -1,7 +1,7 @@
 """Reusable horizontal setting row for the light UI."""
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QBoxLayout, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QBoxLayout, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget, QAbstractButton, QAbstractSpinBox
 
 
 class FlatSettingRow(QWidget):
@@ -11,6 +11,10 @@ class FlatSettingRow(QWidget):
         self.label = QLabel(label, self)
         self.label.setWordWrap(True)
         self.label.setProperty("role", "label")
+        self.label.setBuddy(control)
+        if not control.accessibleName():
+            control.setAccessibleName(label)
+        control.setAccessibleDescription(description)
         self.description_label = QLabel(description, self)
         self.description_label.setWordWrap(True)
         self.description_label.setProperty("role", "description")
@@ -29,8 +33,9 @@ class FlatSettingRow(QWidget):
         layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(8)
         layout.addLayout(copy, 1)
-        control.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        layout.addWidget(control, 1, Qt.AlignVCenter)
+        compact = isinstance(control, (QAbstractButton, QAbstractSpinBox))
+        control.setSizePolicy(QSizePolicy.Preferred if compact else QSizePolicy.Expanding, QSizePolicy.Fixed)
+        layout.addWidget(control, 0 if compact else 1, Qt.AlignVCenter)
 
     def resizeEvent(self, event):
         self.layout().setDirection(QBoxLayout.TopToBottom if self.width() < 600 else QBoxLayout.LeftToRight)
@@ -39,6 +44,9 @@ class FlatSettingRow(QWidget):
     def set_error(self, message: str | None):
         self.error_label.setText(message or "")
         self.error_label.setVisible(bool(message))
+        if message:
+            from src.gui.SectionPanel import reveal_widget
+            reveal_widget(self.control)
 
 
 __all__ = ["FlatSettingRow"]

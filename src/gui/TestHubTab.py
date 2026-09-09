@@ -11,6 +11,7 @@ class TestHubTab(CustomTab):
         self.task_tab = OneTimeTaskTab(section=TESTS)
         self.section_panels = [SectionPanel("测试功能", "仅供诊断与验证，请确认游戏状态后运行。", self.view)]
         self.section_panels[0].add_embedded_widget(self.task_tab)
+        self.section_panels[0].title_label.setProperty('role', 'pageTitle')
         self.add_widget(self.section_panels[0])
 
     @property

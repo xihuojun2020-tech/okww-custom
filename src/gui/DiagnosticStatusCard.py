@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEd
 
 from src.gui.BackgroundOperation import BackgroundOperation
 from src.gui.FlatSettingRow import FlatSettingRow
+from src.gui.SectionPanel import SectionPanel, reveal_widget
 from src.runtime.diagnostic_export import atomic_json, sanitize_text
 from src.runtime.diagnostic_session import default_root, FileLease
 from src.runtime.diagnostic_lifecycle import wake_uploader
@@ -66,15 +67,18 @@ class DiagnosticStatusCard(QWidget):
         description.setWordWrap(True)
         description.setProperty('role', 'description')
         layout.addWidget(description)
+        self.settings_section = SectionPanel('上传连接设置', '修改目录或凭据时展开；上传状态始终显示。',
+                                             self, collapsible=True)
+        layout.addWidget(self.settings_section)
         self.target = QLineEdit(DEFAULT_TARGET)
         self.target.setPlaceholderText('NAS 诊断目录，不填写密码')
-        layout.addWidget(FlatSettingRow('上传目录', self.target))
+        self.settings_section.add_row('上传目录', self.target)
         self.username = QLineEdit('ai-upload')
         self.password = QLineEdit()
         self.password.setEchoMode(QLineEdit.Password)
         self.password.setPlaceholderText('首次连接时填写密码，仅保存到本机 Windows 凭据管理器')
-        layout.addWidget(FlatSettingRow('用户名', self.username))
-        layout.addWidget(FlatSettingRow('密码', self.password, '仅保存到本机 Windows 凭据管理器；留空不修改。'))
+        self.settings_section.add_row('用户名', self.username)
+        self.settings_section.add_row('密码', self.password, '仅保存到本机 Windows 凭据管理器；留空不修改。')
         self.status = QLabel('正在读取本地状态')
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
@@ -107,6 +111,7 @@ class DiagnosticStatusCard(QWidget):
         username, secret = self.username.text().strip(), self.password.text()
         if not target:
             self.status.setText('请填写 NAS 目录')
+            reveal_widget(self.target)
             return
         def write():
             if secret:

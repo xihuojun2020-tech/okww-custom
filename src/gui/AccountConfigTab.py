@@ -86,10 +86,13 @@ class AccountTemplateDialog(QDialog):
         scroll.setWidget(content)
         layout.addWidget(scroll)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel, parent=self)
+        buttons.button(QDialogButtonBox.Save).setText('保存')
+        buttons.button(QDialogButtonBox.Cancel).setText('取消')
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
-        self.resize(680, 560)
+        from src.gui.CodexTheme import size_dialog
+        size_dialog(self, 680, 560)
 
     def tasks(self):
         result = dict(self._tasks)
@@ -141,10 +144,13 @@ class NewAccountDialog(QDialog):
             group_layout.addWidget(box)
         layout.addWidget(group)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel, parent=self)
+        buttons.button(QDialogButtonBox.Save).setText('创建账号')
+        buttons.button(QDialogButtonBox.Cancel).setText('取消')
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
-        self.resize(560, 420)
+        from src.gui.CodexTheme import size_dialog
+        size_dialog(self, 560, 420)
 
     def values(self):
         return {
@@ -183,8 +189,10 @@ class AccountConfigTab(CustomTab):
         self.metadata = BodyLabel("")
         self.metadata.setWordWrap(True)
         layout.addWidget(self.metadata)
-        self.identity_group = QGroupBox("账号识别信息", root)
-        self.identity_layout = QFormLayout(self.identity_group)
+        from src.gui.SectionPanel import SectionPanel
+        self.identity_group = SectionPanel("账号识别信息", "登录身份只读；普通保存不会修改身份。", root, collapsible=True)
+        self.identity_layout = QFormLayout()
+        self.identity_group.content_layout.addLayout(self.identity_layout)
         self.identity_widgets = {}
         for key, label in (("phone", "完整手机号"), ("masked_phone", "带星号手机号（切换关键依据）"),
                            ("nickname", "游戏昵称"), ("alternate_login_name", "U…A 备用识别名")):
@@ -224,10 +232,10 @@ class AccountConfigTab(CustomTab):
         for button in (self.preview_button, self.save_button, self.discard_button):
             actions.addWidget(button)
         layout.addLayout(actions)
-        maintenance = QVBoxLayout()
+        maintenance = SectionPanel('高级账号操作', '模板、JSON、身份重新绑定与删除。', root, collapsible=True)
         for button in (self.json_button, self.template_button, self.rebind_button, self.delete_button):
-            maintenance.addWidget(button)
-        layout.addLayout(maintenance)
+            maintenance.add_widget(button)
+        layout.addWidget(maintenance)
         self.status = BodyLabel("等待操作")
         layout.addWidget(self.status)
         self.add_widget(root, stretch=1)
@@ -260,10 +268,13 @@ class AccountConfigTab(CustomTab):
         editor.setPlainText(json.dumps(self.draft.tasks, ensure_ascii=False, indent=2))
         layout.addWidget(editor)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dialog)
+        buttons.button(QDialogButtonBox.Ok).setText('应用到草稿')
+        buttons.button(QDialogButtonBox.Cancel).setText('取消')
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
-        dialog.resize(700, 540)
+        from src.gui.CodexTheme import size_dialog
+        size_dialog(dialog, 700, 540)
         if dialog.exec() == QDialog.Accepted:
             try:
                 value = json.loads(editor.toPlainText())
@@ -388,14 +399,23 @@ class AccountConfigTab(CustomTab):
             else:
                 text = widget.text()
                 original = self.draft.tasks.get(key)
-                if isinstance(original, int):
-                    self.draft.tasks[key] = int(text)
-                elif isinstance(original, float):
-                    self.draft.tasks[key] = float(text)
-                elif isinstance(original, (list, dict)):
-                    self.draft.tasks[key] = restore_account_value(json.loads(text))
-                else:
-                    self.draft.tasks[key] = restore_account_value(text)
+                row = widget.parentWidget()
+                if isinstance(row, FlatSettingRow):
+                    row.set_error(None)
+                try:
+                    if isinstance(original, int):
+                        self.draft.tasks[key] = int(text)
+                    elif isinstance(original, float):
+                        self.draft.tasks[key] = float(text)
+                    elif isinstance(original, (list, dict)):
+                        self.draft.tasks[key] = restore_account_value(json.loads(text))
+                    else:
+                        self.draft.tasks[key] = restore_account_value(text)
+                except (ValueError, TypeError):
+                    message = '请输入有效的数字' if isinstance(original, (int, float)) else '请输入有效的 JSON'
+                    if isinstance(row, FlatSettingRow):
+                        row.set_error(message)
+                    raise ValueError(f'{widget.accessibleName()}：{message}') from None
 
     def _render_identity(self):
         if self.draft is None:
@@ -422,8 +442,12 @@ class AccountConfigTab(CustomTab):
             self.sequence_layout.addWidget(QLabel("暂无序列；请先在序列配置页新建序列。", self.sequence_group))
 
     def _render_form(self):
+        from src.gui.SectionPanel import SectionPanel
+        states = {key: panel.toggle_button.isChecked()
+                  for key, panel in getattr(self, 'form_sections', {}).items()}
         while self.form_layout.rowCount():
             self.form_layout.removeRow(0)
+        self.form_sections = {}
         self.form_widgets.clear()
         stamina = {'Which to Farm', 'Which Tacet Suppression to Farm', 'Which Forgery Challenge to Farm',
                    'Material Selection', 'Weekly Boss Target'}
@@ -436,8 +460,10 @@ class AccountConfigTab(CustomTab):
         for field in fields:
             if group(field) != last_group:
                 last_group = group(field)
-                heading = QLabel(('每日任务', '体力与周本', '其他选项')[last_group], self.form_host)
-                heading.setProperty('role', 'sectionTitle')
+                heading = SectionPanel(('每日任务', '体力与周本', '其他选项')[last_group],
+                                       parent=self.form_host, collapsible=last_group != 0,
+                                       expanded=states.get(last_group, last_group == 0))
+                self.form_sections[last_group] = heading
                 self.form_layout.addRow(heading)
             value = self.draft.tasks.get(field.key)
             if field.editor_type == "bool":
@@ -457,9 +483,16 @@ class AccountConfigTab(CustomTab):
             widget.setEnabled(not field.read_only)
             widget.setToolTip(field.help_text)
             self.form_widgets[field.key] = widget
-            self.form_layout.addRow(FlatSettingRow(field.label, widget, field.help_text, self.form_host))
+            heading.add_row(field.label, widget, field.help_text)
             if field.key == 'Weekly Boss Target':
                 self._render_weekly_status()
+        target = self.form_widgets.get('Weekly Boss Target')
+        if target is not None and 1 in self.form_sections:
+            def update_summary(*_):
+                value = target.currentText()
+                self.form_sections[1].set_description(f'周本：{value}；展开可调整体力任务与周本配置。')
+            target.currentTextChanged.connect(update_summary)
+            update_summary()
 
     def _render_weekly_status(self):
         from src.config_integrity import get_default_service

@@ -35,6 +35,9 @@ class LabelAndWidget(QWidget):
         self.title_layout.setAlignment(Qt.AlignVCenter)
 
     def add_widget(self, widget: QWidget, stretch=1):
+        self.title.setBuddy(widget)
+        if not widget.accessibleName():
+            widget.setAccessibleName(self.title.text())
         self.layout.addWidget(widget, stretch=stretch)
 
     def add_layout(self, layout: QLayout, stretch=1):

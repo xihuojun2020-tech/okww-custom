@@ -40,6 +40,7 @@ class LanUpdateCard(QWidget):
             self._download()
 
     def _check(self):
+        self.status.setText('正在检查局域网更新…')
         def work():
             service = LanUpdateService(self.config_path)
             return service, service.check(self.current_version)
@@ -57,6 +58,7 @@ class LanUpdateCard(QWidget):
             self.status.setText("自动化任务运行中，停止任务后才能安装更新")
             return
         root = Path(__file__).resolve().parents[2]
+        self.status.setText('正在下载并验证更新…')
         release, service = self.release, self.service
 
         def work():

@@ -251,7 +251,7 @@ class TestAccountManagementTabs(unittest.TestCase):
         sequence_source = inspect.getsource(SequenceManagementTab.__init__)
         self.assertIn("删除当前账号", account_source)
         self.assertIn("删除当前序列", sequence_source)
-        self.assertIn("当前序列包含的账号", sequence_source)
+        self.assertIn("账号执行顺序", sequence_source)
         self.assertIn("上移账号", sequence_source)
         self.assertIn("下移账号", sequence_source)
 

@@ -1,7 +1,7 @@
 """Small, deterministic light theme used by the desktop shell."""
 
 from PySide6.QtCore import QObject, QEvent
-from PySide6.QtGui import QColor, QPalette
+from PySide6.QtGui import QColor, QPalette, QFont
 from PySide6.QtWidgets import QApplication, QComboBox, QAbstractSpinBox, QAbstractScrollArea
 from qfluentwidgets import Theme, qconfig, setThemeColor
 
@@ -15,7 +15,23 @@ COLORS = {
     "accent": "#0969DA",
     "success": "#1A7F37",
     "error": "#CF222E",
+    "control_border": "#8C959F",
+    "hover": "#F0F1F3",
+    "pressed": "#E8EBEF",
+    "disabled": "#F6F6F6",
+    "accent_hover": "#075DBF",
+    "accent_pressed": "#064FA3",
 }
+
+SPACING = {"small": 8, "row": 12, "section": 24}
+TYPE_SIZE = {"body": 13, "description": 12, "section": 15, "page": 23}
+
+
+def size_dialog(dialog, width, height):
+    """Use logical screen space for resizable editor dialogs."""
+    screen = dialog.screen().availableGeometry()
+    dialog.resize(min(width, max(1, screen.width() - 32)),
+                  min(height, max(1, screen.height() - 64)))
 
 
 class PageWheelGuard(QObject):
@@ -38,7 +54,7 @@ class PageWheelGuard(QObject):
 def codex_style_sheet() -> str:
     """Return the shared stylesheet; deliberately has no dark-mode branch."""
     return f"""
-    QWidget {{ color: {COLORS['text']}; font-size: 13px; }}
+    QWidget {{ color: {COLORS['text']}; font-size: {TYPE_SIZE['body']}px; }}
     QAbstractScrollArea, QScrollArea, QFrame#view {{
         background: {COLORS['window']}; border: 0;
     }}
@@ -49,22 +65,34 @@ def codex_style_sheet() -> str:
     QGroupBox {{ border: 0; border-top: 1px solid {COLORS['border']};
         margin-top: 18px; padding-top: 18px; }}
     QGroupBox::title {{ subcontrol-origin: margin; left: 0; }}
-    QLabel[role="sectionTitle"] {{ font-size: 15px; font-weight: 600; }}
+    QLabel[role="sectionTitle"] {{ font-size: {TYPE_SIZE['section']}px; font-weight: 600; }}
+    QLabel[role="pageTitle"] {{ font-size: {TYPE_SIZE['page']}px; font-weight: 600; }}
     QLabel[role="error"] {{ color: {COLORS['error']}; }}
-    QLabel[role="description"], .codex-description {{ color: {COLORS['muted']}; font-size: 12px; }}
+    QLabel[role="description"], .codex-description {{ color: {COLORS['muted']}; font-size: {TYPE_SIZE['description']}px; }}
     QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
-        background: {COLORS['panel']}; border: 1px solid {COLORS['border']};
+        background: {COLORS['panel']}; border: 1px solid {COLORS['control_border']};
         border-radius: 6px; padding: 6px 8px; min-height: 22px;
     }}
     QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus,
     QSpinBox:focus, QDoubleSpinBox:focus {{ border: 1px solid {COLORS['accent']}; }}
     QPushButton {{ background: {COLORS['panel']}; border: 1px solid {COLORS['border']};
         border-radius: 6px; padding: 6px 12px; min-height: 22px; }}
-    QPushButton:hover {{ background: #F0F1F3; }}
+    QPushButton:hover {{ background: {COLORS['hover']}; }}
+    QPushButton:pressed {{ background: {COLORS['pressed']}; }}
     QPushButton:focus {{ border-color: {COLORS['accent']}; }}
-    QPushButton:disabled {{ color: #8C959F; background: #F6F6F6; }}
+    QPushButton:disabled {{ color: {COLORS['control_border']}; background: {COLORS['disabled']}; }}
     QPushButton[role="primary"] {{ background: {COLORS['accent']}; color: white; }}
     QPushButton[role="danger"] {{ color: {COLORS['error']}; }}
+    QPushButton[role="primary"]:hover {{ background: {COLORS['accent_hover']}; }}
+    QPushButton[role="primary"]:pressed {{ background: {COLORS['accent_pressed']}; }}
+    QPushButton[role="primary"]:disabled {{ background: {COLORS['disabled']}; color: {COLORS['muted']}; }}
+    QToolButton[role="disclosure"] {{ text-align: left; background: transparent;
+        border: 1px solid transparent; border-radius: 6px; padding: 8px 4px;
+        font-size: 15px; font-weight: 600; min-height: 24px; }}
+    QToolButton[role="disclosure"]:hover {{ background: {COLORS['hover']}; }}
+    QToolButton[role="disclosure"]:focus {{ border-color: {COLORS['accent']}; }}
+    QToolButton[role="disclosure"]:pressed {{ background: {COLORS['pressed']}; }}
+    QDialog {{ background: {COLORS['window']}; }}
     QRadioButton, QCheckBox {{ spacing: 8px; min-height: 28px; }}
     QToolTip {{ background: {COLORS['text']}; color: {COLORS['panel']}; border: 0; }}
     """
@@ -74,6 +102,9 @@ def apply_codex_light_theme(app: QApplication | None) -> None:
     """Force the palette and stylesheet to the light Codex values."""
     if app is None:
         return
+    font = QFont(app.font())
+    font.setFamilies(['Microsoft YaHei', 'Segoe UI', 'sans-serif'])
+    app.setFont(font)
     setThemeColor(QColor(COLORS['accent']), save=False)
     try:
         qconfig.set(qconfig.theme, Theme.LIGHT)
@@ -96,4 +127,4 @@ def apply_codex_light_theme(app: QApplication | None) -> None:
         app.installEventFilter(app._page_wheel_guard)
 
 
-__all__ = ["COLORS", "apply_codex_light_theme", "codex_style_sheet"]
+__all__ = ["COLORS", "SPACING", "TYPE_SIZE", "size_dialog", "apply_codex_light_theme", "codex_style_sheet"]

@@ -1,13 +1,14 @@
 """Flat bordered section container shared by all five top-level pages."""
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget, QSizePolicy
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget, QSizePolicy, QToolButton, QScrollArea
 
 from src.gui.FlatSettingRow import FlatSettingRow
+from src.gui.CodexTheme import SPACING
 
 
 class SectionPanel(QWidget):
-    def __init__(self, title: str, description: str = "", parent=None):
+    def __init__(self, title: str, description: str = "", parent=None, *, collapsible=False, expanded=False):
         super().__init__(parent)
         self.title = title
         # Sections are the full-width building blocks of every hub page.
@@ -23,16 +24,44 @@ class SectionPanel(QWidget):
         self.description_label = QLabel(description, self)
         self.description_label.setWordWrap(True)
         self.description_label.setProperty("role", "description")
-        self.content_layout = QVBoxLayout()
+        self.content = QWidget(self)
+        self.content_layout = QVBoxLayout(self.content)
         self.content_layout.setContentsMargins(0, 0, 0, 0)
         self.content_layout.setSpacing(2)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 12, 0, 16)
-        layout.setSpacing(12)
+        layout.setContentsMargins(0, SPACING['row'], 0, SPACING['section'])
+        layout.setSpacing(SPACING['row'])
+        self.toggle_button = QToolButton(self)
+        self.toggle_button.setText(title)
+        self.toggle_button.setAccessibleName(title)
+        self.toggle_button.setCheckable(True)
+        self.toggle_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.toggle_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.toggle_button.setProperty("role", "disclosure")
+        self.toggle_button.toggled.connect(self.set_expanded)
+        self.collapsible = collapsible
+        self.title_label.setVisible(not collapsible)
+        self.toggle_button.setVisible(collapsible)
         layout.addWidget(self.title_label)
-        if description:
-            layout.addWidget(self.description_label)
-        layout.addLayout(self.content_layout)
+        layout.addWidget(self.toggle_button)
+        layout.addWidget(self.description_label)
+        self.description_label.setVisible(bool(description))
+        layout.addWidget(self.content)
+        self.set_expanded(expanded if collapsible else True)
+
+    def set_expanded(self, expanded):
+        expanded = bool(expanded or not self.collapsible)
+        self.toggle_button.blockSignals(True)
+        self.toggle_button.setChecked(expanded)
+        self.toggle_button.blockSignals(False)
+        self.toggle_button.setArrowType(Qt.DownArrow if expanded else Qt.RightArrow)
+        self.toggle_button.setAccessibleDescription("已展开" if expanded else "已收起")
+        self.content.setVisible(expanded)
+        self.updateGeometry()
+
+    def set_description(self, text):
+        self.description_label.setText(text)
+        self.description_label.setVisible(bool(text))
 
     def add_widget(self, widget: QWidget, stretch: int = 0):
         policy = widget.sizePolicy()
@@ -60,4 +89,20 @@ class SectionPanel(QWidget):
         return row
 
 
-__all__ = ["SectionPanel"]
+def reveal_widget(widget):
+    """Open containing sections before navigating to a field or validation error."""
+    parent = widget.parentWidget()
+    pages = []
+    while parent is not None:
+        if isinstance(parent, SectionPanel):
+            parent.set_expanded(True)
+        if isinstance(parent, QScrollArea):
+            pages.append(parent)
+        parent = parent.parentWidget()
+    widget.setFocus(Qt.OtherFocusReason)
+    from PySide6.QtCore import QTimer
+    for page in pages:
+        QTimer.singleShot(0, lambda page=page: page.ensureWidgetVisible(widget))
+
+
+__all__ = ["SectionPanel", "reveal_widget"]

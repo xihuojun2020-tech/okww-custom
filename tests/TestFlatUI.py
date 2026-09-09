@@ -85,6 +85,8 @@ class TestFlatUI(unittest.TestCase):
         with patch.object(og, 'app', SimpleNamespace(tr=str)), \
              patch.object(og, 'executor', SimpleNamespace(waiting_for_task=lambda _: '')):
             card = TaskCard(task, True)
+            self.assertFalse(card.isExpand)
+            card.setExpand(True)
             self.assertNotIsInstance(card, QAbstractScrollArea)
             card.resize(700, 500)
             card.show()
@@ -99,6 +101,16 @@ class TestFlatUI(unittest.TestCase):
             task.pause.assert_called_once()
             card.stop_clicked()
             task.disable.assert_called_once()
+            card.setExpand(False)
+            task.running = True
+            task.enabled = True
+            card.update_buttons(task)
+            card.update_config()
+            self.app.processEvents()
+            self.assertFalse(card.isExpand)
+            self.assertTrue(card.stop_button.isVisible())
+            self.assertEqual(task.config['目标'], '测试首领')
+            card.setExpand(True)
             action = card.config_widget_by_key['管理配置']
             button = action.findChild(QPushButton)
             self.assertIsNotNone(button)
@@ -109,6 +121,32 @@ class TestFlatUI(unittest.TestCase):
             self.assertFalse(any(bar.isVisible() and bar.maximum() > 0 for bar in card.findChildren(QScrollBar)))
             card.close()
             card.deleteLater()
+
+    def test_disclosure_preserves_values_and_reveals_errors(self):
+        from src.gui.SectionPanel import SectionPanel
+        from PySide6.QtWidgets import QLineEdit, QToolButton
+        from PySide6.QtTest import QTest
+        sections = [SectionPanel('高级配置', collapsible=True) for _ in range(2)]
+        for section in sections:
+            field = QLineEdit('保留草稿')
+            row = section.add_row('名称', field)
+            section.show()
+            self.app.processEvents()
+            self.assertFalse(field.isVisible())
+            QTest.keyClick(section.toggle_button, Qt.Key_Space)
+            self.assertTrue(section.toggle_button.isChecked())
+            self.assertTrue(field.isVisible())
+            section.set_expanded(False)
+            row.set_error('请检查名称')
+            self.assertTrue(section.toggle_button.isChecked())
+            self.assertEqual(field.text(), '保留草稿')
+            self.assertEqual(field.accessibleName(), '名称')
+            self.assertIs(row.label.buddy(), field)
+            self.assertFalse(section.findChildren(QAbstractScrollArea))
+        self.assertTrue(all(section.toggle_button.isChecked() for section in sections))
+        for section in sections:
+            section.close()
+            section.deleteLater()
 
     def test_account_json_cancel_and_apply_preserve_save_boundary(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -131,6 +169,33 @@ class TestFlatUI(unittest.TestCase):
             self.assertNotEqual(tab.editor.load_draft(tab.draft.profile_id).tasks, tab.draft.tasks)
             self.assertTrue(tab.task_editor.isHidden())
             tab.deleteLater()
+
+    def test_account_form_refresh_preserves_disclosure(self):
+        with tempfile.TemporaryDirectory() as temp:
+            env = make_account_environment(Path(temp))
+            tab = AccountConfigTab(AccountConfigEditor(env.repository))
+            self.assertFalse(tab.form_sections[1].toggle_button.isChecked())
+            tab.form_sections[1].set_expanded(True)
+            tab._render_form()
+            self.assertTrue(tab.form_sections[1].toggle_button.isChecked())
+            self.assertFalse(tab.identity_group.toggle_button.isChecked())
+            tab.deleteLater()
+
+    def test_small_screen_window_geometry_stays_reachable(self):
+        from custom_ok.ok.gui.MainWindow import MainWindow
+        from PySide6.QtCore import QRect
+        window = SimpleNamespace(screen=Mock(), ok_config={
+            'window_width': 1600, 'window_height': 1000, 'window_x': 4000,
+            'window_y': 2000, 'window_maximized': False},
+            setMinimumSize=Mock(), setGeometry=Mock(), apply_navigation_state=Mock())
+        screen = QRect(1920, 0, 960, 540)
+        with patch('custom_ok.ok.gui.MainWindow.QScreen.availableGeometry', return_value=screen):
+            MainWindow.set_window_size(window, 1200, 800, 1200, 800)
+        minimum = window.setMinimumSize.call_args.args[0]
+        self.assertLessEqual(minimum.width(), screen.width())
+        self.assertLessEqual(minimum.height(), screen.height())
+        geometry = QRect(*window.setGeometry.call_args.args)
+        self.assertTrue(screen.contains(geometry))
 
 
 if __name__ == '__main__':

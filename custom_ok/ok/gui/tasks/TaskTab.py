@@ -32,6 +32,7 @@ class TaskTab(Tab):
         self.close_info_button = ToolButton(FluentIcon.CLOSE, self.task_info_container)
         self.close_info_button.setFixedSize(28, 28)
         self.close_info_button.setToolTip(self.tr("Close"))
+        self.close_info_button.setAccessibleName(self.tr("Close"))
         self.close_info_button.clicked.connect(self.close_task_info)
         self.task_info_container.add_top_widget(self.close_info_button)
 
@@ -71,7 +72,8 @@ class TaskTab(Tab):
         text.setReadOnly(True)
         text.setPlainText('\n'.join(f'{key}：{value_to_string(value)}' for key, value in self.last_task.info.items()))
         layout.addWidget(text)
-        dialog.resize(680, 480)
+        from src.gui.CodexTheme import size_dialog
+        size_dialog(dialog, 680, 480)
         dialog.exec()
         dialog.deleteLater()
 

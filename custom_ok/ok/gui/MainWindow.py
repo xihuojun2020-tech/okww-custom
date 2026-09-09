@@ -763,6 +763,11 @@ class MainWindow(FluentWindow):
 
     def set_window_size(self, width, height, min_width, min_height):
         screen = QScreen.availableGeometry(self.screen())
+        # Qt geometry is already in logical pixels; high DPI can leave less
+        # room than the configured desktop minimum. Keep the shell reachable.
+        available_width = max(1, screen.width() - 24)
+        available_height = max(1, screen.height() - 48)
+        self.setMinimumSize(QSize(min(min_width, available_width), min(min_height, available_height)))
         if (self.ok_config['window_width'] > 0 and self.ok_config['window_height'] > 0 and
                 self.ok_config['window_y'] > 0 and self.ok_config['window_x'] > 0):
             x, y, width, height = (self.ok_config['window_x'], self.ok_config['window_y'],
@@ -770,13 +775,16 @@ class MainWindow(FluentWindow):
             if self.ok_config['window_maximized']:
                 self.setWindowState(Qt.WindowMaximized)
             else:
+                width, height = min(width, available_width), min(height, available_height)
+                x = max(screen.left(), min(x, screen.right() - width + 1))
+                y = max(screen.top(), min(y, screen.bottom() - height + 1))
                 self.setGeometry(x, y, width, height)
         else:
-            x = int((screen.width() - width) / 2)
-            y = int((screen.height() - height) / 2)
+            width, height = min(width, available_width), min(height, available_height)
+            x = screen.left() + int((screen.width() - width) / 2)
+            y = screen.top() + int((screen.height() - height) / 2)
             self.setGeometry(x, y, width, height)
 
-        self.setMinimumSize(QSize(min_width, min_height))
         self.apply_navigation_state()
 
     def apply_navigation_state(self):

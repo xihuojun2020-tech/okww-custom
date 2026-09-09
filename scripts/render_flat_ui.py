@@ -56,7 +56,8 @@ def render(output):
                                         get_config=lambda _: MemoryConfig())
         executor = SimpleNamespace(scene=None, text_fix={}, trigger_tasks=[], onetime_tasks=[task], current_task=None, paused=True,
                                    basic_options=basic, global_config=global_config, waiting_for_task=lambda _: '')
-        fake_app = SimpleNamespace(tr=lambda text: catalog.gettext(str(text)) if text else '', title='OK-WW', version='1.44.00',
+        from config import version
+        fake_app = SimpleNamespace(tr=lambda text: catalog.gettext(str(text)) if text else '', title='OK-WW', version=version,
                                    ok_config=InertConfig(), start_controller=SimpleNamespace(start=Mock()))
         for name, value in [('app', fake_app), ('executor', executor), ('device_manager', manager),
                             ('config', {'gui_icon': None}), ('task_manager', SimpleNamespace(imported_scripts={}))]:
@@ -86,6 +87,13 @@ def render(output):
                  AccountSettingsTab(), TaskHubTab(), ActivityHubTab(), TestHubTab()]
         apply_codex_light_theme(app)
         for page in pages:
+            if os.environ.get('OKWW_UI_EXPAND_ALL'):
+                from src.gui.SectionPanel import SectionPanel
+                from ok.gui.tasks.ConfigCard import ConfigCard
+                for section in page.findChildren(SectionPanel):
+                    section.set_expanded(True)
+                for card in page.findChildren(ConfigCard):
+                    card.setExpand(True)
             for width, height in [(760, 700), (1100, 800)]:
                 page.resize(width, height)
                 page.show()
@@ -112,6 +120,17 @@ def render(output):
         for page in pages:
             page.close()
             page.deleteLater()
+        from src.gui.AccountConfigTab import AccountTemplateDialog, NewAccountDialog
+        for dialog in (AccountTemplateDialog(dict(executor.onetime_tasks[0].default_config)),
+                       NewAccountDialog(['S1', 'S2'])):
+            dialog.show()
+            for _ in range(5): app.processEvents()
+            dialog.grab().save(str(output / f'{type(dialog).__name__}.png'))
+            for button in dialog.findChildren(QPushButton):
+                if button.isVisible() and not dialog.rect().contains(button.mapTo(dialog, button.rect().center())):
+                    raise AssertionError(f'Dialog button outside window: {button.text()}')
+            dialog.close()
+            dialog.deleteLater()
         app.processEvents()
 
 

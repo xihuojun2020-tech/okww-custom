@@ -63,7 +63,10 @@ class LabelAndAccountSequence(ConfigLabelAndWidget):
             # 上次完成时间（只读）
             last_label = QLabel('')
             last_label.setObjectName('contentLabel')
-            last_label.setStyleSheet('color: gray;')
+            last_label.setProperty('role', 'description')
+            last_label.setWordWrap(True)
+            label.setBuddy(combo)
+            combo.setAccessibleName(f'账号{i + 1}')
             row.addWidget(last_label)
             row.addStretch(1)
             self.content_layout.addLayout(row)

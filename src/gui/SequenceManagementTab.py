@@ -13,6 +13,7 @@ from src.account_config_editor import sanitize_error
 from src.sequence_repository import SequenceRepository
 from src.gui.AccountChangeEvent import AccountChangeEvent
 from src.gui.BackgroundOperation import BackgroundOperation
+from src.gui.SectionPanel import SectionPanel
 
 
 class SequenceManagementTab(CustomTab):
@@ -29,6 +30,8 @@ class SequenceManagementTab(CustomTab):
         layout.addWidget(BodyLabel("序列配置（运行开始后使用不可变快照；此处删除的是整个序列）"))
         self.sequences = QListWidget(root)
         self.members = QListWidget(root)
+        self.sequences.setAccessibleName('当前序列')
+        self.members.setAccessibleName('序列账号顺序')
         # The account-settings hub embeds this page flat; keep both short
         # lists visible instead of creating another scroll surface.
         self.sequences.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -41,11 +44,13 @@ class SequenceManagementTab(CustomTab):
         self.members.setMinimumHeight(32)
         layout.addWidget(BodyLabel("当前序列"))
         layout.addWidget(self.sequences)
-        layout.addWidget(BodyLabel("当前序列包含的账号（上下移动只调整账号顺序）"))
-        layout.addWidget(self.members, 1)
+        self.order_section = SectionPanel('账号执行顺序', parent=root, collapsible=True)
+        self.order_section.add_widget(self.members)
+        layout.addWidget(self.order_section)
         sequence_actions = QHBoxLayout()
         self.create_button = QPushButton("新建序列", root)
         self.delete_button = QPushButton("删除当前序列", root)
+        self.delete_button.setProperty('role', 'danger')
         for button in (self.create_button, self.delete_button):
             sequence_actions.addWidget(button)
         layout.addLayout(sequence_actions)
@@ -54,7 +59,7 @@ class SequenceManagementTab(CustomTab):
         self.down_button = QPushButton("下移账号", root)
         member_actions.addWidget(self.up_button)
         member_actions.addWidget(self.down_button)
-        layout.addLayout(member_actions)
+        self.order_section.content_layout.addLayout(member_actions)
         self.status = BodyLabel("等待操作")
         layout.addWidget(self.status)
         self.add_widget(root, stretch=1)
@@ -101,6 +106,7 @@ class SequenceManagementTab(CustomTab):
             self._show_members()
         else:
             self.members.clear()
+            self.order_section.set_description('暂无序列；新建后可编辑账号顺序。')
 
     def _selected(self):
         row = self.sequences.currentRow()
@@ -111,11 +117,14 @@ class SequenceManagementTab(CustomTab):
         item = self._selected()
         if not item:
             self.members.setFixedHeight(32)
+            self.order_section.set_description('尚未选择序列。')
             return
         profiles = {record.profile_id: record.account.get("display_name", "未命名账号")
                     for record in self.service.repository.list_profiles()}
         for profile_id in item.profile_ids:
             self.members.addItem(str(profiles.get(profile_id, "缺失账号")))
+        self.order_section.set_description(
+            f'{item.sequence_id}：' + (' → '.join(self.members.item(i).text() for i in range(self.members.count())) or '暂无账号'))
         # Keep every member row visible at once.  The list is deliberately
         # content-sized instead of relying on a nested scroll area.
         row_height = self.members.sizeHintForRow(0) if self.members.count() else 24

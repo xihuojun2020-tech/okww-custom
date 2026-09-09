@@ -32,10 +32,13 @@ class LabelAndTextEdit(ConfigLabelAndWidget):
         editor.setPlainText(self.text_edit.toPlainText())
         layout.addWidget(editor)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dialog)
+        buttons.button(QDialogButtonBox.Ok).setText('应用')
+        buttons.button(QDialogButtonBox.Cancel).setText('取消')
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
-        dialog.resize(640, 420)
+        from src.gui.CodexTheme import size_dialog
+        size_dialog(dialog, 640, 420)
         if dialog.exec() == QDialog.Accepted:
             self.text_edit.setPlainText(editor.toPlainText())
         dialog.deleteLater()
