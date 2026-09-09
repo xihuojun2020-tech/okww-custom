@@ -1,5 +1,5 @@
 <div align="center">
-  <p>新版界面说明：<a href="docs/references/flat-ui.md">1.45.00 简约 UI、按需展开与单层滚动</a></p>
+  <p>新版界面说明：<a href="docs/references/flat-ui.md">1.45.01 简约 UI、默认折叠与单层滚动</a></p>
   <h1 align="center">
     <img src="icons/icon.png" width="200" alt="ok-ww logo"/>
     <br/>

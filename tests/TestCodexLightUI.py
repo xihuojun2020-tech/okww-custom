@@ -4,6 +4,10 @@ from pathlib import Path
 
 
 class TestCodexLightUI(unittest.TestCase):
+    def test_program_preferences_do_not_override_collapsed_default(self):
+        from ok.gui.settings.SettingTab import SettingTab
+        self.assertNotIn('setExpand(True)', inspect.getsource(SettingTab.add_global_config))
+
     def test_theme_tokens_are_fixed_light(self):
         from src.gui.CodexTheme import COLORS, codex_style_sheet
 
