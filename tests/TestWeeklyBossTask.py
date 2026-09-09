@@ -279,7 +279,7 @@ class TestWeeklyBossBoundaries(unittest.TestCase):
     def test_normal_combat_return_with_next_phase_continues_without_claim(self):
         task = self.combat_task(None)
         task._wait_combat_phase.side_effect = ['combat', 'post']
-        task._wait_for = Mock(return_value=True)
+        task._wait_for = Mock(return_value='combat')
         task.in_combat = Mock(return_value=True)
         task._fight()
         self.assertEqual(task.combat_once.call_count, 2)
@@ -287,13 +287,29 @@ class TestWeeklyBossBoundaries(unittest.TestCase):
         task.combat_end.assert_not_called()
         self.assertNotIn('已确认领奖', task.info)
 
+    def test_post_hint_appearing_while_waiting_for_next_phase_finishes_combat(self):
+        task = self.combat_task(None)
+        task._wait_combat_phase.return_value = 'combat'
+        task._task_hint_phase = Mock(return_value='post')
+        task._reward_available = Mock(return_value=None)
+        task._button = Mock(return_value=None)
+        task._wait_for = Mock(side_effect=lambda probe, *_: probe() or probe())
+        task.in_combat = Mock(return_value=False)
+        task._fight()
+        self.assertEqual(task.combat_once.call_count, 1)
+        self.assertEqual(task._task_hint_phase.call_count, 2)
+        task._task_hint_phase.assert_called_with(log=True)
+        task.in_combat.assert_not_called()
+        task.combat_end.assert_not_called()
+        task.reset_to_false.assert_called_once_with('weekly combat returned; verify reward')
+
     def test_switch_team_loss_with_combat_hint_continues_next_phase(self):
         from src.task.BaseCombatTask import NotInCombatException
         error = NotInCombatException('not in_team while switching')
         task = self.combat_task(None)
         task.combat_once.side_effect = [error, None]
         task._wait_combat_phase.side_effect = ['combat', 'post']
-        task._wait_for = Mock(return_value=True)
+        task._wait_for = Mock(return_value='combat')
         task.in_combat = Mock(return_value=True)
         task._fight()
         self.assertEqual(task.combat_once.call_count, 2)

@@ -266,14 +266,25 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
                 if combat_error:
                     raise combat_error from verification_error
                 raise
+            if phase == 'combat':
+                self._stage('周本仍需击败敌人，等待下一阶段')
+                post_seen = False
+                def next_phase():
+                    nonlocal post_seen
+                    if (self._task_hint_phase(log=True) == 'post' or
+                            self._reward_available() or self._button(self.VICTORY, '挑战成功')):
+                        if post_seen:
+                            return 'post'
+                        post_seen = True
+                        return None
+                    post_seen = False
+                    return 'combat' if self.in_combat(target=True) else None
+                phase = self._wait_for(next_phase, '下一阶段 Boss 未出现', 45)
             if phase == 'post':
                 if isinstance(combat_error, CombatStateUnknown):
                     self.combat_end()
                 self.log_info('周本战后阶段已连续确认；尚未计入领奖次数')
                 break
-            self._stage('周本仍需击败敌人，等待下一阶段')
-            self._wait_for(lambda: self.in_combat(target=True),
-                           '下一阶段 Boss 未出现', 45)
         self.reset_to_false('weekly combat returned; verify reward')
 
     def _settlement(self):
