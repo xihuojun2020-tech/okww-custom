@@ -106,7 +106,7 @@ class SequenceManagementTab(CustomTab):
             self._show_members()
         else:
             self.members.clear()
-            self.order_section.set_description('暂无序列；新建后可编辑账号顺序。')
+            self.order_section.set_summary('暂无序列；新建后可编辑账号顺序。')
 
     def _selected(self):
         row = self.sequences.currentRow()
@@ -117,7 +117,7 @@ class SequenceManagementTab(CustomTab):
         item = self._selected()
         if not item:
             self.members.setFixedHeight(32)
-            self.order_section.set_description('尚未选择序列。')
+            self.order_section.set_summary('尚未选择序列。')
             return
         profiles = {record.profile_id: record.account.get("display_name", "未命名账号")
                     for record in self.service.repository.list_profiles()}
@@ -125,6 +125,10 @@ class SequenceManagementTab(CustomTab):
             self.members.addItem(str(profiles.get(profile_id, "缺失账号")))
         self.order_section.set_description(
             f'{item.sequence_id}：' + (' → '.join(self.members.item(i).text() for i in range(self.members.count())) or '暂无账号'))
+        preview = ' → '.join(self.members.item(i).text() for i in range(min(3, self.members.count())))
+        if self.members.count() > 3:
+            preview += ' → …'
+        self.order_section.set_summary(f'{item.sequence_id} · {self.members.count()} 个账号；{preview or "暂无账号"}')
         # Keep every member row visible at once.  The list is deliberately
         # content-sized instead of relying on a nested scroll area.
         row_height = self.members.sizeHintForRow(0) if self.members.count() else 24

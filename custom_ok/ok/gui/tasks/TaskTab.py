@@ -42,6 +42,7 @@ class TaskTab(Tab):
         self.taskCardLayout = QVBoxLayout(self.task_cards_view)
         self.taskCardLayout.setContentsMargins(0, 0, 0, 0)
         self.taskCardLayout.setSpacing(16)
+        self._card_expansion = {}
         self.vBoxLayout.addWidget(self.task_cards_view)
 
         self.task_info_labels = [self.tr('Info'), self.tr('Value')]
@@ -81,9 +82,13 @@ class TaskTab(Tab):
         return True
 
     def add_task_card(self, card):
+        previous = self._card_expansion.get(id(card.task))
+        if previous and previous[0] is card.task:
+            card.setExpand(previous[1])
         self.taskCardLayout.addWidget(card)
 
     def remove_task_card(self, card):
+        self._card_expansion[id(card.task)] = (card.task, card.isExpand)
         self.taskCardLayout.removeWidget(card)
 
     @staticmethod

@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget, QSizePolicy, QToolBu
 
 from src.gui.FlatSettingRow import FlatSettingRow
 from src.gui.CodexTheme import SPACING
+from src.gui.DisclosureHeader import DisclosureHeader
 
 
 class SectionPanel(QWidget):
@@ -31,37 +32,34 @@ class SectionPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, SPACING['row'], 0, SPACING['section'])
         layout.setSpacing(SPACING['row'])
-        self.toggle_button = QToolButton(self)
-        self.toggle_button.setText(title)
-        self.toggle_button.setAccessibleName(title)
-        self.toggle_button.setCheckable(True)
-        self.toggle_button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        self.toggle_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.toggle_button.setProperty("role", "disclosure")
-        self.toggle_button.toggled.connect(self.set_expanded)
+        self.header = DisclosureHeader(title, self)
+        self.toggle_button = self.header.expandButton
+        self.header.toggled.connect(self.set_expanded)
         self.collapsible = collapsible
         self.title_label.setVisible(not collapsible)
-        self.toggle_button.setVisible(collapsible)
+        self.header.setVisible(collapsible)
         layout.addWidget(self.title_label)
-        layout.addWidget(self.toggle_button)
-        layout.addWidget(self.description_label)
+        layout.addWidget(self.header)
+        self.content_layout.addWidget(self.description_label)
         self.description_label.setVisible(bool(description))
         layout.addWidget(self.content)
         self.set_expanded(expanded if collapsible else True)
 
     def set_expanded(self, expanded):
         expanded = bool(expanded or not self.collapsible)
-        self.toggle_button.blockSignals(True)
-        self.toggle_button.setChecked(expanded)
-        self.toggle_button.blockSignals(False)
-        self.toggle_button.setArrowType(Qt.DownArrow if expanded else Qt.RightArrow)
-        self.toggle_button.setAccessibleDescription("已展开" if expanded else "已收起")
+        self.header.set_expanded(expanded)
         self.content.setVisible(expanded)
         self.updateGeometry()
 
     def set_description(self, text):
         self.description_label.setText(text)
         self.description_label.setVisible(bool(text))
+
+    def set_summary(self, text):
+        self.header.set_summary(text)
+
+    def add_action(self, widget):
+        self.header.add_action(widget)
 
     def add_widget(self, widget: QWidget, stretch: int = 0):
         policy = widget.sizePolicy()

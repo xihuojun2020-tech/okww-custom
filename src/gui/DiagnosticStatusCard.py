@@ -57,19 +57,17 @@ def diagnostic_status_text(root):
             f'\n最近采集警告：{diagnostic_error_message(warning) or "无"}')
 
 
-class DiagnosticStatusCard(QWidget):
+class DiagnosticStatusCard(SectionPanel):
     def __init__(self, parent=None):
-        super().__init__(parent)
+        super().__init__('日志与诊断', parent=parent, collapsible=True)
         self.root = default_root()
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        self.set_summary('正在读取本地状态…')
+        layout = self.content_layout
         description = QLabel('启动日志、运行日志与截图自动上传 NAS。每周清理超过 7 天且已上传的日志；截图和待补传资料保留。')
         description.setWordWrap(True)
         description.setProperty('role', 'description')
         layout.addWidget(description)
-        self.settings_section = SectionPanel('上传连接设置', '修改目录或凭据时展开；上传状态始终显示。',
-                                             self, collapsible=True)
-        layout.addWidget(self.settings_section)
+        self.settings_section = self
         self.target = QLineEdit(DEFAULT_TARGET)
         self.target.setPlaceholderText('NAS 诊断目录，不填写密码')
         self.settings_section.add_row('上传目录', self.target)
@@ -83,9 +81,10 @@ class DiagnosticStatusCard(QWidget):
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         row = QHBoxLayout()
-        save, retry, folder = (QPushButton(text) for text in ('保存设置', '重试网络失败批次', '打开本地诊断'))
-        for button in (save, retry, folder):
-            row.addWidget(button)
+        save, retry, folder = (QPushButton(text) for text in ('保存设置', '重试上传', '打开目录'))
+        row.addWidget(save)
+        for button in (retry, folder):
+            self.add_action(button)
         layout.addLayout(row)
         self.operation = BackgroundOperation(self, (save, retry))
         save.clicked.connect(self.save)
@@ -104,13 +103,19 @@ class DiagnosticStatusCard(QWidget):
         root = self.root
         def read():
             return diagnostic_status_text(root)
-        self.operation.start(read, self.status.setText, lambda e: self.status.setText(sanitize_text(e)))
+        self.operation.start(read, self._show_status, lambda e: self._show_status(sanitize_text(e)))
+
+    def _show_status(self, text):
+        self.status.setText(text)
+        lines = text.splitlines()
+        errors = [line for line in lines if line.startswith(('最近上传错误：', '最近采集警告：')) and not line.endswith('：无')]
+        self.set_summary('存在诊断异常，展开查看' if errors else next((line for line in lines if line.startswith('最后成功：')), text))
 
     def save(self):
         root, target = self.root, self.target.text().strip()
         username, secret = self.username.text().strip(), self.password.text()
         if not target:
-            self.status.setText('请填写 NAS 目录')
+            self._show_status('请填写 NAS 目录')
             reveal_widget(self.target)
             return
         def write():
@@ -128,7 +133,7 @@ class DiagnosticStatusCard(QWidget):
                             atomic_json(path, state)
             wake_uploader(root)
         self.operation.start(write, lambda _: (self.password.clear(), self.refresh()),
-                             lambda e: (self.password.clear(), self.status.setText(sanitize_text(e))))
+                             lambda e: (self.password.clear(), self._show_status(sanitize_text(e))))
 
     def retry(self):
         root = self.root
@@ -140,4 +145,4 @@ class DiagnosticStatusCard(QWidget):
                         state['next_retry'] = 0
                         atomic_json(path, state)
             wake_uploader(root)
-        self.operation.start(reset, lambda _: self.refresh(), lambda e: self.status.setText(sanitize_text(e)))
+        self.operation.start(reset, lambda _: self.refresh(), lambda e: self._show_status(sanitize_text(e)))

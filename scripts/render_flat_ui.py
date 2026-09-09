@@ -78,6 +78,15 @@ def render(output):
             instance = cls(executor=executor, app=None)
             instance.config = MemoryConfig(instance.default_config)
             executor.onetime_tasks.append(instance)
+        # Synthetic entries exercise shared task headers outside the main task page.
+        # They are render-only fixtures, never registered with the application.
+        for title, section, group in (('模拟限时活动', 'activities', '限时活动'),
+                                      ('模拟常驻活动', 'activities', '常驻活动'),
+                                      ('模拟测试任务', 'tests', None)):
+            sample = example_task(title)
+            sample.navigation_section, sample.group_name = section, group
+            executor.onetime_tasks.append(sample)
+        executor.trigger_tasks = [example_task('模拟实时功能')]
         from src.gui.GeneralSettingsTab import GeneralSettingsTab
         from src.gui.AccountSettingsTab import AccountSettingsTab
         from src.gui.TaskHubTab import TaskHubTab
@@ -85,6 +94,7 @@ def render(output):
         from src.gui.TestHubTab import TestHubTab
         pages = [GeneralSettingsTab({'windows': {'exe': 'fake'}}, threading.Event(), executor, global_config),
                  AccountSettingsTab(), TaskHubTab(), ActivityHubTab(), TestHubTab()]
+        pages[0].diagnostic_panel._show_status('最后成功：无\n最近上传错误：无\n最近采集警告：无')
         apply_codex_light_theme(app)
         for page in pages:
             if os.environ.get('OKWW_UI_EXPAND_ALL'):

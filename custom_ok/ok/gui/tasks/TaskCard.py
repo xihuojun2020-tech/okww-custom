@@ -17,13 +17,17 @@ class TaskCard(ConfigCard):
         self.task = task
         self.onetime = onetime
         self._compact_header()
+        self.state_label = QLabel(self.card)
+        self.state_label.setProperty('role', 'description')
+        self.state_label.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.card.layout_row.insertWidget(self.card.layout_row.count() - 1, self.state_label)
 
         # Create a container widget for buttons with consistent 6px spacing
         self.button_container = QWidget()
         self.button_layout = QHBoxLayout(self.button_container)
         self.button_layout.setContentsMargins(0, 0, 0, 0)
         self.button_layout.setSpacing(8)
-        self.button_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.button_container.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
         self.addWidget(self.button_container)
 
         self.waiting_label = QLabel(self)
@@ -61,14 +65,20 @@ class TaskCard(ConfigCard):
 
         # Collect all buttons in display order
         self.all_buttons = [b for b in [
-            self.waiting_label,
-            self.instructions_button,
-            self.edit_button,
             self.pause_button,
             self.stop_button,
             self.start_button,
             self.enable_button,
         ] if b is not None]
+
+        self.waiting_label.setWordWrap(True)
+        self.viewLayout.addWidget(self.waiting_label)
+        self.viewLayout.addWidget(self.instructions_button)
+        if self.edit_button is not None:
+            self.viewLayout.addWidget(self.edit_button)
+        if getattr(task, 'instructions', None) or self.edit_button is not None:
+            self._expand_enabled = True
+            self.card.expandButton.show()
 
         self.update_buttons(self.task)
         communicate.task.connect(self.update_buttons)
@@ -89,6 +99,10 @@ class TaskCard(ConfigCard):
         self.waiting_label.setText(content)
         self.waiting_label.setToolTip(content)
         self.waiting_label.setVisible(bool(content))
+        state = ('已暂停' if self.task.paused else '运行中' if self.task.running
+                 else '等待中' if self.task.enabled and self.onetime
+                 else '已启用' if self.task.enabled else '未运行' if self.onetime else '已关闭')
+        self.state_label.setText(state)
 
     def start_clicked(self):
         if self.task.enabled and self.task.paused:
@@ -162,6 +176,7 @@ class TaskCard(ConfigCard):
         for btn in self.all_buttons:
             if not btn.isHidden():
                 self.button_layout.addWidget(btn)
+                QWidget.setTabOrder(btn, self.card.expandButton)
 
     def update_buttons(self, task):
         if task == self.task or self.onetime:

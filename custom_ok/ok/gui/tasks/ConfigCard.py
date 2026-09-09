@@ -300,27 +300,13 @@ class ConfigCard(ConfigContentMixin, QWidget):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self._expand_enabled = True
         self.isExpand = True
-        self.card = QWidget(self)
-        self.card.titleLabel = QLabel(og.app.tr(name), self.card)
-        self.card.titleLabel.setProperty("role", "sectionTitle")
-        self.card.contentLabel = QLabel(og.app.tr(description), self.card)
+        from src.gui.DisclosureHeader import DisclosureHeader
+        self.card = DisclosureHeader(og.app.tr(name), self, icon=config_icon)
+        self.card.contentLabel = QLabel(og.app.tr(description), self)
         self.card.contentLabel.setProperty("role", "description")
         for label in (self.card.titleLabel, self.card.contentLabel):
             label.setWordWrap(True)
-        self.card.vBoxLayout = QVBoxLayout(self.card)
-        self.card.vBoxLayout.setContentsMargins(0, 0, 0, 0)
-        self.card.vBoxLayout.addWidget(self.card.titleLabel)
-        if description:
-            self.card.vBoxLayout.addWidget(self.card.contentLabel)
-        self.card.expandButton = QToolButton(self.card)
-        self.card.expandButton.setText("展开全部参数")
-        self.card.expandButton.setProperty('role', 'disclosure')
-        self.card.expandButton.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        self.card.expandButton.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.card.expandButton.setAccessibleName(f'{og.app.tr(name)}：参数')
-        self.card.expandButton.setCheckable(True)
-        self.card.expandButton.clicked.connect(lambda: self.setExpand(not self.isExpand))
-        self.card.vBoxLayout.addWidget(self.card.expandButton)
+        self.card.toggled.connect(self.setExpand)
         self.view = QWidget(self)
         self.viewLayout = QVBoxLayout(self.view)
         self.rootLayout = QVBoxLayout(self)
@@ -329,18 +315,20 @@ class ConfigCard(ConfigContentMixin, QWidget):
         self.rootLayout.addWidget(self.card)
         self.rootLayout.addWidget(self.view)
         self._init_config_content(task, config, default_config, config_description, config_type)
+        self.viewLayout.insertWidget(0, self.card.contentLabel)
+        self.card.contentLabel.setVisible(bool(description))
+        if description:
+            self._expand_enabled = True
+            self.card.expandButton.show()
         self.setExpand(False)
 
     def addWidget(self, widget):
-        self.card.vBoxLayout.insertWidget(2 if self.card.contentLabel.text() else 1, widget)
+        self.card.add_action(widget)
 
     def setExpand(self, isExpand):
         self.isExpand = bool(isExpand and self._expand_enabled)
         self.view.setVisible(self.isExpand)
-        self.card.expandButton.setChecked(self.isExpand)
-        self.card.expandButton.setArrowType(Qt.DownArrow if self.isExpand else Qt.RightArrow)
-        self.card.expandButton.setText("收起参数" if self.isExpand else "展开全部参数")
-        self.card.expandButton.setAccessibleDescription("已展开" if self.isExpand else "已收起")
+        self.card.set_expanded(self.isExpand)
         self.updateGeometry()
 
     def _on_empty_config_content(self):

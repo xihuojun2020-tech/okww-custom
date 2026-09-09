@@ -10,13 +10,14 @@ from qfluentwidgets import MessageBox
 from src.account_config_editor import sanitize_error
 from src.gui.BackgroundOperation import BackgroundOperation
 from src.update.lan_service import LanUpdateService
+from src.gui.SectionPanel import SectionPanel
 
 
-class LanUpdateCard(QWidget):
+class LanUpdateCard(SectionPanel):
     apply_requested = Signal(Path)
 
     def __init__(self, config_path: Path, current_version: str, executor, parent=None):
-        super().__init__(parent)
+        super().__init__('版本与更新', parent=parent, collapsible=True)
         self.config_path = Path(config_path)
         self.current_version = current_version
         self.executor = executor
@@ -26,11 +27,10 @@ class LanUpdateCard(QWidget):
         self.status.setWordWrap(True)
         self.action = QPushButton("检查局域网更新", self)
         self.action.clicked.connect(self._action)
-        row = QHBoxLayout()
-        row.addWidget(self.status, 1)
-        row.addWidget(self.action)
-        layout = QVBoxLayout(self)
-        layout.addLayout(row)
+        self.add_action(self.action)
+        self.add_widget(self.status)
+        self.set_summary(f'当前版本：{current_version}')
+        self.set_description('从已配置的局域网发布源检查更新；下载后验证完整性，确认后安装并重启。')
         self.operation = BackgroundOperation(self, (self.action,))
 
     def _action(self):
@@ -39,8 +39,12 @@ class LanUpdateCard(QWidget):
         else:
             self._download()
 
+    def _show_status(self, text):
+        self.status.setText(text)
+        self.set_summary(f'v{self.current_version} · {text}')
+
     def _check(self):
-        self.status.setText('正在检查局域网更新…')
+        self._show_status('正在检查局域网更新…')
         def work():
             service = LanUpdateService(self.config_path)
             return service, service.check(self.current_version)
@@ -48,17 +52,17 @@ class LanUpdateCard(QWidget):
         def complete(value):
             self.service, availability = value
             self.release = availability.release
-            self.status.setText(availability.message)
+            self._show_status(availability.message)
             self.action.setText("下载并安装" if self.release else "重新检查")
 
         self.operation.start(work, complete, self._failed, timeout_ms=8000)
 
     def _download(self):
         if getattr(self.executor, "current_task", None) is not None:
-            self.status.setText("自动化任务运行中，停止任务后才能安装更新")
+            self._show_status("自动化任务运行中，停止任务后才能安装更新")
             return
         root = Path(__file__).resolve().parents[2]
-        self.status.setText('正在下载并验证更新…')
+        self._show_status('正在下载并验证更新…')
         release, service = self.release, self.service
 
         def work():
@@ -74,12 +78,12 @@ class LanUpdateCard(QWidget):
             if dialog.exec():
                 self.apply_requested.emit(request)
             else:
-                self.status.setText("安装已取消，当前版本未改变")
+                self._show_status("安装已取消，当前版本未改变")
 
         self.operation.start(work, complete, self._failed)
 
     def _failed(self, error):
-        self.status.setText("局域网更新失败：" + sanitize_error(error))
+        self._show_status("局域网更新失败：" + sanitize_error(error))
 
 
 __all__ = ["LanUpdateCard"]

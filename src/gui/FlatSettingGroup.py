@@ -10,10 +10,12 @@ class FlatSettingGroup(SectionPanel):
         self.add_widget(card)
 
 
-class FlatActionSettingCard(FlatSettingRow):
+class FlatActionSettingCard(SectionPanel):
     clicked = Signal()
 
     def __init__(self, text, icon, title, content='', parent=None):
         button = QPushButton(text)
-        super().__init__(title, button, content, parent)
+        super().__init__(title, content, parent, collapsible=True)
+        self.control = button
+        self.add_action(button)
         button.clicked.connect(self.clicked)

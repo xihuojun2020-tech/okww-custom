@@ -82,6 +82,9 @@ class GeneralSettingsTab(CustomTab):
         conflict = value.casefold() in game_keys and value != "None"
         state = "与游戏快捷键冲突，请更换" if conflict else ("已停用" if value == "None" else "已启用")
         self.start_stop_status.setText(f"程序启停快捷键：{value}（{state}）")
+        for section in getattr(self, 'section_panels', ()):
+            if section.title == '快捷键':
+                section.set_summary(self.start_stop_status.text())
 
     def goto_config(self, key):
         from src.gui.SectionPanel import reveal_widget
@@ -99,9 +102,21 @@ class GeneralSettingsTab(CustomTab):
 
     def add_card(self, title, widget, stretch=0, parent=None):
         """Keep the old call site while using the shared flat section shell."""
+        if isinstance(widget, SectionPanel):
+            self.section_panels.append(widget)
+            self.add_widget(widget, stretch)
+            return widget
         section = SectionPanel(title, parent=self.view,
-                               collapsible=title in ('快捷键', '其他全局设置'))
+                               collapsible=title in ('连接与运行', '快捷键'))
         section.add_embedded_widget(widget)
+        if title == '连接与运行':
+            card = self.start_panel.start_card
+            for button in (card.refresh_button, card.start_button):
+                section.add_action(button)
+            card.disclosure_header = section.header
+            card.update_status()
+        elif title == '快捷键':
+            section.set_summary(self.start_stop_status.text())
         self.section_panels.append(section)
         self.add_widget(section, stretch)
         return section

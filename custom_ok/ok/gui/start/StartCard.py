@@ -98,6 +98,12 @@ class StartCard(QWidget):
         self.update_status()
 
     def update_status(self):
+        if header := getattr(self, 'disclosure_header', None):
+            device = og.device_manager.get_preferred_device() or {}
+            device_name = device.get('nick') or device.get('title') or device.get('name') or '游戏窗口'
+            state = '已连接' if device.get('connected') else '未连接'
+            warning = self.hotkey_warning.text()
+            header.set_summary(f'{device_name} · {state}' + (f'；{warning}' if warning else ''))
         hotkey = self.current_hotkey
         suffix = f'({hotkey})' if hotkey and hotkey != 'None' else ''
 
@@ -168,6 +174,7 @@ class StartCard(QWidget):
     def _show_hotkey_status(self, text):
         self.hotkey_warning.setText(text)
         self.hotkey_warning.setVisible(bool(text))
+        self.update_status()
 
     def rebind_hotkey(self, hotkey):
         windll.user32.UnregisterHotKey(None, 999)

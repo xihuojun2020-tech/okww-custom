@@ -62,6 +62,8 @@ def codex_style_sheet() -> str:
         background: transparent; border: 0;
         border-bottom: 1px solid {COLORS['border']};
     }}
+    QWidget#disclosureHeader {{ background: {COLORS['panel']}; border-radius: 6px; }}
+    QWidget#disclosureHeader:hover {{ background: {COLORS['hover']}; }}
     QGroupBox {{ border: 0; border-top: 1px solid {COLORS['border']};
         margin-top: 18px; padding-top: 18px; }}
     QGroupBox::title {{ subcontrol-origin: margin; left: 0; }}

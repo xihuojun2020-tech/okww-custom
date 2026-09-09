@@ -189,6 +189,8 @@ class AccountConfigTab(CustomTab):
         self.metadata = BodyLabel("")
         self.metadata.setWordWrap(True)
         layout.addWidget(self.metadata)
+        self.draft_status = QLabel('尚未编辑', root)
+        self.draft_status.setProperty('role', 'description')
         from src.gui.SectionPanel import SectionPanel
         self.identity_group = SectionPanel("账号识别信息", "登录身份只读；普通保存不会修改身份。", root, collapsible=True)
         self.identity_layout = QFormLayout()
@@ -231,13 +233,14 @@ class AccountConfigTab(CustomTab):
         row.addWidget(self.new_button)
         for button in (self.preview_button, self.save_button, self.discard_button):
             actions.addWidget(button)
-        layout.addLayout(actions)
+        actions.addWidget(self.draft_status, 1)
+        layout.insertLayout(3, actions)
         maintenance = SectionPanel('高级账号操作', '模板、JSON、身份重新绑定与删除。', root, collapsible=True)
         for button in (self.json_button, self.template_button, self.rebind_button, self.delete_button):
             maintenance.add_widget(button)
         layout.addWidget(maintenance)
         self.status = BodyLabel("等待操作")
-        layout.addWidget(self.status)
+        layout.insertWidget(4, self.status)
         self.add_widget(root, stretch=1)
         self.profile_combo.currentIndexChanged.connect(self._load_selected)
         self.preview_button.clicked.connect(self.preview)
@@ -283,6 +286,7 @@ class AccountConfigTab(CustomTab):
                 self.draft.tasks = value
                 self.task_editor.setPlainText(editor.toPlainText())
                 self._render_form()
+                self._mark_draft_edited()
             except (ValueError, TypeError) as error:
                 self.status.setText(sanitize_error(error))
         dialog.deleteLater()
@@ -381,6 +385,10 @@ class AccountConfigTab(CustomTab):
         self._loaded_tasks = copy.deepcopy(self.draft.tasks)
         self._loaded_sequences = tuple(name for name, box in self.sequence_widgets.items() if box.isChecked())
         self.status.setText("已载入独立草稿")
+        self.draft_status.setText('尚未编辑')
+
+    def _mark_draft_edited(self, *_):
+        self.draft_status.setText('草稿已编辑，尚未保存')
 
     def _apply_text(self):
         # Identity widgets are intentionally read-only.  Identity changes use
@@ -436,6 +444,7 @@ class AccountConfigTab(CustomTab):
         for sequence_id in self.editor.repository.list_sequence_ids():
             box = QCheckBox(sequence_id, self.sequence_group)
             box.setChecked(self.draft.profile_id in self.editor.repository.load_sequence(sequence_id).profile_ids)
+            box.toggled.connect(self._mark_draft_edited)
             self.sequence_widgets[sequence_id] = box
             self.sequence_layout.addWidget(box)
         if not self.sequence_widgets:
@@ -450,19 +459,19 @@ class AccountConfigTab(CustomTab):
         self.form_sections = {}
         self.form_widgets.clear()
         stamina = {'Which to Farm', 'Which Tacet Suppression to Farm', 'Which Forgery Challenge to Farm',
-                   'Material Selection', 'Weekly Boss Target'}
+                   'Material Selection'}
         daily = {'Farm Nightmare Nest for Daily Echo', 'Nightmare Which to Farm', 'Tacet Discord Nests to Farm',
                  'Auto Farm all Nightmare Nest', 'Weekly Garden Check Day', 'Merge Echo on Sunday'}
         def group(field):
-            return 1 if field.key in stamina else 0 if field.key in daily else 2
+            return 2 if field.key == 'Weekly Boss Target' else 1 if field.key in stamina else 0 if field.key in daily else 3
         last_group = None
         fields = sorted(account_field_metadata(self.draft.tasks), key=group)
         for field in fields:
             if group(field) != last_group:
                 last_group = group(field)
-                heading = SectionPanel(('每日任务', '体力与周本', '其他选项')[last_group],
-                                       parent=self.form_host, collapsible=last_group != 0,
-                                       expanded=states.get(last_group, last_group == 0))
+                heading = SectionPanel(('每日任务', '清理体力', '周本挑战', '其他选项')[last_group],
+                                       parent=self.form_host, collapsible=True,
+                                       expanded=states.get(last_group, False))
                 self.form_sections[last_group] = heading
                 self.form_layout.addRow(heading)
             value = self.draft.tasks.get(field.key)
@@ -484,15 +493,28 @@ class AccountConfigTab(CustomTab):
             widget.setToolTip(field.help_text)
             self.form_widgets[field.key] = widget
             heading.add_row(field.label, widget, field.help_text)
+            if isinstance(widget, QCheckBox):
+                widget.toggled.connect(self._mark_draft_edited)
+            elif isinstance(widget, QComboBox):
+                widget.currentIndexChanged.connect(self._mark_draft_edited)
+            else:
+                widget.textEdited.connect(self._mark_draft_edited)
             if field.key == 'Weekly Boss Target':
                 self._render_weekly_status()
         target = self.form_widgets.get('Weekly Boss Target')
-        if target is not None and 1 in self.form_sections:
+        if target is not None and 2 in self.form_sections:
             def update_summary(*_):
                 value = target.currentText()
-                self.form_sections[1].set_description(f'周本：{value}；展开可调整体力任务与周本配置。')
+                self.form_sections[2].set_summary('已关闭' if target.currentData() == '无' else f'目标：{value}；周一检查，周二至周六补检，周日复检')
             target.currentTextChanged.connect(update_summary)
             update_summary()
+        for key, field_key in ((0, 'Weekly Garden Check Day'), (1, 'Which to Farm')):
+            widget = self.form_widgets.get(field_key)
+            if key in self.form_sections and isinstance(widget, QComboBox):
+                def update_group_summary(*_, key=key, widget=widget):
+                    self.form_sections[key].set_summary(widget.currentText())
+                widget.currentTextChanged.connect(update_group_summary)
+                update_group_summary()
 
     def _render_weekly_status(self):
         from src.config_integrity import get_default_service
@@ -510,13 +532,13 @@ class AccountConfigTab(CustomTab):
                         except ValueError:
                             pass
                     text = '本周已完成' if done else '待检查'
-                    if self.draft.tasks.get('Weekly Boss Target', '无') == '无':
-                        text = '已关闭'
-                    self.form_layout.addRow(title, QLabel(f'{text}；最近：{stamp or "无"}', self.form_host))
+                    self.form_sections[2].add_row(title, QLabel(f'{text}；最近：{stamp or "无"}', self.form_host))
                 outcome = service.get_progress(f'weekly_boss:{self.draft.profile_id}', {})
-                self.form_layout.addRow('最近周本结果', QLabel(str(outcome.get('status', '尚未执行')), self.form_host))
+                self.form_sections[2].add_row('最近周本结果', QLabel(str(outcome.get('status', '尚未执行')), self.form_host))
             except Exception:
-                self.form_layout.addRow('周本记录', QLabel('记录暂不可读取', self.form_host))
+                self.form_sections[2].add_row('周本记录', QLabel('记录暂不可读取', self.form_host))
+        else:
+            self.form_sections[2].add_row('周本记录', QLabel('记录服务未就绪', self.form_host))
 
     def edit_template(self):
         if self.operation.busy:

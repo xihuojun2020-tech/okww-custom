@@ -122,6 +122,47 @@ class TestFlatUI(unittest.TestCase):
             card.close()
             card.deleteLater()
 
+    def test_header_clicks_and_actions_are_independent(self):
+        from ok.gui.tasks.TaskCard import TaskCard
+        from PySide6.QtTest import QTest
+        controller = SimpleNamespace(start=Mock())
+        with patch.object(og, 'app', SimpleNamespace(tr=str, start_controller=controller)), \
+             patch.object(og, 'executor', SimpleNamespace(waiting_for_task=lambda _: '')):
+            task = example_task()
+            card = TaskCard(task, True)
+            card.resize(700, 500)
+            card.show()
+            self.app.processEvents()
+            self.assertFalse(card.isExpand)
+            card.start_button.setEnabled(False)
+            QTest.mouseClick(card.start_button, Qt.LeftButton)
+            self.assertFalse(card.isExpand)
+            card.start_button.setEnabled(True)
+            QTest.mouseClick(card.start_button, Qt.LeftButton)
+            controller.start.assert_called_once_with(task)
+            self.assertFalse(card.isExpand)
+            QTest.mouseClick(card.card, Qt.LeftButton, pos=QPoint(8, 8))
+            self.assertTrue(card.isExpand)
+            QTest.mouseClick(card.card.titleLabel, Qt.LeftButton)
+            self.assertFalse(card.isExpand)
+            QTest.keyClick(card.card.expandButton, Qt.Key_Space)
+            self.assertTrue(card.isExpand)
+            QTest.mouseClick(card.card.contentLabel, Qt.LeftButton)
+            self.assertTrue(card.isExpand)
+            QTest.mouseClick(card.card.expandButton, Qt.LeftButton)
+            self.assertFalse(card.isExpand)
+            task.enabled, task.running = True, True
+            card.update_buttons(task)
+            self.app.processEvents()
+            QTest.mouseClick(card.pause_button, Qt.LeftButton)
+            task.pause.assert_called_once()
+            self.assertFalse(card.isExpand)
+            QTest.mouseClick(card.stop_button, Qt.LeftButton)
+            task.disable.assert_called_once()
+            self.assertFalse(card.isExpand)
+            card.close()
+            card.deleteLater()
+
     def test_disclosure_preserves_values_and_reveals_errors(self):
         from src.gui.SectionPanel import SectionPanel
         from PySide6.QtWidgets import QLineEdit, QToolButton
@@ -147,6 +188,53 @@ class TestFlatUI(unittest.TestCase):
         for section in sections:
             section.close()
             section.deleteLater()
+
+    def test_task_list_refresh_preserves_expansion(self):
+        from ok.gui.tasks.OneTimeTaskTab import OneTimeTaskTab
+        task = example_task()
+        with patch.object(og, 'app', SimpleNamespace(tr=str)), \
+             patch.object(og, 'executor', SimpleNamespace(onetime_tasks=[task], current_task=None,
+                                                        waiting_for_task=lambda _: '')), \
+             patch.object(og, 'task_manager', SimpleNamespace(imported_scripts={})):
+            tab = OneTimeTaskTab(section='tasks')
+            tab.card_widgets[0].setExpand(True)
+            tab.refresh_ui()
+            self.assertTrue(tab.card_widgets[0].isExpand)
+            tab.deleteLater()
+
+    def test_settings_header_action_and_account_groups(self):
+        from src.gui.FlatSettingGroup import FlatActionSettingCard
+        from PySide6.QtTest import QTest
+        card = FlatActionSettingCard('导出', None, '账号配置', '范围说明')
+        callback = Mock()
+        card.clicked.connect(callback)
+        card.show()
+        self.app.processEvents()
+        QTest.mouseClick(card.control, Qt.LeftButton)
+        callback.assert_called_once()
+        self.assertFalse(card.toggle_button.isChecked())
+        QTest.mouseClick(card.header, Qt.LeftButton, pos=QPoint(8, 8))
+        self.assertTrue(card.toggle_button.isChecked())
+        card.deleteLater()
+        with tempfile.TemporaryDirectory() as temp:
+            env = make_account_environment(Path(temp))
+            tab = AccountConfigTab(AccountConfigEditor(env.repository))
+            self.assertTrue(all(not section.toggle_button.isChecked() for section in tab.form_sections.values()))
+            self.assertEqual(tab.form_sections[1].title, '清理体力')
+            self.assertEqual(tab.form_sections[2].title, '周本挑战')
+            self.assertTrue(tab.form_sections[2].isAncestorOf(tab.form_widgets['Weekly Boss Target']))
+            self.assertFalse(tab.form_sections[1].isAncestorOf(tab.form_widgets['Weekly Boss Target']))
+            tab.deleteLater()
+
+    def test_connection_summary_keeps_hotkey_failure_visible(self):
+        from ok.gui.start.StartCard import StartCard
+        header = Mock()
+        card = SimpleNamespace(disclosure_header=header, hotkey_warning=QLabel('快捷键注册失败'),
+                               current_hotkey=None, start_button=Mock(), status_bar=Mock(), tr=str)
+        with patch.object(og, 'executor', SimpleNamespace(paused=True)), \
+             patch.object(og, 'device_manager', SimpleNamespace(get_preferred_device=lambda: {'connected': True})):
+            StartCard.update_status(card)
+        self.assertIn('快捷键注册失败', header.set_summary.call_args.args[0])
 
     def test_account_json_cancel_and_apply_preserve_save_boundary(self):
         with tempfile.TemporaryDirectory() as temp:
