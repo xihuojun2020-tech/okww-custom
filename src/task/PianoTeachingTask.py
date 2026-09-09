@@ -71,6 +71,16 @@ class PianoTeachingTask(WWOneTimeTask, BaseWWTask):
         return frame[round(height * 0.64):round(height * 0.96),
                      round(width * 0.26):round(width * 0.76)].copy()
 
+    @staticmethod
+    def _detection_summary(result):
+        valid_dots = sum(reading.dot_luma >= 0.55 for reading in result.readings)
+        top = sorted(result.readings, key=lambda reading: reading.score, reverse=True)[:3]
+        scores = ",".join(f"{reading.key}:{reading.score:.3f}" for reading in top) or "-"
+        return (f"status={result.status} valid_dots={valid_dots}/21 "
+                f"on={','.join(result.on_keys) or '-'} "
+                f"uncertain={','.join(result.uncertain_keys) or '-'} "
+                f"top={scores} reason={result.reason or '-'}")
+
     def run(self):
         WWOneTimeTask.run(self)
         if self.game_lang != "zh_CN":
@@ -81,6 +91,7 @@ class PianoTeachingTask(WWOneTimeTask, BaseWWTask):
         hold_time = float(self.config.get("Key Hold Time", 0.03))
         post_key_delay = float(self.config.get("Post Key Delay", 0.15))
         frame = None
+        last_detection_state = None
         self.info_set("弹琴状态", "等待高亮")
         try:
             while True:
@@ -89,6 +100,10 @@ class PianoTeachingTask(WWOneTimeTask, BaseWWTask):
                 if frame is None:
                     raise RuntimeError("无法取得游戏截图")
                 result = detector.analyze(frame)
+                detection_state = (result.status, result.on_keys, result.uncertain_keys, result.reason)
+                if detection_state != last_detection_state:
+                    self.log_info(f"弹琴检测 {self._detection_summary(result)}")
+                    last_detection_state = detection_state
                 if result.status == "invalid_roi":
                     tracker.reset()
                     self.info_set("弹琴状态", "剧情或转场中，等待弹琴界面")

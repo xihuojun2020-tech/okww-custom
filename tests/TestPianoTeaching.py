@@ -20,8 +20,10 @@ def piano_frame(keys=(), width=1280, height=720):
         for column, x_ratio in enumerate(X_CENTERS):
             center = round(x_ratio * width), round(y_ratio * height)
             cv2.circle(frame, center, max(3, round(9 * scale)), (190, 190, 190), -1)
-            if key_for(row, column) in keys:
-                cv2.circle(frame, center, round(39 * scale), (70, 190, 240), max(3, round(12 * scale)))
+            key = key_for(row, column)
+            if key in keys:
+                color = keys[key] if isinstance(keys, dict) else (70, 190, 240)
+                cv2.circle(frame, center, round(39 * scale), color, max(3, round(12 * scale)))
     return frame
 
 
@@ -36,13 +38,20 @@ class TestPianoTeaching(unittest.TestCase):
         with self.assertRaises(ValueError):
             key_for(3, 0)
 
-    def test_detector_finds_single_and_rejects_multiple_highlights(self):
+    def test_detector_finds_single_and_rejects_competing_highlights(self):
         detector = PianoDetector()
         self.assertEqual(detector.analyze(piano_frame()).status, "no_highlight")
         self.assertEqual(detector.analyze(piano_frame({"S"})).on_keys, ("S",))
         result = detector.analyze(piano_frame({"Q", "S", "M"}))
         self.assertEqual(result.status, "ambiguous")
         self.assertEqual(result.on_keys, ("Q", "S", "M"))
+
+    def test_detector_accepts_a_clearly_dominant_single_highlight(self):
+        detector = PianoDetector()
+        result = detector.analyze(piano_frame({"S": (70, 190, 240), "Y": (70, 145, 180)}))
+        self.assertEqual(result.status, "candidate")
+        self.assertEqual(result.on_keys, ("S",))
+        self.assertIn("over Y", result.reason)
 
     def test_detector_rejects_wrong_scene_and_aspect_ratio(self):
         detector = PianoDetector()
@@ -120,11 +129,20 @@ class TestPianoTeaching(unittest.TestCase):
         crop = PianoTeachingTask._diagnostic_crop(frame)
         self.assertEqual(crop.shape, (230, 640, 3))
 
+    def test_detection_summary_contains_calibration_evidence(self):
+        result = PianoDetector().analyze(piano_frame({"S"}))
+        summary = PianoTeachingTask._detection_summary(result)
+        self.assertIn("status=candidate", summary)
+        self.assertIn("valid_dots=21/21", summary)
+        self.assertIn("on=S", summary)
+        self.assertIn("top=S:", summary)
+
     def test_story_frame_waits_until_user_stops_instead_of_reporting_not_found(self):
         task = PianoTeachingTask.__new__(PianoTeachingTask)
         task.config = {"Sample Interval": 0.03, "Key Hold Time": 0.03, "Post Key Delay": 0.15}
         task._pressed_keys = []
         task.info_set = Mock()
+        task.log_info = Mock()
         task.sleep = Mock()
         task.next_frame = Mock(side_effect=[np.zeros((720, 1280, 3), np.uint8), TaskDisabledException()])
         task.screenshot = Mock()

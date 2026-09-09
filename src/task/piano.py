@@ -52,6 +52,7 @@ class PianoDetector:
             raise ValueError("piano thresholds must satisfy 0 <= off < on")
         self.on_threshold = float(on_threshold)
         self.off_threshold = float(off_threshold)
+        self.dominance_margin = self.on_threshold - self.off_threshold
 
     @staticmethod
     def _circle_masks(radius_scale):
@@ -90,12 +91,21 @@ class PianoDetector:
         if valid_dots < 18:
             return DetectionResult("invalid_roi", (), (), tuple(readings),
                                    f"piano dot grid not found ({valid_dots}/21)")
-        on = tuple(item.key for item in readings if item.score >= self.on_threshold)
+        on_readings = sorted(
+            (item for item in readings if item.score >= self.on_threshold),
+            key=lambda item: item.score,
+            reverse=True,
+        )
+        on = tuple(item.key for item in on_readings)
         uncertain = tuple(item.key for item in readings
                           if self.off_threshold < item.score < self.on_threshold)
-        if len(on) > 1:
-            return DetectionResult("ambiguous", on, on, tuple(readings), "multiple highlights")
-        if uncertain:
+        if len(on_readings) > 1:
+            best, runner_up = on_readings[:2]
+            if best.score - runner_up.score < self.dominance_margin:
+                return DetectionResult("ambiguous", on, on, tuple(readings), "competing highlights")
+            return DetectionResult("candidate", (best.key,), (), tuple(readings),
+                                   f"dominant highlight over {runner_up.key}")
+        if not on and uncertain:
             return DetectionResult("ambiguous", on, uncertain, tuple(readings), "highlight transition")
         return DetectionResult("candidate" if on else "no_highlight", on, (), tuple(readings))
 
