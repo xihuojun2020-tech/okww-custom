@@ -342,6 +342,7 @@ class CombatCheck(BaseWWTask):
                     self.next_frame()
 
     def has_health_bar(self):
+        frame = self.require_game_frame()
         if self._in_combat:
             min_height = self.height_of_screen(9 / 2160)
             max_height = min_height * 3
@@ -351,20 +352,20 @@ class CombatCheck(BaseWWTask):
             max_height = min_height * 3
             min_width = self.width_of_screen(100 / 3840)
 
-        boxes = find_color_rectangles(self.frame, enemy_health_color_red, min_width, min_height, max_height=max_height)
+        boxes = find_color_rectangles(frame, enemy_health_color_red, min_width, min_height, max_height=max_height)
 
         if len(boxes) > 0:
             self.draw_boxes('enemy_health_bar_red', boxes, color='blue')
             return True
         else:
-            boxes = find_color_rectangles(self.frame, boss_health_color, min_width, min_height * 1.3,
+            boxes = find_color_rectangles(frame, boss_health_color, min_width, min_height * 1.3,
                                           box=self.box_of_screen(1269 / 3840, 58 / 2160, 2533 / 3840, 200 / 2160,
                                                                  hcenter=True, vcenter=True))
             if len(boxes) == 1:
                 self.boss_health_box = boxes[0]
                 self.boss_health_box.width = 10
                 self.boss_health_box.x += 6
-                self.boss_health = self.boss_health_box.crop_frame(self.frame)
+                self.boss_health = self.boss_health_box.crop_frame(frame)
                 self.draw_boxes('boss_health', boxes, color='blue')
                 return True
         return False

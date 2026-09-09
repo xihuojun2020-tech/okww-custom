@@ -8,6 +8,7 @@ from typing import List
 import numpy as np
 
 from ok import BaseTask, Logger, find_boxes_by_name, og, find_color_rectangles, mask_white, Box
+from ok import calculate_color_percentage as calculate_frame_color_percentage
 from ok import CannotFindException
 import cv2
 
@@ -89,6 +90,15 @@ class BaseWWTask(BaseTask):
             return super().get_box_by_name(name)
         self.require_game_frame()
         return super().get_box_by_name(name)
+
+    def calculate_color_percentage(self, color, box):
+        """Calculate against one validated frame, including when ``box`` is already resolved."""
+        frame = self.require_game_frame()
+        box = self.get_box_by_name(box)
+        percentage = calculate_frame_color_percentage(frame, color, box)
+        box.confidence = percentage
+        self.draw_boxes(box.name, box)
+        return percentage
 
     @property
     def logged_in(self):

@@ -1,7 +1,7 @@
 import unittest
 import re
 
-from src.task.BaseCombatTask import CharDeadException
+from src.task.BaseCombatTask import CombatStateUnknown, CharDeadException
 from src.task.NightmareNestTask import NestTarget, NightmareNestTask
 
 
@@ -16,6 +16,50 @@ class FakeBox:
 
 
 class TestNightmareNestTask(unittest.TestCase):
+
+    def test_recheck_nest_combat_uses_live_target_and_matching_progress(self):
+        nest = NestTarget(FakeBox('nest'), 'go_nest:41:10', current=35, total=41)
+        for target, count, expected in (
+                (True, [], 'combat'),
+                (False, [FakeBox('35/41')], 'combat'),
+                (False, [FakeBox('41/41')], 'complete')):
+            with self.subTest(target=target, count=count):
+                task = NightmareNestTask.__new__(NightmareNestTask)
+                task.count_re = re.compile(r"(\d{1,2})/(\d{1,2})")
+                task.require_game_frame = lambda: object()
+                task.has_target = lambda: target
+                task.check_health_bar = lambda: False
+                task.ocr = lambda *args, **kwargs: count
+                self.assertEqual(expected, task._recheck_nest_combat(nest, timeout=0))
+
+    def test_recheck_nest_combat_unknown_is_not_completion(self):
+        task = NightmareNestTask.__new__(NightmareNestTask)
+        task.count_re = re.compile(r"(\d{1,2})/(\d{1,2})")
+        task.require_game_frame = lambda: object()
+        task.has_target = lambda: False
+        task.check_health_bar = lambda: False
+        task.ocr = lambda *args, **kwargs: []
+        self.assertEqual('unknown', task._recheck_nest_combat(
+            NestTarget(FakeBox('nest'), 'go_nest:41:10', current=35, total=41), timeout=0))
+
+    def test_combat_unknown_retries_same_nest_only_once(self):
+        task = NightmareNestTask.__new__(NightmareNestTask)
+        task._capture_mode = False
+        task._capture_success = False
+        task.click = lambda *args, **kwargs: None
+        task.wait_feature = lambda *args, **kwargs: FakeBox('team_close')
+        task.click_team_challenge = lambda: None
+        task.wait_in_team_and_world = lambda *args, **kwargs: True
+        task.sleep = lambda *args, **kwargs: None
+        task.combat_once = lambda **kwargs: (_ for _ in ()).throw(CombatStateUnknown('transient'))
+        task._recheck_nest_combat = lambda nest: 'combat'
+        task.target_enemy = lambda **kwargs: True
+        task.log_warning = lambda *args, **kwargs: None
+        task.screenshot = lambda *args, **kwargs: None
+        task.require_game_frame = lambda: object()
+
+        with self.assertRaises(CombatStateUnknown):
+            task.combat_nest(NestTarget(FakeBox('nest'), 'go_nest:41:10', current=35, total=41))
 
     def test_nest_target_keeps_display_name_and_ordinal(self):
         target = NestTarget(

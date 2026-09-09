@@ -1,9 +1,10 @@
 import re
+import time
 import cv2
 from dataclasses import dataclass
 
 from ok import Logger, TaskDisabledException
-from src.task.BaseCombatTask import BaseCombatTask, CharDeadException, CharRevivedException
+from src.task.BaseCombatTask import BaseCombatTask, CombatStateUnknown, CharDeadException, CharRevivedException
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task_status import publish_task_status
 
@@ -133,10 +134,23 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
             publish_task_status(self, stage='刷梦魇巢穴', detail=f'{target_name} · 正在战斗')
             self.run_until(self.in_combat, 'w', time_out=10, running=False, target=True)
         wait_combat_time = 10
+        combat_recovery_used = False
         while True:
             try:
                 need_find = self.combat_once(wait_combat_time=wait_combat_time, target=True,
                                              raise_if_not_found=False)
+            except CombatStateUnknown as error:
+                state = self._recheck_nest_combat(nest)
+                if state == 'combat' and not combat_recovery_used:
+                    combat_recovery_used = True
+                    self.log_warning('nightmare nest: target is still active, retry current combat once')
+                    self.target_enemy(wait=True)
+                    wait_combat_time = 1
+                    continue
+                if state != 'complete':
+                    self.screenshot('nightmare_combat_unknown', frame=self.require_game_frame())
+                    raise error
+                need_find = True
             except CharRevivedException:
                 self.log_info('nightmare nest: death recovered, re-enter from F2 book')
                 return
@@ -172,6 +186,27 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
         if is_team:
             self.esc_world_confirm()
         self.sleep(1)
+
+    def _recheck_nest_combat(self, nest, timeout=8):
+        """Classify a transient combat exit without treating missing evidence as victory."""
+        deadline = time.monotonic() + timeout
+        while True:
+            self.require_game_frame()
+            if self.has_target() or self.check_health_bar():
+                return 'combat'
+            counts = self.ocr(0, 0.08, 0.5, 0.45, match=self.count_re) or []
+            for count_box in counts:
+                for match in re.finditer(self.count_re, count_box.name):
+                    current, total = map(int, match.groups())
+                    if not isinstance(nest, NestTarget) or not nest.total or total == nest.total:
+                        if current < total:
+                            return 'combat'
+                        if current == total:
+                            return 'complete'
+            if time.monotonic() >= deadline:
+                return 'unknown'
+            self.executor.check_enabled()
+            self.executor.next_frame(time_out=min(1, max(0.01, deadline - time.monotonic())))
 
     def _should_continue_combat_after_pickup(self):
         return not self._capture_mode and self.wait_combat(

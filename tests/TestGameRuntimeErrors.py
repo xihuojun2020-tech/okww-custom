@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import numpy as np
 
@@ -82,6 +82,36 @@ class TestGameRuntimeErrors(unittest.TestCase):
 
         with self.assertRaises(FrameUnavailable):
             task.require_game_frame()
+
+    def test_color_percentage_classifies_missing_frame(self):
+        task = BaseWWTask.__new__(BaseWWTask)
+        box = Mock(name='color_box')
+        box.name = 'color_box'
+        task.get_box_by_name = Mock(return_value=box)
+        task.draw_boxes = Mock()
+        with patch('src.task.BaseWWTask.calculate_frame_color_percentage') as calculate:
+            for exists, connected, error in (
+                    (True, True, FrameUnavailable),
+                    (False, False, GameProcessLost)):
+                task._executor = _Executor(exists, connected)
+                with self.subTest(error=error.__name__), self.assertRaises(error):
+                    task.calculate_color_percentage({}, box)
+            calculate.assert_not_called()
+
+    def test_color_percentage_uses_validated_frame(self):
+        task = BaseWWTask.__new__(BaseWWTask)
+        frame = np.zeros((4, 4, 3), dtype=np.uint8)
+        task._executor = _Executor(True, True)
+        task._executor.frame = frame
+        box = Mock(name='color_box')
+        box.name = 'color_box'
+        task.get_box_by_name = Mock(return_value=box)
+        task.draw_boxes = Mock()
+        with patch('src.task.BaseWWTask.calculate_frame_color_percentage', return_value=0.25) as calculate:
+            self.assertEqual(0.25, task.calculate_color_percentage({}, box))
+        calculate.assert_called_once_with(frame, {}, box)
+        self.assertEqual(0.25, box.confidence)
+        task.draw_boxes.assert_called_once_with('color_box', box)
 
 
 if __name__ == '__main__':

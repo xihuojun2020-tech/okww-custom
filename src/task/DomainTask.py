@@ -52,9 +52,11 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
         return self.get_stamina()
 
     def farm_domain_with_recovery_loop(self, must_use, teleport_into_domain_once,
-                                       activity_ready=None, stamina_budget=0, max_recovery_retries=3):
+                                       activity_ready=None, stamina_budget=0, max_recovery_retries=3,
+                                       max_entry_retries=1):
         """包装副本刷取循环：死亡恢复后自动从 F2 重新进入，并限制重试次数。"""
         recovery_retries = 0
+        entry_retries = 0
         allow_backup = activity_ready is None
         backup_policy_decided = activity_ready is None
         while True:
@@ -71,7 +73,20 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
                 self.log_info('not enough stamina', notify=True)
                 self.back()
                 return
-            teleport_into_domain_once()
+            try:
+                teleport_into_domain_once()
+            except WaitFailedException as error:
+                frame = self.require_game_frame()
+                self.screenshot('domain_entry_unknown', frame=frame)
+                if entry_retries >= max_entry_retries:
+                    raise CombatStateUnknown(
+                        f'领域进入状态连续超时，已安全恢复 {entry_retries} 次') from error
+                entry_retries += 1
+                self.log_warning(
+                    f'领域进入状态超时，恢复大世界后重试 ({entry_retries}/{max_entry_retries})')
+                self.ensure_main(time_out=120)
+                continue
+            entry_retries = 0
             self.sleep(1)
             finished, must_use = self.farm_in_domain(must_use=must_use, allow_backup=allow_backup)
             if finished:

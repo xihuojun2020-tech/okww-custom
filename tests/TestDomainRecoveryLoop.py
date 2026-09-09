@@ -20,11 +20,13 @@ class TestDomainRecoveryLoop(unittest.TestCase):
 
     def test_method_has_retry_parameter_with_default(self):
         args = self.method_node.args.args
-        self.assertEqual(args[-1].arg, "max_recovery_retries")
-        self.assertEqual(len(self.method_node.args.defaults), 3)
-        default_value = self.method_node.args.defaults[-1]
+        self.assertEqual(args[-2].arg, "max_recovery_retries")
+        self.assertEqual(args[-1].arg, "max_entry_retries")
+        self.assertEqual(len(self.method_node.args.defaults), 4)
+        default_value = self.method_node.args.defaults[-2]
         self.assertIsInstance(default_value, ast.Constant)
         self.assertEqual(default_value.value, 3)
+        self.assertEqual(self.method_node.args.defaults[-1].value, 1)
 
     def test_method_increments_retries(self):
         has_increment = any(
@@ -140,6 +142,55 @@ class TestDomainRecoveryLoop(unittest.TestCase):
             with self.assertRaises(type(error)):
                 DomainTask._finish_domain_combat(task)
             task._domain_reward_state.assert_not_called()
+
+    def test_entry_timeout_recovers_once_before_farming(self):
+        from unittest.mock import Mock
+        task = Mock(spec=DomainTask)
+        task.stamina_once = 40
+        task.open_F2_book_and_get_stamina.return_value = (40, 0, 40)
+        task.require_game_frame.return_value = object()
+        task.farm_in_domain.return_value = (True, 0)
+        enter = Mock(side_effect=[WaitFailedException('loading'), None])
+
+        DomainTask.farm_domain_with_recovery_loop(task, 40, enter)
+
+        self.assertEqual(2, enter.call_count)
+        task.ensure_main.assert_called_once_with(time_out=120)
+        task.farm_in_domain.assert_called_once()
+        task.screenshot.assert_called_once()
+
+    def test_repeated_entry_timeout_stops_before_combat_or_rewards(self):
+        from unittest.mock import Mock
+        from src.task.BaseCombatTask import CombatStateUnknown
+        task = Mock(spec=DomainTask)
+        task.stamina_once = 40
+        task.open_F2_book_and_get_stamina.return_value = (40, 0, 40)
+        task.require_game_frame.return_value = object()
+        enter = Mock(side_effect=WaitFailedException('loading'))
+
+        with self.assertRaises(CombatStateUnknown):
+            DomainTask.farm_domain_with_recovery_loop(task, 40, enter)
+
+        self.assertEqual(2, enter.call_count)
+        task.ensure_main.assert_called_once_with(time_out=120)
+        task.farm_in_domain.assert_not_called()
+        task.use_stamina.assert_not_called()
+
+    def test_entry_timeout_propagates_frame_loss_without_retry(self):
+        from unittest.mock import Mock
+        from src.runtime.game_runtime_errors import FrameUnavailable
+        task = Mock(spec=DomainTask)
+        task.stamina_once = 40
+        task.open_F2_book_and_get_stamina.return_value = (40, 0, 40)
+        task.require_game_frame.side_effect = FrameUnavailable('no frame')
+        enter = Mock(side_effect=WaitFailedException('loading'))
+
+        with self.assertRaises(FrameUnavailable):
+            DomainTask.farm_domain_with_recovery_loop(task, 40, enter)
+
+        enter.assert_called_once()
+        task.ensure_main.assert_not_called()
+        task.screenshot.assert_not_called()
 
 
 if __name__ == "__main__":
