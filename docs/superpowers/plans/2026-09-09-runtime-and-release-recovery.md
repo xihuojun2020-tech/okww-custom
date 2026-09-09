@@ -87,7 +87,7 @@ git diff --check
 
 Expected: 全部 PASS，版本输出 `1.41.08`。
 
-- [x] **Step 7: 提交和发布 1.41.08**
+- [ ] **Step 7: 提交和发布 1.41.08**（提交、标签和推送已完成；Actions 安装器构建与 Release 核验仍在进行）
 
 仅暂存 Task 1 文件，提交 `fix: accept PowerShell checkout line endings`，创建 annotated tag `v1.41.08`，推送分支和标签。等待流水线全部通过，并确认 Release 同时包含离线/在线安装器、`okww_update_v1.41.08.zip`、`RELEASE_NOTES.md`、安装器 manifest 和 `SHA256SUMS.txt`。
 
