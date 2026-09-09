@@ -1,5 +1,7 @@
 # 钢琴按键高亮识别详细执行方案 Implementation Plan
 
+> **2026-09-09 实机规则修正（最高优先级）：** 任一时刻只有一个按键高亮，按下后才出现下一键；每段通常按1—7次，期间可能出现剧情或转场。`1.41.07` 改为只接受单键、按后默认停顿0.15秒、转场时重置锁定并持续等待，直到用户手动停止。本文后续多键/和弦章节仅保留历史设计，不再作为实施要求。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 > 执行说明：上句为计划模板的工作流引用。`1.40.00` 已实现本方案的最小生产路径；本文同时保留后续真实多键样本校准和扩展验收项。
 

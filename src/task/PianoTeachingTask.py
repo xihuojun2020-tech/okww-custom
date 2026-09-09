@@ -14,17 +14,19 @@ class PianoTeachingTask(WWOneTimeTask, BaseWWTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = "Piano Teaching"
-        self.description = "Open the piano teaching screen first; highlighted notes and chords are played automatically."
+        self.description = "Open piano teaching first; single highlighted notes are played until you stop the task."
         self.group_name = "🧪 测试功能"
         self.supported_languages = ["zh_CN"]
         self.support_schedule_task = False
         self.default_config.update({
             "Sample Interval": 0.05,
             "Key Hold Time": 0.03,
+            "Post Key Delay": 0.15,
         })
         self.config_description.update({
             "Sample Interval": "Seconds between piano highlight samples (0.03–0.08).",
-            "Key Hold Time": "Seconds to hold every detected note or chord (0.02–0.08).",
+            "Key Hold Time": "Seconds to hold every detected note (0.02–0.08).",
+            "Post Key Delay": "Pause after every note to imitate human input (0.05–0.50 seconds).",
         })
         self._pressed_keys = []
 
@@ -32,6 +34,7 @@ class PianoTeachingTask(WWOneTimeTask, BaseWWTask):
         limits = {
             "Sample Interval": (0.03, 0.08),
             "Key Hold Time": (0.02, 0.08),
+            "Post Key Delay": (0.05, 0.50),
         }
         if key in limits and (type(value) not in (int, float) or not limits[key][0] <= value <= limits[key][1]):
             return f"{key} must be between {limits[key][0]} and {limits[key][1]}"
@@ -47,9 +50,8 @@ class PianoTeachingTask(WWOneTimeTask, BaseWWTask):
                 self._pressed_keys.remove(key)
 
     def _press_event(self, event, hold_time):
-        if not event.keys or len(set(event.keys)) != len(event.keys) \
-                or any(key not in KEY_ORDER for key in event.keys):
-            raise ValueError("invalid piano chord")
+        if len(event.keys) != 1 or event.keys[0] not in KEY_ORDER:
+            raise ValueError("piano teaching requires exactly one key")
         try:
             for key in event.keys:
                 lower = key.lower()
@@ -77,7 +79,7 @@ class PianoTeachingTask(WWOneTimeTask, BaseWWTask):
         tracker = PianoStateMachine()
         interval = float(self.config.get("Sample Interval", 0.05))
         hold_time = float(self.config.get("Key Hold Time", 0.03))
-        invalid_frames = 0
+        post_key_delay = float(self.config.get("Post Key Delay", 0.15))
         frame = None
         self.info_set("弹琴状态", "等待高亮")
         try:
@@ -88,17 +90,14 @@ class PianoTeachingTask(WWOneTimeTask, BaseWWTask):
                     raise RuntimeError("无法取得游戏截图")
                 result = detector.analyze(frame)
                 if result.status == "invalid_roi":
-                    invalid_frames += 1
-                    self.info_set("弹琴状态", result.reason)
-                    if invalid_frames >= 3:
-                        raise RuntimeError(f"未找到有效钢琴界面: {result.reason}")
+                    tracker.reset()
+                    self.info_set("弹琴状态", "剧情或转场中，等待弹琴界面")
                 else:
-                    invalid_frames = 0
                     event = tracker.step(result, time.monotonic())
                     if event:
-                        label = "+".join(event.keys)
-                        self.info_set("弹琴状态", f"按下 {label}")
+                        self.info_set("弹琴状态", f"按下 {event.keys[0]}")
                         self._press_event(event, hold_time)
+                        self.sleep(post_key_delay)
                     elif result.uncertain_keys:
                         self.info_set("弹琴状态", "等待高亮稳定")
                     else:

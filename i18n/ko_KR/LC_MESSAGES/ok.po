@@ -1510,3 +1510,15 @@ msgstr "피아노 강조 표시를 확인하는 간격(초, 0.03–0.08)."
 
 msgid "Seconds to hold every detected note or chord (0.02–0.08)."
 msgstr "감지된 음 또는 화음을 누르는 시간(초, 0.02–0.08)."
+
+msgid "Post Key Delay"
+msgstr "키 입력 후 대기"
+
+msgid "Seconds to hold every detected note (0.02–0.08)."
+msgstr "감지된 음을 누르는 시간(초, 0.02–0.08)."
+
+msgid "Pause after every note to imitate human input (0.05–0.50 seconds)."
+msgstr "사람처럼 입력하기 위한 음 사이 대기 시간(0.05–0.50초)."
+
+msgid "Open piano teaching first; single highlighted notes are played until you stop the task."
+msgstr "먼저 피아노 레슨을 여세요. 작업을 직접 중지할 때까지 강조된 음을 하나씩 연주합니다."

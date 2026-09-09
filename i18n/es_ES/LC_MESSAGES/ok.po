@@ -1457,6 +1457,18 @@ msgstr "Segundos entre muestras del resaltado del piano (0.03–0.08)."
 msgid "Seconds to hold every detected note or chord (0.02–0.08)."
 msgstr "Segundos que se mantiene cada nota o acorde detectado (0.02–0.08)."
 
+msgid "Post Key Delay"
+msgstr "Pausa después de la tecla"
+
+msgid "Seconds to hold every detected note (0.02–0.08)."
+msgstr "Segundos que se mantiene cada nota detectada (0.02–0.08)."
+
+msgid "Pause after every note to imitate human input (0.05–0.50 seconds)."
+msgstr "Pausa después de cada nota para imitar una entrada humana (0.05–0.50 segundos)."
+
+msgid "Open piano teaching first; single highlighted notes are played until you stop the task."
+msgstr "Abre primero la lección de piano; se tocarán notas resaltadas de una en una hasta que detengas la tarea."
+
 msgid "Center Lower Resisted 2"
 msgstr ""
 "Torre central, pisos 1–2 Resistencia 2 (evitar DPS principal si es posible)"

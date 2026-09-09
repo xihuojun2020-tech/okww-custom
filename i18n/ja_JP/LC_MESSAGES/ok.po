@@ -1507,3 +1507,15 @@ msgstr "ピアノのハイライトを確認する間隔（秒、0.03～0.08）�
 
 msgid "Seconds to hold every detected note or chord (0.02–0.08)."
 msgstr "検出した音符または和音を押し続ける時間（秒、0.02～0.08）。"
+
+msgid "Post Key Delay"
+msgstr "キー入力後の間隔"
+
+msgid "Seconds to hold every detected note (0.02–0.08)."
+msgstr "検出した音符を押し続ける時間（秒、0.02～0.08）。"
+
+msgid "Pause after every note to imitate human input (0.05–0.50 seconds)."
+msgstr "人の操作を模した音符ごとの待機時間（0.05～0.50秒）。"
+
+msgid "Open piano teaching first; single highlighted notes are played until you stop the task."
+msgstr "先にピアノレッスンを開いてください。停止するまでハイライトされた音符を順番に演奏します。"

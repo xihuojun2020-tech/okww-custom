@@ -93,13 +93,15 @@ class PianoDetector:
         on = tuple(item.key for item in readings if item.score >= self.on_threshold)
         uncertain = tuple(item.key for item in readings
                           if self.off_threshold < item.score < self.on_threshold)
+        if len(on) > 1:
+            return DetectionResult("ambiguous", on, on, tuple(readings), "multiple highlights")
         if uncertain:
             return DetectionResult("ambiguous", on, uncertain, tuple(readings), "highlight transition")
         return DetectionResult("candidate" if on else "no_highlight", on, (), tuple(readings))
 
 
 class PianoStateMachine:
-    """Confirm and de-duplicate each note independently, including chords."""
+    """Confirm and de-duplicate one highlighted teaching note at a time."""
 
     def __init__(self, confirm_frames=2, release_frames=2, max_sample_gap=0.20):
         if confirm_frames < 2 or release_frames < 2:
@@ -110,6 +112,12 @@ class PianoStateMachine:
         self.on_counts = dict.fromkeys(KEY_ORDER, 0)
         self.off_counts = dict.fromkeys(KEY_ORDER, 0)
         self.latched = set()
+        self.last_sample_at = None
+
+    def reset(self):
+        self.on_counts = dict.fromkeys(KEY_ORDER, 0)
+        self.off_counts = dict.fromkeys(KEY_ORDER, 0)
+        self.latched.clear()
         self.last_sample_at = None
 
     def step(self, result, now=None):

@@ -1,10 +1,11 @@
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, PropertyMock, patch
 
 import cv2
 import numpy as np
 
 from config import config
+from ok import TaskDisabledException
 from src.task.PianoTeachingTask import PianoTeachingTask
 from src.task.piano import (
     ChordEvent, KEY_ORDER, PianoDetector, PianoStateMachine,
@@ -35,12 +36,12 @@ class TestPianoTeaching(unittest.TestCase):
         with self.assertRaises(ValueError):
             key_for(3, 0)
 
-    def test_detector_finds_single_and_multiple_highlights(self):
+    def test_detector_finds_single_and_rejects_multiple_highlights(self):
         detector = PianoDetector()
         self.assertEqual(detector.analyze(piano_frame()).status, "no_highlight")
         self.assertEqual(detector.analyze(piano_frame({"S"})).on_keys, ("S",))
         result = detector.analyze(piano_frame({"Q", "S", "M"}))
-        self.assertEqual(result.status, "candidate")
+        self.assertEqual(result.status, "ambiguous")
         self.assertEqual(result.on_keys, ("Q", "S", "M"))
 
     def test_detector_rejects_wrong_scene_and_aspect_ratio(self):
@@ -48,20 +49,32 @@ class TestPianoTeaching(unittest.TestCase):
         self.assertEqual(detector.analyze(np.zeros((720, 1280, 3), np.uint8)).status, "invalid_roi")
         self.assertEqual(detector.analyze(piano_frame(width=1200)).status, "invalid_roi")
 
-    def test_state_machine_confirms_chords_and_does_not_repeat_held_keys(self):
+    def test_state_machine_confirms_single_keys_and_does_not_repeat_held_keys(self):
         detector = PianoDetector()
         tracker = PianoStateMachine()
         events = []
-        for keys in ({"S"}, {"S"}, {"S", "D"}, {"S", "D"}, {"S", "D"}):
+        for keys in ({"S"}, {"S"}, {"D"}, {"D"}, {"D"}):
             event = tracker.step(detector.analyze(piano_frame(keys)))
             if event:
                 events.append(event.keys)
         self.assertEqual(events, [("S",), ("D",)])
 
-        tracker.step(detector.analyze(piano_frame({"D"})))
-        tracker.step(detector.analyze(piano_frame({"D"})))
-        self.assertIsNone(tracker.step(detector.analyze(piano_frame({"S", "D"}))))
-        self.assertEqual(tracker.step(detector.analyze(piano_frame({"S", "D"}))).keys, ("S",))
+    def test_transition_reset_allows_a_new_segment_to_repeat_the_same_key(self):
+        detector = PianoDetector()
+        tracker = PianoStateMachine()
+        note = detector.analyze(piano_frame({"S"}))
+        self.assertIsNone(tracker.step(note))
+        self.assertEqual(tracker.step(note).keys, ("S",))
+        tracker.reset()
+        self.assertIsNone(tracker.step(note))
+        self.assertEqual(tracker.step(note).keys, ("S",))
+
+    def test_multiple_highlights_never_produce_an_event(self):
+        detector = PianoDetector()
+        tracker = PianoStateMachine()
+        result = detector.analyze(piano_frame({"S", "D"}))
+        for _ in range(4):
+            self.assertIsNone(tracker.step(result))
 
     def test_long_capture_gap_does_not_count_as_consecutive_frames(self):
         detector = PianoDetector()
@@ -71,27 +84,26 @@ class TestPianoTeaching(unittest.TestCase):
         self.assertIsNone(tracker.step(result, 1.5))
         self.assertEqual(tracker.step(result, 1.55).keys, ("S",))
 
-    def test_task_presses_chord_together_and_releases_in_reverse(self):
+    def test_task_presses_and_releases_one_key(self):
         task = PianoTeachingTask.__new__(PianoTeachingTask)
         task._pressed_keys = []
         calls = []
         task.send_key_down = lambda key: calls.append(("down", key))
         task.send_key_up = lambda key: calls.append(("up", key))
         task.sleep = lambda seconds: calls.append(("sleep", seconds))
-        task._press_event(ChordEvent(("S", "D")), 0.03)
-        self.assertEqual(calls, [("down", "s"), ("down", "d"), ("sleep", 0.03),
-                                 ("up", "d"), ("up", "s")])
+        task._press_event(ChordEvent(("S",)), 0.03)
+        self.assertEqual(calls, [("down", "s"), ("sleep", 0.03), ("up", "s")])
         self.assertEqual(task._pressed_keys, [])
 
     def test_task_releases_every_attempted_key_after_failure(self):
         task = PianoTeachingTask.__new__(PianoTeachingTask)
         task._pressed_keys = []
-        task.send_key_down = Mock(side_effect=[None, RuntimeError("down failed")])
+        task.send_key_down = Mock(side_effect=RuntimeError("down failed"))
         task.send_key_up = Mock()
         task.sleep = Mock()
         with self.assertRaisesRegex(RuntimeError, "down failed"):
-            task._press_event(ChordEvent(("S", "D")), 0.03)
-        self.assertEqual([call.args[0] for call in task.send_key_up.call_args_list], ["d", "s"])
+            task._press_event(ChordEvent(("S",)), 0.03)
+        self.assertEqual([call.args[0] for call in task.send_key_up.call_args_list], ["s"])
         self.assertEqual(task._pressed_keys, [])
 
     def test_one_release_failure_does_not_skip_other_keys(self):
@@ -107,6 +119,23 @@ class TestPianoTeaching(unittest.TestCase):
         frame = np.zeros((720, 1280, 3), np.uint8)
         crop = PianoTeachingTask._diagnostic_crop(frame)
         self.assertEqual(crop.shape, (230, 640, 3))
+
+    def test_story_frame_waits_until_user_stops_instead_of_reporting_not_found(self):
+        task = PianoTeachingTask.__new__(PianoTeachingTask)
+        task.config = {"Sample Interval": 0.03, "Key Hold Time": 0.03, "Post Key Delay": 0.15}
+        task._pressed_keys = []
+        task.info_set = Mock()
+        task.sleep = Mock()
+        task.next_frame = Mock(side_effect=[np.zeros((720, 1280, 3), np.uint8), TaskDisabledException()])
+        task.screenshot = Mock()
+        task.send_key_up = Mock()
+        with patch.object(PianoTeachingTask, "game_lang", new_callable=PropertyMock,
+                          return_value="zh_CN"), \
+                patch("src.task.PianoTeachingTask.WWOneTimeTask.run"), \
+                self.assertRaises(TaskDisabledException):
+            task.run()
+        task.info_set.assert_any_call("弹琴状态", "剧情或转场中，等待弹琴界面")
+        task.screenshot.assert_not_called()
 
 
 if __name__ == "__main__":

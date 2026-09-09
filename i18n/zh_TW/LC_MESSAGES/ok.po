@@ -1633,3 +1633,15 @@ msgstr "兩次鋼琴高亮取樣之間的秒數（0.03–0.08）。"
 
 msgid "Seconds to hold every detected note or chord (0.02–0.08)."
 msgstr "每個已識別音符或和弦的按住秒數（0.02–0.08）。"
+
+msgid "Post Key Delay"
+msgstr "按鍵後停頓"
+
+msgid "Seconds to hold every detected note (0.02–0.08)."
+msgstr "每個已識別音符的按住秒數（0.02–0.08）。"
+
+msgid "Pause after every note to imitate human input (0.05–0.50 seconds)."
+msgstr "每個音符後模擬人工操作的停頓時間（0.05–0.50 秒）。"
+
+msgid "Open piano teaching first; single highlighted notes are played until you stop the task."
+msgstr "請先開啟彈琴教學；程式會逐個彈奏高亮音符，直到你手動停止任務。"

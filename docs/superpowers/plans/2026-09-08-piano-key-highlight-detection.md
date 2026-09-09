@@ -1,5 +1,7 @@
 # 钢琴小游戏按键高亮识别实施方案
 
+> **2026-09-09 实机规则修正（最高优先级）：** 任一时刻只有一个按键高亮，按下后才出现下一键；每段通常按1—7次，期间可能出现剧情或转场。任务只接受单键高亮，按后停顿再继续识别；不按次数结束，界面消失时持续等待，直到用户手动停止。此规则取代下方所有多键/组合键设计。
+
 > **2026-09-08 用户补充（优先于下文历史单键规则）：** 参考图已提供，原始大小 2560×1440，当前可见 S 金环；实际可能同时有两个或更多按键高亮。下文“唯一候选”“多个高亮暂停”和第一/第二名分差门槛不再适用于新需求。实施以[多键详细执行方案](2026-09-08-piano-key-highlight-execution.md)为准：逐键 ON/OFF/UNCERTAIN 判断、逐键连续确认和去重、同批组合按下并释放全部键。下文保留为最初设计历史，不作为多键实现指令。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
