@@ -222,10 +222,8 @@ class DiagnosticSession(logging.Handler):
 
     def add_screenshot(self, path):
         self.record_event('screenshot_saved', {'status': 'automatic_upload', 'suffix': Path(path).suffix})
-        if self.collector and any(Path(path).absolute().is_relative_to(self.collector.source / folder)
-                                  for folder in ('logs', 'screenshots')):
-            self.request_batch('periodic')
-            return
+        # Capture the exact file named by the framework hook. A directory scan can lag or
+        # be capped by unrelated changed logs, leaving only screenshot_saved on the server.
         self.request_batch(('screenshot', str(path)))
 
     def capture_last_frame(self):
@@ -261,6 +259,8 @@ class DiagnosticSession(logging.Handler):
                                 and not source.is_junction()):
                             saved = folder / (image_id + source.suffix.lower())
                             shutil.copyfile(source, saved)
+                            if self.collector:
+                                self.collector.acknowledge(source)
                     self.record_event('screenshot_copy', {'image_id': image_id,
                                       'local_file': saved.name if saved else None,
                                       'status': 'automatic_upload' if saved else 'unavailable'}, allow_closed=True)

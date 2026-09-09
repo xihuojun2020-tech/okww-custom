@@ -94,6 +94,22 @@ class TestAutoAbyssTask(unittest.TestCase):
         with self.assertRaisesRegex(AbyssCenterUnavailable, "体力"):
             task._allocate_remaining([replace(r, energy=4) for r in records])
 
+    def test_incomplete_energy_is_not_reported_as_shared_energy_shortage(self):
+        records = [CharacterScanRecord(x, x, 10, 90, .9, 1, i) for i, x in enumerate(
+            (Labels.char_qingxiao, Labels.char_denia, Labels.char_chisa))]
+        records[1] = replace(records[1], energy=None)
+        task = self.allocation_task(records, (AVAILABLE, LOCKED))
+        info = {}
+        logs = []
+        task.info_set = info.__setitem__
+        task.log_info = logs.append
+
+        with self.assertRaisesRegex(AbyssCenterUnavailable, "角色体力识别不完整.*char_denia"):
+            task._allocate_remaining(records)
+
+        self.assertIn("char_denia=未识别", info["角色体力账本"])
+        self.assertTrue(any("角色体力账本" in line for line in logs))
+
     def test_planned_team_change_returns_even_with_sufficient_energy(self):
         task = AutoAbyssTask.__new__(AutoAbyssTask)
         task._scheduled_teams = {("深境之塔", 1): SimpleNamespace(members=("a", "b", "c")),

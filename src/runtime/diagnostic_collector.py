@@ -73,6 +73,19 @@ class FileCollector:
             if not failed:
                 (self.root / 'collector-error.json').unlink(missing_ok=True)
 
+    def acknowledge(self, path):
+        """Record a source file already captured directly by the session worker."""
+        path = Path(path).resolve()
+        try:
+            relative = path.relative_to(self.source).as_posix()
+        except ValueError:
+            return False
+        if not relative.startswith(('logs/', 'screenshots/')) or path.suffix.lower() not in LOG_TYPES | IMAGE_TYPES:
+            return False
+        self.cursors[relative] = self.stamp(path)
+        atomic_json(self.path, self.cursors)
+        return True
+
     def _collect_file(self, run, name, path):
         from src.runtime.diagnostic_session import seal_run
         current = self.stamp(path)

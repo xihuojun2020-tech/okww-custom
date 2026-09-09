@@ -320,6 +320,27 @@ catch { $failed=$true }
         weekly_cleanup(self.root, self.remote, now=now + 1,
                        purge=lambda *_: self.fail('ran twice in one week'))
 
+    def test_monitored_screenshot_is_captured_directly_without_duplicate_collection(self):
+        from PIL import Image
+        source_root = Path(self.temp.name) / 'working'
+        screenshot_dir = source_root / 'screenshots'
+        screenshot_dir.mkdir(parents=True)
+        session = DiagnosticSession(self.root, '1.00.00', source_root=source_root)
+        source = screenshot_dir / 'abyss_energy_ambiguous.png'
+        Image.new('RGB', (10, 10), 'red').save(source)
+
+        session.add_screenshot(source)
+        session.pending.join()
+        session.request_batch('periodic')
+        session.pending.join()
+        session.finish(timeout=5)
+
+        pictures = list(session.run.glob('batches/*/截图/**/*.png'))
+        self.assertEqual(len(pictures), 1)
+        events = (session.run / 'events.jsonl').read_text(encoding='utf-8')
+        self.assertIn('screenshot_saved', events)
+        self.assertIn('screenshot_copy', events)
+
     def test_cleanup_does_not_remove_unuploaded_or_young_logs(self):
         self.session.record_event('pending', {})
         self.session.finish(timeout=5)

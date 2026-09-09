@@ -684,6 +684,17 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
 
     def _allocate_remaining(self, records):
         tower, index, remaining, priority = self._allocation_context
+        incomplete_energy = sorted(
+            record.display_name for record in records
+            if record.energy is None and record.level is not None and record.level > 60
+        )
+        ledger = "；".join(
+            f"{record.display_name}={record.energy if record.energy is not None else '未识别'}"
+            for record in sorted(records, key=lambda item: item.display_name)
+            if record.level is not None and record.level > 60
+        ) or "无可核对角色"
+        self.info_set("角色体力账本", ledger)
+        self.log_info(f"深塔角色体力账本：{ledger}")
         floors = []
         for name in tower_order(priority):
             states = remaining.get(name, ())
@@ -724,7 +735,9 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         if missing_center and (priority == CENTER_TOWER_FIRST or tower == TOWER_NAMES[1]):
             target = missing_center[0]
             legal = [p for p in candidates if team_preference(p, target.rule) is not None]
-            if not candidates:
+            if incomplete_energy:
+                reason = f"角色体力识别不完整（{'、'.join(incomplete_energy)}），无法安全判断共享体力"
+            elif not candidates:
                 reason = "识别不完整、等级不足或缺少能组成预设/同定位替补队的主C"
             elif not legal:
                 reason = "输出属性未知或触及第一优先级逆属性禁用规则"
@@ -733,6 +746,10 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             raise AbyssCenterUnavailable(f"中塔第{target.index + 1}层未能安全分配：{reason}；停止整个任务")
         plan = self._scheduled_teams.get((tower, index))
         if plan is None:
+            if incomplete_energy:
+                raise AbyssTeamUnavailable(
+                    f"角色体力识别不完整（{'、'.join(incomplete_energy)}），无法安全判断当前层与优先区域的共享体力"
+                )
             raise AbyssTeamUnavailable("全局资源分配未给当前层安排队伍，保留优先区域体力")
         return plan
 
