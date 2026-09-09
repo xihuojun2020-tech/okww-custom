@@ -146,6 +146,25 @@ catch { $failed=$true }
         self.assertEqual(json.loads(state.read_text())['revision'], SCHEDULER_REVISION)
 
     @unittest.skipUnless(os.name == 'nt', 'Windows scheduled task')
+    def test_scheduler_cache_must_match_current_runtime_bundle(self):
+        from src.runtime.diagnostic_policy import ensure_task, SCHEDULER_REVISION
+        state = self.root / 'scheduler.json'
+        state.write_text(json.dumps({
+            'status': 'installed', 'root': str(self.root), 'checked_at': time.time(),
+            'revision': SCHEDULER_REVISION, 'runtime': r'E:\OKWW-Background\old\python\pythonw.exe',
+            'working_directory': r'E:\OKWW-Background\old',
+        }))
+        with patch('src.runtime.diagnostic_policy.subprocess.run',
+                   return_value=SimpleNamespace(returncode=0)) as run:
+            ensure_task(self.root)
+            self.assertEqual(run.call_count, 1)
+            ensure_task(self.root)
+            self.assertEqual(run.call_count, 1)
+        saved = json.loads(state.read_text())
+        self.assertEqual(saved['runtime'], str(Path(sys.executable).resolve()))
+        self.assertEqual(saved['working_directory'], str(Path(__file__).resolve().parents[1]))
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows scheduled task')
     def test_installer_selects_pythonw_without_registering_real_task(self):
         script = Path(__file__).resolve().parents[1] / 'src/runtime/install_diagnostic_task.ps1'
         quote = lambda value: "'" + str(value).replace("'", "''") + "'"
