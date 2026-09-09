@@ -2,6 +2,9 @@
 from qfluentwidgets import FluentIcon as FIF
 from qfluentwidgets import InfoBar, Theme
 from qfluentwidgets import (SettingCardGroup, ComboBoxSettingCard, OptionsSettingCard, PushSettingCard)
+from src.gui.FlatSettingGroup import FlatSettingGroup as SettingCardGroup, FlatActionSettingCard as PushSettingCard
+from src.gui.FlatSettingRow import FlatSettingRow
+from PySide6.QtWidgets import QLabel, QComboBox
 
 from ok import og
 from ok.gui.common.config import cfg
@@ -24,32 +27,21 @@ class SettingTab(Tab):
         if not account_maintenance_only:
             self.vBoxLayout.addWidget(self.basic_group)
 
-        self.languageCard = ComboBoxSettingCard(
-            cfg.language,
-            FIF.LANGUAGE,
-            self.tr('Language'),
-            self.tr('Set your preferred language'),
-            texts=['简体中文', '繁體中文', 'English', "Español", "日本語", "한국인", self.tr('Use system setting')],
-            parent=self.basic_group
-        )
-        self.themeCard = OptionsSettingCard(
-            cfg.themeMode,
-            FIF.BRUSH,
-            self.tr('Application Theme'),
-            self.tr("Change the appearance of the application"),
-            texts=[
-                self.tr('Light'), self.tr('Dark'),
-                self.tr('Use system setting')
-            ],
-            parent=self.basic_group
-        )
+        self.language_combo = QComboBox(self.basic_group)
+        language_names = ['简体中文', '繁體中文', 'English', 'Español', '日本語', '한국인', self.tr('Use system setting')]
+        for name, option in zip(language_names, cfg.language.options):
+            self.language_combo.addItem(name, option)
+        self.language_combo.setCurrentIndex(self.language_combo.findData(cfg.get(cfg.language)))
+        self.language_combo.currentIndexChanged.connect(self._language_changed)
+        self.languageCard = FlatSettingRow(self.tr('Language'), self.language_combo,
+                                          self.tr('Set your preferred language'), self.basic_group)
+        self.themeCard = FlatSettingRow('界面主题', QLabel('简约浅色'), '所有页面采用统一浅色样式。', self.basic_group)
         # The personal build uses a fixed light shell; keep the setting visible
         # as information but prevent a runtime switch to dark/auto mode.
         try:
             cfg.set(cfg.themeMode, Theme.LIGHT)
         except Exception:
             cfg.themeMode.value = Theme.LIGHT
-        self.themeCard.setEnabled(False)
         # 数据设置：账号配置导出/导入
         self.data_group = SettingCardGroup(
             self.tr('Data Config'))
@@ -219,7 +211,7 @@ class SettingTab(Tab):
     def goto_config(self, key):
         to_scroll = None
         for config in self.config_groups:
-            if config.has_key(key):
+            if key == 'Basic Options' or config.has_key(key):
                 config.setExpand(True)
                 to_scroll = config
             else:
@@ -234,6 +226,10 @@ class SettingTab(Tab):
         if global_configs:
             global_configs.sort(key=lambda item: item[0] != APP_LAUNCHER_OPTION_NAME)
             for name, config, option in global_configs:
+                # GeneralSettingsTab owns all automation settings; this
+                # auxiliary page contains only application preferences.
+                if name != 'Basic Options':
+                    continue
                 if getattr(option, 'show_at_tab', False):
                     continue
                 card = GlobalConfigCard(config, option)
@@ -241,6 +237,10 @@ class SettingTab(Tab):
                     card.setExpand(True)
                 self.basic_group.addSettingCard(card)
                 self.config_groups.append(card)
+
+    def _language_changed(self, index):
+        if index >= 0:
+            cfg.set(cfg.language, self.language_combo.itemData(index))
 
     def __showRestartTooltip(self):
         """ show restart tooltip """

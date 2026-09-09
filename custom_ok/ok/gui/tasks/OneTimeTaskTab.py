@@ -15,6 +15,10 @@ class OneTimeTaskTab(TaskTab):
         self.activity_category = activity_category
         self.card_widgets = []
         self.keep_info_when_done = True
+        from PySide6.QtWidgets import QLabel
+        self.empty_label = QLabel('暂无可用任务', self.view)
+        self.empty_label.setProperty('role', 'description')
+        self.add_widget(self.empty_label)
         
         # Check if this is an imported script to show delete button
         self.imported_file_name = None
@@ -78,6 +82,7 @@ class OneTimeTaskTab(TaskTab):
             elif self.group_name and task_group == self.group_name:
                 self.tasks.append(task)
                 
+        self.empty_label.setVisible(not self.tasks)
         for task in self.tasks:
             task_card = TaskCard(task, True)
             self.card_widgets.append(task_card)

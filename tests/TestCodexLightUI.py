@@ -7,7 +7,7 @@ class TestCodexLightUI(unittest.TestCase):
     def test_theme_tokens_are_fixed_light(self):
         from src.gui.CodexTheme import COLORS, codex_style_sheet
 
-        self.assertEqual(COLORS["window"], "#F7F8FA")
+        self.assertEqual(COLORS["window"], "#FAFAFA")
         self.assertEqual(COLORS["panel"], "#FFFFFF")
         self.assertEqual(COLORS["border"], "#E5E7EB")
         self.assertEqual(COLORS["accent"], "#0969DA")

@@ -153,6 +153,9 @@ class MainWindow(FluentWindow):
                                  position=NavigationItemPosition.BOTTOM)
 
         # 脚本/模板 tab 已隐藏（用户要求精简界面）
+        # Framework settings imports can load persisted theme colors; restore
+        # the shared palette after constructing every page.
+        apply_codex_light_theme(QApplication.instance())
         # if og.task_manager.has_custom:
         #     from ok.gui.tasks.EditTaskTab import EditTaskTab
         #     self.edit_task_tab = EditTaskTab()
@@ -533,6 +536,9 @@ class MainWindow(FluentWindow):
                 logger.debug(f'bring_to_front native activation failed: {e}')
 
     def goto_global_config(self, key):
+        if self.general_settings_tab.goto_config(key):
+            self.switchTo(self.general_settings_tab)
+            return
         for config_tab in self.global_config_tabs:
             if config_tab.has_key(key):
                 self.switchTo(config_tab)

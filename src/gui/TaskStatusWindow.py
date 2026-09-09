@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
 
 from ok.gui.Communicate import communicate
 from src.task_status import choose_status_position, read_task_status
+from src.gui.CodexTheme import COLORS
 
 
 WDA_EXCLUDEFROMCAPTURE = 0x11
@@ -53,8 +54,8 @@ class TaskStatusWindow(QWidget):
         layout.setContentsMargins(12, 8, 12, 8)
         layout.addWidget(self.label)
         self.setStyleSheet(
-            "QWidget { background: rgba(0, 0, 0, 165); border-radius: 8px; }"
-            "QLabel { background: transparent; color: white; font-size: 13px; }"
+            f"QWidget {{ background: rgba(250, 250, 250, 245); border-radius: 8px; border: 1px solid {COLORS['border']}; }}"
+            f"QLabel {{ background: transparent; border: 0; color: {COLORS['text']}; font-size: 13px; }}"
         )
 
         communicate.task.connect(self.on_task)
@@ -141,10 +142,10 @@ class TaskStatusWindow(QWidget):
             if time.monotonic() - self.warning_seen_at > 10:
                 snapshot = replace(snapshot, level="running", message=snapshot.detail)
         color = {
-            "error": "#ff6b6b",
-            "warning": "#ffd166",
-            "paused": "#b8b8b8",
-        }.get(snapshot.level, "#ffffff")
+            "error": COLORS['error'],
+            "warning": "#9A6700",
+            "paused": COLORS['muted'],
+        }.get(snapshot.level, COLORS['text'])
         detail = snapshot.message or snapshot.detail or "正在运行"
         completed = f" · 已完成 {snapshot.completed_count} 个账号" if snapshot.completed_count else ""
         lines = (

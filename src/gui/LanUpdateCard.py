@@ -23,6 +23,7 @@ class LanUpdateCard(QWidget):
         self.release = None
         self.service = None
         self.status = QLabel(f"当前版本：{current_version}", self)
+        self.status.setWordWrap(True)
         self.action = QPushButton("检查局域网更新", self)
         self.action.clicked.connect(self._action)
         row = QHBoxLayout()

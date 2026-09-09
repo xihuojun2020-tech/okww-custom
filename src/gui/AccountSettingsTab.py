@@ -27,9 +27,9 @@ class AccountSettingsTab(CustomTab):
                 ("序列配置", self.sequence_tab),
                 ("导入导出、备份与完整性", self.maintenance_tab)):
             section = SectionPanel(title, parent=self.view)
-            section.add_embedded_widget(widget, stretch=1)
+            section.add_embedded_widget(widget)
             self.section_panels.append(section)
-            self.add_widget(section, stretch=1)
+            self.add_widget(section)
 
     def _on_account_changed(self, event: AccountChangeEvent):
         """Refresh sibling panels without destroying an unsaved account draft."""

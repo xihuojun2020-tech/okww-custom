@@ -1,5 +1,6 @@
 """Flat bordered section container shared by all five top-level pages."""
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget, QSizePolicy
 
 from src.gui.FlatSettingRow import FlatSettingRow
@@ -15,8 +16,10 @@ class SectionPanel(QWidget):
         # unused area on the right side of the window.
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.setObjectName("codexSection")
+        self.setAttribute(Qt.WA_StyledBackground)
         self.title_label = QLabel(title, self)
-        self.title_label.setStyleSheet("font-size: 14px; font-weight: 600;")
+        self.title_label.setProperty("role", "sectionTitle")
+        self.title_label.setWordWrap(True)
         self.description_label = QLabel(description, self)
         self.description_label.setWordWrap(True)
         self.description_label.setProperty("role", "description")
@@ -24,8 +27,8 @@ class SectionPanel(QWidget):
         self.content_layout.setContentsMargins(0, 0, 0, 0)
         self.content_layout.setSpacing(2)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 14, 16, 14)
-        layout.setSpacing(6)
+        layout.setContentsMargins(0, 12, 0, 16)
+        layout.setSpacing(12)
         layout.addWidget(self.title_label)
         if description:
             layout.addWidget(self.description_label)
@@ -46,6 +49,8 @@ class SectionPanel(QWidget):
             if callable(take_widget):
                 take_widget()
             content.setParent(self)
+            if content.layout():
+                content.layout().setContentsMargins(0, 0, 0, 0)
         return self.add_widget(content, stretch)
 
     def add_row(self, label: str, control: QWidget, description: str = "", error: str | None = None):

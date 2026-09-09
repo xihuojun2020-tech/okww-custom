@@ -33,6 +33,7 @@ $groups = @{
     "TestWin32LoginInput.py"
   )
   integration = @(
+    "TestWeeklyDailyIntegration.py",
     "TestDiagnosticPipeline.py",
     "TestDiagnosticPolicy.py",
     "TestAccountConfigBundle.py", "TestAccountPublishService.py", "TestAccountDeletion.py", "TestSecureBackup.py",
@@ -40,6 +41,7 @@ $groups = @{
     "TestAccountSwitchEvidence.py", "TestMultiAccountDailyTask.py", "TestAccountRepositoryMigrationScenario.py"
   )
   ui = @(
+    "TestFlatUI.py",
     "TestDiagnosticStatusCard.py",
     "TestDailyRunConfirmation.py",
     "TestAccountManagementTabs.py", "TestCodexLightUI.py", "TestFiveSectionMainWindow.py",

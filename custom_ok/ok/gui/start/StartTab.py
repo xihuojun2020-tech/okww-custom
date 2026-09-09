@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QAbstractItemView, QVBoxLayout, QHBoxLayout, QWidget, QListWidgetItem, QSizePolicy, \
+from PySide6.QtWidgets import QAbstractItemView, QVBoxLayout, QHBoxLayout, QWidget, QListWidgetItem, QSizePolicy, QDialog, \
     QPlainTextEdit, QLabel
 from qfluentwidgets import ListWidget, PushButton, FluentIcon, SwitchButton, SearchLineEdit
 
@@ -14,6 +14,7 @@ from ok.gui.start.SelectInteractionListView import SelectInteractionListView
 from ok.gui.start.StartCard import StartCard
 from ok.gui.widget.Card import Card
 from ok.gui.widget.Tab import Tab
+from src.gui.FlatChoiceList import FlatChoiceList
 from ok.util.explorer import open_explorer_folder, reveal_in_explorer
 from ok.util.logger import Logger
 
@@ -35,10 +36,8 @@ class StartTab(Tab):
         self.start_card.capture_button.clicked.connect(self.capture)
 
         horizontal_widget = QWidget()
-        horizontal_widget.setMinimumHeight(128)
-        horizontal_widget.setMaximumHeight(128)
         horizontal_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        horizontal_layout = QHBoxLayout(horizontal_widget)
+        horizontal_layout = QVBoxLayout(horizontal_widget)
         horizontal_layout.setContentsMargins(0, 0, 0, 0)
         horizontal_layout.setSpacing(DesignToken.SECTION_SPACING)
         self.add_widget(horizontal_widget)
@@ -48,7 +47,7 @@ class StartTab(Tab):
             self.device_search_box = SearchLineEdit()
             self.device_search_box.setPlaceholderText(self.tr("Search title or exe..."))
             self.device_search_box.textChanged.connect(self.filter_devices)
-        self.device_list = ListWidget()
+        self.device_list = FlatChoiceList()
         device_view_widget = QWidget()
         device_view_layout = QVBoxLayout(device_view_widget)
         device_view_layout.setContentsMargins(0, 0, 0, 0)
@@ -56,24 +55,24 @@ class StartTab(Tab):
             device_view_layout.addWidget(self.device_search_box)
         device_view_layout.addWidget(self.device_list)
         self.device_container = Card(self.tr("Choose Window"), device_view_widget, stretch=1)
-        horizontal_layout.addWidget(self.device_container, 32)
+        horizontal_layout.addWidget(self.device_container)
         self.device_list.itemSelectionChanged.connect(self.device_index_changed)
 
         communicate.adb_devices.connect(self.update_capture)
 
         self.capture_list = SelectCaptureListView(self.capture_index_changed)
         self.capture_container = Card(self.tr("Capture Method"), self.capture_list, stretch=1)
-        horizontal_layout.addWidget(self.capture_container, 20)
+        horizontal_layout.addWidget(self.capture_container)
 
 
         self.interaction_list = SelectInteractionListView(self.interaction_index_changed)
         self.interaction_container = Card(self.tr("Choose Interaction"), self.interaction_list, stretch=1)
-        horizontal_layout.addWidget(self.interaction_container, 23)
+        horizontal_layout.addWidget(self.interaction_container)
 
         from ok import og
 
         self.debug_widget = QWidget()
-        self.debug_layout = QHBoxLayout(self.debug_widget)
+        self.debug_layout = QVBoxLayout(self.debug_widget)
         self.debug_layout.setContentsMargins(0, 0, 0, 0)
         self.debug_layout.setSpacing(8)
 
@@ -103,7 +102,13 @@ class StartTab(Tab):
         self.debug_layout.addWidget(self.ocr_button)
         self.debug_layout.addStretch(1)
 
-        self.add_card(self.tr("Debug"), self.debug_widget)
+        self.diagnostic_dialog = QDialog(self)
+        self.diagnostic_dialog.setWindowTitle("诊断工具")
+        diagnostic_layout = QVBoxLayout(self.diagnostic_dialog)
+        diagnostic_layout.addWidget(self.debug_widget)
+        tools_button = PushButton("诊断工具", self)
+        tools_button.clicked.connect(self.diagnostic_dialog.show)
+        self.add_widget(tools_button)
 
         self.overlay_widget = QWidget()
         self.overlay_layout = QHBoxLayout(self.overlay_widget)
@@ -360,6 +365,7 @@ class StartTab(Tab):
                 item.setHidden(False)
             else:
                 item.setHidden(True)
+        self.device_list.refresh_choices()
 
     def update_selection(self):
         from ok import og

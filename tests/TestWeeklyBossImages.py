@@ -74,7 +74,7 @@ class TestWeeklyBossImages(TaskTestCase):
 
     def test_real_task_has_only_weekly_controls(self):
         from src.gui.navigation_sections import classify_task
-        self.assertEqual(classify_task(self.task), 'tests')
+        self.assertEqual(classify_task(self.task), 'tasks')
         self.assertNotIn('Repeat Farm Count', self.task.default_config)
         self.assertNotIn('Boss Level', self.task.default_config)
         self.assertNotIn('Exit After Task', self.task.default_config)

@@ -51,6 +51,7 @@ android/agent-app/**/*.class
 android/agent-app/**/*.dex
 # 仅排除根目录的下划线开头脚本（如 _diag_*.py），不匹配 src 下的 __init__.py
 /_*.py
+/tests/output/
 
 # 大体积安装包（非项目文件）
 ok-ww-*.exe

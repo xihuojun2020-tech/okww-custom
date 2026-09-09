@@ -3,7 +3,7 @@ import threading
 import time
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QLabel
+from PySide6.QtWidgets import QLabel, QWidget, QVBoxLayout, QHBoxLayout
 from _ctypes import byref
 from qfluentwidgets import FluentIcon, PrimaryPushButton, SettingCard, PushButton
 
@@ -16,13 +16,22 @@ from ok.gui.widget.StatusBar import StatusBar
 logger = Logger.get_logger(__name__)
 
 
-class StartCard(SettingCard):
+class StartCard(QWidget):
     show_choose_hwnd = Signal()
     hotkey_changed = Signal()
     hotkey_status_changed = Signal(str)
 
     def __init__(self, exit_event):
-        super().__init__(og.config.get('gui_icon'), og.app.title, og.app.version)
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        heading = QLabel('游戏连接与运行控制', self)
+        heading.setProperty('role', 'sectionTitle')
+        layout.addWidget(heading)
+        self.iconLabel = QLabel(self)
+        self.iconLabel.hide()
+        self.hBoxLayout = QHBoxLayout()
+        layout.addLayout(self.hBoxLayout)
         self.basic_options = og.executor.basic_options
         self.current_hotkey = None
         self._desired_hotkey = 'UNINIT'

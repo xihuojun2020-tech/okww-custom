@@ -1,7 +1,7 @@
 """Reusable horizontal setting row for the light UI."""
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QBoxLayout, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 
 class FlatSettingRow(QWidget):
@@ -9,14 +9,14 @@ class FlatSettingRow(QWidget):
         super().__init__(parent)
         self.control = control
         self.label = QLabel(label, self)
-        self.label.setMinimumWidth(150)
+        self.label.setWordWrap(True)
         self.label.setProperty("role", "label")
         self.description_label = QLabel(description, self)
         self.description_label.setWordWrap(True)
         self.description_label.setProperty("role", "description")
         self.error_label = QLabel(self)
         self.error_label.setWordWrap(True)
-        self.error_label.setStyleSheet("color: #CF222E; font-size: 12px;")
+        self.error_label.setProperty("role", "error")
         self.error_label.hide()
         copy = QVBoxLayout()
         copy.setContentsMargins(0, 0, 12, 0)
@@ -31,6 +31,10 @@ class FlatSettingRow(QWidget):
         layout.addLayout(copy, 1)
         control.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout.addWidget(control, 1, Qt.AlignVCenter)
+
+    def resizeEvent(self, event):
+        self.layout().setDirection(QBoxLayout.TopToBottom if self.width() < 600 else QBoxLayout.LeftToRight)
+        super().resizeEvent(event)
 
     def set_error(self, message: str | None):
         self.error_label.setText(message or "")

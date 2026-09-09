@@ -7,6 +7,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton
 
 from src.gui.BackgroundOperation import BackgroundOperation
+from src.gui.FlatSettingRow import FlatSettingRow
 from src.runtime.diagnostic_export import atomic_json, sanitize_text
 from src.runtime.diagnostic_session import default_root, FileLease
 from src.runtime.diagnostic_lifecycle import wake_uploader
@@ -60,17 +61,20 @@ class DiagnosticStatusCard(QWidget):
         super().__init__(parent)
         self.root = default_root()
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel('日志与截图自动上传 NAS（仅从本版本开始）'))
-        layout.addWidget(QLabel('每周清理超过 7 天且已上传的日志；截图和待补传资料保留。'))
+        layout.setContentsMargins(0, 0, 0, 0)
+        description = QLabel('启动日志、运行日志与截图自动上传 NAS。每周清理超过 7 天且已上传的日志；截图和待补传资料保留。')
+        description.setWordWrap(True)
+        description.setProperty('role', 'description')
+        layout.addWidget(description)
         self.target = QLineEdit(DEFAULT_TARGET)
         self.target.setPlaceholderText('NAS 诊断目录，不填写密码')
-        layout.addWidget(self.target)
+        layout.addWidget(FlatSettingRow('上传目录', self.target))
         self.username = QLineEdit('ai-upload')
         self.password = QLineEdit()
         self.password.setEchoMode(QLineEdit.Password)
         self.password.setPlaceholderText('首次连接时填写密码，仅保存到本机 Windows 凭据管理器')
-        layout.addWidget(self.username)
-        layout.addWidget(self.password)
+        layout.addWidget(FlatSettingRow('用户名', self.username))
+        layout.addWidget(FlatSettingRow('密码', self.password, '仅保存到本机 Windows 凭据管理器；留空不修改。'))
         self.status = QLabel('正在读取本地状态')
         self.status.setWordWrap(True)
         layout.addWidget(self.status)

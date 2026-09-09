@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
                                QMessageBox, QPlainTextEdit, QPushButton, QInputDialog, QDialog,
                                QDialogButtonBox,
-                               QVBoxLayout, QWidget, QLineEdit, QSizePolicy)
+                               QVBoxLayout, QWidget, QLineEdit, QSizePolicy, QScrollArea)
 from qfluentwidgets import BodyLabel, FluentIcon
 
 from ok.gui.widget.CustomTab import CustomTab
@@ -19,6 +19,7 @@ from src.account_field_metadata import (account_field_metadata, localize_account
                                         restore_account_value, normalize_weekday)
 from src.gui.AccountChangeEvent import AccountChangeEvent
 from src.gui.BackgroundOperation import BackgroundOperation
+from src.gui.FlatSettingRow import FlatSettingRow
 
 
 class ClickOnlyComboBox(QComboBox):
@@ -58,7 +59,11 @@ class AccountTemplateDialog(QDialog):
         self._widgets = {}
         layout = QVBoxLayout(self)
         layout.addWidget(BodyLabel("模板只复制每日任务设置，不复制账号身份、序列或完成记录。"))
-        form = QFormLayout()
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        content = QWidget(scroll)
+        form = QVBoxLayout(content)
         for field in account_field_metadata(self._tasks):
             if field.affects_identity or field.key in ("备用识别名称", "备用识别名称内容"):
                 continue
@@ -77,8 +82,9 @@ class AccountTemplateDialog(QDialog):
                 widget.setText(json.dumps(display, ensure_ascii=False)
                                if isinstance(display, (list, dict)) else str(display))
             self._widgets[field.key] = widget
-            form.addRow(field.label, widget)
-        layout.addLayout(form)
+            form.addWidget(FlatSettingRow(field.label, widget, field.help_text, content))
+        scroll.setWidget(content)
+        layout.addWidget(scroll)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel, parent=self)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -171,7 +177,7 @@ class AccountConfigTab(CustomTab):
         layout.addWidget(BodyLabel("账号配置（登录身份与唯一编号只读；删除操作仅针对当前账号）"))
         row = QHBoxLayout()
         row.addWidget(QLabel("账号"))
-        self.profile_combo = QComboBox(root)
+        self.profile_combo = ClickOnlyComboBox(root)
         row.addWidget(self.profile_combo, 1)
         layout.addLayout(row)
         self.metadata = BodyLabel("")
@@ -186,10 +192,10 @@ class AccountConfigTab(CustomTab):
             widget.setReadOnly(True)
             widget.setToolTip("身份字段由重新绑定流程修改，普通账号配置保存不会覆盖它")
             self.identity_widgets[key] = widget
-            self.identity_layout.addRow(label, widget)
+            self.identity_layout.addRow(FlatSettingRow(label, widget, parent=self.identity_group))
         self.feature_code_label = QLabel("未记录（当前不参与任务）", self.identity_group)
         self.feature_code_label.setToolTip("来自游戏防 OLED 烧屏遮罩区域；当前只记录，不参与任务")
-        self.identity_layout.addRow("游戏内特征码（只读）", self.feature_code_label)
+        self.identity_layout.addRow(FlatSettingRow("游戏内特征码（只读）", self.feature_code_label, parent=self.identity_group))
         layout.addWidget(self.identity_group)
         self.sequence_group = QGroupBox("所属序列（勾选后保存即可调整当前账号归属）", root)
         self.sequence_layout = QVBoxLayout(self.sequence_group)
@@ -199,10 +205,11 @@ class AccountConfigTab(CustomTab):
         self.form_layout = QFormLayout(self.form_host)
         self.form_widgets = {}
         layout.addWidget(self.form_host)
-        layout.addWidget(BodyLabel("高级 JSON（复杂列表或兼容字段；常用字段请优先使用上方中文表单）"))
         self.task_editor = QPlainTextEdit(root)
         self.task_editor.setPlaceholderText("任务配置 JSON")
-        layout.addWidget(self.task_editor, 1)
+        self.task_editor.hide()
+        self.json_button = QPushButton("高级 JSON…", root)
+        self.json_button.clicked.connect(self.edit_json)
         actions = QHBoxLayout()
         self.preview_button = QPushButton("预览差异", root)
         self.save_button = QPushButton("确认保存", root)
@@ -211,11 +218,16 @@ class AccountConfigTab(CustomTab):
         self.rebind_button = QPushButton("重新绑定身份", root)
         self.template_button = QPushButton("编辑新账号模板", root)
         self.new_button = QPushButton("新建账号配置", root)
-        for button in (self.preview_button, self.save_button, self.discard_button,
-                       self.template_button, self.new_button,
-                       self.rebind_button, self.delete_button):
+        self.save_button.setProperty('role', 'primary')
+        self.delete_button.setProperty('role', 'danger')
+        row.addWidget(self.new_button)
+        for button in (self.preview_button, self.save_button, self.discard_button):
             actions.addWidget(button)
         layout.addLayout(actions)
+        maintenance = QVBoxLayout()
+        for button in (self.json_button, self.template_button, self.rebind_button, self.delete_button):
+            maintenance.addWidget(button)
+        layout.addLayout(maintenance)
         self.status = BodyLabel("等待操作")
         layout.addWidget(self.status)
         self.add_widget(root, stretch=1)
@@ -230,8 +242,39 @@ class AccountConfigTab(CustomTab):
         self.operation = BackgroundOperation(self, (
             self.save_button, self.delete_button, self.rebind_button, self.template_button,
             self.new_button, self.discard_button, self.preview_button,
-            self.form_host, self.task_editor, self.sequence_group))
+            self.form_host, self.task_editor, self.sequence_group, self.json_button))
         self.refresh()
+
+    def edit_json(self):
+        if self.operation.busy or self.draft is None:
+            return
+        try:
+            self._apply_text()
+        except (ValueError, TypeError) as error:
+            self.status.setText(sanitize_error(error))
+            return
+        dialog = QDialog(self.view)
+        dialog.setWindowTitle('高级 JSON（应用到草稿后仍需确认保存）')
+        layout = QVBoxLayout(dialog)
+        editor = QPlainTextEdit(dialog)
+        editor.setPlainText(json.dumps(self.draft.tasks, ensure_ascii=False, indent=2))
+        layout.addWidget(editor)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=dialog)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        dialog.resize(700, 540)
+        if dialog.exec() == QDialog.Accepted:
+            try:
+                value = json.loads(editor.toPlainText())
+                if not isinstance(value, dict):
+                    raise ValueError('任务配置必须是 JSON 对象')
+                self.draft.tasks = value
+                self.task_editor.setPlainText(editor.toPlainText())
+                self._render_form()
+            except (ValueError, TypeError) as error:
+                self.status.setText(sanitize_error(error))
+        dialog.deleteLater()
 
     @property
     def name(self):
@@ -318,9 +361,7 @@ class AccountConfigTab(CustomTab):
         alternate = self.draft.account.get("alternate_login_name") or "未记录"
         feature_code = self.draft.account.get("game_feature_code") or "未记录（当前不参与任务）"
         self.metadata.setText(
-            f"账号短名：{label}\n唯一编号：{self.draft.profile_id}\n"
-            f"切换关键识别：{masked_phone}\n备用识别名：{alternate}\n"
-            f"游戏内特征码：{feature_code}"
+            f"账号：{label} · 唯一编号：{self.draft.profile_id}"
         )
         self._render_sequences()
         self._render_identity()
@@ -384,10 +425,21 @@ class AccountConfigTab(CustomTab):
         while self.form_layout.rowCount():
             self.form_layout.removeRow(0)
         self.form_widgets.clear()
-        for field in account_field_metadata(self.draft.tasks):
+        stamina = {'Which to Farm', 'Which Tacet Suppression to Farm', 'Which Forgery Challenge to Farm',
+                   'Material Selection', 'Weekly Boss Target'}
+        daily = {'Farm Nightmare Nest for Daily Echo', 'Nightmare Which to Farm', 'Tacet Discord Nests to Farm',
+                 'Auto Farm all Nightmare Nest', 'Weekly Garden Check Day', 'Merge Echo on Sunday'}
+        def group(field):
+            return 1 if field.key in stamina else 0 if field.key in daily else 2
+        last_group = None
+        fields = sorted(account_field_metadata(self.draft.tasks), key=group)
+        for field in fields:
+            if group(field) != last_group:
+                last_group = group(field)
+                heading = QLabel(('每日任务', '体力与周本', '其他选项')[last_group], self.form_host)
+                heading.setProperty('role', 'sectionTitle')
+                self.form_layout.addRow(heading)
             value = self.draft.tasks.get(field.key)
-            label = QLabel(f"{field.label}\n{field.help_text}", self.form_host)
-            label.setWordWrap(True)
             if field.editor_type == "bool":
                 widget = QCheckBox(self.form_host)
                 widget.setChecked(bool(value))
@@ -405,8 +457,11 @@ class AccountConfigTab(CustomTab):
             widget.setEnabled(not field.read_only)
             widget.setToolTip(field.help_text)
             self.form_widgets[field.key] = widget
-            self.form_layout.addRow(label, widget)
+            self.form_layout.addRow(FlatSettingRow(field.label, widget, field.help_text, self.form_host))
+            if field.key == 'Weekly Boss Target':
+                self._render_weekly_status()
 
+    def _render_weekly_status(self):
         from src.config_integrity import get_default_service
         from src.task.weekly_boss import WEEKLY_MONDAY, WEEKLY_SUNDAY, weekly_check_window
         from datetime import datetime
