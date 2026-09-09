@@ -53,6 +53,8 @@ class TestWeeklyBossParsing(unittest.TestCase):
             self.assertEqual(combat_phase(text), 'post')
         for text in ('', '剧情过场', '无法识别'):
             self.assertIsNone(combat_phase(text))
+        self.assertEqual(combat_phase(['击败伤痕', '离开某地']), 'post')
+        self.assertEqual(combat_phase(['离开某地', '击败伤痕']), 'post')
 
 
 class TestWeeklyBossFlow(unittest.TestCase):
@@ -312,10 +314,17 @@ class TestWeeklyBossBoundaries(unittest.TestCase):
 
     def test_battle_hint_overrides_victory_and_reward_auxiliary_signals(self):
         task = self.task()
-        task._text = Mock(return_value='击败伤痕')
+        task._ocr = Mock(return_value=[box('击败伤痕')])
         task._reward_available = Mock(return_value=object())
         task._button = Mock(return_value=object())
         self.assertFalse(task._battle_finished())
+
+    def test_post_hint_overrides_stale_combat_hint(self):
+        task = self.task()
+        task._ocr = Mock(return_value=[box('击败伤痕'), box('离开某地')])
+        task._reward_available = Mock(return_value=None)
+        task._button = Mock(return_value=None)
+        self.assertTrue(task._battle_finished())
 
     def test_unknown_phase_after_normal_return_stops(self):
         from src.task.WeeklyBossTask import WeeklyPageTimeout

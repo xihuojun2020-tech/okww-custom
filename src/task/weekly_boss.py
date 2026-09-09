@@ -60,11 +60,12 @@ def parse_stamina(text):
 
 
 def combat_phase(text):
-    text = compact(text).replace('「', '').replace('」', '')
-    if text.startswith('击败') or text.startswith('与岁主角对战'):
-        return 'combat'
-    if text.startswith('领取奖励') or text.startswith('离开'):
+    values = [text] if isinstance(text, str) else text
+    values = [compact(value).replace('「', '').replace('」', '') for value in values]
+    if any(value.startswith('领取奖励') or value.startswith('离开') for value in values):
         return 'post'
+    if any(value.startswith('击败') or value.startswith('与岁主角对战') for value in values):
+        return 'combat'
     return None
 
 

@@ -194,10 +194,19 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         claim = self._button((0.69, 0.49, 0.80, 0.545), '领取奖励', frame)
         return claim if f and claim and abs(f.y - claim.y) <= self.height * 0.015 else None
 
+    def _task_hint_phase(self, log=False):
+        hints = [compact(box.name) for box in self._ocr(self.TASK_HINT)]
+        phase = combat_phase(hints)
+        signature = (tuple(hints), phase)
+        if log and signature != getattr(self, '_last_task_hint', None):
+            self._last_task_hint = signature
+            self.log_info(f'周本左侧任务提示 OCR={hints or ["<empty>"]}，阶段={phase or "unknown"}')
+        return phase
+
     def _battle_finished(self):
         # A phase transition can briefly look out of combat or show victory.
         # The left objective is authoritative while it still says to fight.
-        phase = combat_phase(self._text(self.TASK_HINT))
+        phase = self._task_hint_phase()
         if phase == 'combat':
             return False
         return bool(phase == 'post' or self._reward_available() or
@@ -205,7 +214,7 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
 
     def _wait_combat_phase(self, timeout=30):
         def read():
-            phase = combat_phase(self._text(self.TASK_HINT))
+            phase = self._task_hint_phase(log=True)
             if phase:
                 return phase
             if self._reward_available() or self._button(self.VICTORY, '挑战成功'):
