@@ -1522,3 +1522,12 @@ msgstr "사람처럼 입력하기 위한 음 사이 대기 시간(0.05–0.50초
 
 msgid "Open piano teaching first; single highlighted notes are played until you stop the task."
 msgstr "먼저 피아노 레슨을 여세요. 작업을 직접 중지할 때까지 강조된 음을 하나씩 연주합니다."
+
+msgid "Weekly Boss Target"
+msgstr "주간 보스"
+
+msgid "Last Completed - Weekly Boss Monday"
+msgstr "월요일 주간 보스 확인"
+
+msgid "Last Completed - Weekly Boss Sunday"
+msgstr "일요일 주간 보스 재확인"

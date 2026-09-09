@@ -1439,6 +1439,15 @@ msgstr ""
 "secundario)；Se guarda. Los cambios durante la ejecución se aplican en la "
 "siguiente"
 
+msgid "Weekly Boss Target"
+msgstr "Jefe semanal"
+
+msgid "Last Completed - Weekly Boss Monday"
+msgstr "Comprobación del lunes"
+
+msgid "Last Completed - Weekly Boss Sunday"
+msgstr "Revisión del domingo"
+
 msgid "Piano Teaching"
 msgstr "Lección de piano"
 

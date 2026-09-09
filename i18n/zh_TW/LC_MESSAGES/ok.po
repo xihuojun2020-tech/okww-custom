@@ -1645,3 +1645,12 @@ msgstr "每個音符後模擬人工操作的停頓時間（0.05–0.50 秒）。
 
 msgid "Open piano teaching first; single highlighted notes are played until you stop the task."
 msgstr "請先開啟彈琴教學；程式會逐個彈奏高亮音符，直到你手動停止任務。"
+
+msgid "Weekly Boss Target"
+msgstr "每週週本"
+
+msgid "Last Completed - Weekly Boss Monday"
+msgstr "週一週本檢查"
+
+msgid "Last Completed - Weekly Boss Sunday"
+msgstr "週日週本複檢"

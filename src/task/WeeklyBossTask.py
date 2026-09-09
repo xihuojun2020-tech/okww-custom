@@ -382,11 +382,11 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         self._stage('已复核 0/3，本周奖励全部领取')
         return self.last_result
 
-    def run_weekly(self):
+    def run_weekly(self, target_key=None):
         self.last_result = None
         self.info['已确认领奖'] = 0
         self.use_liberation = self.config.get('Use Liberation', True)
-        boss = next((b for b in WEEKLY_BOSSES if b.key == self.config.get('Weekly Boss')), None)
+        boss = next((b for b in WEEKLY_BOSSES if b.key == (target_key if target_key is not None else self.config.get('Weekly Boss'))), None)
         if boss is None:
             raise ValueError('请选择有效的周本名称')
         self._stage('检查本周剩余次数')
@@ -422,6 +422,9 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
 
     def run(self):
         WWOneTimeTask.run(self)
+        return self.run_for_target(self.config.get('Weekly Boss'))
+
+    def run_for_target(self, target_key):
         if self.game_lang != 'zh_CN':
             raise RuntimeError('周本首版仅支持简体中文游戏')
         if abs(self.width / self.height - 16 / 9) > 0.02:
@@ -429,7 +432,7 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         previous = self.skip_combat_check
         self.skip_combat_check = True
         try:
-            return self.run_weekly()
+            return self.run_weekly(target_key)
         except TaskDisabledException:
             raise
         except Exception:

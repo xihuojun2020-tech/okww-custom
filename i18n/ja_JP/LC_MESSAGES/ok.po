@@ -1519,3 +1519,12 @@ msgstr "人の操作を模した音符ごとの待機時間（0.05～0.50秒）�
 
 msgid "Open piano teaching first; single highlighted notes are played until you stop the task."
 msgstr "先にピアノレッスンを開いてください。停止するまでハイライトされた音符を順番に演奏します。"
+
+msgid "Weekly Boss Target"
+msgstr "週間ボス"
+
+msgid "Last Completed - Weekly Boss Monday"
+msgstr "月曜の週間ボス確認"
+
+msgid "Last Completed - Weekly Boss Sunday"
+msgstr "日曜の週間ボス再確認"

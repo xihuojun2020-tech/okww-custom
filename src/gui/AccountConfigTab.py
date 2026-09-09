@@ -407,6 +407,29 @@ class AccountConfigTab(CustomTab):
             self.form_widgets[field.key] = widget
             self.form_layout.addRow(label, widget)
 
+        from src.config_integrity import get_default_service
+        from src.task.weekly_boss import WEEKLY_MONDAY, WEEKLY_SUNDAY, weekly_check_window
+        from datetime import datetime
+        service = get_default_service()
+        if service is not None:
+            try:
+                for key, title in ((WEEKLY_MONDAY, '周一检查'), (WEEKLY_SUNDAY, '周日复检')):
+                    stamp = service.get_completion(self.draft.profile_id, key)
+                    done = False
+                    if stamp:
+                        try:
+                            done = weekly_check_window(datetime.fromisoformat(stamp)) == (weekly_check_window()[0], key)
+                        except ValueError:
+                            pass
+                    text = '本周已完成' if done else '待检查'
+                    if self.draft.tasks.get('Weekly Boss Target', '无') == '无':
+                        text = '已关闭'
+                    self.form_layout.addRow(title, QLabel(f'{text}；最近：{stamp or "无"}', self.form_host))
+                outcome = service.get_progress(f'weekly_boss:{self.draft.profile_id}', {})
+                self.form_layout.addRow('最近周本结果', QLabel(str(outcome.get('status', '尚未执行')), self.form_host))
+            except Exception:
+                self.form_layout.addRow('周本记录', QLabel('记录暂不可读取', self.form_host))
+
     def edit_template(self):
         if self.operation.busy:
             return None

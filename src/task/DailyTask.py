@@ -4,7 +4,7 @@ import copy
 import importlib
 import inspect
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from PySide6.QtCore import QThread
 from PySide6.QtWidgets import QApplication
@@ -13,6 +13,9 @@ from ok import Logger, TaskDisabledException
 from ok.util.file import get_relative_path, read_json_file, write_json_file
 from src.task.ForgeryTask import ForgeryTask
 from src.task.GardenTask import GardenTask
+from src.task.WeeklyBossTask import WeeklyBossTask
+from src.task.weekly_boss import (WEEKLY_TARGET, WEEKLY_DISABLED, WEEKLY_BOSSES,
+                                WEEKLY_MONDAY, WEEKLY_SUNDAY, weekly_check_window, weekly_check_due)
 from src.task.MergeEchoTask import MergeEchoTask
 from src.task.NightmareNestTask import NightmareNestTask
 from src.task.TacetTask import TacetTask
@@ -114,6 +117,8 @@ RECORD_PAGE_OPTIONS = ['任务页', '每周乐园', '战令', '残像聚落']
 LOGOUT_AFTER_DAILY = 'Logout PC After Daily Task'
 # 只读标签键 → 子任务名（record_last_completed 使用的名称）
 LC_SUB_KEYS = {
+    'Last Completed - Weekly Boss Monday': WEEKLY_MONDAY,
+    'Last Completed - Weekly Boss Sunday': WEEKLY_SUNDAY,
     LC_TACET: 'Tacet Suppression',
     LC_FORGERY: 'Forgery Challenge',
     LC_SIMULATION: 'Simulation Challenge',
@@ -187,6 +192,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             'Nightmare Which to Farm': ['Tacet Discord Nest'],
             'Tacet Discord Nests to Farm': list(NEST_NAMES),
             GARDEN_CHECK_DAY: '无',
+            WEEKLY_TARGET: WEEKLY_DISABLED,
+            'Last Completed - Weekly Boss Monday': '',
+            'Last Completed - Weekly Boss Sunday': '',
             ALIAS_ENABLE: '无',
             ALIAS_TEXT: '',
             LC_GARDEN: '',
@@ -234,6 +242,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         except ConfigIntegrityBlocked:
             initial_sequences, initial_profiles = [], []
         self.config_type = {
+            WEEKLY_TARGET: {'type': 'drop_down', 'options': [WEEKLY_DISABLED, *(b.key for b in WEEKLY_BOSSES)]},
             DAILY_PROFILE: {'type': 'drop_down', 'options': initial_profiles},
             # 方案序列：选序列后「账号配置」下拉随之只显示该序列的方案（两级联动，避免翻页）
             PROFILE_SEQUENCE: {
@@ -308,6 +317,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             LC_AUTO_NIGHTMARE: {'type': 'label', 'sub_key': 'Nightmare Nest'},
             LC_NEST: {'type': 'label', 'sub_key': 'Nightmare Nest'},
             LC_GARDEN: {'type': 'label', 'sub_key': 'Weekly Garden'},
+            'Last Completed - Weekly Boss Monday': {'type': 'label', 'sub_key': WEEKLY_MONDAY},
+            'Last Completed - Weekly Boss Sunday': {'type': 'label', 'sub_key': WEEKLY_SUNDAY},
             LC_MERGE: {'type': 'label', 'sub_key': 'Merge Echo'},
         }
         # Stable account intent is display-only.  Runtime selectors (the
@@ -411,6 +422,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         # Give them a detached snapshot whose protected values come from the
         # validated master, never from stale Config fields.
         profile_runtime_config = self._readonly_profile_config()
+        if self._runtime_overrides.get('_weekly_boss_only', False):
+            return self.check_weekly_boss()
 
         auto_farm = self._profile_get(AUTO_FARM_NIGHTMARE_NEST, False)
         daily_echo = self._profile_get('Farm Nightmare Nest for Daily Echo', False)
@@ -423,6 +436,10 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
         self._publish_daily_stage('每日任务', '正在检查每日奖励和体力进度')
         self.log_info('正在领取每日奖励并检查体力进度...')
+        used_stamina, daily_reward_ready = self.open_daily()
+        if daily_reward_ready is None:
+            _, daily_reward_ready = self._claim_and_recheck_daily_activity()
+        self.check_weekly_boss()
         used_stamina, daily_reward_ready = self.open_daily()
         if daily_reward_ready is None:
             _, daily_reward_ready = self._claim_and_recheck_daily_activity()
@@ -1075,7 +1092,19 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
     def get_readonly_last_completed(self, task_name):
         """Keep completion labels available while configuration needs repair."""
         try:
-            return self.get_last_completed(task_name)
+            completed = self.get_last_completed(task_name)
+            if task_name in (WEEKLY_MONDAY, WEEKLY_SUNDAY):
+                target = self._profile_get(WEEKLY_TARGET, WEEKLY_DISABLED)
+                if target == WEEKLY_DISABLED:
+                    return '已关闭'
+                current_week = weekly_check_window()[0]
+                try:
+                    stamp_week, stamp_slot = weekly_check_window(datetime.fromisoformat(completed))
+                    done = stamp_week == current_week and stamp_slot == task_name
+                except (ValueError, TypeError):
+                    done = False
+                return ('本周已完成' if done else '待检查') + (f'；最近：{completed}' if completed else '')
+            return completed
         except ConfigIntegrityBlocked:
             return None
 
@@ -1698,6 +1727,52 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         # 声骸融合：每周日运行一次
         if self._profile_get(MERGE_ECHO_ON_SUNDAY) and WEEKDAYS[datetime.now().weekday()] == WEEKDAYS[6]:
             self.check_discarded_echo()
+
+    def check_weekly_boss(self):
+        self.info_set('周本检查结果', '无需检查')
+        target = self._profile_get(WEEKLY_TARGET, WEEKLY_DISABLED)
+        window = weekly_check_window()
+        if not weekly_check_due(target, self.get_last_completed(window[1])):
+            return False
+        profile_id = self._active_profile_id()
+        self._publish_daily_stage('清理体力', '优先检查每周周本')
+        try:
+            result = self.get_task_by_class(WeeklyBossTask).run_for_target(target)
+            if result is None or not result.complete:
+                raise RuntimeError('周本尚未确认剩余次数为零')
+            if weekly_check_window() != window:
+                raise RuntimeError('周本执行跨越刷新边界，下次重新检查')
+            if self.integrity_service is not None:
+                self.integrity_service.record_completion(
+                    profile_id, window[1], datetime.now(timezone(timedelta(hours=8))).isoformat())
+            else:
+                self.record_last_completed(window[1], profile_id=profile_id)
+            self.info_set('周本检查结果', '已确认次数耗尽')
+            self._record_weekly_outcome(target, '已确认次数耗尽', result.remaining)
+        except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked,
+                GameProcessLost, FrameUnavailable):
+            raise
+        except Exception as error:
+            self.info_set('周本检查结果', f'待补检：{error}')
+            weekly = self.get_task_by_class(WeeklyBossTask)
+            last = getattr(weekly, 'last_result', None)
+            remaining = getattr(last, 'remaining', None)
+            self._record_weekly_outcome(target, f'待补检：{error}', remaining if isinstance(remaining, int) else None)
+            self.log_error('周本未完成，保留补检资格', error)
+            self.screenshot('weekly_daily_pending')
+            self.ensure_main(time_out=180)
+        return True
+
+    def _record_weekly_outcome(self, target, status, remaining):
+        if self.integrity_service is not None:
+            self.integrity_service.set_progress(f'weekly_boss:{self._active_profile_id()}', {
+                'target': target, 'status': status, 'remaining': remaining,
+                'time': datetime.now(timezone(timedelta(hours=8))).isoformat(),
+            })
+
+    def run_weekly_boss_only(self):
+        with self.runtime_config_override('_weekly_boss_only', True):
+            return self.run()
 
     def check_weekly_garden(self):
         self.info_set('current task', 'check weekly garden')

@@ -749,6 +749,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
     # ==================== 主流程 ====================
 
     def run(self):
+        self._weekly_attempted = set()
+        self._weekly_pending = {}
         self.clear_run_snapshot()
         _publish_status_safe(self, stage='启动', detail='正在启动多账号任务')
         require_account_runtime_for_task(self)
@@ -1068,6 +1070,20 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         })
 
     def _is_done(self, account):
+        if not MultiAccountDailyTask._daily_is_done(self, account):
+            return False
+        if account in getattr(self, '_weekly_attempted', set()):
+            return True
+        from src.task.weekly_boss import WEEKLY_TARGET, weekly_check_window, weekly_check_due
+        profile = self._load_profiles().get(account) or {}
+        target = profile.get('task_config', profile).get(WEEKLY_TARGET, '无')
+        service = getattr(self, 'integrity_service', None)
+        key = weekly_check_window()[1]
+        completion = (service.get_completion(self._profile_id_for(account), key) if service
+                      else (profile.get('last_completed') or {}).get(key))
+        return not weekly_check_due(target, completion)
+
+    def _daily_is_done(self, account):
         """账号是否已完成：多账号断点记录，或今天已单独跑过该账号的每日任务（方案文件 last_completed）。"""
         if self.integrity_service is not None:
             identity = self._profile_id_for(account)
@@ -1931,7 +1947,14 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         """Run one account atomically; only successful accounts enter done_set."""
         try:
             self._require_daily_profile(account)
-            self.run_task_by_class(DailyTask)
+            if not hasattr(self, '_weekly_attempted'):
+                self._weekly_attempted = set()
+            self._weekly_attempted.add(account)
+            daily_done = getattr(self, '_daily_is_done', None)
+            if callable(daily_done) and daily_done(account):
+                self.get_task_by_class(DailyTask).run_weekly_boss_only()
+            else:
+                self.run_task_by_class(DailyTask)
         except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked):
             raise
         except Exception as error:
@@ -1942,7 +1965,17 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             except Exception:
                 pass
             return False, error
-        self.log_info(f'账号 {profile_status_label(account)} 每日任务完成', notify=True)
+        child = getattr(self, 'get_task_by_class', lambda *_: None)(DailyTask)
+        child_info = getattr(child, 'info', {})
+        outcome = child_info.get('周本检查结果', '') if isinstance(child_info, dict) else ''
+        if str(outcome).startswith('待补检'):
+            if not hasattr(self, '_weekly_pending'):
+                self._weekly_pending = {}
+            self._weekly_pending[profile_status_label(account)] = outcome
+            self.info_set('周本待补检', dict(self._weekly_pending))
+            self.log_info(f'账号 {profile_status_label(account)} 每日任务完成；周本{outcome}', notify=True)
+        else:
+            self.log_info(f'账号 {profile_status_label(account)} 每日任务完成', notify=True)
         self._mark_done(account)
         self._save_today_progress()
         return True, None
@@ -3319,8 +3352,11 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         self.log_info(f'账号序列已处理完成，准备登录回起始账号 {profile_status_label(first_account)}', notify=True)
         title = '多账号每日任务部分失败' if failures else '多账号每日任务完成'
         failure_text = ''
+        pending = getattr(self, '_weekly_pending', {})
+        if pending:
+            failure_text = '；周本待补检：' + '、'.join(pending)
         if failures:
-            failure_text = '；失败账号：' + '、'.join(item['account'] for item in failures)
+            failure_text += '；失败账号：' + '、'.join(item['account'] for item in failures)
         if not first_account:
             self._notify_user(title, f'本轮账号已处理完成{failure_text}')
             return

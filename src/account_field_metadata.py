@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from typing import Any, Mapping
+from src.task.weekly_boss import WEEKLY_BOSSES
 
 WEEKDAYS = ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
 _WEEKDAY_ALIASES = {prefix + day: english for english, day in zip(WEEKDAYS, '一二三四五六日')
@@ -33,6 +34,7 @@ class AccountFieldMetadata:
 
 
 _LABELS = {
+    "Weekly Boss Target": ("每周周本", "无表示关闭；周一检查、周二至周六补检、周日独立复检。优先使用当前体力。"),
     "Which to Farm": ("体力用途", "每天优先消耗体力的副本类型。不会影响账号识别。"),
     "Which Tacet Suppression to Farm": ("无音区选择", "选择要刷取的无音区编号。不会影响账号识别。"),
     "Which Forgery Challenge to Farm": ("凝素领域选择", "选择要刷取的凝素领域编号。不会影响账号识别。"),
@@ -48,12 +50,14 @@ _LABELS = {
     "备用识别名称内容": ("备用识别名称内容", "可填写 U…A 等登录页显示名称；停用时保留但不会用于识别。"),
 }
 _OPTIONS = {
+    "Weekly Boss Target": ("无", *(boss.key for boss in WEEKLY_BOSSES)),
     "Which to Farm": ("Tacet Suppression", "Forgery Challenge", "Simulation Challenge"),
     "Material Selection": ("Resonator EXP", "Weapon EXP", "Shell Credit"),
     "Weekly Garden Check Day": ("无", *WEEKDAYS),
     "备用识别名称": ("无", "使用"),
 }
 _VALUE_LABELS = {
+    **{boss.key: boss.name for boss in WEEKLY_BOSSES},
     **dict(zip(WEEKDAYS, ('星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'))),
     "Tacet Suppression": "无音区",
     "Forgery Challenge": "凝素领域",

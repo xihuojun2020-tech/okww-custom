@@ -1,7 +1,43 @@
 """Weekly challenge names and conservative, UI-independent parsing rules."""
 import re
 import unicodedata
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
+
+WEEKLY_TARGET = 'Weekly Boss Target'
+WEEKLY_DISABLED = '无'
+WEEKLY_MONDAY = 'Weekly Boss Monday Check'
+WEEKLY_SUNDAY = 'Weekly Boss Sunday Check'
+
+
+def weekly_check_window(now=None):
+    # Simplified-Chinese servers reset at 04:00 UTC+8.
+    now = now or datetime.now(timezone(timedelta(hours=8)))
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone(timedelta(hours=8)))
+    day = (now.astimezone(timezone(timedelta(hours=8))) - timedelta(hours=4)).date()
+    return (day - timedelta(days=day.weekday()),
+            WEEKLY_SUNDAY if day.weekday() == 6 else WEEKLY_MONDAY)
+
+
+def weekly_check_due(target, completed, now=None):
+    if target == WEEKLY_DISABLED:
+        return False
+    if target not in {boss.key for boss in WEEKLY_BOSSES}:
+        raise ValueError('请选择有效的账号周本目标')
+    if not completed:
+        return True
+    try:
+        stamp = datetime.fromisoformat(str(completed).replace('Z', '+00:00'))
+        current = now or datetime.now(timezone(timedelta(hours=8)))
+        zone = timezone(timedelta(hours=8))
+        stamp = stamp.replace(tzinfo=zone) if stamp.tzinfo is None else stamp
+        current = current.replace(tzinfo=zone) if current.tzinfo is None else current
+        if stamp > current:
+            return True
+        return weekly_check_window(stamp) != weekly_check_window(now)
+    except (TypeError, ValueError):
+        return True
 
 
 @dataclass(frozen=True)

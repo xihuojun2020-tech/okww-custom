@@ -67,6 +67,7 @@ PROTECTED_TASK_KEYS = (
     "Tacet Discord Nests to Farm",
     "Auto Farm all Nightmare Nest",
     "Weekly Garden Check Day",
+    "Weekly Boss Target",
     "Merge Echo on Sunday",
     "备用识别名称",
     "备用识别名称内容",
@@ -81,6 +82,7 @@ _TASK_KEY_TYPES = {
     "Tacet Discord Nests to Farm": list,
     "Auto Farm all Nightmare Nest": bool,
     "Weekly Garden Check Day": str,
+    "Weekly Boss Target": str,
     "Merge Echo on Sunday": bool,
     "备用识别名称": str,
     "备用识别名称内容": str,
@@ -99,6 +101,7 @@ _BOOTSTRAP_TASK_DEFAULTS = {
     "Tacet Discord Nests to Farm": [],
     "Auto Farm all Nightmare Nest": False,
     "Weekly Garden Check Day": "无",
+    "Weekly Boss Target": "无",
     "Merge Echo on Sunday": False,
     "备用识别名称": "无",
     "备用识别名称内容": "",
@@ -311,7 +314,13 @@ def validate_master(data: Any) -> list[str]:
                     else:
                         identity_owner[candidate] = str(profile_id)
         if isinstance(task_config, Mapping):
-            missing_keys = [key for key in PROTECTED_TASK_KEYS if key not in task_config]
+            # Old anchors remain valid; the additive weekly option is disabled
+            # until explicitly saved through the account editor transaction.
+            missing_keys = [key for key in PROTECTED_TASK_KEYS
+                            if key not in task_config and key != 'Weekly Boss Target']
+            from src.task.weekly_boss import WEEKLY_BOSSES
+            if task_config.get('Weekly Boss Target', '无') not in ('无', *(b.key for b in WEEKLY_BOSSES)):
+                errors.append(f'{path}.task_config weekly boss target is invalid')
             if missing_keys:
                 errors.append(f"{path}.task_config missing protected keys: {', '.join(missing_keys)}")
             for key, expected in _TASK_KEY_TYPES.items():
