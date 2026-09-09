@@ -46,6 +46,45 @@ class TestPackageSmoke(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, '不一致'):
                 inspect_extracted(root, {'config.py': b'version = "new"'}, 'new')
 
+    def test_powershell_eol_only_difference_is_allowed(self):
+        from scripts.inspect_installer import inspect_extracted
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            reference = {
+                'config.py': b'version = "1.41.08"\n',
+                'src/runtime/install_diagnostic_task.ps1': b"Write-Output 'ok'\n",
+            }
+            for folder in ('repo', 'working'):
+                source = root / 'data/apps/example' / folder
+                for name, data in reference.items():
+                    path = source / name
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(data.replace(b'\n', b'\r\n'))
+            result = inspect_extracted(root, reference, '1.41.08')
+            self.assertTrue(all(
+                'src/runtime/install_diagnostic_task.ps1' in tree['eol_only_differences']
+                for tree in result['source_trees']
+            ))
+
+    def test_powershell_content_difference_is_rejected(self):
+        from scripts.inspect_installer import inspect_extracted
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            reference = {
+                'config.py': b'version = "1.41.08"\n',
+                'src/runtime/install_diagnostic_task.ps1': b"Write-Output 'ok'\n",
+            }
+            for folder in ('repo', 'working'):
+                source = root / 'data/apps/example' / folder
+                for name, data in reference.items():
+                    path = source / name
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(data)
+            changed = root / 'data/apps/example/working/src/runtime/install_diagnostic_task.ps1'
+            changed.write_bytes(b"Write-Output 'changed'\r\n")
+            with self.assertRaisesRegex(ValueError, '源码与引用版本不一致'):
+                inspect_extracted(root, reference, '1.41.08')
+
     def inspect(self, name, value=b'{}'):
         with tempfile.TemporaryDirectory() as temp:
             dist = Path(temp)

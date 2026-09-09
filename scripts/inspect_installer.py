@@ -13,6 +13,10 @@ from pathlib import Path, PurePosixPath
 from scripts.package_smoke import inspect_member
 
 INSTALLER_EXTRACT_TIMEOUT_SECONDS = 600
+EOL_NORMALIZED_SUFFIXES = {
+    '.py', '.txt', '.md', '.in', '.yml', '.po', '.bat', '.ps1',
+    '.json', '.svg', '.qss',
+}
 
 
 def logical_payload_path(name: str) -> str | None:
@@ -52,7 +56,7 @@ def inspect_extracted(payload: Path, reference: dict[str, bytes], version: str) 
                 if data != expected:
                     # git checkout on Windows applies CRLF to text. Retain raw
                     # file hashes and explicitly report this canonical comparison.
-                    if path.suffix.lower() not in {'.py', '.txt', '.md', '.in', '.yml', '.po', '.bat', '.json', '.svg', '.qss'} or (
+                    if path.suffix.lower() not in EOL_NORMALIZED_SUFFIXES or (
                             data.replace(b'\r\n', b'\n') != expected.replace(b'\r\n', b'\n')):
                         raise ValueError(f'安装器源码与引用版本不一致：{name}')
                     eol_only.append(name)
