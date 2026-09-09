@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from src.runtime.diagnostic_export import sanitize_file, sanitize_text, safe_path, validate_manifest
-from src.runtime.diagnostic_session import DiagnosticSession, recover_sessions, seal_run
+from src.runtime.diagnostic_session import DiagnosticSession, FileLease, recover_sessions, seal_run
 from src.runtime.diagnostic_uploader import upload_one, validate_remote, retry_pending, bounded_upload
 
 
@@ -72,7 +72,7 @@ class TestDiagnosticPipeline(unittest.TestCase):
         batch = self.batch()
         original = Path.replace
         def failed(source, target):
-            if str(source).endswith('.log.uploading') or str(source).endswith('.jsonl.uploading'):
+            if '.log.uploading.' in str(source) or '.jsonl.uploading.' in str(source):
                 raise OSError('simulated disconnect')
             return original(source, target)
         with patch.object(Path, 'replace', failed):
@@ -81,6 +81,36 @@ class TestDiagnosticPipeline(unittest.TestCase):
         self.assertFalse(list(self.remote.rglob('_UPLOAD_COMPLETE')))
         upload_one(batch, self.remote)
         self.assertTrue(list(self.remote.rglob('_UPLOAD_COMPLETE')))
+
+    def test_stale_upload_temporary_is_recovered(self):
+        batch = self.batch()
+        manifest = json.loads((batch / 'manifest.json').read_text(encoding='utf-8'))
+        item = manifest['files'][0]
+        destination = self.remote / '待分析' / item['path']
+        destination.parent.mkdir(parents=True)
+        destination.with_name(destination.name + '.uploading').write_bytes(
+            (batch / item['path']).read_bytes())
+        upload_one(batch, self.remote)
+        self.assertTrue(destination.is_file())
+        self.assertFalse(destination.with_name(destination.name + '.uploading').exists())
+
+    def test_existing_foreign_upload_temporary_does_not_collide(self):
+        batch = self.batch()
+        manifest = json.loads((batch / 'manifest.json').read_text(encoding='utf-8'))
+        item = manifest['files'][0]
+        destination = self.remote / '待分析' / item['path']
+        destination.parent.mkdir(parents=True)
+        foreign = destination.with_name(destination.name + '.uploading.999.foreign')
+        foreign.write_bytes(b'incomplete')
+        upload_one(batch, self.remote)
+        self.assertTrue(destination.is_file())
+        self.assertEqual(foreign.read_bytes(), b'incomplete')
+
+    def test_uploader_lock_contention_is_a_benign_noop(self):
+        self.batch()
+        with FileLease(self.root / '.uploader.lock'):
+            self.assertFalse(retry_pending(self.root, self.remote))
+        self.assertFalse((self.root / 'uploader-error.json').exists())
 
     def test_retry_survives_restart_and_preserves_batch(self):
         batch = self.batch()

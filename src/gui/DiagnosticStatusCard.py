@@ -37,7 +37,11 @@ def diagnostic_status_text(root):
     from datetime import datetime
     success = datetime.fromtimestamp(last_success).isoformat(timespec='seconds') if last_success else '无'
     scheduler_path = root / 'scheduler.json'
-    scheduler = json.loads(scheduler_path.read_text(encoding='utf-8')).get('status') if scheduler_path.exists() else '待安装'
+    scheduler = json.loads(scheduler_path.read_text(encoding='utf-8')) if scheduler_path.exists() else {}
+    if scheduler.get('status') == 'installed':
+        scheduler_text = '已由系统验证' if scheduler.get('system_verified') else '已缓存（未验证系统任务）'
+    else:
+        scheduler_text = scheduler.get('status', '待安装')
     collector_error = root / 'collector-error.json'
     warning = ''
     if collector_error.exists():
@@ -46,7 +50,7 @@ def diagnostic_status_text(root):
             warning = value.get('error', '')
         except (OSError, ValueError):
             warning = '采集警告状态无法读取'
-    return (f'批次：{dict(counts)}\n最后成功：{success}\n退出后补传任务：{scheduler}'
+    return (f'批次：{dict(counts)}\n最后成功：{success}\n退出后补传任务：{scheduler_text}'
             f'\n最近上传错误：{diagnostic_error_message(upload_error) or "无"}'
             f'\n最近采集警告：{diagnostic_error_message(warning) or "无"}')
 

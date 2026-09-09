@@ -163,7 +163,7 @@ catch { $failed=$true }
             self.assertEqual(run.call_count, 1)
             self.assertEqual(run.call_args.kwargs['creationflags'], subprocess.CREATE_NO_WINDOW)
             ensure_task(self.root)
-            self.assertEqual(run.call_count, 1)
+            self.assertEqual(run.call_count, 2)
         self.assertEqual(json.loads(state.read_text())['revision'], SCHEDULER_REVISION)
 
     @unittest.skipUnless(os.name == 'nt', 'Windows scheduled task')
@@ -180,10 +180,26 @@ catch { $failed=$true }
             ensure_task(self.root)
             self.assertEqual(run.call_count, 1)
             ensure_task(self.root)
-            self.assertEqual(run.call_count, 1)
+            self.assertEqual(run.call_count, 2)
         saved = json.loads(state.read_text())
         self.assertEqual(saved['runtime'], str(Path(sys.executable).resolve()))
         self.assertEqual(saved['working_directory'], str(Path(__file__).resolve().parents[1]))
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows scheduled task')
+    def test_scheduler_cache_does_not_hide_missing_system_task(self):
+        from src.runtime.diagnostic_policy import ensure_task, SCHEDULER_REVISION
+        state = self.root / 'scheduler.json'
+        state.write_text(json.dumps({
+            'status': 'installed', 'root': str(self.root), 'checked_at': time.time(),
+            'revision': SCHEDULER_REVISION, 'runtime': str(Path(sys.executable).resolve()),
+            'working_directory': str(Path(__file__).resolve().parents[1]),
+        }))
+        missing = SimpleNamespace(returncode=1)
+        installed = SimpleNamespace(returncode=0)
+        with patch('src.runtime.diagnostic_policy.subprocess.run', side_effect=(missing, installed)) as run:
+            ensure_task(self.root)
+        self.assertEqual(run.call_count, 2)
+        self.assertTrue(json.loads(state.read_text())['system_verified'])
 
     @unittest.skipUnless(os.name == 'nt', 'Windows scheduled task')
     def test_installer_selects_pythonw_without_registering_real_task(self):

@@ -74,6 +74,15 @@ class TestDiagnosticStatusCard(unittest.TestCase):
             self.assertIn('最近上传错误：SMB worker timed out', status)
             self.assertIn('最近采集警告：image file is truncated', status)
 
+    def test_scheduler_status_distinguishes_cache_from_system_verification(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'scheduler.json').write_text(json.dumps({'status': 'installed'}))
+            self.assertIn('已缓存（未验证系统任务）', diagnostic_status_text(root))
+            (root / 'scheduler.json').write_text(json.dumps({
+                'status': 'installed', 'system_verified': True}))
+            self.assertIn('已由系统验证', diagnostic_status_text(root))
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -11,7 +11,7 @@ from pathlib import Path
 from src.runtime.diagnostic_export import atomic_json
 
 POLICY = 'automatic-v1'
-SCHEDULER_REVISION = 4
+SCHEDULER_REVISION = 5
 DEFAULT_TARGET = r'\\192.168.3.161\xihuojun 共享给我\AI诊断'
 LEGACY_TARGETS = {
     r'\\192.168.3.170\xihuojun 共享给我\AI诊断',
@@ -94,21 +94,29 @@ def ensure_task(root):
         state = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
         runtime = str(Path(sys.executable).resolve())
         working_directory = str(Path(__file__).resolve().parents[2])
-        if (state.get('status') == 'installed' and state.get('root') == str(root)
+        task_name = 'okww-diagnostics-' + installation_id()
+        script = str(Path(__file__).with_name('install_diagnostic_task.ps1'))
+        command = ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                   '-File', script, '-PythonExe', sys.executable, '-Root', str(root),
+                   '-SourceRepo', str(REPO), '-TaskName', task_name]
+        cached = (state.get('status') == 'installed' and state.get('root') == str(root)
                 and state.get('revision') == SCHEDULER_REVISION
                 and state.get('runtime') == runtime
                 and state.get('working_directory') == working_directory
-                and time.time() - state.get('checked_at', 0) < 86400):
-            return
-        result = subprocess.run(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
-                                 '-File', str(Path(__file__).with_name('install_diagnostic_task.ps1')),
-                                 '-PythonExe', sys.executable, '-Root', str(root),
-                                 '-SourceRepo', str(REPO),
-                                 '-TaskName', 'okww-diagnostics-' + installation_id()],
-                                capture_output=True, timeout=20, creationflags=subprocess.CREATE_NO_WINDOW)
+                and time.time() - state.get('checked_at', 0) < 86400)
+        if cached:
+            verified = subprocess.run(command + ['-Verify'], capture_output=True, timeout=20,
+                                      creationflags=subprocess.CREATE_NO_WINDOW)
+            if verified.returncode == 0:
+                state.update(system_verified=True, verified_at=time.time())
+                atomic_json(path, state)
+                return
+        result = subprocess.run(command, capture_output=True, timeout=20,
+                                creationflags=subprocess.CREATE_NO_WINDOW)
         atomic_json(path, {'status': 'installed' if result.returncode == 0 else 'failed',
                            'checked_at': time.time(), 'exit_code': result.returncode, 'root': str(root),
                            'revision': SCHEDULER_REVISION, 'runtime': runtime,
-                           'working_directory': working_directory})
+                           'working_directory': working_directory,
+                           'system_verified': result.returncode == 0})
     except (OSError, subprocess.TimeoutExpired):
         atomic_json(path, {'status': 'failed', 'checked_at': time.time()})

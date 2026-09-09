@@ -1,6 +1,7 @@
 param(
     [switch]$Remove,
     [switch]$Preview,
+    [switch]$Verify,
     [string]$TaskName = 'okww-custom-diagnostics-v1',
     [string]$PythonExe,
     [string]$Root,
@@ -34,6 +35,13 @@ if ($Root) {
     $arguments += ' --root "' + [IO.Path]::GetFullPath($Root) + '"'
 }
 $action = New-ScheduledTaskAction -Execute $pythonExe -Argument $arguments -WorkingDirectory $repo
+if ($Verify) {
+    if ($existing -and $existing.Description -eq $description -and
+        $existing.Actions.Execute -eq $pythonExe -and
+        $existing.Actions.Arguments -eq $arguments -and
+        $existing.Actions.WorkingDirectory -eq $repo) { exit 0 }
+    exit 1
+}
 if ($Preview) {
     $action | Select-Object Execute, Arguments, WorkingDirectory | ConvertTo-Json
     return

@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import os
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 
 from src.runtime.diagnostic_export import atomic_json, digest, safe_path, sanitize_text, validate_manifest
@@ -75,7 +77,19 @@ def upload_one(batch, target):
             if digest(destination.read_bytes()) != digest(data):
                 raise ValueError('existing diagnostic content conflict')
             return
-        pending = destination.with_name(destination.name + '.uploading')
+        stale = [destination.with_name(destination.name + '.uploading')]
+        stale.extend(destination.parent.glob(destination.name + '.uploading.*'))
+        for pending in stale:
+            if pending.is_symlink() or pending.is_junction():
+                raise ValueError('linked upload temporary file')
+            try:
+                if pending.stat().st_size == len(data) and digest(pending.read_bytes()) == digest(data):
+                    pending.replace(destination)
+                    return
+            except FileNotFoundError:
+                pass
+        pending = destination.with_name(
+            destination.name + f'.uploading.{os.getpid()}.{uuid.uuid4().hex}')
         if pending.is_symlink() or pending.is_junction():
             raise ValueError('linked upload temporary file')
         with pending.open('wb') as stream:
@@ -143,7 +157,13 @@ def retry_pending(root, target, *, timeout=30, now=None, transfer=None):
     root = Path(root)
     now = time.time() if now is None else now
     transfer = transfer or bounded_upload
-    with FileLease(root / '.uploader.lock'):
+    try:
+        lease = FileLease(root / '.uploader.lock')
+    except OSError as error:
+        if error.errno in (errno.EACCES, errno.EAGAIN):
+            return False
+        raise
+    with lease:
         recover_sessions(root)
         pending = []
         for ready in root.glob('*/batches/*/_READY'):
@@ -180,6 +200,7 @@ def retry_pending(root, target, *, timeout=30, now=None, transfer=None):
                 atomic_json(batch.parents[1] / 'upload-status.json', dict(state, latest_batch=batch.name))
             except (OSError, ValueError, KeyError) as error:
                 atomic_json(root / 'uploader-error.json', {'error': sanitize_text(error), 'time': now})
+    return True
 
 
 def bounded_upload(batch, target, timeout):
