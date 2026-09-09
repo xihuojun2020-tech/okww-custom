@@ -54,8 +54,8 @@ from src.task.AutoAbyssTask import (
     validate_abyss_resolution,
     validate_selection_state,
 )
+from src.task.BaseCombatTask import CharDeadException, CombatStateUnknown
 from src.task.abyss_team_planner import ROVER_AERO, ROVER_HAVOC, ROVER_SPECTRO, ROVER_UNKNOWN
-from src.task.BaseCombatTask import CharDeadException
 
 
 class TestAutoAbyssTask(unittest.TestCase):
@@ -732,6 +732,52 @@ class TestAutoAbyssTask(unittest.TestCase):
         self.assertIn(("walk", "开启挑战"), events)
         self.assertIn(("pick",), events)
         self.assertTrue(any(event[0] == "warning" for event in events))
+
+    def test_unknown_combat_state_accepts_confirmed_abyss_success(self):
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        reset = unittest.mock.Mock()
+        task.chars = [SimpleNamespace(reset_state=reset), None]
+        task._run_floor_combat = lambda *_args: (_ for _ in ()).throw(
+            CombatStateUnknown("liberation ended without combat evidence")
+        )
+        task._wait_abyss_result = lambda: ("continue", "continue-button")
+        task.log_warning = unittest.mock.Mock()
+
+        self.assertEqual(
+            task._run_combat_and_wait_result("深境之塔", 2),
+            ("continue", "continue-button"),
+        )
+        reset.assert_called_once_with()
+        task.log_warning.assert_called_once()
+
+    def test_unknown_combat_state_accepts_confirmed_abyss_failure(self):
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task.chars = []
+        task._run_floor_combat = lambda *_args: (_ for _ in ()).throw(
+            CombatStateUnknown("combat state unknown")
+        )
+        task._wait_abyss_result = lambda: ("failed", "return-button")
+        task.log_warning = unittest.mock.Mock()
+
+        self.assertEqual(
+            task._run_combat_and_wait_result("深境之塔", 2),
+            ("failed", "return-button"),
+        )
+
+    def test_unknown_combat_state_is_preserved_when_result_is_missing(self):
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        original = CombatStateUnknown("original combat failure")
+        result_error = RuntimeError("result page missing")
+        task.chars = []
+        task._run_floor_combat = lambda *_args: (_ for _ in ()).throw(original)
+        task._wait_abyss_result = lambda: (_ for _ in ()).throw(result_error)
+        task.log_warning = unittest.mock.Mock()
+
+        with self.assertRaises(CombatStateUnknown) as caught:
+            task._run_combat_and_wait_result("深境之塔", 2)
+
+        self.assertIs(caught.exception, original)
+        self.assertIs(caught.exception.__cause__, result_error)
 
     def test_abyss_death_handler_closes_popup_without_teleporting(self):
         events = []

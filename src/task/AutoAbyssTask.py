@@ -19,7 +19,7 @@ from src.task.abyss_team_planner import (
     effective_character_id,
     plan_team,
 )
-from src.task.BaseCombatTask import BaseCombatTask, CharDeadException
+from src.task.BaseCombatTask import BaseCombatTask, CharDeadException, CombatStateUnknown
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task_status import publish_task_status
 from src.task.abyss_allocation import (
@@ -1109,6 +1109,25 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             raise Exception("战斗结束后未能完整识别深塔结算页")
         return result["value"]
 
+    def _run_combat_and_wait_result(self, tower_name, floor_number):
+        combat_error = None
+        try:
+            self._run_floor_combat(tower_name, floor_number)
+        except CombatStateUnknown as error:
+            combat_error = error
+            self.log_warning(
+                f"{tower_name}第 {floor_number} 层战斗状态未确认，等待深塔结算页复核：{error}"
+            )
+            for char in getattr(self, "chars", []):
+                if char:
+                    char.reset_state()
+        try:
+            return self._wait_abyss_result()
+        except Exception as result_error:
+            if combat_error is not None:
+                raise combat_error from result_error
+            raise
+
     def _fight_selected_tower(self, tower_name, first_floor_index, team_energy=None):
         """Fight until the tower ends or the current team cannot afford the next floor."""
         cleared = 0
@@ -1118,8 +1137,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             self._set_status("开启挑战", f"正在确认并进入{tower_name}第 {floor_number} 层")
             self._click_start_challenge()
             self._prepare_challenge_map(tower_name, floor_number)
-            self._run_floor_combat(tower_name, floor_number)
-            state, button = self._wait_abyss_result()
+            state, button = self._run_combat_and_wait_result(tower_name, floor_number)
             if state == "continue":
                 cleared += 1
                 if floor_index + 1 >= len(FLOOR_ROWS):
