@@ -1,5 +1,5 @@
 <div align="center">
-  <p>新版界面：<a href="docs/references/account-naming-rules.md">1.50.06 补全账号名称显示</a> · <a href="docs/references/flat-ui.md">修复账号保存后卡顿</a> · <a href="docs/references/auto-combat-recovery.md">自动战斗手动重启保护</a></p>
+  <p>当前版本：<a href="docs/references/multi-account-retry.md">1.51.00 多账号失败恢复与队尾补跑</a> · <a href="docs/references/account-naming-rules.md">完整账号名称显示</a> · <a href="docs/references/flat-ui.md">统一界面</a></p>
   <h1 align="center">
     <img src="icons/icon.png" width="200" alt="ok-ww logo"/>
     <br/>

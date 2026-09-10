@@ -13,7 +13,8 @@ Navigation and theme settings live in `mkdocs.yml` at the repository root.
 
 ## Architecture and code review
 
-- [程序结构说明（1.50.06）](程序结构说明.md)
+- [程序结构说明（1.51.00）](程序结构说明.md)
+- [多账号失败恢复与队尾补跑（1.51.00）](references/multi-account-retry.md)
 - [账号命名与配置规则（1.50.06）](references/account-naming-rules.md)
 - [自动战斗手动重启保护（1.48.00）](references/auto-combat-recovery.md)
 - [功能分类、统一 Fluent 控件与账号显示（1.50.06）](references/flat-ui.md)

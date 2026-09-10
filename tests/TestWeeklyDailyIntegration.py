@@ -110,6 +110,7 @@ class TestWeeklyDailyIntegration(unittest.TestCase):
 
     def test_weekly_only_does_not_rerun_daily(self):
         task = object.__new__(MultiAccountDailyTask)
+        task.info_set = Mock()
         task._require_daily_profile = Mock()
         task._daily_is_done = Mock(return_value=True)
         task.get_task_by_class = Mock()

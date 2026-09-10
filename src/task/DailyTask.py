@@ -474,7 +474,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 self.record_last_completed('Nightmare Nest', profile_id=getattr(self, '_verified_profile_id', None))
             except TaskDisabledException:
                 raise
-            except ConfigIntegrityBlocked:
+            except (ConfigIntegrityBlocked, ConfigWriteBlocked):
                 raise
             except (GameProcessLost, FrameUnavailable):
                 raise
@@ -524,7 +524,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 self.record_last_completed(
                     'Nightmare Nest', profile_id=getattr(self, '_verified_profile_id', None))
                 _, daily_reward_ready = self.open_daily()
-            except (TaskDisabledException, ConfigIntegrityBlocked, GameProcessLost, FrameUnavailable):
+            except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked, GameProcessLost, FrameUnavailable):
                 raise
             except Exception as error:
                 nightmare_error = error
@@ -1084,10 +1084,11 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             profile['last_completed'] = last
             profiles[active] = profile
             self.save_daily_profiles(profiles)
-        except ConfigIntegrityBlocked:
+        except (ConfigIntegrityBlocked, ConfigWriteBlocked):
             raise
         except Exception as e:
             self.log_error('record last completed failed', e)
+            raise ConfigWriteBlocked('任务完成记录写入失败') from e
 
     def get_readonly_last_completed(self, task_name):
         """Keep completion labels available while configuration needs repair."""
@@ -1807,7 +1808,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             self.record_last_completed('Weekly Garden', profile_id=getattr(self, '_verified_profile_id', None))
         except TaskDisabledException:
             raise
-        except ConfigIntegrityBlocked:
+        except (ConfigIntegrityBlocked, ConfigWriteBlocked):
             raise
         except Exception as e:
             self.log_error("GardenTask Failed", e)
@@ -1825,7 +1826,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             self.record_last_completed('Merge Echo', profile_id=getattr(self, '_verified_profile_id', None))
         except TaskDisabledException:
             raise
-        except ConfigIntegrityBlocked:
+        except (ConfigIntegrityBlocked, ConfigWriteBlocked):
             raise
         except Exception as e:
             self.log_error("MergeEchoTask Failed", e)

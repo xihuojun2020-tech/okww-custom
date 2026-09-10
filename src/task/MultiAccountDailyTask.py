@@ -695,7 +695,59 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _today(self):
         from datetime import datetime
-        return datetime.now().strftime('%Y-%m-%d')
+        return getattr(self, '_progress_date', None) or datetime.now().strftime('%Y-%m-%d')
+
+    def _check_progress_date(self):
+        from datetime import datetime
+        if getattr(self, '_progress_date', None) not in (None, datetime.now().strftime('%Y-%m-%d')):
+            raise TaskDisabledException('日期已变化，请重新启动多账号任务以建立新一天的进度')
+
+    def _load_failed_accounts(self):
+        if self.integrity_service is not None:
+            values = self.integrity_service.get_progress(f'multi_account_failures:{self._today()}', {})
+        else:
+            values = (read_json_file(PROGRESS_FILE) or {}).get(f'failures:{self._today()}', {})
+        if not isinstance(values, dict) or any(not isinstance(v, dict) for v in values.values()):
+            raise ConfigIntegrityBlocked('多账号失败记录格式异常，请先检查运行记录')
+        return values
+
+    def _resolve_failure(self, account):
+        key = MultiAccountDailyTask._failure_key(self, account)
+        record = (getattr(self, 'failed_accounts', {}) or {}).get(key)
+        if record and record.get('status') != 'resolved':
+            from datetime import datetime
+            previous = dict(record)
+            record.update(status='resolved', resolved_at=datetime.now().isoformat())
+            try:
+                self._save_failed_accounts()
+            except Exception:
+                self.failed_accounts[key] = previous
+                raise
+            self.info_set('Failed', [item['account'] for item in self.failed_accounts.values()
+                                     if item.get('status') != 'resolved'])
+
+    def _reconcile_failures(self, sequence):
+        from datetime import datetime
+        for account in sequence:
+            key = self._failure_key(account)
+            record = getattr(self, 'failed_accounts', {}).get(key)
+            if not record or record.get('status') == 'resolved' or record.get('scope') == 'weekly':
+                continue
+            completion = (self.integrity_service.get_completion(key, 'Daily Task')
+                          if self.integrity_service is not None else
+                          ((self._load_profiles().get(account) or {}).get('last_completed') or {}).get('Daily Task'))
+            try:
+                later = (str(completion).startswith(self._today()) and
+                         datetime.fromisoformat(completion).timestamp() >
+                         datetime.fromisoformat(record['failed_at']).timestamp())
+            except (KeyError, TypeError, ValueError):
+                later = False
+            if later:
+                self._resolve_failure(account)
+            else:
+                self.done_set.discard(key)
+                self.done_set.discard(account)
+        self.info_set('Failed', [profile_status_label(a) for a in sequence if self._is_failed(a)])
 
     def _load_today_progress(self):
         """读取今天的已完成账号记录。"""
@@ -721,14 +773,12 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             write_json_file(PROGRESS_FILE, data)
         except Exception as e:
             logger.error('save progress failed', e)
+            raise ConfigWriteBlocked('多账号完成记录写入失败') from e
 
     def _save_failed_accounts(self):
         failures = dict(getattr(self, 'failed_accounts', {}) or {})
         if self.integrity_service is not None:
-            try:
-                self.integrity_service.set_progress(f'multi_account_failures:{self._today()}', failures)
-            except Exception as error:
-                logger.error('save account failures failed', error)
+            self.integrity_service.set_progress(f'multi_account_failures:{self._today()}', failures)
             return
         try:
             data = read_json_file(PROGRESS_FILE) or {}
@@ -738,6 +788,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             write_json_file(PROGRESS_FILE, data)
         except Exception as error:
             logger.error('save account failures failed', error)
+            raise ConfigWriteBlocked('多账号失败记录写入失败') from error
 
     # ==================== 提醒预留模块 ====================
 
@@ -752,6 +803,10 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
     # ==================== 主流程 ====================
 
     def run(self):
+        from datetime import datetime
+        self._progress_date = datetime.now().strftime('%Y-%m-%d')
+        self._account_attempts = {}
+        self._retry_phase = False
         self._weekly_attempted = set()
         self._weekly_pending = {}
         self.clear_run_snapshot()
@@ -763,10 +818,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             self.integrity_service.guard_task_start()
         WWOneTimeTask.run(self)
         self.done_set.clear()
-        if not hasattr(self, 'failed_accounts'):
-            self.failed_accounts = {}
-        else:
-            self.failed_accounts.clear()
+        self.failed_accounts = self._load_failed_accounts()
         self._game_restart_attempted = False
         self.all_accounts.clear()
         # 把本任务勾选的序列账号同步到统一归属数据（多账号任务为归属编辑入口，每日任务联动读取）
@@ -884,6 +936,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             # 断点恢复：加载今日已完成账号
             for done in self._load_today_progress():
                 self.done_set.add(done)
+            reconcile = getattr(self, '_reconcile_failures', None)
+            if callable(reconcile):
+                reconcile(sequence)
             if self.done_set:
                 labels = MultiAccountDailyTask._done_status_labels(self)
                 self.log_info(f'检测到今日已完成账号（断点恢复）: {labels}', notify=True)
@@ -1069,6 +1124,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _daily_is_done(self, account):
         """账号是否已完成：多账号断点记录，或今天已单独跑过该账号的每日任务（方案文件 last_completed）。"""
+        record = getattr(self, 'failed_accounts', {}).get(MultiAccountDailyTask._failure_key(self, account), {})
+        if record and record.get('status') != 'resolved' and record.get('scope') != 'weekly':
+            return False
         if self.integrity_service is not None:
             identity = self._profile_id_for(account)
             if account in self.done_set or identity in self.done_set:
@@ -1908,27 +1966,49 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         return account
 
     def _is_failed(self, account):
-        return self._failure_key(account) in (getattr(self, 'failed_accounts', {}) or {})
+        record = (getattr(self, 'failed_accounts', {}) or {}).get(MultiAccountDailyTask._failure_key(self, account))
+        return bool(record and record.get('status') != 'resolved')
 
     def _mark_failed(self, account, error):
+        from datetime import datetime
         stage = ''
         info = getattr(self, 'info', None)
         if isinstance(info, dict):
             stage = str(info.get('current task') or '')
         reason = f'{type(error).__name__}: {error}'
-        self.failed_accounts[self._failure_key(account)] = {
+        key = self._failure_key(account)
+        previous = self.failed_accounts.get(key, {})
+        history = list(previous.get('history', []))
+        if previous:
+            history.append({k: v for k, v in previous.items() if k != 'history'})
+        self.failed_accounts[key] = {
             'account': profile_status_label(account),
             'stage': stage,
             'reason': reason,
+            'status': 'pending',
+            'failed_at': datetime.now().isoformat(),
+            'attempt': getattr(self, '_account_attempts', {}).get(self._failure_key(account), 1),
+            'scope': getattr(self, '_attempt_scope', 'daily'),
+            'history': history,
         }
         self._save_failed_accounts()
-        self.info_set('Failed', [item['account'] for item in self.failed_accounts.values()])
+        self.info_set('Failed', [item['account'] for item in self.failed_accounts.values()
+                                 if item.get('status') != 'resolved'])
         _publish_status_safe(
             self, account=account, stage='执行失败', detail=reason,
         )
 
     def _run_daily_account(self, account):
         """Run one account atomically; only successful accounts enter done_set."""
+        MultiAccountDailyTask._check_progress_date(self)
+        if not hasattr(self, '_account_attempts'):
+            self._account_attempts = {}
+        key = MultiAccountDailyTask._failure_key(self, account)
+        self._account_attempts[key] = self._account_attempts.get(key, 0) + 1
+        phase = '失败补跑 1/1' if getattr(self, '_retry_phase', False) else '正常执行'
+        self.info_set('执行轮次', phase)
+        _publish_status_safe(self, account=account, stage=phase, detail='从每日任务入口开始执行')
+        self._attempt_scope = 'daily'
         try:
             self._require_daily_profile(account)
             if not hasattr(self, '_weekly_attempted'):
@@ -1936,6 +2016,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             self._weekly_attempted.add(account)
             daily_done = getattr(self, '_daily_is_done', None)
             if callable(daily_done) and daily_done(account):
+                self._attempt_scope = 'weekly'
                 self.get_task_by_class(DailyTask).run_weekly_boss_only()
             else:
                 self.run_task_by_class(DailyTask)
@@ -1943,7 +2024,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             raise
         except Exception as error:
             self._mark_failed(account, error)
-            self.log_error(f'账号 {profile_status_label(account)} 每日任务失败，保留断点并跳过', error)
+            self.log_error(f'账号 {profile_status_label(account)} {phase}失败，保留记录并继续调度', error)
             try:
                 self.screenshot(f'multi_account_{profile_status_label(account)}_failed')
             except Exception:
@@ -1962,6 +2043,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             self.log_info(f'账号 {profile_status_label(account)} 每日任务完成', notify=True)
         self._mark_done(account)
         self._save_today_progress()
+        MultiAccountDailyTask._resolve_failure(self, account)
         return True, None
 
     def _game_window_available(self):
@@ -1991,7 +2073,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             else:
                 self._wait_login_screen_stable(time_out=120)
             return True
-        except TaskDisabledException:
+        except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked):
             raise
         except Exception as error:
             self.log_error('受控启动游戏失败', error)
@@ -2006,7 +2088,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 self.ensure_main(time_out=100)
                 self._switch_to_login()
                 return True
-            except TaskDisabledException:
+            except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked):
                 raise
             except Exception as recovery_error:
                 self.log_error(
@@ -2687,23 +2769,33 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _next_target_account(self):
         """Return the next unfinished account in the fixed rotation selected before the run."""
+        MultiAccountDailyTask._check_progress_date(self)
         snapshot = getattr(self, '_active_run_snapshot', None)
         if snapshot is not None:
             names = {p['profile_id']: str(p['account'].get('display_name') or p['profile_id']) for p in snapshot.profiles}
-            return next((names[pid] for pid in self._run_profile_order
-                         if not self._is_done(names[pid]) and not self._is_failed(names[pid])), None)
-        sequence = self.get_sequence_accounts()
+            sequence = [names[pid] for pid in self._run_profile_order]
+            retry_order = [names[p['profile_id']] for p in snapshot.profiles]
+        else:
+            sequence = self.get_sequence_accounts()
+            retry_order = list(sequence)
         if not sequence:
             return None
-        start = (self.config.get(CURRENT_ACCOUNT) or '').strip()
+        start = (self.config.get(CURRENT_ACCOUNT) or '').strip() if snapshot is None else ''
         if start:
             for i, acc in enumerate(sequence):
                 if self._same_account(acc, start):
                     sequence = sequence[i:] + sequence[:i]
                     break
-        for acc in sequence:
-            failed = getattr(self, '_is_failed', None)
-            if not self._is_done(acc) and not (callable(failed) and failed(acc)):
+        attempts = getattr(self, '_account_attempts', {})
+        if not getattr(self, '_retry_phase', False):
+            for acc in sequence:
+                if ((MultiAccountDailyTask._is_failed(self, acc) or not self._is_done(acc))
+                        and not attempts.get(MultiAccountDailyTask._failure_key(self, acc), 0)):
+                    return acc
+        for acc in retry_order:
+            if (MultiAccountDailyTask._is_failed(self, acc) and
+                    attempts.get(MultiAccountDailyTask._failure_key(self, acc), 0) < 2):
+                self._retry_phase = True
                 return acc
         return None
 
@@ -2741,7 +2833,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             if getattr(self, '_active_run_snapshot', None) is None:
                 self.config[DAILY_PROFILE] = profile_name
             return True
-        except TaskDisabledException:
+        except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked):
             raise
         except Exception as e:
             self.log_error(f'联动每日任务方案失败: {profile_status_label(profile_name)}', e)
@@ -2761,9 +2853,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 raise ConfigWriteBlocked(integrity_service.describe(result))
         profiles = self._load_profiles()
         if not profile_name or profile_name not in profiles:
-            raise Exception(f'账号方案不存在，已停止每日任务: {profile_name or "未识别"}')
+            raise ConfigIntegrityBlocked(f'账号方案不存在，已停止每日任务: {profile_name or "未识别"}')
         if not self._link_daily_profile(profile_name):
-            raise Exception(f'无法联动每日任务方案，已停止执行: {profile_status_label(profile_name)}')
+            raise ConfigIntegrityBlocked(f'无法联动每日任务方案，已停止执行: {profile_status_label(profile_name)}')
         # Repeat the binding at the execution boundary and verify the ID from
         # the same validated profile map used by this task.
         daily_task = getattr(self, 'get_task_by_class', lambda *_: None)(DailyTask)
@@ -3332,7 +3424,12 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _finish_sequence(self, current_account=None):
         """Summarize without performing any login, logout or recovery inputs."""
-        failures = list((getattr(self, 'failed_accounts', {}) or {}).values())
+        snapshot = getattr(self, '_active_run_snapshot', None)
+        sequence = ([str(p['account'].get('display_name') or p['profile_id']) for p in snapshot.profiles]
+                    if snapshot is not None else getattr(self, 'get_sequence_accounts', lambda: None)())
+        keys = {MultiAccountDailyTask._failure_key(self, a) for a in sequence} if sequence is not None else None
+        failures = [v for k, v in (getattr(self, 'failed_accounts', {}) or {}).items()
+                    if v.get('status') != 'resolved' and (keys is None or k in keys)]
         title = '多账号每日任务部分失败' if failures else '多账号每日任务完成'
         failure_text = ''
         pending = getattr(self, '_weekly_pending', {})

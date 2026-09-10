@@ -21,6 +21,230 @@ from src.task.WWOneTimeTask import WWOneTimeTask
 from src.win32_login_input import ForegroundResult, LoginClickDelivery
 
 
+class TestPersistentDailyRetry(unittest.TestCase):
+    def make_task(self, service=None, start='A1'):
+        from unittest.mock import Mock
+        task = object.__new__(MultiAccountDailyTask)
+        task.integrity_service = service
+        task.config = {CURRENT_ACCOUNT: start}
+        task.done_set = set()
+        task.failed_accounts = {}
+        task._account_attempts = {}
+        task._retry_phase = False
+        task._profile_id_for = lambda name: 'id-' + name
+        task.get_sequence_accounts = lambda: ['A1', 'A2', 'A3', 'A4']
+        task._load_profiles = lambda: {}
+        task._require_daily_profile = Mock()
+        task.run_task_by_class = Mock()
+        task.get_task_by_class = Mock(return_value=SimpleNamespace(info={}))
+        task.info = {}
+        task.info_set = Mock()
+        task.log_info = task.log_error = task.screenshot = task._notify_user = Mock()
+        task.ensure_main = Mock()
+        task._switch_to_login = Mock()
+        task._save_today_progress = Mock()
+        task._save_failed_accounts = Mock()
+        return task
+
+    def execute(self, task, account, fail=False):
+        task.run_task_by_class.side_effect = RuntimeError('test failure') if fail else None
+        return task._run_daily_account(account)
+
+    def test_normal_then_retry_once_in_sequence_order(self):
+        task = self.make_task()
+        observed = []
+        while account := task._next_target_account():
+            self.assertEqual(task._next_target_account(), account)  # Peeking cannot spend a retry.
+            observed.append(account)
+            self.execute(task, account, fail=account in ('A2', 'A3'))
+            self.assertLessEqual(len(observed), 6)
+        self.assertEqual(observed, ['A1', 'A2', 'A3', 'A4', 'A2', 'A3'])
+        self.assertTrue(task._is_failed('A3'))
+        self.assertEqual(task.failed_accounts['A3']['attempt'], 2)
+        self.assertEqual(len(task.failed_accounts['A3']['history']), 1)
+
+    def test_successful_retry_resolves_without_returning_to_first_account(self):
+        task = self.make_task()
+        for account in ['A1', 'A2', 'A3', 'A4']:
+            self.execute(task, account, fail=account == 'A3')
+        self.assertEqual(task._next_target_account(), 'A3')
+        self.execute(task, 'A3')
+        self.assertIsNone(task._next_target_account())
+        self.assertEqual(task.failed_accounts['A3']['status'], 'resolved')
+        task._switch_to_login.reset_mock()
+        task._advance_after_account('A3', True, None)
+        task._switch_to_login.assert_not_called()
+        self.assertIn('停留在账号 A3', task._notify_user.call_args.args[1])
+
+    def test_restart_from_failed_or_later_account_preserves_pending(self):
+        import copy
+        task = self.make_task()
+        self.execute(task, 'A1')
+        self.execute(task, 'A2')
+        self.execute(task, 'A3', fail=True)
+        for start, expected in [('A3', ['A3', 'A4']), ('A4', ['A4', 'A3'])]:
+            restarted = self.make_task(start=start)
+            restarted.failed_accounts = copy.deepcopy(task.failed_accounts)
+            restarted.done_set = set(task.done_set)
+            actual = []
+            while account := restarted._next_target_account():
+                actual.append(account)
+                self.execute(restarted, account)
+            self.assertEqual(actual, expected)
+            self.assertFalse(restarted._is_failed('A3'))
+
+    def test_persistent_uuid_reconciliation_requires_later_completion(self):
+        import tempfile
+        from datetime import datetime, timedelta
+        from tests.fixture_support import make_account_environment, synthetic_identity
+        with tempfile.TemporaryDirectory() as root:
+            env = make_account_environment(root)
+            task = self.make_task(env.integrity)
+            task._profile_id_for = lambda name: synthetic_identity(name)['profile_id']
+            task._save_failed_accounts = lambda: MultiAccountDailyTask._save_failed_accounts(task)
+            self.execute(task, 'A3', fail=True)
+            key = task._failure_key('A3')
+            self.assertEqual(task._load_failed_accounts()[key]['status'], 'pending')
+            failed_at = datetime.fromisoformat(task.failed_accounts[key]['failed_at'])
+            for offset, resolved in [(-1, False), (0, False), (1, True)]:
+                env.integrity.record_completion(key, 'Daily Task', (failed_at + timedelta(seconds=offset)).isoformat())
+                task.failed_accounts = task._load_failed_accounts()
+                task.done_set.add(key)
+                task._reconcile_failures(['A3'])
+                self.assertEqual(not task._is_failed('A3'), resolved)
+            self.assertEqual(task._load_failed_accounts()[key]['status'], 'resolved')
+
+    def test_old_completion_and_done_set_cannot_hide_pending_failure(self):
+        from datetime import datetime
+        task = self.make_task()
+        self.execute(task, 'A3', fail=True)
+        task.done_set.add('A3')
+        task._load_profiles = lambda: {'A3': {'last_completed': {'Daily Task': datetime.now().isoformat()}}}
+        self.assertFalse(task._daily_is_done('A3'))
+        task.failed_accounts['A3'].pop('failed_at')  # Legacy records have no reliable chronology.
+        task._reconcile_failures(['A3'])
+        self.assertTrue(task._is_failed('A3'))
+        self.assertNotIn('A3', task.done_set)
+
+    def test_completion_persisted_before_failure_resolution(self):
+        task = self.make_task()
+        self.execute(task, 'A3', fail=True)
+        events = []
+        task._save_today_progress.side_effect = lambda: events.append('completion')
+        task._save_failed_accounts.side_effect = lambda: events.append('resolution')
+        self.execute(task, 'A3')
+        self.assertEqual(events, ['completion', 'resolution'])
+
+    def test_write_failure_keeps_failure_pending_and_stops(self):
+        from src.config_integrity import ConfigWriteBlocked
+        for failure_writer in ('_save_today_progress', '_save_failed_accounts'):
+            task = self.make_task()
+            self.execute(task, 'A3', fail=True)
+            getattr(task, failure_writer).side_effect = ConfigWriteBlocked('disk unavailable')
+            with self.assertRaises(ConfigWriteBlocked):
+                self.execute(task, 'A3')
+            self.assertTrue(task._is_failed('A3'))
+
+    def test_stop_and_integrity_errors_never_start_retry(self):
+        from src.config_integrity import ConfigWriteBlocked
+        for error in (TaskDisabledException(), ConfigIntegrityBlocked('identity mismatch'), ConfigWriteBlocked('blocked')):
+            task = self.make_task()
+            task._require_daily_profile.side_effect = error
+            with self.assertRaises(type(error)):
+                self.execute(task, 'A3')
+            task.run_task_by_class.assert_not_called()
+            self.assertEqual(task.failed_accounts, {})
+
+    def test_other_sequence_failure_is_not_executed_or_summarized(self):
+        task = self.make_task()
+        task.failed_accounts = {'A9': {'account': 'A9', 'status': 'pending'}}
+        task.done_set = set(task.get_sequence_accounts())
+        self.assertIsNone(task._next_target_account())
+        task._finish_sequence('A4')
+        self.assertEqual(task._notify_user.call_args.args[0], '多账号每日任务完成')
+
+    def test_date_boundary_stops_before_input(self):
+        task = self.make_task()
+        task._progress_date = '2000-01-01'
+        with self.assertRaises(TaskDisabledException):
+            task._next_target_account()
+        with self.assertRaises(TaskDisabledException):
+            self.execute(task, 'A3')
+        task._require_daily_profile.assert_not_called()
+
+    def test_full_entry_used_for_daily_retry_without_deleting_reward_records(self):
+        task = self.make_task()
+        profiles = {'A3': {'last_completed': {'Weekly Garden': 'existing', 'Weekly Boss': 'existing'}}}
+        task._load_profiles = lambda: profiles
+        self.execute(task, 'A3', fail=True)
+        self.execute(task, 'A3')
+        self.assertEqual(task.run_task_by_class.call_count, 2)
+        self.assertEqual(profiles['A3']['last_completed'], {'Weekly Garden': 'existing', 'Weekly Boss': 'existing'})
+        self.assertEqual(task._require_daily_profile.call_count, 2)
+
+    def test_real_run_loop_relogs_failed_account_after_other_accounts(self):
+        from unittest.mock import Mock
+        for first_state in ('world', 'login'):
+            task = self.make_task()
+            task._classify_start_state = Mock(return_value=first_state)
+            logins, executions = [], []
+            task.switch_to_account = lambda account: logins.append(account) or account
+            task._require_daily_profile = lambda account: setattr(task, 'selected', account)
+            def daily(_task_class):
+                executions.append(task.selected)
+                if task.selected == 'A3' and executions.count('A3') == 1:
+                    raise RuntimeError('recoverable')
+            task.run_task_by_class.side_effect = daily
+            with patch.object(MultiAccountDailyTask, '_prepare_login_after_account_failure', return_value=True):
+                task._run_inner(_startup_context=(task.get_sequence_accounts(), 'A1', 'A1'))
+            self.assertEqual(executions, ['A1', 'A2', 'A3', 'A4', 'A3'])
+            self.assertEqual(logins, executions if first_state == 'login' else executions[1:])
+            self.assertEqual(task._notify_user.call_args.args[0], '多账号每日任务完成')
+
+    def test_weekly_failure_retry_does_not_repeat_daily(self):
+        from unittest.mock import Mock
+        task = self.make_task()
+        task.done_set.add('A3')
+        child = SimpleNamespace(info={}, run_weekly_boss_only=Mock(side_effect=[RuntimeError('weekly'), None]))
+        task.get_task_by_class.return_value = child
+        self.assertFalse(task._run_daily_account('A3')[0])
+        self.assertEqual(task.failed_accounts['A3']['scope'], 'weekly')
+        self.assertTrue(task._run_daily_account('A3')[0])
+        task.run_task_by_class.assert_not_called()
+        self.assertEqual(child.run_weekly_boss_only.call_count, 2)
+
+    def test_restart_resets_budget_but_loads_failures(self):
+        from unittest.mock import Mock
+        task = self.make_task()
+        task._account_attempts = {'A3': 2}
+        task._retry_phase = True
+        failure = {'A3': {'account': 'A3', 'status': 'pending'}}
+        task._load_failed_accounts = Mock(return_value=failure)
+        task.clear_run_snapshot = Mock()
+        task.all_accounts = set()
+        task._sync_local_to_sequences = Mock()
+        task.get_task_by_class.return_value = None
+        task.run_coordinator = Mock()
+        from contextlib import nullcontext
+        task.account_input_guard = lambda *_: nullcontext()
+        observed = []
+        task._run_inner = lambda: observed.append((dict(task.failed_accounts), dict(task._account_attempts), task._retry_phase))
+        with patch('src.task.MultiAccountDailyTask.require_account_runtime_for_task'), patch.object(WWOneTimeTask, 'run'):
+            task.run()
+        self.assertEqual(observed, [(failure, {}, False)])
+
+    def test_daily_completion_write_errors_propagate(self):
+        from unittest.mock import Mock
+        from src.config_integrity import ConfigWriteBlocked
+        daily = object.__new__(DailyTask)
+        daily.integrity_service = Mock()
+        daily._active_profile_id = Mock(return_value='id-A3')
+        daily.log_error = Mock()
+        daily.integrity_service.record_completion.side_effect = OSError('disk full')
+        with self.assertRaises(ConfigWriteBlocked):
+            daily.record_last_completed('Daily Task', profile_id='id-A3')
+
+
 class AccountBox:
     def __init__(self, name, x=10, y=20, width=100, height=20):
         self.name = name
