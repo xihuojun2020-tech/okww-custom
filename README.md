@@ -1,5 +1,5 @@
 <div align="center">
-  <p>新版功能：<a href="docs/references/auto-combat-recovery.md">1.48.00 自动战斗手动重启保护</a> · <a href="docs/references/flat-ui.md">五页统一分类界面</a></p>
+  <p>新版界面：<a href="docs/references/flat-ui.md">1.50.00 原版 Fluent 任务页样板</a> · <a href="docs/references/auto-combat-recovery.md">自动战斗手动重启保护</a></p>
   <h1 align="center">
     <img src="icons/icon.png" width="200" alt="ok-ww logo"/>
     <br/>

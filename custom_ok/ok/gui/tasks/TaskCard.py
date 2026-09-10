@@ -11,7 +11,7 @@ logger = Logger.get_logger(__name__)
 
 
 class TaskCard(ConfigCard):
-    def __init__(self, task: BaseTask, onetime):
+    def __init__(self, task: BaseTask, onetime, *, fluent_sample=False):
         config_type = dict(task.config_type or {})
         if type(task).__name__ == 'DailyTask':
             config_type['Manage Daily Profiles'] = {'type': 'button', 'text': '编辑账号计划',
@@ -89,6 +89,47 @@ class TaskCard(ConfigCard):
 
         self.update_buttons(self.task)
         communicate.task.connect(self.update_buttons)
+        if fluent_sample:
+            self._apply_fluent_sample()
+
+    def _apply_fluent_sample(self):
+        """Task-page pilot only; shared configuration and execution stay unchanged."""
+        from src.gui.CodexTheme import COLORS
+        from src.gui.navigation_sections import task_category
+        from PySide6.QtCore import QSize
+        import re
+        # Display-only cleanup: task names remain stable for config and execution.
+        self.card.titleLabel.setText(re.sub(r'^[^\w]+', '', self.card.titleLabel.text()))
+        if not self.task.icon:
+            icon = {'每日执行': FluentIcon.CALENDAR, '每周任务': FluentIcon.SYNC,
+                    '声骸获取与整理': FluentIcon.BOOK_SHELF}.get(task_category(self.task), FluentIcon.GAME)
+            self.card.icon_label.setPixmap(icon.icon().pixmap(QSize(20, 20)))
+        self.setObjectName('fluentTaskSample')
+        self.viewLayout.removeWidget(self.card.contentLabel)
+        self.card.text_layout.addWidget(self.card.contentLabel)
+        self.card.contentLabel.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self._expand_enabled = bool(self.config_widgets or self.reset_config or
+                                    self.task.show_create_shortcut or self.task.instructions or self.edit_button)
+        self.card.expandButton.setVisible(self._expand_enabled)
+        if not self._expand_enabled:
+            self.card.layout_row.addSpacing(self.card.expandButton.width() + self.card.layout_row.spacing())
+        self.setExpand(self.isExpand)
+        self.rootLayout.setContentsMargins(0, 0, 0, 0)
+        self.rootLayout.setSpacing(0)
+        self.card.setMinimumHeight(76)
+        self.card.layout_row.setContentsMargins(16, 12, 12, 12)
+        self.viewLayout.setContentsMargins(16, 12, 16, 16)
+        self.view.setObjectName('fluentTaskDetails')
+        self.setStyleSheet(f'''
+            QWidget#fluentTaskSample {{ background: {COLORS['panel']};
+                border: 1px solid {COLORS['border']}; border-radius: 8px; }}
+            QWidget#fluentTaskSample QWidget#disclosureHeader {{
+                background: transparent; border: 0; border-radius: 8px; }}
+            QWidget#fluentTaskSample QWidget#disclosureHeader:hover {{
+                background: {COLORS['hover']}; }}
+            QWidget#fluentTaskDetails {{ border: 0;
+                border-top: 1px solid {COLORS['border']}; }}
+        ''')
 
     def open_account_editor(self):
         # Navigation only: never reload the selected account or discard a draft.

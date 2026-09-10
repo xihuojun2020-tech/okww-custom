@@ -39,6 +39,78 @@ class TestFlatUI(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
         apply_codex_light_theme(cls.app)
 
+    def test_fluent_sample_description_and_actions(self):
+        from ok.gui.tasks.TaskCard import TaskCard
+        from PySide6.QtTest import QTest
+        for sample in (False, True):
+            with self.subTest(sample=sample), \
+                 patch.object(og, 'app', SimpleNamespace(tr=str, start_controller=SimpleNamespace(start=Mock()))), \
+                 patch.object(og, 'executor', SimpleNamespace(waiting_for_task=lambda _: '')):
+                task = example_task()
+                card = TaskCard(task, True, fluent_sample=sample)
+                card.resize(760, 500)
+                card.show()
+                self.app.processEvents()
+                self.assertFalse(card.isExpand)
+                self.assertEqual(card.card.contentLabel.isVisible(), sample)
+                self.assertEqual(card.objectName(), 'fluentTaskSample' if sample else 'configSection')
+                QTest.mouseClick(card.start_button, Qt.LeftButton)
+                og.app.start_controller.start.assert_called_once_with(task)
+                self.assertFalse(card.isExpand)
+                QTest.mouseClick(card.card.titleLabel, Qt.LeftButton)
+                self.assertTrue(card.isExpand)
+                QTest.mouseClick(card.card.contentLabel, Qt.LeftButton)
+                self.assertEqual(card.isExpand, not sample)
+                card.setExpand(True)
+                QTest.mouseClick(card.config_widget_by_key['目标'], Qt.LeftButton)
+                self.assertTrue(card.isExpand)
+                task.enabled, task.running = True, True
+                card.update_buttons(task)
+                self.app.processEvents()
+                QTest.mouseClick(card.pause_button, Qt.LeftButton)
+                QTest.mouseClick(card.stop_button, Qt.LeftButton)
+                task.pause.assert_called_once()
+                task.disable.assert_called_once()
+                self.assertTrue(card.isExpand)
+                card.close()
+                card.deleteLater()
+
+    def test_fluent_sample_only_enabled_on_task_hub(self):
+        from src.gui.TaskHubTab import TaskHubTab
+        from ok.gui.tasks.OneTimeTaskTab import OneTimeTaskTab
+        task = example_task()
+        with patch.object(og, 'app', SimpleNamespace(tr=str)), \
+             patch.object(og, 'executor', SimpleNamespace(onetime_tasks=[task], current_task=None,
+                                                        waiting_for_task=lambda _: '')), \
+             patch.object(og, 'task_manager', SimpleNamespace(imported_scripts={})):
+            hub = TaskHubTab()
+            legacy = OneTimeTaskTab(section='tasks')
+            self.assertEqual(hub.task_tab.card_widgets[0].objectName(), 'fluentTaskSample')
+            self.assertEqual(legacy.card_widgets[0].objectName(), 'configSection')
+            hub.task_tab.card_widgets[0].setExpand(True)
+            hub.task_tab.refresh_ui()
+            self.assertTrue(hub.task_tab.card_widgets[0].isExpand)
+            for widget in (hub.task_tab, legacy):
+                widget.timer.stop()
+            hub.deleteLater()
+            legacy.deleteLater()
+
+    def test_fluent_description_only_has_no_empty_disclosure(self):
+        from ok.gui.tasks.TaskCard import TaskCard
+        task = example_task('🎮 测试任务')
+        task.config = MemoryConfig()
+        task.default_config = {}
+        task.config_type = {}
+        with patch.object(og, 'app', SimpleNamespace(tr=str)), \
+             patch.object(og, 'executor', SimpleNamespace(waiting_for_task=lambda _: '')):
+            card = TaskCard(task, True, fluent_sample=True)
+            self.assertTrue(card.card.expandButton.isHidden())
+            card.setExpand(True)
+            self.assertFalse(card.isExpand)
+            self.assertEqual(card.card.titleLabel.text(), '测试任务')
+            self.assertEqual(task.name, '🎮 测试任务')
+            card.deleteLater()
+
     def test_choices_have_no_visible_scroll_area_and_keep_callbacks(self):
         widget = FlatChoiceList()
         widget.addItem('WGC')

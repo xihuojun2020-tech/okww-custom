@@ -6,6 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import tempfile
 import threading
+import time
 import gettext
 import importlib
 from contextlib import ExitStack
@@ -104,6 +105,22 @@ def render(output):
                             exit_event=threading.Event(), global_config=global_config, executor=executor, handler=Mock())
         stack.enter_context(patch.object(og, 'main_window', window))
         settings = window.general_settings_tab
+        sample_state = os.environ.get('OKWW_UI_SAMPLE_STATE', '')
+        if sample_state:
+            if sample_state not in ('running', 'error'):
+                raise ValueError('OKWW_UI_SAMPLE_STATE must be running or error')
+            sample_task = window.task_hub_tab.task_tab.card_widgets[0].task
+            sample_task._enabled = sample_state == 'running'
+            sample_task.running = sample_state == 'running'
+            sample_task.start_time = time.time() - 10
+            sample_task.info['离线样板'] = '模拟运行中' if sample_state == 'running' else '模拟错误详情：未连接游戏'
+            if sample_state == 'running':
+                executor.current_task = sample_task
+            window.task_hub_tab.task_tab.last_task = sample_task
+            window.task_hub_tab.task_tab.current_info_run = (id(sample_task), sample_task.start_time)
+            window.task_hub_tab.task_tab.update_info_table()
+            for card in window.task_hub_tab.task_tab.card_widgets:
+                card.update_buttons(card.task)
         pages = [window.task_hub_tab, window.account_settings_tab, window.assistant_hub_tab,
                  window.tools_hub_tab, settings]
         hotkey_handler.assert_called_once()
@@ -144,6 +161,9 @@ def render(output):
                 page.show()
                 for _ in range(8): app.processEvents()
                 page.grab().save(str(output / f'{type(page).__name__}-{width}.png'))
+                if sample_state and page is window.task_hub_tab:
+                    assert page.task_tab.task_summary.isVisible(), 'Sample status must be visible'
+                    assert '离线样板' in page.task_tab.task_summary.text()
                 inner = [bar for bar in page.findChildren(QScrollBar)
                          if bar.isVisible() and bar.maximum() > 0
                          and bar not in (page.verticalScrollBar(), page.horizontalScrollBar())]

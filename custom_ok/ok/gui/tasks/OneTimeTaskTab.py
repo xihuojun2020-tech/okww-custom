@@ -7,13 +7,17 @@ logger = Logger.get_logger(__name__)
 
 
 class OneTimeTaskTab(TaskTab):
-    def __init__(self, is_standalone=True, group_name=None, section=None, activity_category=None, group_tasks=False):
+    def __init__(self, is_standalone=True, group_name=None, section=None, activity_category=None, group_tasks=False,
+                 *, fluent_sample=False):
         super().__init__()
         self.is_standalone = is_standalone
         self.group_name = group_name
         self.section = section
         self.activity_category = activity_category
         self.group_tasks = group_tasks
+        self.fluent_sample = fluent_sample
+        if fluent_sample:
+            self.taskCardLayout.setSpacing(10)
         self.card_widgets = []
         self.keep_info_when_done = True
         from PySide6.QtWidgets import QLabel
@@ -89,7 +93,7 @@ class OneTimeTaskTab(TaskTab):
         if self.group_tasks:
             self.tasks.sort(key=lambda task: TASK_CATEGORIES.index(task_category(task)))
         for task in self.tasks:
-            task_card = TaskCard(task, True)
+            task_card = TaskCard(task, True, fluent_sample=self.fluent_sample)
             if task_category(task) == '活动':
                 task_card.card.set_summary(getattr(task, 'activity_category', getattr(task, 'group_name', '活动')))
             self.card_widgets.append(task_card)
