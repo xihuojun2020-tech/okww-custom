@@ -7,14 +7,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import tempfile
 import threading
 import time
+import json
 import gettext
 import importlib
 from contextlib import ExitStack
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
-from PySide6.QtWidgets import QApplication, QWidget, QScrollBar, QPushButton
-from PySide6.QtCore import QPoint, QTranslator, QLocale
-from qfluentwidgets import FluentTranslator
+from PySide6.QtWidgets import QApplication, QWidget, QScrollBar, QPushButton, QLabel, QAbstractButton, QComboBox
+from PySide6.QtCore import QPoint, QTranslator, QLocale, QCoreApplication
+from qfluentwidgets import FluentTranslator, ComboBox
 from PySide6.QtGui import QFontDatabase, QFont
 from PySide6.QtGui import QIcon
 from ok import og
@@ -25,6 +26,20 @@ from src.gui.CodexTheme import apply_codex_light_theme
 
 class InertConfig(MemoryConfig):
     def save_file(self): pass
+
+
+def audit_texts(widget):
+    """Export synthetic UI labels/options, including collapsed content, for review."""
+    texts = set()
+    for control in [widget, *widget.findChildren(QWidget)]:
+        if isinstance(control, (QLabel, QAbstractButton)):
+            texts.add(control.text())
+        if isinstance(control, (QComboBox, ComboBox)):
+            texts.update(control.itemText(i) for i in range(control.count()))
+        texts.add(control.toolTip())
+        if control.isWindow():
+            texts.add(control.windowTitle())
+    return sorted(text for text in texts if text.strip())
 
 
 def render(output):
@@ -63,7 +78,7 @@ def render(output):
         executor = SimpleNamespace(scene=None, text_fix={}, trigger_tasks=[], onetime_tasks=[task], current_task=None, paused=True,
                                    basic_options=basic, global_config=global_config, waiting_for_task=lambda _: '')
         from config import version
-        fake_app = SimpleNamespace(tr=lambda text: catalog.gettext(str(text)) if text else '', title='OK-WW', version=version,
+        fake_app = SimpleNamespace(tr=lambda text: catalog.gettext(QCoreApplication.translate('app', str(text))) if text else '', title='OK-WW', version=version,
                                    ok_config=InertConfig(), start_controller=SimpleNamespace(start=Mock()))
         for name, value in [('app', fake_app), ('executor', executor), ('device_manager', manager),
                             ('config', {'gui_icon': None}), ('task_manager', SimpleNamespace(imported_scripts={}))]:
@@ -182,6 +197,7 @@ def render(output):
                 for _ in range(4): app.processEvents()
                 page.grab().save(str(output / f'{type(page).__name__}-{width}-bottom.png'))
             page.hide()
+        text_audit = {type(page).__name__: audit_texts(page) for page in pages}
         for page in pages:
             page.close()
             page.deleteLater()
@@ -192,12 +208,14 @@ def render(output):
             dialog.show()
             for _ in range(5): app.processEvents()
             dialog.grab().save(str(output / f'{type(dialog).__name__}.png'))
+            text_audit[type(dialog).__name__] = audit_texts(dialog)
             for button in dialog.findChildren(QPushButton):
                 if button.isVisible() and not dialog.rect().contains(button.mapTo(dialog, button.rect().center())):
                     raise AssertionError(f'Dialog button outside window: {button.text()}')
             dialog.close()
             dialog.deleteLater()
         app.processEvents()
+        (output / 'ui-text-audit.json').write_text(json.dumps(text_audit, ensure_ascii=False, indent=2), encoding='utf-8')
 
 
 if __name__ == '__main__':

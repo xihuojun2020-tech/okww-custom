@@ -7,6 +7,10 @@ from PySide6.QtWidgets import QBoxLayout, QHBoxLayout, QLabel, QSizePolicy, QVBo
 class FlatSettingRow(QWidget):
     def __init__(self, label: str, control: QWidget, description: str = "", parent=None):
         super().__init__(parent)
+        from ok import og
+        if og.app is not None:
+            label = og.app.tr(label)
+            description = og.app.tr(description) if description else ''
         self.control = control
         self.label = QLabel(label, self)
         self.label.setWordWrap(True)
@@ -24,7 +28,8 @@ class FlatSettingRow(QWidget):
         self.error_label.hide()
         copy = QVBoxLayout()
         copy.setContentsMargins(0, 0, 12, 0)
-        copy.setSpacing(2)
+        copy.setSpacing(1)
+        copy.setAlignment(Qt.AlignVCenter)
         copy.addWidget(self.label)
         if description:
             copy.addWidget(self.description_label)

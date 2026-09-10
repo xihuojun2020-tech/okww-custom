@@ -111,6 +111,63 @@ class TestFlatUI(unittest.TestCase):
             self.assertEqual(task.name, '🎮 测试任务')
             card.deleteLater()
 
+    def test_readonly_option_translation_does_not_change_config(self):
+        from ok.gui.tasks.LabelAndLabel import LabelAndLabel
+        import gettext
+        catalog = gettext.translation('ok', localedir='i18n', languages=['zh_CN'])
+        config = MemoryConfig({'目标': 'Tacet Suppression'})
+        with patch.object(og, 'app', SimpleNamespace(tr=catalog.gettext)):
+            row = LabelAndLabel({}, config, '目标')
+            self.assertEqual(row.label.text(), '无音区')
+            self.assertEqual(config['目标'], 'Tacet Suppression')
+            config['目标'] = 'Shell Credit'
+            row.update_value()
+            self.assertEqual(row.label.text(), '贝币')
+            self.assertEqual(LabelAndLabel._format_value('C:/Games/WW'), 'C:/Games/WW')
+            self.assertEqual(LabelAndLabel._format_value({'account': 'A1'}), '{"account": "A1"}')
+            original = ['Tacet Suppression']
+            self.assertEqual(LabelAndLabel._format_value(original), '["无音区"]')
+            self.assertEqual(original, ['Tacet Suppression'])
+            row.deleteLater()
+
+    def test_disabled_hotkey_keeps_config_identifier(self):
+        from src.gui.GeneralSettingsTab import GeneralSettingsTab
+        tab = SimpleNamespace(basic_config={}, hotkey_config=None,
+                              start_stop_status=QLabel(), hotkey_section=Mock())
+        GeneralSettingsTab._update_start_stop_hotkey(tab, 'None')
+        self.assertEqual(tab.basic_config['Start/Stop'], 'None')
+        self.assertEqual(tab.start_stop_status.text(), '程序启停快捷键：无（已停用）')
+
+    def test_default_interaction_uses_app_translation(self):
+        from ok.gui.start.SelectInteractionListView import SelectInteractionListView
+        manager = SimpleNamespace(get_preferred_device=lambda: {'device': 'other'})
+        with patch.object(og, 'device_manager', manager), patch.object(
+                og, 'app', SimpleNamespace(tr=lambda text: '默认输入方式')):
+            choices = SelectInteractionListView(lambda: None)
+            choices.update_for_device()
+            self.assertEqual(choices.item(0).text(), '默认输入方式')
+            choices.deleteLater()
+
+    def test_flat_setting_translates_display_only(self):
+        from src.gui.FlatSettingRow import FlatSettingRow
+        with patch.object(og, 'app', SimpleNamespace(tr=lambda value: {'Daily Profile': '每日计划'}.get(value, value))):
+            row = FlatSettingRow('Daily Profile', QLabel())
+            self.assertIn('每日计划', [label.text() for label in row.findChildren(QLabel)])
+            row.deleteLater()
+
+    def test_header_title_and_description_keep_compact_gap(self):
+        from ok.gui.tasks.TaskCard import TaskCard
+        with patch.object(og, 'app', SimpleNamespace(tr=str)), \
+             patch.object(og, 'executor', SimpleNamespace(waiting_for_task=lambda _: '')):
+            card = TaskCard(example_task(), True, fluent_sample=True)
+            card.resize(760, 300)
+            card.show()
+            self.app.processEvents()
+            title, description = card.card.titleLabel, card.card.contentLabel
+            self.assertLessEqual(description.y() - title.geometry().bottom() - 1, 3)
+            card.close()
+            card.deleteLater()
+
     def test_choices_have_no_visible_scroll_area_and_keep_callbacks(self):
         widget = FlatChoiceList()
         widget.addItem('WGC')

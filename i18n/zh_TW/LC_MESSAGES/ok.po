@@ -329,7 +329,7 @@ msgid ""
 msgstr "必須為16:9解析度，未勾選的項目將被標記為棄置，請在遊戲世界中啟動"
 
 msgid "Boss"
-msgstr "Boss"
+msgstr "首領"
 
 msgid "Celestial Light"
 msgstr "浮星祛暗"
@@ -1654,3 +1654,27 @@ msgstr "週一週本檢查"
 
 msgid "Last Completed - Weekly Boss Sunday"
 msgstr "週日週本複檢"
+
+msgid "Circle Scale"
+msgstr "繞圈範圍倍率"
+
+msgid "Shop Click Interval"
+msgstr "商店點擊間隔"
+
+msgid "Tower Priority"
+msgstr "高塔優先順序"
+
+msgid "Default Interaction"
+msgstr "預設輸入方式"
+
+msgid "Discord Webhook"
+msgstr "Discord 通知位址"
+
+msgid "None"
+msgstr "無"
+
+msgid "Config auto backup on first launch of each day"
+msgstr "每天首次啟動時自動備份設定"
+
+msgid "Leave empty to use the default: <project>/configs_backup"
+msgstr "留空使用預設位置：<project>/configs_backup"

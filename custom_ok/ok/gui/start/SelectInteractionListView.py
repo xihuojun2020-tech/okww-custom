@@ -15,7 +15,7 @@ class SelectInteractionListView(ListWidget):
         if device is not None:
             self.blockSignals(True)
             if self.count() == 0:
-                item = QListWidgetItem(self.tr("Default Interaction"))
+                item = QListWidgetItem(og.app.tr("Default Interaction"))
                 self.addItem(item)
             selected = 0
             if device['device'] == "windows":
@@ -53,7 +53,7 @@ class SelectInteractionListView(ListWidget):
                 self.item(0).setText(f"{title}")
                 selected = 0
             else:
-                title = self.tr("Default Interaction")
+                title = og.app.tr("Default Interaction")
                 self.reduce_row_to_1()
                 self.item(0).setText(f"{title}")
                 selected = 0

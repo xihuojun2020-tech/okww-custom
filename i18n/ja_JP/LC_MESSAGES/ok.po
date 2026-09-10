@@ -1528,3 +1528,27 @@ msgstr "月曜の週間ボス確認"
 
 msgid "Last Completed - Weekly Boss Sunday"
 msgstr "日曜の週間ボス再確認"
+
+msgid "Circle Scale"
+msgstr "周回範囲の倍率"
+
+msgid "Shop Click Interval"
+msgstr "ショップのクリック間隔"
+
+msgid "Tower Priority"
+msgstr "塔の優先順位"
+
+msgid "Default Interaction"
+msgstr "既定の入力方式"
+
+msgid "Discord Webhook"
+msgstr "Discord 通知先"
+
+msgid "None"
+msgstr "なし"
+
+msgid "Config auto backup on first launch of each day"
+msgstr "毎日の初回起動時に設定を自動バックアップ"
+
+msgid "Leave empty to use the default: <project>/configs_backup"
+msgstr "空欄の場合は既定の場所を使用：<project>/configs_backup"

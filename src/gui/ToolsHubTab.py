@@ -11,7 +11,7 @@ from src.gui.navigation_sections import TOOLS
 class ToolsHubTab(CustomTab):
     def __init__(self, start_panel):
         super().__init__()
-        title = SectionPanel('工具', '日志、数据维护与实验功能。', self.view)
+        title = SectionPanel('工具', parent=self.view)
         title.title_label.setProperty('role', 'pageTitle')
         self.add_widget(title)
         self.diagnostic_panel = DiagnosticStatusCard(self.view)
@@ -27,7 +27,7 @@ class ToolsHubTab(CustomTab):
         self.add_widget(maintenance)
         self.experiments = OneTimeTaskTab(section=TOOLS)
         self.task_tab = self.experiments  # Legacy hidden account-switch refresh entry.
-        experimental = SectionPanel('实验功能', '这些功能仍在验证中，请确认游戏状态后使用。不会因页面迁移自动启用。', self.view)
+        experimental = SectionPanel('实验功能', '功能仍在验证中，请确认游戏状态后使用。', self.view)
         experimental.add_embedded_widget(self.experiments)
         self.add_widget(experimental)
         self.developer_section = SectionPanel('开发诊断', '截图、OCR 与调试框，仅用于排查识别问题。', self.view, collapsible=True)

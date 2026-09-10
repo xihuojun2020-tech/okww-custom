@@ -1523,3 +1523,27 @@ msgstr ""
 "Torre central, pisos 3–4 Resistencia 2 (evitar DPS principal si es "
 "posible)；Se guarda. Los cambios durante la ejecución se aplican en la "
 "siguiente"
+
+msgid "Circle Scale"
+msgstr "Escala del círculo"
+
+msgid "Shop Click Interval"
+msgstr "Intervalo de clics en la tienda"
+
+msgid "Tower Priority"
+msgstr "Prioridad de torres"
+
+msgid "Default Interaction"
+msgstr "Método de entrada predeterminado"
+
+msgid "Discord Webhook"
+msgstr "Webhook de Discord"
+
+msgid "None"
+msgstr "Ninguno"
+
+msgid "Config auto backup on first launch of each day"
+msgstr "Respaldar la configuración al iniciar por primera vez cada día"
+
+msgid "Leave empty to use the default: <project>/configs_backup"
+msgstr "Dejar vacío para usar la ruta predeterminada: <project>/configs_backup"

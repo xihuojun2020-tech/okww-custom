@@ -54,10 +54,12 @@ class GeneralSettingsTab(CustomTab):
         self.start_stop_status.setWordWrap(True)
         self.start_stop_combo = QComboBox(start_stop_row)
         self.start_stop_combo.setAccessibleName('程序启停快捷键')
-        self.start_stop_combo.addItems(['None', 'F9', 'F10', 'F11', 'F12'])
+        for hotkey in ('None', 'F9', 'F10', 'F11', 'F12'):
+            self.start_stop_combo.addItem('无' if hotkey == 'None' else hotkey, hotkey)
         current = str(self.basic_config.get('Start/Stop') if self.basic_config else 'F9')
-        self.start_stop_combo.setCurrentText(current)
-        self.start_stop_combo.currentTextChanged.connect(self._update_start_stop_hotkey)
+        self.start_stop_combo.setCurrentIndex(self.start_stop_combo.findData(current))
+        self.start_stop_combo.currentIndexChanged.connect(
+            lambda _: self._update_start_stop_hotkey(self.start_stop_combo.currentData()))
         row.addWidget(self.start_stop_status, 1)
         row.addWidget(self.start_stop_combo)
         self.hotkey_section.content_layout.insertWidget(0, start_stop_row)
@@ -74,7 +76,8 @@ class GeneralSettingsTab(CustomTab):
             'Dodge Key', 'Wheel Key', 'Guidebook Key', 'Bag Key')} if self.hotkey_config is not None else set()
         conflict = value != 'None' and value.casefold() in game_keys
         state = '与游戏快捷键冲突，请更换' if conflict else '已停用' if value == 'None' else '已启用'
-        text = f'程序启停快捷键：{value}（{state}）'
+        display_value = '无' if value == 'None' else value
+        text = f'程序启停快捷键：{display_value}（{state}）'
         self.start_stop_status.setText(text)
         self.hotkey_section.set_summary(text)
 

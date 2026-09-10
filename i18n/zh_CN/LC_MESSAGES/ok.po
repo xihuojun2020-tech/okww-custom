@@ -329,7 +329,7 @@ msgid ""
 msgstr "必须16:9分辨率, 没有勾选的都会标记为弃置, 大世界启动"
 
 msgid "Boss"
-msgstr ""
+msgstr "首领"
 
 msgid "Celestial Light"
 msgstr "浮星祛暗"
@@ -1822,3 +1822,27 @@ msgstr "周一周本检查"
 
 msgid "Last Completed - Weekly Boss Sunday"
 msgstr "周日周本复检"
+
+msgid "Circle Scale"
+msgstr "绕圈范围倍率"
+
+msgid "Shop Click Interval"
+msgstr "商店点击间隔"
+
+msgid "Tower Priority"
+msgstr "高塔优先顺序"
+
+msgid "Default Interaction"
+msgstr "默认输入方式"
+
+msgid "Discord Webhook"
+msgstr "Discord 通知地址"
+
+msgid "None"
+msgstr "无"
+
+msgid "Config auto backup on first launch of each day"
+msgstr "每天首次启动时自动备份配置"
+
+msgid "Leave empty to use the default: <project>/configs_backup"
+msgstr "留空使用默认位置：<project>/configs_backup"

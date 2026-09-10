@@ -13,7 +13,7 @@ class LabelAndWidget(QWidget):
         configure_row(self, self.layout)
         self.title_layout = QVBoxLayout()
         self.title_layout.setContentsMargins(0, 0, 0, 0)
-        self.title_layout.setSpacing(2)
+        self.title_layout.setSpacing(1)
         # The description column owns the flexible row width. Controls remain
         # right-aligned at their requested size without forcing early wrapping.
         self.layout.addLayout(self.title_layout)

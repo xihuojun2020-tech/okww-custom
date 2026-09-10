@@ -52,6 +52,12 @@ class LabelAndLabel(ConfigLabelAndWidget):
             return ''
         if isinstance(value, bool):
             return '是' if value else '否'
+        if isinstance(value, (list, tuple)):
+            from ok import og
+            value = [og.app.tr(item) if isinstance(item, str) else item for item in value]
         if isinstance(value, (dict, list, tuple)):
             return json.dumps(value, ensure_ascii=False, sort_keys=isinstance(value, dict))
+        if isinstance(value, str):
+            from ok import og
+            return og.app.tr(value)
         return str(value)
