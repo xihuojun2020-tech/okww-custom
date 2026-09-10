@@ -127,6 +127,9 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
                 for widget in getattr(card, 'config_widgets', []):
                     if getattr(widget, 'key', None) != '目标账号' or not hasattr(widget, 'combo_box'):
                         continue
+                    if hasattr(widget, 'set_options'):
+                        widget.set_options(['（自动识别）'] + names)
+                        continue
                     combo = widget.combo_box
                     current = self.config.get('目标账号') or '（自动识别）'
                     combo.blockSignals(True)

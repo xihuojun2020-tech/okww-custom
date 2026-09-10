@@ -1,6 +1,7 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel
 import json
+import re
 
 from ok.gui.tasks.ConfigLabelAndWidget import ConfigLabelAndWidget
 
@@ -32,6 +33,16 @@ class LabelAndLabel(ConfigLabelAndWidget):
             self.update_value()
 
     def update_value(self):
+        key = getattr(self, 'key', None)
+        if key in ('Daily Profile', '当前执行账号', '当前序列账号') or (
+                isinstance(key, str) and re.fullmatch(r'序列\s*\d+\s*账号', key)):
+            from src.account_display import account_option_labels
+            value = (self.task.get_readonly_config_value(key)
+                     if self.task is not None and hasattr(self.task, 'get_readonly_config_value')
+                     else self.config.get(key))
+            values = value if isinstance(value, (list, tuple)) else [value]
+            self.label.setText('\n'.join(f'【{label}】' for label in account_option_labels(values) if label))
+            return
         if self.task is not None and self.sub_key and hasattr(self.task, 'get_last_completed'):
             reader = getattr(self.task, 'get_readonly_last_completed', self.task.get_last_completed)
             ts = reader(self.sub_key)
@@ -44,9 +55,6 @@ class LabelAndLabel(ConfigLabelAndWidget):
         else:
             text = self.config.get(self.key)
             self.label.setText(self._format_value(text))
-        if getattr(self, 'key', None) in ('Daily Profile', '当前执行账号'):
-            from src.account_display import account_option_label
-            self.label.setText(account_option_label(self.label.text()))
 
     @staticmethod
     def _format_value(value):

@@ -148,8 +148,9 @@ class TaskStatusWindow(QWidget):
         }.get(snapshot.level, COLORS['text'])
         detail = snapshot.message or snapshot.detail or "正在运行"
         completed = f" · 已完成 {snapshot.completed_count} 个账号" if snapshot.completed_count else ""
+        from src.account_display import account_option_label
         lines = (
-            f"账号：{html.escape(snapshot.account)}",
+            f"账号：{html.escape(account_option_label(snapshot.account))}",
             f"阶段：{html.escape(snapshot.stage)}",
             f"详情：{html.escape(detail)}",
             f"已运行：{self._elapsed_text(snapshot.elapsed_seconds)}{completed}",

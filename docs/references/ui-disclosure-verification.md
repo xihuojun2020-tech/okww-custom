@@ -1,5 +1,13 @@
 # UI 验收记录
 
+## 1.50.06 账号显示要素
+
+- 根因：LabelAndLabel 只转换单账号键，序列列表走原始 JSON 展示；任务动态刷新直接 addItems 导致 AccountChoice 标签回退且丢失原始 userData。旧序列控件和测试目标选择也未统一。
+- 全量报告 `test_out/test_runs/20260910-172223-580`：101 文件、1058 项，1050 通过、8 项既有跳过，无失败/错误。专项覆盖列表顺序、唯一/歧义匹配、缺失资料、三种任务动态刷新、旧序列的原始键与完成记录、状态显示不改写原始状态。
+- 分进程定向：TestFlatUI 33 项、TestTaskStatusWindow 5 项、TestAccountManagementTabs 25 项通过。早期同进程混跑有既有 `_TouchScrollClickGuard._active` 生命周期异常，保留在 `test_out/account-label-focused.log`；完整分文件回归通过，未修改无关滚动代码。
+- 五页展开模式 760/1100 宽度离线渲染通过，无嵌套滚动或横向溢出。`test_out/account-label-ui/expanded/SequenceAccountLabels-760.png` 人工核对为三行组合名称；渲染夹具显式指定 S1，防止空列表掩盖缺陷。
+- 仓库与桌面命名规则文档 SHA256 一致。NAS 离线，未读取远端日志、未验证另一台设备的资料完整性，也未运行真实切换或任务；不将本地通过等同于远端已升级。
+
 ## 1.50.05 保存后刷新卡顿
 
 - 修复前定向测试记录 `test_out/account-save-before.log`：保存后表单重建 2 次、显式重载读取草稿 2 次、序列刷新成员绘制 3 次，新增的三个回归断言均失败，确认并非只做样式猜测。

@@ -34,6 +34,94 @@ def example_task(name='周本挑战'):
 
 
 class TestFlatUI(unittest.TestCase):
+    def test_legacy_sequence_display_keeps_selection_and_completion_keys(self):
+        from src.gui.LabelAndAccountSequence import LabelAndAccountSequence
+        with tempfile.TemporaryDirectory() as temp:
+            env = make_account_environment(Path(temp))
+            with patch('src.account_repository.get_default_repository', return_value=env.repository), \
+                 patch.object(og, 'app', SimpleNamespace(tr=str)):
+                config = MemoryConfig({'序列 1 账号': ['A1', 'A3']})
+                completed = Mock(return_value='测试时间')
+                row = LabelAndAccountSequence({}, ['A1', 'A3', 'A4'], config, '序列 1 账号',
+                                               max_count=3, last_completed_provider=completed)
+                self.assertIn('测试账号一', row.combos[0].currentText())
+                self.assertEqual(row._config_list(), ['A1', 'A3'])
+                completed.assert_any_call('A1')
+                completed.assert_any_call('A3')
+                row._refresh_all()
+                self.assertEqual(row._config_list(), ['A1', 'A3'])
+                row.combos[1].setCurrentIndex(row.combos[1].findData('A4'))
+                self.assertEqual(config['序列 1 账号'], ['A1', 'A4'])
+                self.assertIn('199****0004', row.combos[1].currentText())
+                row.deleteLater()
+
+    def test_ambiguous_short_account_does_not_guess_identity(self):
+        from src.account_display import account_option_labels
+        records = [SimpleNamespace(profile_id='id-1', account={'display_name': 'A1-一-19910000001'}),
+                   SimpleNamespace(profile_id='id-2', account={'display_name': 'A1-二-19910000002'})]
+        repository = SimpleNamespace(list_profiles=Mock(return_value=records))
+        with patch('src.account_repository.get_default_repository', return_value=repository):
+            labels = account_option_labels(['A1', 'id-1', 'A1-二-19910000002'])
+        repository.list_profiles.assert_called_once_with()
+        self.assertEqual(labels, ['A1-账号匹配不唯一', 'A1-一-199****0001', 'A1-二-199****0002'])
+
+    def test_sequence_account_labels_resolve_each_raw_value_once(self):
+        from ok.gui.tasks.LabelAndLabel import LabelAndLabel
+        from src.account_display import account_option_labels
+        with tempfile.TemporaryDirectory() as temp:
+            env = make_account_environment(Path(temp))
+            with patch('src.account_repository.get_default_repository', return_value=env.repository), \
+                 patch.object(env.repository, 'list_profiles', wraps=env.repository.list_profiles) as reads, \
+                 patch.object(og, 'app', SimpleNamespace(tr=str)):
+                raw = ['A4', 'A1', 'A3']
+                config = MemoryConfig({'当前序列账号': raw.copy()})
+                task = SimpleNamespace(get_readonly_config_value=lambda key: raw)
+                row = LabelAndLabel({}, config, '当前序列账号', task=task)
+                self.assertEqual(reads.call_count, 1)
+                lines = row.label.text().splitlines()
+                self.assertEqual(lines, ['【A4-测试账号四-199****0004】',
+                                         '【A1-测试账号一-199****0001】',
+                                         '【A3-测试账号三-199****0003】'])
+                self.assertEqual(config['当前序列账号'], raw)
+                self.assertEqual(account_option_labels(['B14']), ['B14-未填昵称-未填手机号'])
+                row.deleteLater()
+
+    def test_account_dropdown_refresh_keeps_labels_and_raw_keys(self):
+        from src.gui.AccountChoice import AccountChoice
+        from src.task.DailyTask import DailyTask
+        from src.task.MultiAccountDailyTask import MultiAccountDailyTask
+        from src.task.TestAccountSwitchTask import TestAccountSwitchTask
+        with tempfile.TemporaryDirectory() as temp:
+            env = make_account_environment(Path(temp))
+            with patch('src.account_repository.get_default_repository', return_value=env.repository), \
+                 patch.object(og, 'app', SimpleNamespace(tr=str)):
+                for kind, key in ((DailyTask, 'Daily Profile'), (MultiAccountDailyTask, '当前执行账号'),
+                                  (TestAccountSwitchTask, '目标账号')):
+                    config = MemoryConfig({key: 'A3', '当前序列': 'S1'})
+                    row = AccountChoice({}, ['A1', 'A3'], config, key)
+                    task = kind.__new__(kind)
+                    task.config = config
+                    task.config_type = {'当前序列': {}, '当前执行账号': {}, '目标账号': {}}
+                    task.get_sequence_names = lambda: ['S1']
+                    task.get_profile_names = lambda: ['A3', 'A4']
+                    task._get_profile_names = lambda: ['A3', 'A4']
+                    card = SimpleNamespace(task=task, config_widgets=[row])
+                    task_tab = SimpleNamespace(card_widgets=[card])
+                    main = SimpleNamespace(onetime_tab=task_tab, test_hub_tab=SimpleNamespace(task_tab=task_tab))
+                    with patch.object(og, 'main_window', main):
+                        if kind is DailyTask:
+                            task._update_dropdown_items(key, ['A3', 'A4'])
+                        elif kind is MultiAccountDailyTask:
+                            task.refresh_account_options()
+                        else:
+                            task.refresh_profile_options()
+                    self.assertEqual(row.combo_box.currentData(), 'A3')
+                    self.assertIn('测试账号三', row.combo_box.currentText())
+                    row.combo_box.setCurrentIndex(row.combo_box.findData('A4'))
+                    self.assertEqual(config[key], 'A4')
+                    self.assertIn('199****0004', row.combo_box.currentText())
+                    row.deleteLater()
+
     def test_shared_dropdown_values_keyboard_and_elision(self):
         from PySide6.QtTest import QTest
         from src.gui.ChoiceControls import QtComboBox

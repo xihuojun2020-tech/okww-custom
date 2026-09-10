@@ -16,6 +16,7 @@ import re
 
 from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel
 from src.gui.ChoiceControls import ComboBox
+from src.account_display import account_option_labels
 
 from ok import og
 from ok.gui.tasks.ConfigLabelAndWidget import ConfigLabelAndWidget
@@ -81,7 +82,7 @@ class LabelAndAccountSequence(ConfigLabelAndWidget):
         if self.last_completed_provider is None:
             return
         for i, combo in enumerate(self.combos):
-            text = combo.currentText()
+            text = combo.currentData()
             if text and text != NONE_LABEL:
                 time_str = self.last_completed_provider(text)
                 if time_str:
@@ -111,7 +112,7 @@ class LabelAndAccountSequence(ConfigLabelAndWidget):
         """前 pos 个位置已选的账号（非无）。"""
         used = []
         for i in range(pos):
-            text = self.combos[i].currentText()
+            text = self.combos[i].currentData()
             if text and text != NONE_LABEL:
                 used.append(text)
         return used
@@ -126,14 +127,16 @@ class LabelAndAccountSequence(ConfigLabelAndWidget):
         """重建全部位置的选项（点开下拉时调用，保证跨序列去重最新）。"""
         self.user_action = False
         try:
-            current_vals = [c.currentText() for c in self.combos]
+            labels = dict(zip(self.options, account_option_labels(self.options)))
+            current_vals = [c.currentData() for c in self.combos]
             for i in range(self.max_count):
                 combo = self.combos[i]
                 items = self._build_items(i)
                 combo.blockSignals(True)
                 current = current_vals[i]
                 combo.clear()
-                combo.addItems(items)
+                for value in items:
+                    combo.addItem(labels.get(value, value), userData=value)
                 new_index = items.index(current) if current in items else 0
                 combo.setCurrentIndex(new_index)
                 combo.blockSignals(False)
@@ -144,7 +147,7 @@ class LabelAndAccountSequence(ConfigLabelAndWidget):
         """从下拉状态提取 config 列表（截断到第一个「无」）。"""
         result = []
         for combo in self.combos:
-            text = combo.currentText()
+            text = combo.currentData()
             if not text or text == NONE_LABEL:
                 break
             result.append(text)
@@ -163,13 +166,15 @@ class LabelAndAccountSequence(ConfigLabelAndWidget):
     def _refresh_from(self, start):
         self.user_action = False
         try:
+            labels = dict(zip(self.options, account_option_labels(self.options)))
             for i in range(start, self.max_count):
                 combo = self.combos[i]
-                current = combo.currentText()
+                current = combo.currentData()
                 items = self._build_items(i)
                 combo.blockSignals(True)
                 combo.clear()
-                combo.addItems(items)
+                for value in items:
+                    combo.addItem(labels.get(value, value), userData=value)
                 new_index = items.index(current) if current in items else 0
                 combo.setCurrentIndex(new_index)
                 combo.blockSignals(False)
@@ -179,13 +184,15 @@ class LabelAndAccountSequence(ConfigLabelAndWidget):
     def update_value(self):
         self.user_action = False
         try:
+            labels = dict(zip(self.options, account_option_labels(self.options)))
             current = self.config[self.key] or []
             for i in range(self.max_count):
                 combo = self.combos[i]
                 items = self._build_items(i)
                 combo.blockSignals(True)
                 combo.clear()
-                combo.addItems(items)
+                for value in items:
+                    combo.addItem(labels.get(value, value), userData=value)
                 if i < len(current) and current[i] in items:
                     combo.setCurrentIndex(items.index(current[i]))
                 else:

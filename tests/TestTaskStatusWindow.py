@@ -45,6 +45,25 @@ class FakeExecutor:
 
 
 class TestTaskStatusWindow(unittest.TestCase):
+    def test_status_display_expands_account_without_changing_published_status(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from tests.fixture_support import make_account_environment
+        with tempfile.TemporaryDirectory() as temp:
+            env = make_account_environment(Path(temp))
+            task = FakeTask()
+            publish_task_status(task, account='A3')
+            before = dict(task.info)
+            with patch('src.account_repository.get_default_repository', return_value=env.repository):
+                window = TaskStatusWindow(FakeExecutor(task))
+                try:
+                    window.refresh()
+                    self.assertIn('A3-测试账号三-199****0003', window.label.text())
+                    self.assertEqual(task.info, before)
+                finally:
+                    window.shutdown()
+
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])

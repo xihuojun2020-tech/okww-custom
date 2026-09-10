@@ -23,19 +23,38 @@ def account_display_label(account):
     return f'{code}-{nickname}-{masked}'
 
 
-def account_option_label(value):
-    if not value or value == '无':
-        return value
+def account_option_labels(values):
+    """Resolve one display batch from one repository read; never rewrite its keys."""
+    values = list(values)
+    if not values:
+        return []
     from src.account_repository import get_default_repository
     repository = get_default_repository()
+    records = ()
     if repository is not None:
         from src.account_repository import AccountRepositoryError
         try:
             records = repository.list_profiles()
-            exact = [r for r in records if value in (r.profile_id, r.account.get('display_name'))]
-            matches = exact or [r for r in records if short_profile_name(r.account.get('display_name')) == value]
-            if len(matches) == 1:
-                return account_display_label(matches[0].account)
         except AccountRepositoryError:
             pass
-    return account_display_label({'display_name': value}) if parse_account_label(value) else value
+    labels = []
+    for value in values:
+        if not value or value in ('无', '（自动识别）'):
+            labels.append(value)
+            continue
+        exact = [r for r in records if value in (r.profile_id, r.account.get('display_name'))]
+        matches = exact or [r for r in records if value in (
+            short_profile_name(r.account.get('display_name')), r.account.get('short_name'))]
+        if len(matches) == 1:
+            labels.append(account_display_label(matches[0].account))
+        elif len(matches) > 1:
+            labels.append(f'{value}-账号匹配不唯一')
+        elif parse_account_label(value) or re.fullmatch(r'[A-Za-z]\d+', str(value)):
+            labels.append(account_display_label({'display_name': value}))
+        else:
+            labels.append(value)
+    return labels
+
+
+def account_option_label(value):
+    return account_option_labels([value])[0]

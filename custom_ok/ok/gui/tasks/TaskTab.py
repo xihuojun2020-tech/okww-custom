@@ -151,7 +151,9 @@ class TaskTab(Tab):
         if not self.task_info_table.isVisible():
             self.task_info_container.show()
         info = task.info
-        summary = list(info.items())
+        from src.account_display import account_option_label
+        summary = [(key, account_option_label(value) if key == 'Status Account' else value)
+                   for key, value in info.items()]
         self.task_summary.setText("\n".join(f"{og.app.tr(str(key))}：{og.app.tr(value_to_string(value))}"
                                                for key, value in summary[:8]))
         if len(summary) > 8:
@@ -159,7 +161,7 @@ class TaskTab(Tab):
         if task.enabled:
             self.current_task_name = f": {og.app.tr(task.name)} {self.tr('Time Elapsed')}: {self.time_elapsed(task.start_time)}"
         self.task_info_table.setRowCount(len(info))
-        for row, (key, value) in enumerate(info.items()):
+        for row, (key, value) in enumerate(summary):
             if not self.task_info_table.item(row, 0):
                 item0 = self.uneditable_item()
                 self.task_info_table.setItem(row, 0, item0)

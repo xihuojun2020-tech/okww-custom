@@ -523,6 +523,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                         combo.setCurrentText(current_sequence)
                         combo.blockSignals(False)
                     elif key == CURRENT_ACCOUNT and hasattr(widget, 'combo_box'):
+                        if hasattr(widget, 'set_options'):
+                            widget.set_options([''] + profile_names)
+                            continue
                         combo = widget.combo_box
                         current = self.config.get(CURRENT_ACCOUNT) or ''
                         combo.blockSignals(True)

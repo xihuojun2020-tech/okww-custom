@@ -1603,6 +1603,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                     continue
                 for w in getattr(card, 'config_widgets', []):
                     if getattr(w, 'key', None) == key and hasattr(w, 'combo_box'):
+                        if hasattr(w, 'set_options'):
+                            w.set_options(options)
+                            return
                         combo = w.combo_box
                         # 同步 LabelAndDropDown 的 tr_dict/tr_options（显示文本→原始方案名 映射），
                         # 否则切换序列后下拉无法还原方案名、写入 None 导致切换失效

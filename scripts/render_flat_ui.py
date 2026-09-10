@@ -85,6 +85,7 @@ def render(output):
             stack.enter_context(patch.object(og, name, value))
         hotkey_handler = stack.enter_context(patch('ok.gui.start.StartCard.Handler', Mock()))
         stack.enter_context(patch('src.gui.AccountConfigTab.get_default_repository', return_value=env.repository))
+        stack.enter_context(patch('src.account_repository.get_default_repository', return_value=env.repository))
         stack.enter_context(patch('src.gui.SequenceManagementTab.get_default_repository', return_value=env.repository))
         stack.enter_context(patch('src.gui.DiagnosticStatusCard.default_root', return_value=Path(temp) / 'diagnostics'))
         stack.enter_context(patch('src.gui.DiagnosticStatusCard.DiagnosticStatusCard.refresh'))
@@ -102,6 +103,8 @@ def render(output):
                 cls = getattr(importlib.import_module(module), name)
                 instance = cls(executor=executor, app=None)
                 instance.config = MemoryConfig(instance.default_config)
+                if isinstance(instance, MultiAccountDailyTask):
+                    instance.config['当前序列'] = 'S1'
                 instances.append(instance)
             setattr(executor, collection, instances)
         from src.gui.GeneralSettingsTab import GeneralSettingsTab
@@ -177,6 +180,12 @@ def render(output):
                 for _ in range(8): app.processEvents()
                 assert not page.findChildren(QComboBox), 'Native dropdown remains on page'
                 page.grab().save(str(output / f'{type(page).__name__}-{width}.png'))
+                if page is window.task_hub_tab and os.environ.get('OKWW_UI_EXPAND_ALL'):
+                    from ok.gui.tasks.LabelAndLabel import LabelAndLabel
+                    for field in page.findChildren(LabelAndLabel):
+                        if field.key == '当前序列账号':
+                            field.label.grab().save(str(output / f'SequenceAccountLabels-{width}.png'))
+                            assert '测试账号一' in field.label.text(), 'Sequence labels must resolve synthetic identities'
                 if sample_state and page is window.task_hub_tab:
                     assert page.task_tab.task_summary.isVisible(), 'Sample status must be visible'
                     assert '离线样板' in page.task_tab.task_summary.text()
