@@ -160,7 +160,8 @@ class TestDiagnosticEvidence(unittest.TestCase):
         scan_incidents(remote)
         for batch in batches:
             purge_remote_logs(batch, remote, now=time.time() + WEEK + 60)
-        scan_incidents(remote)
+        # Like Windows short-name TEMP paths, this spelling resolves to the same root.
+        scan_incidents(remote / '..' / remote.name)
         view = next((remote / '事件索引').rglob('*.json'))
         text = view.read_text(encoding='utf-8')
         self.assertNotIn('synthetic diagnostic failure', text)

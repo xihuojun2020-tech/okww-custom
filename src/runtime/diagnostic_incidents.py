@@ -68,7 +68,7 @@ def scan_incidents(target):
     # Retained views contain only image links; include them for post-retention verification.
     for path in (target / '事件索引').glob('*/*/*.json'):
         try:
-            safe_path(target, path.relative_to(target).as_posix())
+            path = safe_path(target, path.relative_to(target).as_posix())
             old = json.loads(path.read_text(encoding='utf-8'))
             validate_index(old)
             if path != view_path(target, old):
