@@ -1,5 +1,5 @@
 <div align="center">
-  <p>当前版本：<a href="docs/references/activity-tasks.md">1.52.00 任务分类与第二索拉活动辅助</a> · <a href="docs/references/multi-account-retry.md">多账号失败补跑</a> · <a href="docs/references/flat-ui.md">统一界面</a></p>
+  <p>当前版本：<a href="docs/references/completion-evidence.md">1.53.00 完成检查与永久留证</a> · <a href="docs/references/multi-account-retry.md">多账号失败补跑</a> · <a href="docs/references/flat-ui.md">统一界面</a></p>
   <h1 align="center">
     <img src="icons/icon.png" width="200" alt="ok-ww logo"/>
     <br/>

@@ -1,5 +1,5 @@
 from PySide6.QtCore import Qt, QSignalBlocker
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget, QSizePolicy
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget, QSizePolicy, QMenu
 from qfluentwidgets import FluentIcon, PrimaryPushButton, PushButton, SwitchButton, MessageBox
 
 from ok import Logger, BaseTask, og
@@ -24,6 +24,12 @@ class TaskCard(ConfigCard):
         super().__init__(task, task.name, task.config, description, task.default_config, task.config_description,
                          config_type, config_icon=task.icon or FluentIcon.INFO)
         self.task = task
+        from src.evidence.model import TASK_PROJECTS
+        self._evidence_project = TASK_PROJECTS.get(type(task).__name__)
+        if self._evidence_project:
+            self.card.setContextMenuPolicy(Qt.CustomContextMenu)
+            self.card.customContextMenuRequested.connect(self.show_evidence_menu)
+            self.card.setToolTip('右键：保存当前画面为证据')
         self.onetime = onetime
         self._compact_header()
         self.state_label = QLabel(self.card)
@@ -103,6 +109,15 @@ class TaskCard(ConfigCard):
                 margins = layout.contentsMargins()
                 layout.setContentsMargins(margins.left(), 4, margins.right(), 4)
                 widget.setMinimumHeight(44)
+
+    def show_evidence_menu(self, position):
+        menu = QMenu(self)
+        action = menu.addAction('保存当前画面为证据')
+        if menu.exec(self.card.mapToGlobal(position)) == action:
+            page = getattr(og.main_window, 'completion_check_tab', None)
+            if page is not None:
+                og.main_window.switchTo(page)
+                page.capture_evidence(self._evidence_project)
 
     def _apply_fluent_sample(self):
         """Task-page pilot only; shared configuration and execution stay unchanged."""

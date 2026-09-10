@@ -13,8 +13,9 @@ Navigation and theme settings live in `mkdocs.yml` at the repository root.
 
 ## Architecture and code review
 
-- [完成检查模块设计（待实施）](superpowers/specs/2026-09-10-completion-evidence-design.md)
-- [程序结构说明（1.52.00）](程序结构说明.md)
+- [完成检查使用说明（1.53.00）](references/completion-evidence.md)
+- [完成检查模块设计](superpowers/specs/2026-09-10-completion-evidence-design.md)
+- [程序结构说明（1.53.00）](程序结构说明.md)
 - [任务分类与活动辅助（1.52.00）](references/activity-tasks.md)
 - [多账号失败恢复与队尾补跑（1.51.00）](references/multi-account-retry.md)
 - [账号命名与配置规则（1.50.06）](references/account-naming-rules.md)

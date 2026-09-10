@@ -112,6 +112,18 @@ def render(output):
         from src.gui.TaskHubTab import TaskHubTab
         from src.gui.AssistantHubTab import AssistantHubTab
         from src.gui.ToolsHubTab import ToolsHubTab
+        from src.gui.CompletionCheckTab import CompletionCheckTab
+        from src.evidence.repository import EvidenceRepository
+        from src.evidence.service import EvidenceService
+        import numpy as np
+        evidence_service = EvidenceService(EvidenceRepository(Path(temp) / 'completion-evidence'))
+        stack.callback(evidence_service.close)
+        stack.enter_context(patch('src.gui.CompletionCheckTab.get_evidence_service', return_value=evidence_service))
+        stack.enter_context(patch('src.gui.CompletionCheckTab.get_default_repository', return_value=env.repository))
+        synthetic_id = next(iter(env.repository.get_detached_projection()['profiles'].values()))['profile_id']
+        evidence_service.repository.save(dict(profile_id=synthetic_id, project_id='daily_activity',
+            source='automatic', completion_status='completed', reason='离线合成样例：活跃度 100'),
+            np.full((180, 320, 3), (230, 240, 245), dtype=np.uint8))
         from ok.gui.MainWindow import MainWindow
         for method in ('auto_backup_config', '_start_backup_cleanup_timer', '_handle_first_show'):
             stack.enter_context(patch.object(MainWindow, method))
@@ -144,8 +156,9 @@ def render(output):
         hotkey_handler.assert_called_once()
         from src.gui.navigation_sections import build_navigation_manifest
         nav = window.navigationInterface.panel
-        assert len(nav.items) == 5, 'Unexpected navigation destination'
-        for page, item in zip(pages, build_navigation_manifest()):
+        nav_pages = pages[:2] + [window.completion_check_tab] + pages[2:]
+        assert len(nav.items) == 6, 'Unexpected navigation destination'
+        for page, item in zip(nav_pages, build_navigation_manifest()):
             widget = nav.items[page.objectName()].widget
             assert (nav.bottomLayout.indexOf(widget) >= 0) == (item['position'] == 'bottom')
         assert window.stackedWidget.currentWidget() is pages[0], 'Default page must be tasks'
@@ -164,6 +177,7 @@ def render(output):
         window.grab().save(str(output / 'MainWindow.png'))
         window.hide()
         window.stackedWidget.currentChanged.disconnect(window._onCurrentInterfaceChanged)
+        pages.append(window.completion_check_tab)
         for page in pages:
             window.stackedWidget.removeWidget(page)
             page.setParent(None)
@@ -180,6 +194,18 @@ def render(output):
                 for _ in range(8): app.processEvents()
                 assert not page.findChildren(QComboBox), 'Native dropdown remains on page'
                 page.grab().save(str(output / f'{type(page).__name__}-{width}.png'))
+                if isinstance(page, CompletionCheckTab):
+                    from PySide6.QtTest import QTest
+                    for _ in range(250):
+                        QTest.qWait(20)
+                        if len(page._cards) == 10 and not page.load_operation.busy:
+                            break
+                    assert len(page._cards) == 10, 'Completion dashboard has not finished loading'
+                    QTest.qWait(100)
+                    page.grab().save(str(output / f'{type(page).__name__}-{width}.png'))
+                    assert page.scroll.horizontalScrollBar().maximum() == 0
+                    print('CompletionCheckTab', width, 'cards=', len(page._cards), flush=True)
+                    continue
                 if page is window.task_hub_tab and os.environ.get('OKWW_UI_EXPAND_ALL'):
                     from ok.gui.tasks.LabelAndLabel import LabelAndLabel
                     for field in page.findChildren(LabelAndLabel):

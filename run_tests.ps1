@@ -47,6 +47,7 @@ $groups = @{
     "TestDailyRunConfirmation.py",
     "TestAccountManagementTabs.py", "TestCodexLightUI.py", "TestFiveSectionMainWindow.py",
     "TestMainWindowStartup.py", "TestLanUpdateUI.py", "TestNavigationSections.py", "TestTaskNavigationClassification.py",
+    "TestCompletionEvidence.py", "TestCompletionCheckUI.py",
     "TestCharacterCodeTab.py", "TestEnhanceEchoStatusBox.py", "TestSkipDialogConfirm.py",
     "TestSkipDialogWideMode.py", "TestTaskStatusWindow.py", "TestUsabilityUI.py"
   )

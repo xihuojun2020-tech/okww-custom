@@ -92,6 +92,9 @@ class GardenTask(WWOneTimeTask, BaseWWTask):
     def is_weekly_garden_completed(self):
         current = self.ocr(0.102, 0.793, 0.284, 0.956, match=self.GARDEN_TARGET_POINTS)
         self.log_info(f"Garden current: {current}")
+        if current:
+            from src.evidence.service import record_task_evidence
+            record_task_evidence(self, 'weekly_garden', 'completed', '周常目标积分已达标；不代表奖励已领取')
         return bool(current)
 
     def is_garden_done(self, texts):

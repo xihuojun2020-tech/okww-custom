@@ -24,13 +24,13 @@ class TestCodexLightUI(unittest.TestCase):
         self.assertNotIn("QTabWidget", inspect.getsource(AccountSettingsTab))
         self.assertNotIn("QTabWidget", inspect.getsource(ActivityHubTab))
 
-    def test_five_page_order_and_flat_section_markers(self):
+    def test_six_page_order_and_flat_section_markers(self):
         from src.gui.navigation_sections import build_navigation_manifest
         from src.gui.GeneralSettingsTab import GeneralSettingsTab
 
         self.assertEqual(
             [item["title"] for item in build_navigation_manifest()],
-            ["任务", "账号", "自动辅助", "工具", "设置"],
+            ["任务", "账号", "完成检查", "自动辅助", "工具", "设置"],
         )
         self.assertIn("self.section_panels", inspect.getsource(GeneralSettingsTab))
 

@@ -292,6 +292,9 @@ class TaskExecutor:
         return self._frame
 
     def check_enabled(self, check_pause=True):
+        if getattr(self, '_completion_capture_requests', None) is not None:
+            from src.evidence.service import process_capture
+            process_capture(self)
         if check_pause and self.paused:
             self.sleep(1)
         if self.current_task and not self.current_task._enabled:
@@ -489,6 +492,9 @@ class TaskExecutor:
         return None
 
     def next_task(self) -> tuple:
+        if getattr(self, '_completion_capture_requests', None) is not None:
+            from src.evidence.service import process_capture
+            process_capture(self)
         if self.exit_event.is_set():
             logger.error(f"next_task exit_event.is_set exit")
             return None, False, False

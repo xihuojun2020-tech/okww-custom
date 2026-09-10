@@ -376,6 +376,10 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         remaining = self._read_remaining()
         self.last_result = WeeklyBossResult(initial, claimed, remaining)
         self.info_set('复核剩余', remaining)
+        from src.evidence.service import record_task_evidence
+        record_task_evidence(self, 'weekly_boss', 'completed' if remaining == 0 else 'partial',
+                             f'战歌重奏复核：本周剩余 {remaining} 次；{reason}',
+                             progress=dict(initial=initial, claimed=claimed, remaining=remaining))
         self.ensure_main(time_out=60)
         if remaining:
             raise RuntimeError(f'{reason or "周本未完成"}，本周仍剩余 {remaining} 次；未记录完成')
@@ -395,6 +399,9 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         self.info_set('计划领奖', initial)
         if initial == 0:
             self.last_result = WeeklyBossResult(0, 0, 0)
+            from src.evidence.service import record_task_evidence
+            record_task_evidence(self, 'weekly_boss', 'completed', '战歌重奏已识别本周剩余 0 次',
+                                 progress=dict(remaining=0))
             self.ensure_main(time_out=60)
             self._stage('本周奖励已全部领取')
             return self.last_result

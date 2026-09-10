@@ -122,6 +122,7 @@ class MainWindow(FluentWindow):
         self.global_config_tabs = []
         from src.gui.GeneralSettingsTab import GeneralSettingsTab
         from src.gui.AccountSettingsTab import AccountSettingsTab
+        from src.gui.CompletionCheckTab import CompletionCheckTab
         from src.gui.TaskHubTab import TaskHubTab
         from src.gui.AssistantHubTab import AssistantHubTab
         from src.gui.ToolsHubTab import ToolsHubTab
@@ -130,6 +131,7 @@ class MainWindow(FluentWindow):
         self.general_settings_tab = GeneralSettingsTab(config, exit_event, executor, global_config)
         self.general_settings_tab.lan_update_card.apply_requested.connect(self.schedule_lan_update)
         self.account_settings_tab = AccountSettingsTab()
+        self.completion_check_tab = CompletionCheckTab(executor)
         self.task_hub_tab = TaskHubTab()
         self.assistant_hub_tab = AssistantHubTab(self.general_settings_tab.start_panel)
         self.tools_hub_tab = ToolsHubTab(self.general_settings_tab.start_panel)
@@ -142,6 +144,7 @@ class MainWindow(FluentWindow):
         self.setting_tab = self.general_settings_tab.preferences
         self.imported_tabs = {}
         pages = dict(tasks=self.task_hub_tab, accounts=self.account_settings_tab,
+                     completion=self.completion_check_tab,
                      assistant=self.assistant_hub_tab, tools=self.tools_hub_tab,
                      settings=self.general_settings_tab)
         for item in build_navigation_manifest():
@@ -902,6 +905,7 @@ class MainWindow(FluentWindow):
             "settings": "general_settings_tab",
             "account": "account_settings_tab",
             "accounts": "account_settings_tab",
+            "completion": "completion_check_tab",
             "onetime": "task_hub_tab",
             "schedule": "task_hub_tab",
             "tasks": "task_hub_tab",

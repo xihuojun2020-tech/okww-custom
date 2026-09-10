@@ -8,10 +8,12 @@ TESTS = "tests"
 SETTINGS = 'settings'
 ASSISTANT = 'assistant'
 TOOLS = 'tools'
+COMPLETION = 'completion'
 
 _MANIFEST = (
     (TASKS, "任务", 'scroll'),
     (ACCOUNTS, "账号", 'scroll'),
+    (COMPLETION, "完成检查", 'scroll'),
     (ASSISTANT, "自动辅助", 'scroll'),
     (TOOLS, "工具", 'bottom'),
     (SETTINGS, "设置", 'bottom'),
@@ -66,6 +68,6 @@ def helper_category(task):
 
 
 __all__ = ["GENERAL", "ACCOUNTS", "TASKS", "ACTIVITIES", "TESTS",
-           "SETTINGS", "ASSISTANT", "TOOLS", "TASK_CATEGORIES", "HELPER_CATEGORIES",
+           "SETTINGS", "ASSISTANT", "TOOLS", "COMPLETION", "TASK_CATEGORIES", "HELPER_CATEGORIES",
            "canonical_section", "task_category", "helper_category",
            "classify_task", "build_navigation_manifest"]

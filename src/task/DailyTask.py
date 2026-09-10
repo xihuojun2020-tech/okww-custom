@@ -1983,6 +1983,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         attempts = max(int(attempts), 1)
         candidates = []
         raw_candidates = []
+        evidence_frame = None
+        evidence_points = -1
         for attempt in range(attempts):
             points_boxes = self.ocr(0.19, 0.8, 0.30, 0.93, match=DAILY_POINTS_RE) or []
             for box in points_boxes:
@@ -1993,11 +1995,20 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 value = int(text)
                 if 0 <= value <= 180:
                     candidates.append(value)
+                    if value > evidence_points:
+                        evidence_points = value
+                        from src.evidence.service import evidence_frame as copy_evidence_frame
+                        evidence_frame = copy_evidence_frame(self)
             if attempt + 1 < attempts:
                 self.next_frame()
         points = max(candidates) if candidates else None
         self.log_info(f'每日活跃度 OCR 候选={raw_candidates or "无"} 结果={points}')
         self.info_set('total daily points', points)
+        if points is not None:
+            from src.evidence.service import record_task_evidence
+            record_task_evidence(self, 'daily_activity', 'completed' if points >= 100 else 'partial',
+                                 f'活跃度识别为 {points}，达标阈值 100；不代表奖励已领取',
+                                 frame=evidence_frame, progress=dict(points=points, target=100))
         return points
 
     def _find_daily_claim_button(self):

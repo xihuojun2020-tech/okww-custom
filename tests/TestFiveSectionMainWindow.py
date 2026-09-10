@@ -29,9 +29,9 @@ class TestFiveSectionMainWindow(unittest.TestCase):
     def test_main_window_wires_exactly_five_project_hubs(self):
         source = inspect.getsource(MainWindow.__init__)
         for class_name in ("GeneralSettingsTab", "AccountSettingsTab", "TaskHubTab",
-                           "AssistantHubTab", "ToolsHubTab"):
+                           "AssistantHubTab", "ToolsHubTab", "CompletionCheckTab"):
             self.assertEqual(source.count(f"= {class_name}("), 1)
-        self.assertEqual(len(build_navigation_manifest()), 5)
+        self.assertEqual(len(build_navigation_manifest()), 6)
         self.assertNotIn("ScheduleTaskTab", source)
         self.assertNotIn("self.setting_tab = SettingTab()", source)
         self.assertIn("item['position'] == 'bottom'", source)
@@ -74,11 +74,13 @@ class TestFiveSectionMainWindow(unittest.TestCase):
             "task_hub_tab": object(),
             "assistant_hub_tab": object(),
             "tools_hub_tab": object(),
+            "completion_check_tab": object(),
         }
         window.__dict__.update(pages)
         window.switchTo = Mock()
 
         expected = {
+            "completion": pages["completion_check_tab"],
             "start": pages["general_settings_tab"],
             "trigger": pages["assistant_hub_tab"],
             "assistant": pages["assistant_hub_tab"],
