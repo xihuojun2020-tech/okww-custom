@@ -34,6 +34,9 @@ def config_widget(config_type, config_desc, config, key, value, task):
     resolved_type = _resolve_type(the_type, value)
     if resolved_type:
         if resolved_type == 'drop_down':
+            if key in ('Daily Profile', '当前执行账号'):
+                from src.gui.AccountChoice import AccountChoice
+                return AccountChoice(config_desc, the_type['options'], config, key)
             if isinstance(value, list) and 'options_available' in the_type:
                 return ModifyListItem(
                     config_desc, config, key, options_available=the_type['options_available'],

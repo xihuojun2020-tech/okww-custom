@@ -119,7 +119,8 @@ class SequenceManagementTab(CustomTab):
             self.members.setFixedHeight(32)
             self.order_section.set_summary('尚未选择序列。')
             return
-        profiles = {record.profile_id: record.account.get("display_name", "未命名账号")
+        from src.account_display import account_display_label
+        profiles = {record.profile_id: account_display_label(record.account)
                     for record in self.service.repository.list_profiles()}
         for profile_id in item.profile_ids:
             self.members.addItem(str(profiles.get(profile_id, "缺失账号")))

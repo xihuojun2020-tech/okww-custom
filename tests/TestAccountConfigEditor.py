@@ -22,6 +22,9 @@ class FakeRepository:
     def load_profile(self, _profile_id):
         return copy.deepcopy(self.record)
 
+    def list_profiles(self):
+        return (copy.deepcopy(self.record),)
+
     def backup_profile(self, profile_id, payload):
         self.backups.append((profile_id, payload))
 
@@ -121,6 +124,13 @@ class TestAccountConfigEditor(unittest.TestCase):
         self.assertEqual(tasks["备用识别名称"], "使用")
         self.assertEqual(kwargs["sequence_ids"], ("序列1",))
         self.assertEqual(kwargs["expected_revision"], "r1")
+
+    def test_duplicate_short_code_in_legacy_label_is_rejected(self):
+        from src.account_config_editor import AccountConfigEditorError
+        self.repository.record.account['display_name'] = '【A3-测试-19910000003】'
+        with self.assertRaisesRegex(AccountConfigEditorError, '编号已存在'):
+            self.editor.create_profile(self.editor.load_template(), display_name='A3',
+                                       phone='19910000004', nickname='另一账号')
 
 
 if __name__ == "__main__":

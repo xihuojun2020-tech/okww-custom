@@ -44,6 +44,9 @@ class LabelAndLabel(ConfigLabelAndWidget):
         else:
             text = self.config.get(self.key)
             self.label.setText(self._format_value(text))
+        if getattr(self, 'key', None) in ('Daily Profile', '当前执行账号'):
+            from src.account_display import account_option_label
+            self.label.setText(account_option_label(self.label.text()))
 
     @staticmethod
     def _format_value(value):

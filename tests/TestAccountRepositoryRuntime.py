@@ -93,6 +93,29 @@ class TestAccountRepositoryRuntime(unittest.TestCase):
         self.assertTrue((self.root / "运行状态" / "账号" / f"{self.a}.json").is_file())
         self.assertFalse((self.root / "运行状态" / "账号" / f"{self.b}.json").exists())
 
+    def test_label_cleanup_preserves_tasks_names_order_and_is_idempotent(self):
+        from src.account_label_cleanup import plan_cleanup, apply_cleanup
+        from unittest.mock import Mock
+        repo = self._memory_repo()
+        profile = repo.raw['profiles'][self.a]
+        profile.update(display_name='【A1-测试账号一-19910000001】', phone='', masked_phone='', nickname='')
+        before = copy.deepcopy(repo.raw)
+        repo.backup_profile = Mock()
+        planned = plan_cleanup(repo)
+        self.assertEqual(planned[0]['conflicts'], [])
+        self.assertEqual(len(apply_cleanup(repo, planned)), 1)
+        after = repo.raw['profiles'][self.a]
+        self.assertEqual(after['nickname'], '测试账号一')
+        self.assertEqual(after['masked_phone'], '199****0001')
+        for key in ('display_name', 'task_config', 'account_aliases', 'alternate_login_name'):
+            self.assertEqual(after[key], before['profiles'][self.a][key])
+        self.assertEqual(repo.raw['sequences'], before['sequences'])
+        self.assertEqual(apply_cleanup(repo, plan_cleanup(repo)), [])
+        repo.backup_profile.assert_called_once()
+        after['nickname'] = '冲突名字'
+        self.assertIn('nickname', plan_cleanup(repo)[0]['conflicts'])
+        self.assertEqual(apply_cleanup(repo, plan_cleanup(repo)), [])
+
     def test_profile_save_preserves_existing_sequence_position(self):
         from src.account_repository import ProfileEditScope
         repo = self._memory_repo()

@@ -138,6 +138,47 @@ class TestFlatUI(unittest.TestCase):
         self.assertEqual(tab.basic_config['Start/Stop'], 'None')
         self.assertEqual(tab.start_stop_status.text(), '程序启停快捷键：无（已停用）')
 
+    def test_account_name_preview_and_selection_preserve_identity(self):
+        from src.gui.AccountConfigTab import NewAccountDialog
+        from src.account_display import account_display_label, parse_account_label
+        from src.gui.AccountChoice import AccountChoice
+        dialog = NewAccountDialog([])
+        dialog.short_name.setText('a5')
+        dialog.nickname.setText('测试-昵称')
+        dialog.phone.setText('19910000005')
+        self.assertEqual(dialog.name_preview.text(), '显示名称：A5-测试-昵称-199****0005')
+        self.assertEqual(dialog.values()['phone'], '19910000005')
+        legacy = '【A5-测试-昵称-19910000005】'
+        self.assertEqual(parse_account_label(legacy)['nickname'], '测试-昵称')
+        self.assertEqual(account_display_label({'display_name': legacy}), 'A5-测试-昵称-199****0005')
+        self.assertEqual(parse_account_label('A5-不完整'), {})
+        config = MemoryConfig({'当前执行账号': legacy})
+        with patch.object(og, 'app', SimpleNamespace(tr=str)):
+            row = AccountChoice({}, ['', legacy], config, '当前执行账号')
+            self.assertEqual(row.combo_box.currentData(), legacy)
+            self.assertNotIn('19910000005', row.combo_box.currentText())
+            self.assertEqual(config['当前执行账号'], legacy)
+            row.combo_box.setCurrentIndex(0)
+            self.assertEqual(config['当前执行账号'], '')
+            row.combo_box.setCurrentIndex(1)
+            self.assertEqual(config['当前执行账号'], legacy)
+            row.deleteLater()
+        dialog.deleteLater()
+
+    def test_identity_phone_reveal_resets_on_account_change(self):
+        with tempfile.TemporaryDirectory() as temp:
+            env = make_account_environment(Path(temp))
+            tab = AccountConfigTab(AccountConfigEditor(env.repository))
+            original = tab.draft.account['phone']
+            self.assertNotEqual(tab.identity_widgets['phone'].text(), original)
+            tab.reveal_phone.setChecked(True)
+            self.assertEqual(tab.identity_widgets['phone'].text(), original)
+            tab._load_selected()
+            self.assertFalse(tab.reveal_phone.isChecked())
+            self.assertNotEqual(tab.identity_widgets['phone'].text(), original)
+            self.assertEqual(tab.draft.account['phone'], original)
+            tab.deleteLater()
+
     def test_targeted_task_descriptions_hidden_without_metadata_change(self):
         from ok.gui.tasks.TaskCard import TaskCard
         for name in ('DailyTask', 'MultiAccountDailyTask', 'GardenTask', 'WeeklyBossTask', 'EventTask'):

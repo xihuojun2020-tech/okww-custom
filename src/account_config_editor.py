@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from .account_repository import ProfileEditScope, ProfileRevisionConflict
-from .account_identity import masked_phone
+from .account_identity import masked_phone, short_profile_name
 
 
 class AccountConfigEditorError(RuntimeError):
@@ -183,6 +183,9 @@ class AccountConfigEditor:
         alias = str(alias_text or "").strip()
         if not re.fullmatch(r"[A-Z]\d+", label):
             raise AccountConfigEditorError("账号短名必须为一个字母加数字，例如 A5")
+        if any(short_profile_name(record.account.get('display_name')) == label
+               for record in self.repository.list_profiles()):
+            raise AccountConfigEditorError('账号编号已存在')
         if not re.fullmatch(r"1[3-9]\d{9}", full_phone):
             raise AccountConfigEditorError("完整手机号格式无效")
         if not nickname:

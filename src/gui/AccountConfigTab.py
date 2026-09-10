@@ -13,6 +13,7 @@ from qfluentwidgets import BodyLabel, FluentIcon
 
 from ok.gui.widget.CustomTab import CustomTab
 from src.account_config_editor import AccountConfigEditor, sanitize_error
+from src.account_display import account_display_label
 from src.account_rebind_service import AccountRebindService
 from src.account_repository import AccountRepository, AccountRepositoryError, get_default_repository
 from src.account_field_metadata import (account_field_metadata, localize_account_value,
@@ -129,12 +130,18 @@ class NewAccountDialog(QDialog):
         self.alias_enable.addItem("无", False)
         self.alias_enable.addItem("使用", True)
         self.alias_text = QLineEdit(self)
-        for label, widget in (("账号短名（例如 A5）", self.short_name), ("完整手机号", self.phone),
+        for label, widget in (("账号编号（例如 A5）", self.short_name), ("完整手机号", self.phone),
                               ("游戏昵称", self.nickname), ("游戏内特征码", self.feature_code),
                               ("使用备用识别名称", self.alias_enable),
                               ("备用识别名称内容", self.alias_text)):
             form.addRow(label, widget)
         layout.addLayout(form)
+        self.name_preview = QLabel(self)
+        self.name_preview.setWordWrap(True)
+        layout.addWidget(self.name_preview)
+        for field in (self.short_name, self.nickname, self.phone):
+            field.textChanged.connect(self.update_name_preview)
+        self.update_name_preview()
         group = QGroupBox("加入账号序列", self)
         group_layout = QVBoxLayout(group)
         self.sequence_boxes = {}
@@ -151,6 +158,11 @@ class NewAccountDialog(QDialog):
         layout.addWidget(buttons)
         from src.gui.CodexTheme import size_dialog
         size_dialog(self, 560, 420)
+
+    def update_name_preview(self):
+        self.name_preview.setText('显示名称：' + account_display_label({
+            'display_name': self.short_name.text().strip().upper(),
+            'nickname': self.nickname.text().strip(), 'phone': self.phone.text().strip()}))
 
     def values(self):
         return {
@@ -204,6 +216,9 @@ class AccountConfigTab(CustomTab):
             self.identity_widgets[key] = widget
             self.identity_layout.addRow(FlatSettingRow(label, widget, parent=self.identity_group))
         self.feature_code_label = QLabel("未记录（当前不参与任务）", self.identity_group)
+        self.reveal_phone = QCheckBox('显示完整手机号', self.identity_group)
+        self.reveal_phone.toggled.connect(self._render_identity)
+        self.identity_layout.addRow(self.reveal_phone)
         self.feature_code_label.setToolTip("来自游戏防 OLED 烧屏遮罩区域；当前只记录，不参与任务")
         self.identity_layout.addRow(FlatSettingRow("游戏内特征码（只读）", self.feature_code_label, parent=self.identity_group))
         self.identity_task_fields = QWidget(self.identity_group)
@@ -349,7 +364,7 @@ class AccountConfigTab(CustomTab):
         try:
             records = self.editor.repository.list_profiles()
             for record in records:
-                label = str(record.account.get("display_name", "未命名账号"))
+                label = account_display_label(record.account)
                 self.profile_combo.addItem(label, record.profile_id)
         except AccountRepositoryError as exc:
             # A missing master is a safe-mode state during first launch or
@@ -375,7 +390,8 @@ class AccountConfigTab(CustomTab):
         if not profile_id:
             return
         self.draft = self._failed_drafts.pop(profile_id, None) or self.editor.load_draft(profile_id)
-        label = self.draft.account.get("display_name", "未命名账号")
+        self.reveal_phone.setChecked(False)
+        label = account_display_label(self.draft.account)
         masked_phone = self.draft.account.get("masked_phone") or "未记录"
         alternate = self.draft.account.get("alternate_login_name") or "未记录"
         feature_code = self.draft.account.get("game_feature_code") or "未记录（当前不参与任务）"
@@ -433,7 +449,11 @@ class AccountConfigTab(CustomTab):
         if self.draft is None:
             return
         for key, widget in self.identity_widgets.items():
-            widget.setText(str(self.draft.account.get(key) or ""))
+            value = str(self.draft.account.get(key) or "")
+            if key == 'phone' and value and not self.reveal_phone.isChecked():
+                from src.account_identity import masked_phone
+                value = masked_phone(value)
+            widget.setText(value)
         self.feature_code_label.setText(str(self.draft.account.get("game_feature_code")
                                             or "未记录（当前不参与任务）"))
 
@@ -580,12 +600,23 @@ class AccountConfigTab(CustomTab):
             template = self.editor.load_template(self.selected_profile_id)
             sequence_ids = self.editor.repository.list_sequence_ids()
             dialog = NewAccountDialog(sequence_ids, self.view)
+            from src.account_identity import short_profile_name
+            records = self.editor.repository.list_profiles()
+            occupied = {short_profile_name(record.account.get('display_name')) for record in records}
+            number = 1
+            while f'A{number}' in occupied:
+                number += 1
+            dialog.short_name.setText(f'A{number}')
             if dialog.exec() != QDialog.Accepted:
                 return None
             values = dialog.values()
+            phone = ''.join(str(values['phone']).split())
+            duplicates = [account_display_label(record.account) for record in records
+                          if str(record.account.get('phone') or '') == phone and phone]
+            warning = ('\n注意：手机号与以下账号重复：' + '、'.join(duplicates) + '\n不会合并账号。') if duplicates else ''
             answer = QMessageBox.question(
                 self.view, "确认新建账号",
-                f"确认使用新账号模板创建 {str(values['display_name']).strip().upper()}？",
+                f"确认使用新账号模板创建 {account_display_label(values)}？{warning}",
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return None
@@ -615,7 +646,7 @@ class AccountConfigTab(CustomTab):
             self._apply_text()
             label = str(self.draft.account.get("display_name", self.draft.profile_id))
             sequence_ids = tuple(name for name, box in self.sequence_widgets.items() if box.isChecked())
-            answer = QMessageBox.question(self.view, "确认账号", f"确认保存账号 {label} 的修改？")
+            answer = QMessageBox.question(self.view, "确认账号", f"确认保存账号 {account_display_label(self.draft.account)} 的修改？")
             if answer != QMessageBox.Yes:
                 return None
             submitted = copy.deepcopy(self.draft)
@@ -655,7 +686,7 @@ class AccountConfigTab(CustomTab):
             changes = "、".join(preview.changes) or "无"
             answer = QMessageBox.question(
                 self.view, "确认重新绑定",
-                f"账号 {self.draft.account.get('display_name', self.draft.profile_id)} 将修改：{changes}\n"
+                f"账号 {account_display_label(self.draft.account)} 将修改：{changes}\n"
                 "旧身份会先备份，是否继续？")
             if answer != QMessageBox.StandardButton.Yes:
                 return None
@@ -679,7 +710,7 @@ class AccountConfigTab(CustomTab):
         label = str(self.draft.account.get("display_name") or
                     self.draft.account.get("short_name") or "未命名账号")
         preview = self.editor.repository.preview_profile_deletion(self.draft.profile_id)
-        first = QMessageBox.question(self.view, "删除账号", f"确认删除账号 {label}？")
+        first = QMessageBox.question(self.view, "删除账号", f"确认删除账号 {account_display_label(self.draft.account)}？")
         if first != QMessageBox.StandardButton.Yes:
             return None
         sequences = "、".join(preview.sequence_ids) or "无"
