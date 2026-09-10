@@ -1,5 +1,5 @@
 <div align="center">
-  <p>新版界面说明：<a href="docs/references/flat-ui.md">1.47.00 任务、账号、自动辅助、工具与设置统一分类</a></p>
+  <p>新版功能：<a href="docs/references/auto-combat-recovery.md">1.48.00 自动战斗手动重启保护</a> · <a href="docs/references/flat-ui.md">五页统一分类界面</a></p>
   <h1 align="center">
     <img src="icons/icon.png" width="200" alt="ok-ww logo"/>
     <br/>

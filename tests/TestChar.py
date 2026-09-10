@@ -132,6 +132,9 @@ class TestChar(TaskTestCase):
 
     def test_auto_combat_switches_to_healer_before_and_after_combat(self):
         combat = AutoCombatTask.__new__(AutoCombatTask)
+        combat._held_keys = {}
+        combat._held_mouse = {}
+        combat._error_count = 0
         events = []
         combat.scene = type('Scene', (), {'in_team': lambda self, check: True})()
         combat.in_team_and_world = lambda: True

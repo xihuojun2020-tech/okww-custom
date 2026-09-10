@@ -121,6 +121,9 @@ class TaskCard(ConfigCard):
                  else '等待中' if self.task.enabled and self.onetime
                  else '已启用' if self.task.enabled else '未运行' if self.onetime else '已关闭')
         self.state_label.setText(state)
+        recovery = getattr(self.task, 'recovery_status', '')
+        if recovery:
+            self.state_label.setText(f'{state} · {recovery}')
 
     def start_clicked(self):
         if self.task.enabled and self.task.paused:
@@ -231,6 +234,10 @@ class TaskCard(ConfigCard):
             self._rebuild_button_layout()
 
     def check_changed(self, checked):
+        manual_control = getattr(self.task, 'set_enabled_from_ui', None)
+        if callable(manual_control):
+            manual_control(checked)
+            return
         if checked:
             import threading
             threading.Thread(target=self.task.enable, name="TaskEnable").start()

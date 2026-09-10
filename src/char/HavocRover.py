@@ -12,6 +12,7 @@ _ROVER_FORM_NAMES = {
 class HavocRover(BaseChar):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.use_skyfall_severance = False
         self._bind_form_logger()
 
     def reset_state(self):
@@ -104,8 +105,9 @@ class HavocRover(BaseChar):
         if self.ring_index == -1:
             self.task._ensure_ring_index()
             self._bind_form_logger()
-            if self.ring_index == Elements.WIND:
-                self.init_wind()
+        # Display/concerto recognition may have resolved the form before init().
+        if self.ring_index == Elements.WIND:
+            self.init_wind()
 
     def perform_spectro_routine(self):
         if self.has_intro:

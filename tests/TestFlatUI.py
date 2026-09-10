@@ -368,6 +368,22 @@ class TestFlatUI(unittest.TestCase):
                 self.assertFalse(card.isExpand)
                 card.deleteLater()
 
+    def test_auto_combat_manual_control_is_not_called_by_state_refresh(self):
+        from ok.gui.tasks.TaskCard import TaskCard
+        task = example_task('自动战斗')
+        task.set_enabled_from_ui = Mock()
+        task.recovery_status = '手动保持开启'
+        task.enabled = True
+        with patch.object(og, 'app', SimpleNamespace(tr=str)), \
+                patch.object(og, 'executor', SimpleNamespace(waiting_for_task=lambda _: '')):
+            card = TaskCard(task, False)
+            card.update_buttons(task)
+            task.set_enabled_from_ui.assert_not_called()
+            self.assertIn('手动保持开启', card.state_label.text())
+            card.enable_button.setChecked(False)
+            task.set_enabled_from_ui.assert_called_once_with(False)
+            card.deleteLater()
+
 
 if __name__ == '__main__':
     unittest.main()
