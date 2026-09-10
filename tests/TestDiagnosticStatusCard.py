@@ -83,6 +83,36 @@ class TestDiagnosticStatusCard(unittest.TestCase):
                 'status': 'installed', 'system_verified': True}))
             self.assertIn('已由系统验证', diagnostic_status_text(root))
 
+    def test_capture_status_distinguishes_missing_frames_from_upload_failure(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            run = root / 'run'
+            run.mkdir()
+            (run / 'evidence-status.json').write_text(json.dumps({
+                'updated_at': time.time(), 'ring_frames': 3, 'warning': 'stale_frame'}))
+            text = diagnostic_status_text(root)
+            self.assertIn('已缓存 3 张', text)
+            self.assertIn('画面未更新', text)
+            self.assertIn('最近上传错误：无', text)
+
+    def test_manual_capture_only_queues_diagnostics(self):
+        from unittest.mock import Mock
+        from src.runtime import diagnostic_lifecycle
+        with tempfile.TemporaryDirectory() as temp, patch('src.gui.DiagnosticStatusCard.default_root', return_value=Path(temp)):
+            card = DiagnosticStatusCard()
+            try:
+                card.timer.stop()
+                self.wait(card)
+                session = Mock(closed_session=False)
+                with patch.object(diagnostic_lifecycle, '_session', session):
+                    card.test_capture()
+                self.assertEqual(session.record_error.call_args.args[0]['source'], 'manual_test')
+                session.record_event.assert_called_once()
+                self.assertIn('已触发截图测试', card.status.text())
+            finally:
+                card.deleteLater()
+                self.app.processEvents()
+
 
 if __name__ == '__main__':
     unittest.main()

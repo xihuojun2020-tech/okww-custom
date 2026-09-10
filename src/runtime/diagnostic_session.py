@@ -13,10 +13,11 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from src.runtime.diagnostic_export import atomic_json, digest, sanitize_data, sanitize_file, sanitize_text
+from src.runtime.diagnostic_export import atomic_json, digest, sanitize_data, sanitize_file, sanitize_text, sanitize_identity, sanitize_incident
 from src.runtime.diagnostic_policy import POLICY, installation_id, settings
 
 PART_LIMIT = 4 * 1024 * 1024
+LOG_INTERVAL = 2.
 
 
 def default_root():
@@ -65,7 +66,7 @@ def log_sources(run):
             or p.name == 'crash.json' or (p.name.startswith('collected-') and p.suffix == '.json')}
 
 
-def seal_run(run, kind, *, sizes=None, reviewed_images=(), offsets=None):
+def seal_run(run, kind, *, sizes=None, reviewed_images=(), offsets=None, incident=None, prepared_images=False):
     """Publish a local batch only after every exported file is valid."""
     run = Path(run).absolute()
     root = run.parent
@@ -84,7 +85,7 @@ def seal_run(run, kind, *, sizes=None, reviewed_images=(), offsets=None):
         entries.append({'path': name, 'size': len(content), 'sha256': digest(content)})
 
     metadata['batch_kind'] = kind
-    add(f'日志/{prefix}/metadata.json', json.dumps(sanitize_data(metadata), ensure_ascii=False).encode())
+    add(f'日志/{prefix}/metadata.json', json.dumps(sanitize_identity(metadata), ensure_ascii=False).encode())
     sources = sizes if sizes is not None else log_sources(run)
     # Files are append-only. Snapshot sizes are captured under the writer lock.
     for index, (source, size) in enumerate(sorted(sources.items())):
@@ -100,7 +101,15 @@ def seal_run(run, kind, *, sizes=None, reviewed_images=(), offsets=None):
         snapshot.unlink()
         add(f'日志/{prefix}/{index:04d}{source.suffix}', content)
     for index, picture in enumerate(reviewed_images):
-        add(f'截图/{prefix}/{Path(picture).stem}.png', sanitize_file(picture, reviewed_image=True))
+        name = f'截图/{prefix}/{Path(picture).stem}.png'
+        content = sanitize_file(picture, reviewed_image=True, prepared_png=prepared_images)
+        add(name, content)
+        if incident is not None:
+            for frame in incident['frames']:
+                if frame['frame_id'] == Path(picture).stem:
+                    frame.update(remote_path=name, batch_id=batch_id, sha256=digest(content))
+    if incident is not None:
+        add(f'日志/{prefix}/incident.json', json.dumps(sanitize_incident(incident), ensure_ascii=False).encode())
     manifest = {'schema_version': 1, 'run_id': run.name, 'batch_id': batch_id,
                 'created_at': time.time(), 'kind': kind, 'files': entries,
                 'policy': metadata.get('policy'),
@@ -111,9 +120,17 @@ def seal_run(run, kind, *, sizes=None, reviewed_images=(), offsets=None):
     return batch
 
 
+def publish_incident(run, incident, pictures):
+    seal_run(run, 'error', sizes={}, reviewed_images=pictures, incident=incident, prepared_images=True)
+    return incident
+
+
 def seal_pending(run, kind, *, sizes=None):
     """At least once: advance offsets only after an immutable batch is durable."""
     run = Path(run)
+    from src.runtime.diagnostic_evidence import recover_events
+    recover_events(run, lambda index, pictures: publish_incident(run, index, pictures),
+                   interrupted=kind == 'final')
     state_path = run / 'sealed-offsets.json'
     state = json.loads(state_path.read_text(encoding='utf-8')) if state_path.exists() else {}
     sources = sizes if sizes is not None else log_sources(run)
@@ -151,6 +168,7 @@ class DiagnosticSession(logging.Handler):
         self.lease = FileLease(self.run / '.session.lock')
         self.guard = threading.RLock()
         self.pending = queue.Queue(maxsize=32)
+        self.triggers = queue.Queue(maxsize=128)
         self.closed_session = False
         self.metadata = {'schema_version': 1, 'version': version, 'policy': POLICY,
                          'device_id': settings(self.root)['device_id'], 'installation_id': installation_id(),
@@ -160,6 +178,7 @@ class DiagnosticSession(logging.Handler):
         self.parts, self.total, self.last_error_batch = {}, 0, 0
         self.sequence = 0
         self.frame_provider = None
+        self.sample_provider = None
         self.on_batch_ready = None
         self.collector = None
         if source_root is not None:
@@ -167,12 +186,18 @@ class DiagnosticSession(logging.Handler):
             self.collector = FileCollector(source_root, self.root,
                                            current_run_started_at=current_run_started_at)
         self.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(name)s %(message)s'))
+        from src.runtime.diagnostic_evidence import EvidenceWindow
+        identity = {key: self.metadata[key] for key in ('device_id', 'installation_id', 'run_id', 'version')}
+        self.evidence = EvidenceWindow(self.run / 'incidents', identity,
+                                       lambda index, pictures: publish_incident(self.run, index, pictures))
+        self.capacity_checked_at = 0
+        self.capacity_warning = None
         self._save_metadata()
         self.worker = threading.Thread(target=self._work, name='diagnostic-local', daemon=True)
         self.worker.start()
 
     def _save_metadata(self):
-        atomic_json(self.run / 'metadata.json', sanitize_data(self.metadata))
+        atomic_json(self.run / 'metadata.json', sanitize_identity(self.metadata))
 
     def _append(self, stem, suffix, text):
         data = (text + '\n').encode('utf-8')
@@ -194,10 +219,11 @@ class DiagnosticSession(logging.Handler):
                     return
                 self._append('run', '.log', sanitize_text(self.format(record)))
                 if record.levelno >= logging.ERROR:
-                    self.record_event('error_log', {'message': self.format(record), 'logger': record.name})
+                    data = {'message': self.format(record), 'logger': record.name, 'level': record.levelname}
+                    self.record_event('error_log', data)
+                    self.record_error(data)
                     if time.monotonic() - self.last_error_batch >= 5:
                         self.last_error_batch = time.monotonic()
-                        self.capture_last_frame()
                         self.request_batch('error')
         except Exception:
             # Never recurse through logging or affect the task being observed.
@@ -220,6 +246,53 @@ class DiagnosticSession(logging.Handler):
         except queue.Full:
             self.metadata['dropped_batches'] += 1
 
+    def record_error(self, data):
+        """Only a bounded queue operation in the caller; frames stay off its thread."""
+        data = {key: value[:4096] if isinstance(value, str) else value for key, value in data.items()}
+        data['event_sequence'] = self.sequence
+        try:
+            self.triggers.put_nowait((time.monotonic(), sanitize_data(data)))
+            self.request_batch('incident')
+        except queue.Full:
+            self.metadata['dropped_error_triggers'] = self.metadata.get('dropped_error_triggers', 0) + 1
+
+    def _sample_evidence(self):
+        now = time.monotonic()
+        if now - self.capacity_checked_at >= 30:
+            self.capacity_checked_at = now
+            free = shutil.disk_usage(self.root).free
+            # Stop walking as soon as the quota is reached. Never delete pending evidence.
+            pending_bytes = 0
+            for ready in self.root.glob('*/batches/*/_READY'):
+                batch = ready.parent
+                state_path = self.root / 'states' / (batch.parents[1].name + '--' + batch.name + '.json')
+                try:
+                    state = json.loads(state_path.read_text(encoding='utf-8')) if state_path.exists() else {}
+                    if state.get('status') in ('uploaded', 'logs_purged'):
+                        continue
+                    manifest = json.loads((batch / 'manifest.json').read_text(encoding='utf-8'))
+                    pending_bytes += sum(item['size'] for item in manifest['files'])
+                except (OSError, ValueError, KeyError):
+                    continue
+                if pending_bytes >= 2 * 1024 ** 3:
+                    break
+            self.capacity_warning = ('low_disk_space' if free < 2 * 1024 ** 3 else
+                                     'pending_size_limit' if pending_bytes >= 2 * 1024 ** 3 else None)
+        if self.capacity_warning:
+            self.evidence.unavailable(self.capacity_warning)
+        elif self.sample_provider:
+            sample = self.sample_provider()
+            if sample is None:
+                self.evidence.unavailable('frame_unavailable')
+            else:
+                self.evidence.sample(*sample)
+        elif self.frame_provider:
+            self.evidence.sample(self.frame_provider())
+        else:
+            self.evidence.unavailable('frame_unavailable')
+        self.evidence.tick()
+        atomic_json(self.run / 'evidence-status.json', self.evidence.status())
+
     def add_screenshot(self, path):
         self.record_event('screenshot_saved', {'status': 'automatic_upload', 'suffix': Path(path).suffix})
         # Capture the exact file named by the framework hook. A directory scan can lag or
@@ -233,15 +306,36 @@ class DiagnosticSession(logging.Handler):
                 self.request_batch(('frame', frame.copy()))
 
     def _work(self):
+        next_log = time.monotonic() + LOG_INTERVAL
+        next_sample = time.monotonic()
         while True:
             queued = True
             try:
-                kind = self.pending.get(timeout=30)
+                end = self.evidence.deadline if self.evidence.active else float('inf')
+                kind = self.pending.get(timeout=max(0, min(next_log, next_sample, end) - time.monotonic()))
             except queue.Empty:
-                kind, queued = 'periodic', False
+                kind, queued = 'tick', False
             try:
                 if kind is None:
                     return
+                for _ in range(32):
+                    try:
+                        at, data = self.triggers.get_nowait()
+                    except queue.Empty:
+                        break
+                    self.evidence.trigger(data, at)
+                now = time.monotonic()
+                due_end = self.evidence.active and now >= self.evidence.deadline
+                if now >= next_sample or self.evidence.want_at or due_end:
+                    next_sample = (now + 1 if self.evidence.want_at or due_end else
+                                   max(next_sample + 1, now + .5))
+                    try:
+                        self._sample_evidence()
+                    except Exception as error:
+                        self.evidence.unavailable('capture_failed:' + type(error).__name__)
+                        self.evidence.tick()
+                if kind == 'final':
+                    self.evidence.finish()
                 if isinstance(kind, tuple):
                     action, source = kind
                     folder = self.run / 'screenshots'
@@ -265,12 +359,15 @@ class DiagnosticSession(logging.Handler):
                                       'local_file': saved.name if saved else None,
                                       'status': 'automatic_upload' if saved else 'unavailable'}, allow_closed=True)
                     kind = 'screenshot'
-                with self.guard:
-                    self._save_metadata()
-                    sizes = log_sources(self.run)
-                if self.collector:
-                    self.collector.collect(self.run)
-                seal_pending(self.run, kind, sizes=sizes)
+                if time.monotonic() >= next_log or kind not in ('tick', 'incident'):
+                    next_log = time.monotonic() + LOG_INTERVAL
+                    with self.guard:
+                        self._save_metadata()
+                        sizes = log_sources(self.run)
+                    if self.collector:
+                        self.collector.collect(self.run)
+                    seal_pending(self.run, kind if kind != 'tick' else 'periodic', sizes=sizes)
+                # Also wake for incident-only batches; the process launcher applies its throttle.
                 if self.on_batch_ready:
                     self.on_batch_ready()
             except Exception as error:

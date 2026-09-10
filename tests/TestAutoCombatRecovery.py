@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 from src.task.AutoCombatTask import AutoCombatTask
 from src.char.HavocRover import HavocRover
 from src.char.BaseChar import Elements
-from ok.task.TaskExecutor import TaskExecutor
+from custom_ok.ok.task.TaskExecutor import TaskExecutor
 
 
 class TestAutoCombatRecovery(unittest.TestCase):

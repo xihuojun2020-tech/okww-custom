@@ -35,6 +35,16 @@ class TestTestRunner(unittest.TestCase):
         self.assertEqual(result['skipped'], 1)
         self.assertEqual(result['exit_code'], 0)
 
+    def test_child_imports_shipped_framework_without_modifying_site_packages(self):
+        path = self.make_test_file(
+            'import inspect\n'
+            'from ok.task.TaskExecutor import TaskExecutor\n'
+            'class Checks(unittest.TestCase):\n'
+            '    def test_source(self):\n'
+            '        self.assertIn("custom_ok", inspect.getfile(TaskExecutor))\n')
+        result = run_isolated(path, timeout=15)
+        self.assertEqual(result['status'], 'passed')
+
     def test_assertion_failure_is_not_success(self):
         path = self.make_test_file('class Checks(unittest.TestCase):\n'
                               '    def test_fail(self): self.fail("synthetic failure")\n')

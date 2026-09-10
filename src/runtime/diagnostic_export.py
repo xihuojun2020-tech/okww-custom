@@ -35,6 +35,28 @@ def sanitize_data(value):
     return sanitize_text(value) if isinstance(value, str) else value
 
 
+def sanitize_identity(value):
+    """Generated protocol identifiers aren't phone numbers embedded in free text."""
+    cleaned = sanitize_data(value)
+    for key in ('device_id', 'installation_id', 'run_id', 'incident_id', 'continued_from'):
+        item = value.get(key)
+        if isinstance(item, str) and re.fullmatch(r'[a-zA-Z0-9_-]{1,80}', item):
+            cleaned[key] = item
+    return cleaned
+
+
+def sanitize_incident(value):
+    cleaned = sanitize_identity(value)
+    for original, frame in zip(value.get('frames', []), cleaned.get('frames', [])):
+        for key, pattern in (('frame_id', r'[a-f0-9]{32}'), ('sha256', r'[a-f0-9]{64}'),
+                             ('batch_id', r'[0-9]{6}-[a-f0-9]{12}'),
+                             ('remote_path', r'截图/okww-custom/[0-9-]+/[a-zA-Z0-9_-]+/[0-9]{6}-[a-f0-9]{12}/[a-f0-9]{32}\.png')):
+            item = original.get(key)
+            if isinstance(item, str) and re.fullmatch(pattern, item):
+                frame[key] = item
+    return cleaned
+
+
 def atomic_json(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -75,7 +97,7 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def sanitize_file(path, *, reviewed_image=False):
+def sanitize_file(path, *, reviewed_image=False, prepared_png=False):
     path = Path(path)
     if path.is_symlink() or path.is_junction() or path.stat().st_size > MAX_FILE:
         raise ValueError('diagnostic file is linked or too large')
@@ -90,6 +112,11 @@ def sanitize_file(path, *, reviewed_image=False):
         with Image.open(path) as picture:
             if picture.width * picture.height > 32_000_000:
                 raise ValueError('image dimensions too large')
+            if prepared_png and picture.format == 'PNG' and picture.mode == 'RGB' and not picture.info:
+                # Our frame encoder already strips metadata. Verify CRCs without
+                # re-encoding ten large pre-frames on the one-second sampling path.
+                picture.verify()
+                return path.read_bytes()
             output = BytesIO()
             picture.convert('RGB').save(output, format='PNG')
             return output.getvalue()

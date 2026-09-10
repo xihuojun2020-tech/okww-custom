@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import builtins
+import importlib.util
 import json
 import os
 import signal
@@ -19,6 +20,20 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.observability import install_redaction_filters, redact_message
+
+
+def _install_framework_overrides():
+    """Test the same shipped overrides main.py installs, without mutating a venv."""
+    class CustomFrameworkFinder:
+        def find_spec(self, fullname, path=None, target=None):
+            if fullname.startswith('ok.'):
+                source = ROOT / 'custom_ok' / Path(*fullname.split('.'))
+                if source.with_suffix('.py').is_file():
+                    return importlib.util.spec_from_file_location(fullname, source.with_suffix('.py'))
+                if (source / '__init__.py').is_file():
+                    return importlib.util.spec_from_file_location(fullname, source / '__init__.py')
+            return None
+    sys.meta_path.insert(0, CustomFrameworkFinder())
 
 
 def _write_result(path, result):
@@ -90,6 +105,7 @@ def _run_test(test_file, result_file):
         original_print(*(redact_message(value) for value in values), **kwargs)
 
     install_redaction_filters()
+    _install_framework_overrides()
     builtins.print = safe_print
     sys.argv[0] = str(ROOT / "python.exe -m unittest")
     path = Path(test_file).resolve()

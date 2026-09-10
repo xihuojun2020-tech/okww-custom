@@ -13,6 +13,8 @@ Navigation and theme settings live in `mkdocs.yml` at the repository root.
 
 ## Architecture and code review
 
+- [局域网自动日志与错误截图（1.54.00）](references/lan-diagnostics.md)
+- [另一台电脑 AI：更新、配置与验收](superpowers/specs/2026-09-10-remote-ai-diagnostic-requirements.md)
 - [完成检查使用说明（1.53.00）](references/completion-evidence.md)
 - [完成检查模块设计](superpowers/specs/2026-09-10-completion-evidence-design.md)
 - [程序结构说明（1.53.00）](程序结构说明.md)

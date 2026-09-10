@@ -43,6 +43,8 @@ def scan(target):
         except (OSError, ValueError, KeyError, TypeError) as error:
             key = digest(str(control).encode())[:24]
             atomic_json(target / '错误' / (key + '.json'), {'status': 'validation_failed', 'error': sanitize_text(error)})
+    from src.runtime.diagnostic_incidents import scan_incidents
+    results.extend(scan_incidents(target))
     return results
 
 

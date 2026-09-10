@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import numpy as np
-from ok.task.TaskExecutor import TaskExecutor
+from custom_ok.ok.task.TaskExecutor import TaskExecutor
 from custom_ok.ok.device.capture_methods.windows_graphics import WindowsGraphicsCaptureMethod
 
 

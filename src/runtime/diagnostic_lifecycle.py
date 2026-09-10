@@ -107,7 +107,7 @@ def record_crash(kind, value, tb, *, fatal=True):
         atomic_json(_session.run / 'crash.json', data)
         if fatal:
             _session.metadata['process_status'] = 'crashed'
-        _session.capture_last_frame()
+        _session.record_error(data)
         _session.request_batch('error')
     except Exception:
         pass
@@ -122,6 +122,13 @@ def attach_framework_hooks():
         from ok import og
         from ok.gui.debug.Screenshot import Screenshot
         _session.frame_provider = lambda: getattr(getattr(og, 'executor', None), '_frame', None)
+        def sample():
+            executor = getattr(og, 'executor', None)
+            if executor is None:
+                return None
+            executor._diagnostic_capture_enabled = True
+            return getattr(executor, '_diagnostic_frame', None)
+        _session.sample_provider = sample
         original = Screenshot.save_pil_image
         if getattr(original, '_diagnostic_hook', False):
             return

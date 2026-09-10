@@ -218,11 +218,51 @@ def bounded_upload(batch, target, timeout):
         raise OSError(message)
 
 
+def probe_target(target):
+    """A unique disposable directory tests precisely the permissions uploads need."""
+    connect(target)
+    root = Path(target).absolute()
+    directory = safe_path(root, '.okww-probe-' + uuid.uuid4().hex)
+    directory.mkdir()
+    source, renamed = directory / 'probe.txt', directory / 'renamed.txt'
+    try:
+        payload = ('okww diagnostic connection test ' + uuid.uuid4().hex).encode('ascii')
+        source.write_bytes(payload)
+        if source.read_bytes() != payload:
+            raise OSError('shared directory readback failed')
+        source.replace(renamed)
+        if renamed.read_bytes() != payload:
+            raise OSError('shared directory rename verification failed')
+        renamed.unlink()
+        return {'status': 'passed', 'checks': ['write', 'read', 'rename', 'delete']}
+    finally:
+        # Only the two known files in our just-created child. No recursive deletion.
+        safe_path(root, directory.name)
+        for path in (source, renamed):
+            safe_path(directory, path.name).unlink(missing_ok=True)
+        directory.rmdir()
+
+
+def bounded_probe(target, timeout=30):
+    result = subprocess.run([sys.executable, '-E', '-s', '-m', 'src.runtime.diagnostic_uploader',
+                             '--probe-worker', '--target', str(target)],
+                            cwd=str(Path(__file__).resolve().parents[2]),
+                            capture_output=True, text=True, timeout=timeout,
+                            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+    if result.returncode:
+        raise OSError(sanitize_text(result.stderr[-2000:]))
+    # The installed ok package may print an import banner before the worker's result.
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--root', type=Path, default=default_root())
     parser.add_argument('--target')
     parser.add_argument('--configure', action='store_true')
+    parser.add_argument('--probe', action='store_true', help='Verify target share permissions with a 30s timeout')
+    parser.add_argument('--probe-worker', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--username', default='ai-upload')
     parser.add_argument('--save-credentials', action='store_true')
     parser.add_argument('--ensure-task', action='store_true')
     parser.add_argument('--cleanup-one', type=Path)
@@ -232,6 +272,24 @@ def main():
     parser.add_argument('--reviewed-image', type=Path)
     parser.add_argument('--run', type=Path)
     args = parser.parse_args()
+    if args.probe or args.probe_worker:
+        target = args.target or settings(args.root)['target']
+        if args.probe_worker:
+            try:
+                print(json.dumps(probe_target(target)))
+                return 0
+            except Exception as error:
+                print(sanitize_text(error), file=sys.stderr)
+                return 1
+        try:
+            print(json.dumps(bounded_probe(target)))
+            return 0
+        except subprocess.TimeoutExpired:
+            print('共享目录检查超过 30 秒；请检查地址、网络和权限', file=sys.stderr)
+            return 1
+        except (OSError, ValueError) as error:
+            print(sanitize_text(error), file=sys.stderr)
+            return 1
     if args.upload_one:
         try:
             connect(args.target)
@@ -254,7 +312,7 @@ def main():
         return 0
     if args.save_credentials:
         import getpass
-        save_credentials(args.target or DEFAULT_TARGET, 'ai-upload', getpass.getpass('NAS password: '))
+        save_credentials(args.target or settings(args.root)['target'], args.username, getpass.getpass('Share password: '))
         return 0
     if args.configure:
         value = settings(args.root)

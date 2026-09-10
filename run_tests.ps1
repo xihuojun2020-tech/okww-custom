@@ -36,6 +36,7 @@ $groups = @{
   integration = @(
     "TestWeeklyDailyIntegration.py",
     "TestDiagnosticPipeline.py",
+    "TestDiagnosticEvidence.py",
     "TestDiagnosticPolicy.py",
     "TestAccountConfigBundle.py", "TestAccountPublishService.py", "TestAccountDeletion.py", "TestSecureBackup.py",
     "TestConfigBackup.py", "TestConfigIntegrity.py", "TestAccountRuntimeIntegration.py",

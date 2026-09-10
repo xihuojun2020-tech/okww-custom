@@ -56,6 +56,9 @@ class TaskExecutor:
                  ocr_lib=None,
                  config_folder=None, debug=False, global_config=None, ocr_target_height=0, config=None):
         self._frame = None
+        self._diagnostic_frame = None
+        self._diagnostic_capture_enabled = False
+        self._diagnostic_capture_after = 0.
         device_manager.executor = self
         self.pause_start = time.time()
         self.pause_end_time = time.time()
@@ -263,6 +266,7 @@ class TaskExecutor:
                         logger.warning(f"captured wrong size frame: {width}x{height}")
                     self._frame = frame
                     self._last_frame_time = time.time()
+                    self._diagnostic_frame = (frame, self._last_frame_time, time.monotonic())
                     if self.blur_overlay_processor:
                         self.blur_overlay_processor.next_frame(frame)
                     return self._frame
@@ -276,6 +280,26 @@ class TaskExecutor:
 
     def is_executor_thread(self):
         return self.thread == threading.current_thread()
+
+    def _service_diagnostic_capture(self):
+        """Refresh idle/error-window frames on the capture owner's thread only."""
+        if not getattr(self, '_diagnostic_capture_enabled', False) or not self.is_executor_thread():
+            return
+        now = time.monotonic()
+        if now < getattr(self, '_diagnostic_capture_after', 0):
+            return
+        self._diagnostic_capture_after = now + .8
+        latest = getattr(self, '_diagnostic_frame', None)
+        if latest is not None and now - latest[2] < .8:
+            return
+        try:
+            if not self.exit_event.is_set() and self.can_capture():
+                frame = self.method.get_frame()
+                if frame is not None:
+                    self._diagnostic_frame = (frame, time.time(), time.monotonic())
+        except Exception:
+            # No logging here: capture failure must not cause diagnostic error storms.
+            pass
 
     def connected(self):
         return self.method is not None and self.method.connected()
@@ -317,6 +341,7 @@ class TaskExecutor:
         self.pause_end_time = time.time() + timeout
         task = None
         while True:
+            TaskExecutor._service_diagnostic_capture(self)
             self.check_enabled(check_pause=False)
             next_sleep_check = None
             if self.current_task is not None:
@@ -368,6 +393,8 @@ class TaskExecutor:
             return self._wake_version
 
     def _wait_for_activity(self, timeout, wake_version=None):
+        if getattr(self, '_diagnostic_capture_enabled', False):
+            timeout = min(timeout, .25)
         if timeout <= 0:
             return False
         condition = getattr(self, '_wake_condition', None)
@@ -539,6 +566,7 @@ class TaskExecutor:
     def execute(self):
         logger.info(f"start execute")
         while not self.exit_event.is_set():
+            TaskExecutor._service_diagnostic_capture(self)
             if self.paused:
                 logger.info(f'executor is paused sleep')
                 self.sleep(1)

@@ -40,6 +40,12 @@ def purge_remote_logs(batch, target, *, now=None):
             raise ValueError('remote batch differs from delivered batch')
         journal.write_text(checksum, encoding='ascii')
     # Readers stop seeing the batch as complete before any payload is removed.
+    for item in manifest['files']:
+        if item['path'].endswith('/incident.json'):
+            source = safe_path(remote, item['path'])
+            if source.exists():
+                from src.runtime.diagnostic_incidents import expire_view
+                expire_view(target, json.loads(bounded_read(remote, item['path'], 1024 * 1024)))
     safe_path(control, '_UPLOAD_COMPLETE').unlink(missing_ok=True)
     for item in manifest['files']:
         if item['path'].startswith('日志/'):
@@ -114,6 +120,13 @@ def weekly_cleanup(root, target, *, now=None, purge=None, source_root=REPO):
                     if all_purged:
                         for path in log_sources(run):
                             safe_path(run, path.name).unlink(missing_ok=True)
+                        from src.runtime.diagnostic_incidents import without_logs
+                        for path in (run / 'incidents').glob('*/event.json'):
+                            safe_path(run, path.relative_to(run).as_posix())
+                            index = json.loads(path.read_text(encoding='utf-8'))
+                            retained = without_logs(index)
+                            retained['published_revision'] = index['revision']
+                            atomic_json(path, retained)
             except (OSError, ValueError, KeyError, subprocess.TimeoutExpired):
                 complete = False
         purge_collected_sources(root, source_root, now)
