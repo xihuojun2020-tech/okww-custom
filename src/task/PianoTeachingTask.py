@@ -9,13 +9,13 @@ from src.task.piano import KEY_ORDER, PianoDetector, PianoStateMachine
 
 
 class PianoTeachingTask(WWOneTimeTask, BaseWWTask):
-    navigation_section = "tests"
+    navigation_section = "activities"
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = "Piano Teaching"
         self.description = "Open piano teaching first; single highlighted notes are played until you stop the task."
-        self.group_name = "🧪 测试功能"
+        self.group_name = "常驻活动"
         self.supported_languages = ["zh_CN"]
         self.support_schedule_task = False
         self.default_config.update({

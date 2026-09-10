@@ -7,7 +7,6 @@ import re
 import cv2
 import numpy as np
 
-from qfluentwidgets import FluentIcon as Icon
 
 from src.char.CharFactory import char_dict, char_names
 from src.task.abyss_team_planner import (
@@ -585,7 +584,7 @@ def merge_character_records(records):
 class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
     """Scan and automatically challenge every available Adversity Tower floor."""
 
-    navigation_section = "tests"
+    navigation_section = "tasks"
     _ASSET_DIR = Path("assets/images")
     _TEMPLATES = {
         "period_selected": _ASSET_DIR / "abyss_period_challenge_selected.png",
@@ -597,13 +596,12 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.name = "🧪 自动深渊"
+        self.name = "自动深塔"
         self.description = (
             "扫描逆境深塔三座塔的关卡状态，按设置的顺序逐塔重新识别角色体力、自动编队并战斗。"
             "成功后继续下一层，失败时跳过当前塔剩余关卡。"
         )
-        self.group_name = "🧪 测试功能"
-        self.group_icon = Icon.DEVELOPER_TOOLS
+        self.group_name = ""
         self.default_config = {TOWER_PRIORITY: SIDE_TOWERS_FIRST}
         self.config_type = {
             TOWER_PRIORITY: {

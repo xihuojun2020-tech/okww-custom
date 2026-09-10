@@ -1448,6 +1448,15 @@ msgstr "Comprobación del lunes"
 msgid "Last Completed - Weekly Boss Sunday"
 msgstr "Revisión del domingo"
 
+msgid "自动深塔"
+msgstr "Torre de la Adversidad automática"
+
+msgid "第二索拉·诡影迷踪"
+msgstr "Segunda Solaria · Sombras misteriosas"
+
+msgid "手动进入活动后开始，约每秒短按 F；切出游戏时等待，活动结束后请手动停止。"
+msgstr "Entra al evento manualmente e inicia. Pulsa F brevemente cada segundo aproximadamente; espera si el juego pierde el foco. Detén la tarea al terminar."
+
 msgid "Piano Teaching"
 msgstr "Lección de piano"
 

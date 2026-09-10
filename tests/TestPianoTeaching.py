@@ -28,9 +28,9 @@ def piano_frame(keys=(), width=1280, height=720):
 
 
 class TestPianoTeaching(unittest.TestCase):
-    def test_task_is_registered_in_test_features(self):
+    def test_task_is_registered_in_activities(self):
         self.assertIn(["src.task.PianoTeachingTask", "PianoTeachingTask"], config["onetime_tasks"])
-        self.assertEqual(PianoTeachingTask.navigation_section, "tests")
+        self.assertEqual(PianoTeachingTask.navigation_section, "activities")
 
     def test_layout_and_reference_mapping(self):
         self.assertEqual(key_for(1, 1), "S")

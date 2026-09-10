@@ -47,7 +47,7 @@ def task_category(task):
     name = type(task).__name__
     if name in ('DailyTask', 'MultiAccountDailyTask'):
         return '每日执行'
-    if name in ('WeeklyBossTask', 'GardenTask'):
+    if name in ('WeeklyBossTask', 'GardenTask', 'AutoAbyssTask'):
         return '每周任务'
     if name in ('FarmEchoTask', 'MergeEchoTask'):
         return '声骸获取与整理'

@@ -16,7 +16,7 @@ $Python = if (Test-Path ".\.venv\Scripts\python.exe") {
 $groups = @{
   unit = @(
     "TestAutoCombatRecovery.py",
-    "TestWeeklyBossTask.py", "TestPianoTeaching.py",
+    "TestWeeklyBossTask.py", "TestPianoTeaching.py", "TestSecondSolTask.py",
     "TestWindowsGraphicsRecovery.py", "TestMultiStartState.py", "TestHotkeyRegistration.py",
     "test_extract_issue_log.py", "TestAccountConfigEditor.py", "TestAccountDirectoryAssessment.py",
     "TestAccountFieldMetadata.py", "TestAccountGraphStore.py", "TestAccountIdentity.py",

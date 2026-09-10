@@ -1,7 +1,9 @@
 import unittest
 import inspect
 
-from src.gui.navigation_sections import TASKS, TOOLS, classify_task
+from src.gui.navigation_sections import TASKS, TOOLS, classify_task, task_category
+from src.task.PianoTeachingTask import PianoTeachingTask
+from src.task.SecondSolTask import SecondSolTask
 from src.task.EventTask import EventTask
 from src.task.TestAccountSwitchTask import TestAccountSwitchTask
 from src.task.AutoAbyssTask import AutoAbyssTask
@@ -13,7 +15,11 @@ class TestTaskNavigationClassification(unittest.TestCase):
         self.assertEqual(EventTask.activity_category, "常驻活动")
         self.assertEqual(classify_task(object.__new__(EventTask)), TASKS)
         self.assertEqual(classify_task(object.__new__(TestAccountSwitchTask)), TOOLS)
-        self.assertEqual(classify_task(object.__new__(AutoAbyssTask)), TOOLS)
+        self.assertEqual(classify_task(object.__new__(AutoAbyssTask)), TASKS)
+        self.assertEqual(task_category(object.__new__(AutoAbyssTask)), '每周任务')
+        for cls in (PianoTeachingTask, SecondSolTask):
+            self.assertEqual(classify_task(object.__new__(cls)), TASKS)
+            self.assertEqual(task_category(object.__new__(cls)), '活动')
         self.assertIn("多账号每日任务", inspect.getsource(TestAccountSwitchTask.__init__))
         self.assertIn('self.visible = False', inspect.getsource(TestAccountSwitchTask.__init__))
         self.assertTrue(issubclass(AutoAbyssTask, BaseCombatTask))
