@@ -252,7 +252,7 @@ class TestAccountSwitchEvidence(unittest.TestCase):
         gate.assert_called_once_with(task)
         self.assertEqual(calls, ['A3'])
 
-    def test_test_task_continuous_mode_uses_production_sequence_and_returns_to_start(self):
+    def test_test_task_continuous_mode_uses_production_sequence_and_stays_on_last(self):
         calls = []
 
         class Executor:
@@ -316,7 +316,6 @@ class TestAccountSwitchEvidence(unittest.TestCase):
                 ('login', 'A3'),
                 ('logout', None),
                 ('login', 'A4'),
-                ('login', 'A1'),
             ],
         )
 

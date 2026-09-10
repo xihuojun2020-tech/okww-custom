@@ -1527,6 +1527,9 @@ msgstr ""
 msgid "Circle Scale"
 msgstr "Escala del círculo"
 
+msgid "当前世界中已经登录的账号，仅作为本轮起点；结束后保留最后执行账号。留空时才退登并自动识别当前账号"
+msgstr "Cuenta conectada en el mundo, usada solo como inicio. Al terminar se conserva la última cuenta ejecutada. Dejar vacío para cerrar sesión e identificar la cuenta actual."
+
 msgid "Shop Click Interval"
 msgstr "Intervalo de clics en la tienda"
 

@@ -233,8 +233,7 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
 
             starting_account = None
             if continuous_mode:
-                # The production multi-account flow keeps the real starting
-                # account so it can log back into it after the sequence.
+                # Keep the initial identity check; completion never logs back.
                 try:
                     starting_account = mat._detect_current_account_from_login()
                 except TaskDisabledException:
@@ -244,7 +243,7 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
                 except Exception as error:
                     self.log_error('连续切换测试无法识别登录界面的起始账号', error)
                 if not starting_account:
-                    self.log_error('连续切换测试无法确认起始账号，为防止错误回登已停止')
+                    self.log_error('连续切换测试无法确认起始账号，为防止使用错误方案已停止')
                     self.screenshot('multi')
                     raise Exception('无法确认连续切换测试的起始账号')
                 self.log_info(
@@ -298,22 +297,8 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
                     mat._switch_to_login()
                     self.sleep(2)
 
-            if continuous_mode and starting_account:
-                if mat._same_account(target, starting_account):
-                    self.log_info('连续序列结束时已回到起始账号，无需重复登录')
-                else:
-                    self.log_info(
-                        f'连续序列结束，按正式流程登录回起始账号 '
-                        f'{self._status_account_label(starting_account)}'
-                    )
-                    self.info_set(
-                        '状态',
-                        f'返回起始账号 {self._status_account_label(starting_account)}...',
-                    )
-                    mat._select_and_login_specific(starting_account)
-                    self.log_info(
-                        f'✓ 已登录回起始账号 {self._status_account_label(starting_account)}'
-                    )
+            if continuous_mode:
+                self.log_info(f'连续序列结束，保留最后账号 {self._status_account_label(target)}，不再回登')
 
             self.log_info(f'全部 {rounds} 轮切换测试通过 ✓', notify=True)
             self.info_set('状态', '测试通过 ✓')

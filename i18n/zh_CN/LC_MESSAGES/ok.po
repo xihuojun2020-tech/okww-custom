@@ -1826,6 +1826,9 @@ msgstr "周日周本复检"
 msgid "Circle Scale"
 msgstr "绕圈范围倍率"
 
+msgid "当前世界中已经登录的账号，仅作为本轮起点；结束后保留最后执行账号。留空时才退登并自动识别当前账号"
+msgstr "当前世界中已经登录的账号，仅作为本轮起点；结束后保留最后执行账号。留空时才退登并自动识别当前账号"
+
 msgid "Shop Click Interval"
 msgstr "商店点击间隔"
 

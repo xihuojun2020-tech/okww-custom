@@ -138,6 +138,37 @@ class TestFlatUI(unittest.TestCase):
         self.assertEqual(tab.basic_config['Start/Stop'], 'None')
         self.assertEqual(tab.start_stop_status.text(), '程序启停快捷键：无（已停用）')
 
+    def test_targeted_task_descriptions_hidden_without_metadata_change(self):
+        from ok.gui.tasks.TaskCard import TaskCard
+        for name in ('DailyTask', 'MultiAccountDailyTask', 'GardenTask', 'WeeklyBossTask', 'EventTask'):
+            task = type(name, (), {})()
+            task.__dict__.update(vars(example_task()))
+            with patch.object(og, 'app', SimpleNamespace(tr=str)), patch.object(
+                    og, 'executor', SimpleNamespace(waiting_for_task=lambda _: '')):
+                card = TaskCard(task, True, fluent_sample=True)
+                self.assertTrue(card.card.contentLabel.isHidden())
+                self.assertEqual(card.card.contentLabel.text(), '')
+                self.assertTrue(task.description)
+                self.assertEqual(card.card.minimumHeight(), 56)
+                card.deleteLater()
+
+    def test_helper_static_state_is_not_duplicated(self):
+        from ok.gui.tasks.TaskCard import TaskCard
+        task = example_task()
+        task.enabled = True
+        with patch.object(og, 'app', SimpleNamespace(tr=str)):
+            card = TaskCard(task, False)
+            self.assertTrue(card.state_label.isHidden())
+            self.assertEqual(card.rootLayout.contentsMargins().top(), 0)
+            task.recovery_status = '手动保持开启'
+            card.update_content()
+            self.assertFalse(card.state_label.isHidden())
+            self.assertEqual(card.state_label.text(), '手动保持开启')
+            task.running = True
+            card.update_content()
+            self.assertIn('运行中', card.state_label.text())
+            card.deleteLater()
+
     def test_default_interaction_uses_app_translation(self):
         from ok.gui.start.SelectInteractionListView import SelectInteractionListView
         manager = SimpleNamespace(get_preferred_device=lambda: {'device': 'other'})

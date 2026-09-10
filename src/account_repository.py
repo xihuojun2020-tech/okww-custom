@@ -418,9 +418,11 @@ class AccountRepository:
                 if any(name not in candidate.get("sequences", {}) for name in sequence_ids):
                     raise AccountRepositoryError("账号序列不存在")
                 for name, members in candidate.get("sequences", {}).items():
-                    members = [member for member in members if member != profile_id]
                     if name in sequence_ids:
-                        members.append(profile_id)
+                        if profile_id not in members:
+                            members = [*members, profile_id]
+                    else:
+                        members = [member for member in members if member != profile_id]
                     candidate["sequences"][name] = members
             self._publish_master(candidate)
             return self.load_profile(profile_id)

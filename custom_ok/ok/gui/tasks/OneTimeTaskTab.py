@@ -17,7 +17,7 @@ class OneTimeTaskTab(TaskTab):
         self.group_tasks = group_tasks
         self.fluent_sample = fluent_sample
         if fluent_sample:
-            self.taskCardLayout.setSpacing(10)
+            self.taskCardLayout.setSpacing(8)
         self.card_widgets = []
         self.keep_info_when_done = True
         from PySide6.QtWidgets import QLabel
@@ -94,7 +94,7 @@ class OneTimeTaskTab(TaskTab):
             self.tasks.sort(key=lambda task: TASK_CATEGORIES.index(task_category(task)))
         for task in self.tasks:
             task_card = TaskCard(task, True, fluent_sample=self.fluent_sample)
-            if task_category(task) == '活动':
+            if task_category(task) == '活动' and not (self.fluent_sample and type(task).__name__ == 'EventTask'):
                 task_card.card.set_summary(getattr(task, 'activity_category', getattr(task, 'group_name', '活动')))
             self.card_widgets.append(task_card)
             self.add_task_card(task_card, task_category(task) if self.group_tasks else None)

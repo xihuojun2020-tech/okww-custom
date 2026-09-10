@@ -8,6 +8,7 @@ from src.gui.navigation_sections import helper_category, HELPER_CATEGORIES
 class TriggerTaskTab(TaskTab):
     def __init__(self):
         super().__init__()
+        self.taskCardLayout.setSpacing(8)
         self.card_widgets = []
         from ok.gui.Communicate import communicate
         communicate.task_list_updated.connect(self.refresh_ui)

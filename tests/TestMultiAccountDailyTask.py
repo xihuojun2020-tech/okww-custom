@@ -93,6 +93,49 @@ def _fake_login_task(main_texts=None, dialog_texts=None):
 
 class TestMultiAccountDailyTask(unittest.TestCase):
 
+    def test_account_transition_only_when_next_target_exists(self):
+        from unittest.mock import Mock
+        for success in (True, False):
+            for target in (None, 'A4'):
+                with self.subTest(success=success, target=target):
+                    task = SimpleNamespace(ensure_main=Mock(), _switch_to_login=Mock(),
+                        _next_target_account=Mock(return_value=target), log_info=Mock(),
+                        _notify_user=Mock(), failed_accounts={} if success else {'A3': {'account': 'A3'}},
+                        _weekly_pending={'A3': '待补检'})
+                    with patch.object(MultiAccountDailyTask, '_prepare_login_after_account_failure') as recover:
+                        done = MultiAccountDailyTask._advance_after_account(task, 'A3', success, RuntimeError())
+                    self.assertEqual(done, target is None)
+                    self.assertEqual(task._switch_to_login.call_count, int(success and target is not None))
+                    self.assertEqual(recover.call_count, int(not success and target is not None))
+                    self.assertEqual(task._notify_user.call_count, int(target is None))
+                    if done:
+                        self.assertIn('周本待补检', task._notify_user.call_args.args[1])
+                        if success:
+                            self.assertIn('停留在账号 A3', task._notify_user.call_args.args[1])
+
+    def test_stop_during_final_world_check_never_finishes_or_switches(self):
+        from unittest.mock import Mock
+        task = SimpleNamespace(ensure_main=Mock(side_effect=TaskDisabledException()),
+            _switch_to_login=Mock(), _next_target_account=Mock(), _notify_user=Mock())
+        with self.assertRaises(TaskDisabledException):
+            MultiAccountDailyTask._advance_after_account(task, 'A4', True, None)
+        task._switch_to_login.assert_not_called()
+        task._notify_user.assert_not_called()
+
+    def test_completed_sequence_keeps_world_or_login_without_account_input(self):
+        from unittest.mock import Mock
+        for state in ('world', 'login'):
+            task = SimpleNamespace(config={}, done_set=set(),
+                get_sequence_accounts=Mock(return_value=['A1', 'A3', 'A4']),
+                _load_today_progress=Mock(return_value=['A1', 'A3', 'A4']),
+                _classify_start_state=Mock(return_value=state),
+                _next_target_account=Mock(return_value=None), _switch_to_login=Mock(),
+                _select_and_login_account=Mock(), log_info=Mock(), _notify_user=Mock())
+            MultiAccountDailyTask._run_inner(task)
+            task._switch_to_login.assert_not_called()
+            task._select_and_login_account.assert_not_called()
+            task._notify_user.assert_called_once()
+
     def test_account_dropdown_accepts_multiple_login_text_matches(self):
         account_box = object()
 
@@ -698,9 +741,10 @@ class TestMultiAccountDailyTask(unittest.TestCase):
             task._switch_to_login()
         self.assertEqual(task.confirm_count, 3)
 
-    def test_login_back_failure_does_not_send_success_notification(self):
+    def test_finish_reports_failure_without_login(self):
         class FakeTask:
-            _login_back_to = MultiAccountDailyTask._login_back_to
+            _finish_sequence = MultiAccountDailyTask._finish_sequence
+            failed_accounts = {'A4': {'account': 'A4'}}
 
             def __init__(self):
                 self.notifications = []
@@ -718,9 +762,10 @@ class TestMultiAccountDailyTask(unittest.TestCase):
                 pass
 
         task = FakeTask()
-        task._login_back_to('profile-a1')
+        task._finish_sequence()
         self.assertEqual(len(task.notifications), 1)
-        self.assertIn('需手动处理', task.notifications[0][0])
+        self.assertIn('部分失败', task.notifications[0][0])
+        self.assertIn('必要时手动登录', task.notifications[0][1])
         self.assertNotIn('已登录回 profile-a1', task.notifications[0][1])
 
     def test_daily_task_requires_verified_profile_link(self):
@@ -846,6 +891,10 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         class FakeTask:
             _run_inner = MultiAccountDailyTask._run_inner
             _classify_start_state = lambda self: "world"
+            _next_target_account = MultiAccountDailyTask._next_target_account
+
+            def _notify_user(self, *_args):
+                self.events.append('finish')
 
             def __init__(self):
                 self.done_set = set()
@@ -920,14 +969,17 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         self.assertEqual(
             task.events,
             ['logout', 'detect', 'login:A4', 'profile:A4', 'daily',
-             'save', 'ensure_main', 'logout', 'return:A4'],
+             'save', 'ensure_main', 'logout', 'finish'],
         )
 
-    def test_explicit_current_account_runs_in_place_then_rotates_and_returns(self):
+    def test_explicit_current_account_runs_in_place_then_stays_on_last(self):
         class FakeTask:
             _run_inner = MultiAccountDailyTask._run_inner
             _classify_start_state = lambda self: "world"
             _next_target_account = MultiAccountDailyTask._next_target_account
+
+            def _notify_user(self, *_args):
+                self.events.append('finish')
 
             def __init__(self):
                 self.done_set = set()
@@ -992,8 +1044,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
             task.events,
             ['profile:A3', 'daily', 'save', 'ensure_main', 'logout',
              'login:A4', 'profile:A4', 'daily', 'save', 'ensure_main', 'logout',
-             'login:A1', 'profile:A1', 'daily', 'save', 'ensure_main', 'logout',
-             'return:A3'],
+             'login:A1', 'profile:A1', 'daily', 'save', 'ensure_main', 'finish'],
         )
         self.assertEqual(task.config[CURRENT_ACCOUNT], 'A3')
 

@@ -27,7 +27,7 @@ class TestMultiStartState(unittest.TestCase):
             task._load_today_progress = Mock(return_value=[])
             task._classify_start_state = Mock(side_effect=['login', 'world'])
             task._is_done = Mock(return_value=True)
-            task._next_target_account = Mock(return_value=None)
+            task._next_target_account = Mock(side_effect=['A1', None])
             task.log_info = task.info_set = task._notify_user = Mock()
             task._switch_to_login = Mock()
             snapshots = []

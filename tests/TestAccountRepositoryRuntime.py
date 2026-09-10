@@ -93,6 +93,19 @@ class TestAccountRepositoryRuntime(unittest.TestCase):
         self.assertTrue((self.root / "运行状态" / "账号" / f"{self.a}.json").is_file())
         self.assertFalse((self.root / "运行状态" / "账号" / f"{self.b}.json").exists())
 
+    def test_profile_save_preserves_existing_sequence_position(self):
+        from src.account_repository import ProfileEditScope
+        repo = self._memory_repo()
+        repo.raw['sequences'] = {'S1': ['first', self.a, 'last'], 'S2': ['first']}
+        for membership in [('S1',), ('S1',), ('S1', 'S2'), ('S2',)]:
+            record = repo.load_profile(self.a)
+            repo.publish_profile(ProfileEditScope(self.a, record.revision), {
+                'account': dict(record.account), 'tasks': dict(record.tasks), 'sequence_ids': membership})
+            self.assertEqual(repo.raw['sequences']['S1'],
+                             ['first', self.a, 'last'] if 'S1' in membership else ['first', 'last'])
+            self.assertEqual(repo.raw['sequences']['S2'],
+                             ['first', self.a] if 'S2' in membership else ['first'])
+
     def test_progress_has_own_global_file(self):
         self.repo.set_progress("cursor", {"账号": self.a, "step": 2})
         self.assertEqual(self.repo.get_progress("cursor")["账号"], self.a)

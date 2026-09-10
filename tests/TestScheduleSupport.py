@@ -94,7 +94,7 @@ class TestScheduleSupport(unittest.TestCase):
             node for node in ast.walk(run_node)
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
-            and node.func.attr in {"_run_daily_account", "ensure_main", "_switch_to_login"}
+            and node.func.attr in {"_run_daily_account", "_advance_after_account"}
         ]
 
         call_names = [node.func.attr for node in sorted(calls, key=lambda call: call.lineno)]
@@ -105,12 +105,15 @@ class TestScheduleSupport(unittest.TestCase):
         self.assertTrue(daily_indexes)
         for daily_index in daily_indexes:
             following = call_names[daily_index + 1:]
-            self.assertIn("ensure_main", following)
-            ensure_index = daily_index + 1 + following.index("ensure_main")
-            after_ensure = call_names[ensure_index + 1:]
-            self.assertIn("_switch_to_login", after_ensure)
+            self.assertEqual(following[0], "_advance_after_account")
+        advance = _class_function("src/task/MultiAccountDailyTask.py", "MultiAccountDailyTask", "_advance_after_account")
+        calls = sorted((node for node in ast.walk(advance) if isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Attribute)), key=lambda node: node.lineno)
+        names = [node.func.attr for node in calls]
+        self.assertLess(names.index('ensure_main'), names.index('_switch_to_login'))
+        self.assertLess(names.index('_next_target_account'), names.index('_switch_to_login'))
 
-    def test_multi_account_switches_to_login_after_each_account_daily(self):
+    def test_multi_account_uses_conditional_transition_after_each_account_daily(self):
         run_node = _class_function("src/task/MultiAccountDailyTask.py", "MultiAccountDailyTask", "_run_inner")
         while_node = next(node for node in ast.walk(run_node) if isinstance(node, ast.While))
 
@@ -118,14 +121,13 @@ class TestScheduleSupport(unittest.TestCase):
             node for node in ast.walk(while_node)
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
-            and node.func.attr in {"_run_daily_account", "ensure_main", "_switch_to_login"}
+            and node.func.attr in {"_run_daily_account", "_advance_after_account", "_switch_to_login"}
         ]
 
         call_names = [node.func.attr for node in sorted(calls, key=lambda call: call.lineno)]
         daily_index = call_names.index("_run_daily_account")
 
-        self.assertIn("ensure_main", call_names[daily_index + 1:])
-        self.assertIn("_switch_to_login", call_names[daily_index + 1:])
+        self.assertEqual(call_names[daily_index + 1:], ["_advance_after_account"])
 
     def test_multi_account_login_dropdown_timeout_is_not_silent(self):
         find_node = _class_function(

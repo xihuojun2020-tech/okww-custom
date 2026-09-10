@@ -19,7 +19,9 @@ class TaskCard(ConfigCard):
         elif type(task).__name__ == 'MultiAccountDailyTask':
             config_type['管理序列'] = {'type': 'button', 'text': '编辑账号序列',
                                       'callback': self.open_sequence_editor}
-        super().__init__(task, task.name, task.config, task.description, task.default_config, task.config_description,
+        description = '' if fluent_sample and type(task).__name__ in (
+            'DailyTask', 'MultiAccountDailyTask', 'GardenTask', 'WeeklyBossTask', 'EventTask') else task.description
+        super().__init__(task, task.name, task.config, description, task.default_config, task.config_description,
                          config_type, config_icon=task.icon or FluentIcon.INFO)
         self.task = task
         self.onetime = onetime
@@ -91,6 +93,16 @@ class TaskCard(ConfigCard):
         communicate.task.connect(self.update_buttons)
         if fluent_sample:
             self._apply_fluent_sample()
+        elif not onetime:
+            self.rootLayout.setContentsMargins(0, 0, 0, 0)
+            self.rootLayout.setSpacing(4)
+            self.viewLayout.setContentsMargins(12, 6, 12, 8)
+            self.viewLayout.setSpacing(4)
+            for widget in self.config_widgets:
+                layout = widget.layout() if callable(widget.layout) else widget.layout
+                margins = layout.contentsMargins()
+                layout.setContentsMargins(margins.left(), 4, margins.right(), 4)
+                widget.setMinimumHeight(44)
 
     def _apply_fluent_sample(self):
         """Task-page pilot only; shared configuration and execution stay unchanged."""
@@ -116,8 +128,8 @@ class TaskCard(ConfigCard):
         self.setExpand(self.isExpand)
         self.rootLayout.setContentsMargins(0, 0, 0, 0)
         self.rootLayout.setSpacing(0)
-        self.card.setMinimumHeight(76)
-        self.card.layout_row.setContentsMargins(16, 12, 12, 12)
+        self.card.setMinimumHeight(56)
+        self.card.layout_row.setContentsMargins(16, 8, 12, 8)
         self.viewLayout.setContentsMargins(16, 12, 16, 16)
         self.view.setObjectName('fluentTaskDetails')
         self.setStyleSheet(f'''
@@ -165,6 +177,9 @@ class TaskCard(ConfigCard):
         recovery = getattr(self.task, 'recovery_status', '')
         if recovery:
             self.state_label.setText(f'{state} · {recovery}')
+        self.state_label.setVisible(bool(self.onetime or self.task.running or self.task.paused or recovery))
+        if not self.onetime and recovery and not self.task.running and not self.task.paused:
+            self.state_label.setText(recovery)
 
     def start_clicked(self):
         if self.task.enabled and self.task.paused:

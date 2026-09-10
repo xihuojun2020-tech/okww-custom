@@ -1,5 +1,5 @@
 <div align="center">
-  <p>新版界面：<a href="docs/references/flat-ui.md">1.50.01 精简说明与中文修复</a> · <a href="docs/references/auto-combat-recovery.md">自动战斗手动重启保护</a></p>
+  <p>新版界面：<a href="docs/references/flat-ui.md">1.50.02 账号顺序与紧凑任务界面</a> · <a href="docs/references/auto-combat-recovery.md">自动战斗手动重启保护</a></p>
   <h1 align="center">
     <img src="icons/icon.png" width="200" alt="ok-ww logo"/>
     <br/>
