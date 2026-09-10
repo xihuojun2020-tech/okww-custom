@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Scan, form teams for, and automatically challenge Adversity Tower floors."""
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 import re
 
@@ -80,6 +80,7 @@ class CharacterScanRecord:
     rover_form: str | None = None
     rover_confidence: float = 0.0
     selection_number: int | None = None
+    slot: tuple | None = None
 
     @property
     def available(self):
@@ -305,6 +306,58 @@ def character_safe_click(slot):
     return x + width * 0.50, y + height * 0.35
 
 
+def detect_character_slots(frame):
+    """Locate full card rows from repeated horizontal borders, never from scroll counts."""
+    if frame is None or frame.size == 0:
+        return ()
+    height, width = frame.shape[:2]
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    strength = np.zeros(height, dtype=np.float32)
+    votes = np.zeros(height, dtype=np.uint8)
+    for column in range(CHARACTER_COLUMNS):
+        x = CHARACTER_CARD_X + column * CHARACTER_CARD_X_STEP
+        left, right = int((x + .12 * CHARACTER_CARD_WIDTH) * width), int((x + .88 * CHARACTER_CARD_WIDTH) * width)
+        edge = np.median(np.abs(np.diff(gray[:, left:right].astype(np.float32), axis=0)), axis=1)
+        strength[:-1] += np.minimum(edge, 15)
+        votes[:-1] += edge > 4
+    tolerance = max(1, round(height * .002))
+    kernel = np.ones((tolerance * 2 + 1, 1), np.uint8)
+    strength = cv2.dilate(strength[:, None], kernel)[:, 0]
+    votes = cv2.dilate(votes[:, None], kernel)[:, 0]
+    card_height = round(CHARACTER_CARD_HEIGHT * height)
+    step = round(.247 * height)
+    candidates = []
+    for phase in range(step):
+        tops = tuple(y for y in range(phase, height, step)
+                     if y >= CHARACTER_GRID[1] * height and y + card_height < .833 * height)
+        # A last row can contain only one or two cards. Infer its phase from the
+        # neighbouring populated row rather than requiring seven occupied columns.
+        if not tops or not any(votes[y] >= 3 and votes[y + card_height] >= 3 for y in tops):
+            continue
+        score = sum(float(strength[y] + strength[y + card_height]) for y in tops) / len(tops)
+        candidates.append((score, phase, tops))
+    if not candidates:
+        return ()
+    best = max(candidates)
+    # Reject a competing row phase; adjacent pixels describe the same border.
+    rivals = [score for score, phase, _ in candidates
+              if min(abs(phase - best[1]), step - abs(phase - best[1])) > height * .012]
+    if best[0] < 60 or (rivals and max(rivals) > best[0] * .90):
+        return ()
+    return tuple((row, column, CHARACTER_CARD_X + column * CHARACTER_CARD_X_STEP,
+                  top / height, CHARACTER_CARD_WIDTH, CHARACTER_CARD_HEIGHT, True)
+                 for row, top in enumerate(best[2]) for column in range(CHARACTER_COLUMNS))
+
+
+def character_list_at_edge(frame, bottom=False):
+    geometry = _scroll_thumb_geometry(frame)
+    if geometry is None:
+        return False
+    center, coverage = geometry
+    half = coverage * .78 / 2
+    return center + half >= .827 if bottom else center - half <= .125
+
+
 def selection_marker_present(crop):
     """Detect the gold side border that appears only on a selected character card."""
     if crop is None or crop.size == 0:
@@ -312,8 +365,14 @@ def selection_marker_present(crop):
     hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
     gold = cv2.inRange(hsv, (15, 70, 120), (45, 255, 255))
     edge_width = max(2, int(gold.shape[1] * 0.04))
-    edges = np.hstack((gold[:, :edge_width], gold[:, -edge_width:]))
-    return float(np.count_nonzero(edges)) / edges.size >= 0.15
+    # Both side borders must extend through most of the card, not just gold hair.
+    sides = (gold[:, :edge_width], gold[:, -edge_width:])
+    for side in sides:
+        rows = np.flatnonzero(np.any(side > 0, axis=1))
+        runs = np.split(rows, np.flatnonzero(np.diff(rows) > 1) + 1)
+        if max(map(len, runs), default=0) < len(side) * .65:
+            return False
+    return True
 
 
 def validate_selection_state(records):
@@ -507,7 +566,7 @@ def classify_rover_element_crop(crop):
 
 
 def merge_character_records(records):
-    """Deduplicate two screens and return both all recognized and strictly usable characters."""
+    """Deduplicate overlapping viewports and return recognized and strictly usable characters."""
     merged = {}
     for record in records:
         identity = effective_character_id(record)
@@ -1259,45 +1318,59 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         )
 
     def _scan_character_pages(self, first, minimum_energy=1):
-        single_page = is_single_page_character_list(first)
-        first_records = self._recognize_character_screen(first, 1, include_incomplete=single_page)
-        last_frame = first
-        if single_page:
-            self._character_page_count = 1
-            self._character_page_index = 1
-            self._set_status("截取角色", "检测到角色列表仅一页，使用第 1 屏识别结果")
-            self.log_info("角色列表仅一页，无需滚动；已尝试识别底部可见的不完整卡片")
-            records = first_records
-        else:
-            self._set_status("滚动角色列表", "正在向下滚动角色列表")
-            second = self._scroll_to_second_character_page(first)
-            if second is None:
-                usable_ids = {
-                    effective_character_id(record)
-                    for record in first_records
-                    if record.available and record.energy >= minimum_energy
-                }
-                if len(usable_ids) < 3:
-                    raise Exception(
-                        f"角色列表滚动未生效，第一屏不足三名体力不低于 {minimum_energy} 的可用角色"
-                    )
-                self._character_page_count = 1
-                self._character_page_index = 1
-                self.log_warning(
-                    f"角色列表滚动未生效；第一屏有 {len(usable_ids)} 名可用角色，继续尝试编队"
-                )
-                records = first_records
+        # Start at a proven top, even when the game remembers a previous scroll offset.
+        if not character_list_at_edge(first):
+            for _ in range(2):
+                self.scroll_relative(0.50, 0.50, 30)
+                self.sleep(.6)
+                first = self._wait_stable_character_frame()
+                if character_list_at_edge(first):
+                    break
             else:
-                self._set_status("截取角色", "正在截取角色列表第 2 屏")
-                second_records = self._recognize_character_screen(second, 2)
-                self._character_page_count = 2
-                self._character_page_index = 2
-                records = first_records + second_records
-                last_frame = second
-        if not records:
-            self.screenshot("abyss_character_recognition_empty", frame=last_frame)
-            raise Exception("角色列表未识别到角色头像")
-        return records
+                self.screenshot("abyss_list_top_unknown", frame=first)
+                raise Exception("角色列表顶部无法确认，仓库扫描不完整")
+        self._character_pages = {}
+        records, frame, previous_ids = [], first, None
+        for page_index in range(1, 13):
+            self._recognized_frame = frame
+            current = self._recognize_character_screen(frame, page_index)
+            frame = self._recognized_frame
+            if not current:
+                self.screenshot("abyss_character_recognition_empty", frame=frame)
+                raise Exception("角色列表未识别到角色头像，仓库扫描不完整")
+            identities = {effective_character_id(r) for r in current}
+            if previous_ids is not None and not previous_ids & identities:
+                self.screenshot("abyss_scroll_overlap_unknown", frame=frame)
+                raise Exception("滚动后未确认重叠角色，仓库扫描不完整")
+            # Repeated cards must not silently increase the shared energy ledger.
+            known = {effective_character_id(r): r.energy for r in records if r.energy is not None}
+            conflicts = [r for r in current if r.energy is not None
+                         and effective_character_id(r) in known
+                         and known[effective_character_id(r)] != r.energy]
+            if conflicts:
+                frame = self._wait_stable_character_frame()
+                retry = self._recognize_character_screen(frame, page_index)
+                retry_energy = {effective_character_id(r): r.energy for r in retry}
+                if any(retry_energy.get(effective_character_id(r)) != known[effective_character_id(r)]
+                       for r in conflicts):
+                    self.screenshot("abyss_energy_conflict", frame=frame)
+                    raise Exception("重复角色体力读数矛盾，停止共享体力规划")
+                current = retry
+                frame = self._recognized_frame
+            self._character_pages[page_index] = (scroll_thumb_center(frame), tuple(current))
+            records.extend(current)
+            self._character_page_count = self._character_page_index = page_index
+            self.log_info(f"角色扫描第{page_index}屏：滚动条={scroll_thumb_center(frame)}，角色={len(current)}")
+            if character_list_at_edge(frame, bottom=True):
+                return records
+            if page_index == 12:
+                break
+            previous_ids = identities
+            frame = self._scroll_to_second_character_page(frame)
+            if frame is None:
+                raise Exception("角色列表滚动未生效，仓库扫描不完整；停止配队")
+        self.screenshot("abyss_scan_limit", frame=frame)
+        raise Exception("角色扫描超过12屏，仓库扫描不完整；停止配队")
 
     def _wait_exact_text(self, text, region, time_out):
         x1, y1, x2, y2 = region
@@ -1340,113 +1413,83 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         return state["frame"]
 
     def _scroll_to_second_character_page(self, first):
-        first_thumb = scroll_thumb_center(first)
-        for attempt, amount in enumerate((-6, -10), start=1):
+        """Advance a short overlapping viewport; a wheel count is never a page identity."""
+        before = scroll_thumb_center(first)
+        for attempt in range(2):
             self.ensure_in_front()
-            self.sleep(0.2)
-            self.scroll_relative(0.50, 0.50, amount)
-            self.sleep(0.6)
-            second = self._wait_stable_character_frame()
-            second_thumb = scroll_thumb_center(second)
-            change_score = frame_change_score(first, second)
-            thumb_delta = (
-                abs(first_thumb - second_thumb)
-                if first_thumb is not None and second_thumb is not None
-                else None
-            )
-            grid_changed = change_score >= 0.035
-            thumb_changed = (
-                thumb_delta is not None and thumb_delta >= 0.015
-            )
-            self.log_info(
-                f"角色列表第 {attempt} 次滚轮：网格变化={change_score:.4f}，"
-                f"滚动条位移={thumb_delta:.4f}" if thumb_delta is not None else
-                f"角色列表第 {attempt} 次滚轮：网格变化={change_score:.4f}，滚动条位移=不可用"
-            )
-            if grid_changed or thumb_changed:
-                return second
-            self.screenshot(f"abyss_character_scroll_wheel_{attempt}_before", frame=first)
-            self.screenshot(f"abyss_character_scroll_wheel_{attempt}_after", frame=second)
-            self.log_warning(f"角色列表第 {attempt} 次滚动未检测到有效变化")
-
-        self.ensure_in_front()
-        self.sleep(0.2)
-        drag_start = first_thumb if first_thumb is not None else 0.35
-        drag_target = min(0.78, drag_start + 0.35)
-        self.swipe_relative(0.925, drag_start, 0.925, drag_target, duration=0.5, settle_time=0.3)
-        dragged = self._wait_stable_character_frame()
-        dragged_thumb = scroll_thumb_center(dragged)
-        drag_score = frame_change_score(first, dragged)
-        drag_delta = (
-            abs(first_thumb - dragged_thumb)
-            if first_thumb is not None and dragged_thumb is not None
-            else None
-        )
-        self.log_info(
-            f"角色列表拖动滚动条：网格变化={drag_score:.4f}，滚动条位移={drag_delta:.4f}"
-            if drag_delta is not None else
-            f"角色列表拖动滚动条：网格变化={drag_score:.4f}，滚动条位移=不可用"
-        )
-        if drag_score >= 0.035 or (drag_delta is not None and drag_delta >= 0.015):
-            return dragged
-        self.screenshot("abyss_character_scroll_drag_before", frame=first)
-        self.screenshot("abyss_character_scroll_drag_after", frame=dragged)
-        self.log_warning("角色列表拖动滚动条后仍未检测到有效变化")
+            self.scroll_relative(.50, .50, -3)
+            self.sleep(.6)
+            after = self._wait_stable_character_frame()
+            thumb = scroll_thumb_center(after)
+            if before is not None and thumb is not None and thumb - before >= .003:
+                return after
+            self.log_warning(f"角色列表滚动第{attempt + 1}次未确认向下位移")
+        self.screenshot("abyss_scroll_failed", frame=after)
         return None
 
+    def _page_matches(self, frame, page_index):
+        target, anchors = self._character_pages[page_index]
+        thumb = scroll_thumb_center(frame)
+        if target is None or thumb is None or abs(thumb - target) > .006:
+            return False
+        # Verify identities as well as scrollbar position (sorting may have changed).
+        anchors = sorted(anchors, key=lambda r: -r.confidence)[:3]
+        return sum(self._verify_record_identity(frame, r) for r in anchors) >= min(2, len(anchors))
+
     def _show_character_page(self, page_index):
-        page_count = getattr(self, "_character_page_count", 1)
-        if not 1 <= page_index <= page_count:
-            raise ValueError(f"角色列表页码超出范围：{page_index}/{page_count}")
-        if getattr(self, "_character_page_index", 1) == page_index:
-            return self._wait_stable_character_frame()
-        before = self._wait_stable_character_frame()
-        before_thumb = scroll_thumb_center(before)
-        amount = 10 if page_index == 1 else -10
-        for attempt in range(2):
-            if attempt:
-                self.ensure_in_front()
-            self.scroll_relative(0.50, 0.50, amount)
-            self.sleep(0.6)
-            after = self._wait_stable_character_frame()
-            after_thumb = scroll_thumb_center(after)
-            grid_changed = frame_change_score(before, after) >= 0.035
-            thumb_changed = (
-                before_thumb is not None
-                and after_thumb is not None
-                and abs(before_thumb - after_thumb) >= 0.015
-            )
-            if grid_changed or thumb_changed:
+        if page_index not in self._character_pages:
+            raise ValueError(f"角色列表没有扫描位置：{page_index}")
+        frame = self._wait_stable_character_frame()
+        for attempt in range(3):
+            if self._page_matches(frame, page_index):
                 self._character_page_index = page_index
-                return after
-            self.log_warning(f"角色列表切换到第 {page_index} 页第 {attempt + 1} 次未检测到变化")
-        self.screenshot(f"abyss_character_page_{page_index}_failed", frame=before)
-        raise Exception(f"角色列表无法切换到第 {page_index} 页")
+                return frame
+            if attempt == 2:
+                break
+            current = scroll_thumb_center(frame)
+            target, _anchors = self._character_pages[page_index]
+            if current is None or target is None:
+                break
+            self.ensure_in_front()
+            self.swipe_relative(.924, current, .924, target, duration=.5, settle_time=.3)
+            frame = self._wait_stable_character_frame()
+        self.screenshot(f"abyss_character_page_{page_index}_failed", frame=frame)
+        raise Exception(f"角色列表返回第{page_index}屏位置或身份不匹配，禁止点击")
 
     @staticmethod
     def _record_sort_key(record):
-        slot = character_card_slots()[record.slot_index]
+        slot = record.slot or character_card_slots()[record.slot_index]
         return not slot[-1], -record.confidence, record.screen_index, record.slot_index
 
     def _best_record_for_identity(self, records, identity):
         candidates = [record for record in records if effective_character_id(record) == identity]
         return min(candidates, key=self._record_sort_key, default=None)
 
+    def _relocate_record(self, frame, record):
+        matches = []
+        for index, slot in enumerate(detect_character_slots(frame)):
+            avatar = self._slot_crop(frame, slot, (.02, .01, .98, .78))
+            identified = self._identify_character(avatar)
+            if identified is None or identified[0] != record.character_id:
+                continue
+            if record.character_id in ROVER_CHARACTER_IDS:
+                form, _confidence = classify_rover_element_crop(
+                    self._slot_crop(frame, slot, (.02, .02, .28, .28)))
+                if form != effective_character_id(record):
+                    continue
+            matches.append(replace(record, slot_index=index, slot=slot))
+        return matches[0] if len(matches) == 1 else None
+
     def _verify_record_identity(self, frame, record):
-        slot = character_card_slots()[record.slot_index]
-        avatar = self._slot_crop(frame, slot, (0.02, 0.01, 0.98, 0.78))
-        identified = self._identify_character(avatar) if avatar is not None and avatar.size else None
-        if identified is None or identified[0] != record.character_id:
-            return False
-        if record.character_id not in ROVER_CHARACTER_IDS:
-            return True
-        element_crop = self._slot_crop(frame, slot, (0.02, 0.02, 0.28, 0.28))
-        rover_form, _confidence = classify_rover_element_crop(element_crop)
-        return rover_form == effective_character_id(record)
+        located = self._relocate_record(frame, record)
+        return located is not None and (record.slot is None or (
+            abs(located.slot[3] - record.slot[3]) < .012 and located.slot[1] == record.slot[1]))
 
     def _selection_marker_present(self, frame, record):
-        slot = character_card_slots()[record.slot_index]
-        crop = self._slot_crop(frame, slot, SELECTION_MARKER_REGION)
+        located = self._relocate_record(frame, record)
+        if located is None:
+            return None
+        crop = self._slot_crop(frame, located.slot, SELECTION_MARKER_REGION)
         return selection_marker_present(crop)
 
     def _wait_selection_marker(self, record, expected):
@@ -1472,9 +1515,10 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         page_count = getattr(self, "_character_page_count", 1)
         for page_index in range(1, page_count + 1):
             frame = self._show_character_page(page_index)
-            for slot_index, slot in enumerate(character_card_slots()):
-                if not slot[-1] and page_count != 1:
-                    continue
+            slots = detect_character_slots(frame)
+            if not slots:
+                raise Exception("选择复核时卡片定位失败")
+            for slot_index, slot in enumerate(slots):
                 crop = self._slot_crop(frame, slot, SELECTION_MARKER_REGION)
                 if selection_marker_present(crop):
                     locations.append((page_index, slot_index))
@@ -1482,42 +1526,68 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
 
     def _click_character_record(self, record, expected_number):
         frame = self._show_character_page(record.screen_index)
-        if not self._verify_record_identity(frame, record):
+        record = self._relocate_record(frame, record)
+        if record is None:
             self.log_warning(
-                f"点击前角色身份复核失败：第{record.screen_index}屏槽位{record.slot_index}"
+                "点击前角色身份复核失败，禁止沿用历史槽位"
             )
             return False
-        x, y = character_safe_click(character_card_slots()[record.slot_index])
+        x, y = character_safe_click(record.slot or character_card_slots()[record.slot_index])
         self.click_relative(x, y, after_sleep=0.35, name=record.display_name)
         return self._wait_selection_marker(record, True)
 
+    def _selected_records(self, records):
+        selected = {}
+        for page_index in range(1, self._character_page_count + 1):
+            frame = self._show_character_page(page_index)
+            slots = detect_character_slots(frame)
+            if not slots:
+                raise Exception("选择复核时卡片定位失败")
+            for slot in slots:
+                if not selection_marker_present(self._slot_crop(frame, slot, SELECTION_MARKER_REGION)):
+                    continue
+                avatar = self._slot_crop(frame, slot, (.02, .01, .98, .78))
+                identified = self._identify_character(avatar)
+                matches = [r for r in records if identified is not None and r.character_id == identified[0]]
+                if identified is not None and identified[0] in ROVER_CHARACTER_IDS:
+                    form, _confidence = classify_rover_element_crop(
+                        self._slot_crop(frame, slot, (.02, .02, .28, .28)))
+                    matches = [r for r in matches if effective_character_id(r) == form]
+                identities = {effective_character_id(r) for r in matches}
+                if len(identities) != 1:
+                    self.screenshot("abyss_selection_identity_unknown", frame=frame)
+                    raise Exception("选中卡片身份未知，禁止清理或开始战斗")
+                selected[identities.pop()] = replace(matches[0], screen_index=page_index, slot=slot)
+        return selected
+
     def _clear_all_selection(self, records=None):
         records = list(records) if records is not None else self._selection_records_all_pages()
-        selected = {}
-        for page_index in range(1, getattr(self, "_character_page_count", 1) + 1):
-            frame = self._show_character_page(page_index)
-            for record in (item for item in records if item.screen_index == page_index):
-                if not self._selection_marker_present(frame, record):
-                    continue
-                identity = effective_character_id(record)
-                previous = selected.get(identity)
-                if previous is None or self._record_sort_key(record) < self._record_sort_key(previous):
-                    selected[identity] = record
-        for number, record in enumerate(selected.values(), start=1):
+        selected = self._selected_records(records)
+        if len(selected) > 3:
+            selected = self._selected_records(records)
+        if len(selected) > 3:
+            self.screenshot("abyss_selection_contradiction")
+            raise Exception("选中标记超过3人，禁止取消第四个角色")
+        for _ in range(3):
+            if not selected:
+                return True
+            identity, record = next(iter(selected.items()))
             frame = self._show_character_page(record.screen_index)
-            if not self._verify_record_identity(frame, record):
+            record = self._relocate_record(frame, record)
+            if record is None or self._selection_marker_present(frame, record) is not True:
                 self.screenshot("abyss_character_selection_clear_failed", frame=frame)
-                raise Exception(f"清理第 {number} 个已有角色前身份复核失败")
-            x, y = character_safe_click(character_card_slots()[record.slot_index])
-            self.click_relative(x, y, after_sleep=0.35, name=f"取消{record.display_name}")
+                raise Exception("取消前角色身份或选中状态复核失败")
+            x, y = character_safe_click(record.slot)
+            self.click_relative(x, y, after_sleep=.35, name=f"取消{record.display_name}")
             if not self._wait_selection_marker(record, False):
                 self.screenshot("abyss_character_selection_clear_failed")
-                raise Exception(f"第 {number} 个已有角色选择标记未能清除")
-        remaining = self._selection_marker_locations_all_pages()
-        if remaining:
-            self.screenshot("abyss_character_selection_clear_failed")
-            raise Exception(f"快速编队仍有未清除选择标记：{remaining}")
-        return True
+                raise Exception("已有角色选择标记未能清除")
+            refreshed = self._selected_records(records)
+            if set(refreshed) != set(selected) - {identity}:
+                self.screenshot("abyss_selection_contradiction")
+                raise Exception("取消后选中集合变化异常，停止输入")
+            selected = refreshed
+        return not selected
 
     def _select_planned_team(self, plan, records):
         if not plan.executable or len(plan.members) != 3:
@@ -1556,7 +1626,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             self.log_info(
                 f"最终局部确认 {record.display_name} 选择标记存在，按点击顺序为 {expected_number}"
             )
-        return True
+        return set(self._selected_records(records)) == set(plan.members)
 
     def _finish_team_formation(self):
         complete = self._wait_exact_text_or_fail(
@@ -1629,8 +1699,10 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             y + height * ly2,
         ))
 
-    def _read_complete_row_numbers(self, frame, row):
-        row_y = CHARACTER_CARD_Y[row]
+    def _read_complete_row_numbers(self, frame, row, slots=None):
+        slots = slots if slots is not None else character_card_slots()
+        row_slots = [slot for slot in slots if slot[0] == row]
+        row_y = row_slots[0][3]
         left = CHARACTER_CARD_X
         right = CHARACTER_CARD_X + (CHARACTER_COLUMNS - 1) * CHARACTER_CARD_X_STEP + CHARACTER_CARD_WIDTH
         top = row_y + CHARACTER_CARD_HEIGHT * 0.58
@@ -1665,7 +1737,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                 if 1 <= number <= 100:
                     values[column]["level"] = number
             elif 0.58 <= local_y < 0.82:
-                slot = character_card_slots()[row * CHARACTER_COLUMNS + column]
+                slot = next(slot for slot in row_slots if slot[1] == column)
                 energy_crop = self._slot_crop(frame, slot, (0.50, 0.52, 1.00, 0.84))
                 digit_count = energy_digit_count(energy_crop)
                 number = parse_energy_number(text, digit_count=digit_count) if digit_count else None
@@ -1675,10 +1747,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                             f"角色第 {row + 1} 行第 {column + 1} 列体力 OCR 无法确认："
                             f"原始={text!r}，数字轮廓={digit_count}"
                         )
-                        self.screenshot(
-                            f"abyss_energy_ambiguous_r{row + 1}_c{column + 1}",
-                            frame=energy_crop,
-                        )
+                        self._save_card_evidence(frame, slot, "abyss_energy_ambiguous")
                     continue
                 if parse_energy_number(text) != number:
                     self.log_info(
@@ -1708,8 +1777,8 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         energy_crop = self._slot_crop(frame, slot, (0.50, 0.52, 1.00, 0.84))
         digit_count = energy_digit_count(energy_crop)
         if digit_count is None:
-            self.log_warning("角色体力数字轮廓无法确认，按不可用处理")
-            self.screenshot("abyss_energy_ambiguous", frame=energy_crop)
+            self.log_warning(f"角色体力数字轮廓无法确认：行{slot[0] + 1}列{slot[1] + 1}，卡片坐标={slot[2:6]}")
+            self._save_card_evidence(frame, slot, "abyss_energy_ambiguous")
             return None
         raw_texts = []
 
@@ -1793,16 +1862,39 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             None,
         )
 
-    def _recognize_character_screen(self, frame, screen_index, include_incomplete=False):
-        total_screens = 1 if include_incomplete else 2
-        self._set_status("识别角色", f"正在识别第 {screen_index}/{total_screens} 屏角色、体力和等级")
-        numbers = {
-            row: self._read_complete_row_numbers(frame, row)
-            for row in range(CHARACTER_COMPLETE_ROWS)
-        }
+    def _save_card_evidence(self, frame, slot, reason):
+        key = (slot[0], slot[1])
+        saved = getattr(self, "_card_evidence_saved", set())
+        if key in saved:
+            return
+        saved.add(key)
+        self._card_evidence_saved = saved
+        label = f"{reason}_p{getattr(self, '_scanning_page', 0)}_r{slot[0] + 1}_c{slot[1] + 1}"
+        self.screenshot(label + "_frame", frame=frame)
+        annotated = frame.copy()
+        _, _, x, y, w, h, _ = slot
+        height, width = frame.shape[:2]
+        cv2.rectangle(annotated, (int((x + w * .50) * width), int((y + h * .52) * height)),
+                      (int((x + w) * width), int((y + h * .84) * height)), (0, 0, 255), 2)
+        self.screenshot(label + "_region", frame=annotated)
+        self.screenshot(label + "_crop", frame=self._slot_crop(frame, slot, (.50, .52, 1, .84)))
+
+    def _recognize_character_screen(self, frame, screen_index, include_incomplete=False, _retry=True):
+        self._recognized_frame = frame
+        self._scanning_page = screen_index
+        if _retry:
+            self._card_evidence_saved = set()
+        self._set_status("识别角色", f"正在识别第 {screen_index} 屏角色、体力和等级")
+        slots = detect_character_slots(frame)
+        if not slots:
+            self.screenshot("abyss_card_geometry_unknown", frame=frame)
+            raise Exception("卡片行定位失败，仓库扫描不完整")
+        self.log_info(f"第{screen_index}屏完整卡片行：{[round(s[3], 4) for s in slots[::7]]}")
+        numbers = {row: self._read_complete_row_numbers(frame, row, slots)
+                   for row in sorted({slot[0] for slot in slots})}
         records = []
         unknown = 0
-        for slot_index, slot in enumerate(character_card_slots()):
+        for slot_index, slot in enumerate(slots):
             row, column, _x, _y, _width, _height, complete = slot
             if not complete and not include_incomplete:
                 continue
@@ -1853,12 +1945,24 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                 slot_index=slot_index,
                 rover_form=rover_form,
                 rover_confidence=rover_confidence,
+                slot=slot,
             ))
-        partial = "，已尝试底部不完整卡片" if include_incomplete else "，底部不完整卡片 7 个"
+        partial = "，残缺行不参与读取"
         self.log_info(
             f"第 {screen_index} 屏识别角色 {len(records)} 个，未知头像 {unknown} 个"
             f"{partial}"
         )
+        missing = [r for r in records if r.energy is None or r.level is None]
+        if missing:
+            self.log_warning("角色数字未确认：" + "；".join(
+                f"{r.display_name}(体力={r.energy},等级={r.level},行{r.slot[0] + 1}列{r.slot[1] + 1})"
+                for r in missing))
+            for record in missing:
+                self._save_card_evidence(frame, record.slot, "abyss_card_numbers_unknown")
+            if _retry:
+                self.sleep(.2)
+                return self._recognize_character_screen(
+                    self._wait_stable_character_frame(), screen_index, _retry=False)
         return records
 
     def _click_period_challenge_icon(self):

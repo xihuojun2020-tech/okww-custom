@@ -25,6 +25,8 @@ from src.task.AutoAbyssTask import (
     classify_floor_evidence,
     character_column_at,
     character_card_slots,
+    detect_character_slots,
+    character_list_at_edge,
     character_safe_click,
     count_occupied_tower_slots,
     energy_digit_count,
@@ -176,7 +178,7 @@ class TestAutoAbyssTask(unittest.TestCase):
                 task.screenshot = lambda *_args, **_kwargs: None
                 task.tr = lambda value: value
                 task.ocr = lambda *_args, **_kwargs: [SimpleNamespace(name="1")] if selected else []
-                task._read_complete_row_numbers = lambda _frame, row: (
+                task._read_complete_row_numbers = lambda _frame, row, slots=None: (
                     {0: {'energy': 10, 'level': 90}} if row == 0 else {}
                 )
 
@@ -210,7 +212,8 @@ class TestAutoAbyssTask(unittest.TestCase):
                         2,
                     )
 
-                records = task._recognize_character_screen(frame, 1)
+                with patch("src.task.AutoAbyssTask.detect_character_slots", return_value=character_card_slots()[:14]):
+                    records = task._recognize_character_screen(frame, 1)
 
                 self.assertEqual(len(records), 1)
                 self.assertEqual(records[0].character_id, Labels.char_qingxiao)
@@ -885,9 +888,9 @@ class TestAutoAbyssTask(unittest.TestCase):
         frame[620:1170, 2355:2370] = 0
         self.assertFalse(is_single_page_character_list(frame))
 
-    def test_single_page_scan_skips_scroll_and_attempts_bottom_row(self):
+    def test_single_page_scan_skips_scroll_and_ignores_partial_rows(self):
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
-        frame[180:1170, 2355:2370] = 220
+        frame[180:1200, 2355:2370] = 220
         expected = [CharacterScanRecord("char_a", "A", 10, 90, 0.9, 1, 0)]
         calls = []
         task = AutoAbyssTask.__new__(AutoAbyssTask)
@@ -901,13 +904,14 @@ class TestAutoAbyssTask(unittest.TestCase):
         task._scroll_to_second_character_page = lambda _first: self.fail("single page must not scroll")
 
         self.assertEqual(task._scan_character_pages(frame), expected)
-        self.assertIn(("recognize", True, 1, True), calls)
+        self.assertIn(("recognize", True, 1, False), calls)
 
-    def test_multi_page_scan_keeps_the_existing_second_screen_flow(self):
+    def test_multi_page_scan_requires_overlap_and_bottom(self):
         first = np.zeros((1440, 2560, 3), dtype=np.uint8)
         first[180:620, 2355:2370] = 220
         second = first.copy()
-        second[200:500, 300:800] = 255
+        second[180:620, 2355:2370] = 0
+        second[760:1200, 2355:2370] = 220
         first_record = CharacterScanRecord("char_a", "A", 10, 90, 0.9, 1, 0)
         second_record = CharacterScanRecord("char_b", "B", 10, 80, 0.9, 2, 0)
         calls = []
@@ -919,14 +923,14 @@ class TestAutoAbyssTask(unittest.TestCase):
         task._recognize_character_screen = (
             lambda current, index, include_incomplete=False:
             calls.append(("recognize", current is first, index, include_incomplete))
-            or ([first_record] if current is first else [second_record])
+            or ([first_record] if current is first else [first_record, second_record])
         )
 
-        self.assertEqual(task._scan_character_pages(first), [first_record, second_record])
+        self.assertEqual(task._scan_character_pages(first), [first_record, first_record, second_record])
         self.assertIn(("recognize", True, 1, False), calls)
         self.assertIn(("recognize", False, 2, False), calls)
 
-    def test_multi_page_scroll_uses_scrollbar_drag_after_wheel_failures(self):
+    def test_multi_page_scroll_rejects_picture_change_without_scrollbar_motion(self):
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
         frame[180:620, 2355:2370] = 220
         changed = frame.copy()
@@ -944,14 +948,12 @@ class TestAutoAbyssTask(unittest.TestCase):
         task.log_warning = warnings.append
         task.screenshot = lambda name, **kwargs: events.append(("screenshot", name, kwargs.get("frame")))
 
-        self.assertIs(task._scroll_to_second_character_page(frame), changed)
-        self.assertEqual(sum(event[0] == "front" for event in events), 3)
+        self.assertIsNone(task._scroll_to_second_character_page(frame))
         self.assertEqual(sum(event[0] == "wheel" for event in events), 2)
-        self.assertEqual(sum(event[0] == "drag" for event in events), 1)
+        self.assertEqual(sum(event[0] == "drag" for event in events), 0)
         self.assertEqual(len(warnings), 2)
-        self.assertEqual(sum(event[0] == "screenshot" for event in events), 4)
 
-    def test_multi_page_scroll_failure_uses_sufficient_first_screen_records(self):
+    def test_multi_page_scroll_failure_rejects_even_sufficient_partial_roster(self):
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
         frame[180:620, 2355:2370] = 220
         records = [
@@ -967,9 +969,8 @@ class TestAutoAbyssTask(unittest.TestCase):
         task._recognize_character_screen = lambda *_args, **_kwargs: records
         task._scroll_to_second_character_page = lambda _first: None
 
-        self.assertEqual(task._scan_character_pages(frame, minimum_energy=5), records)
-        self.assertEqual(task._character_page_count, 1)
-        self.assertTrue(any("第一屏" in warning for warning in warnings))
+        with self.assertRaisesRegex(Exception, "仓库扫描不完整"):
+            task._scan_character_pages(frame, minimum_energy=5)
 
     def test_multi_page_scroll_failure_stops_when_first_screen_cannot_form_team(self):
         frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
@@ -987,7 +988,7 @@ class TestAutoAbyssTask(unittest.TestCase):
         task._recognize_character_screen = lambda *_args, **_kwargs: records
         task._scroll_to_second_character_page = lambda _first: None
 
-        with self.assertRaisesRegex(Exception, "第一屏不足三名"):
+        with self.assertRaisesRegex(Exception, "仓库扫描不完整"):
             task._scan_character_pages(frame, minimum_energy=5)
 
     def test_parse_ocr_number_accepts_level_and_rejects_out_of_range(self):
@@ -1048,7 +1049,8 @@ class TestAutoAbyssTask(unittest.TestCase):
         self.assertIsNone(
             task._read_slot_energy(np.zeros((1440, 2560, 3), dtype=np.uint8), character_card_slots()[0])
         )
-        self.assertEqual(saved[0][0], "abyss_energy_ambiguous")
+        self.assertEqual(saved[0][0], "abyss_energy_ambiguous_p0_r1_c1_frame")
+        self.assertEqual(len(saved), 3)
 
     def test_merge_character_records_deduplicates_and_filters_strictly(self):
         records = [
@@ -1082,6 +1084,184 @@ class TestAutoAbyssTask(unittest.TestCase):
         self.assertAlmostEqual(x, x0 + width * 0.50)
         self.assertAlmostEqual(y, y0 + height * 0.35)
 
+    def test_nas_scrolled_cards_have_correct_energy_regions_at_multiple_scales(self):
+        source = cv2.imread("tests/fixtures/abyss_scroll/scrolled.png")
+        self.assertIsNotNone(source)
+        for width, height in ((1280, 720), (1920, 1080), (2560, 1440)):
+            with self.subTest(width=width):
+                frame = cv2.resize(source, (width, height))
+                slots = detect_character_slots(frame)
+                self.assertEqual(len(slots), 14)
+                self.assertAlmostEqual(slots[0][3], 274 / 1080, delta=.004)
+                self.assertAlmostEqual(slots[7][3], 541 / 1080, delta=.004)
+                counts = [energy_digit_count(AutoAbyssTask._slot_crop(frame, s, (.5, .52, 1, .84)))
+                          for s in slots]
+                self.assertEqual(counts, [1, 1, 1, 1, 2, 1, 2, 2, 2, 1, 2, 2, 2, 2])
+                self.assertFalse(any(selection_marker_present(
+                    AutoAbyssTask._slot_crop(frame, s, SELECTION_MARKER_REGION)) for s in slots))
+
+    def test_nas_card_numbers_with_real_ocr(self):
+        from onnxocr.onnx_paddleocr import ONNXPaddleOcr
+        engine = ONNXPaddleOcr(use_openvino=True, use_npu=False, use_angle_cls=False)
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        def read(*args, frame, **kwargs):
+            boxes = []
+            for points, (text, confidence) in engine.ocr(frame)[0]:
+                xs, ys = [p[0] for p in points], [p[1] for p in points]
+                boxes.append(SimpleNamespace(name=text, x=min(xs), y=min(ys),
+                                             width=max(xs) - min(xs), height=max(ys) - min(ys)))
+            return boxes
+        task.ocr = read
+        task.log_info = task.log_warning = lambda *_: None
+        task.screenshot = lambda *_args, **_kwargs: None
+        source = cv2.imread("tests/fixtures/abyss_scroll/scrolled.png")
+        for width, height in ((1280, 720), (1920, 1080), (2560, 1440)):
+            frame = cv2.resize(source, (width, height))
+            slots = detect_character_slots(frame)
+            result = []
+            for row in range(2):
+                values = task._read_complete_row_numbers(frame, row, slots)
+                for slot in slots[row * 7:(row + 1) * 7]:
+                    value = values[slot[1]]
+                    energy = value["energy"]
+                    if energy is None:
+                        energy = task._read_slot_energy(frame, slot)
+                    result.append((energy, value["level"]))
+            self.assertEqual(result, [(e, 90) for e in (7, 7, 7, 7, 10, 7, 10, 10, 10, 7, 10, 10, 10, 10)])
+
+    def test_card_rows_follow_vertical_offset_and_reject_blank_frames(self):
+        source = cv2.imread("tests/fixtures/abyss_scroll/scrolled.png")
+        for offset in (-110, -40, 40, 100):
+            frame = cv2.warpAffine(source, np.float32([[1, 0, 0], [0, 1, offset]]), (1920, 1080))
+            frame[:130] = 0
+            frame[900:] = 0
+            slots = detect_character_slots(frame)
+            self.assertGreaterEqual(len(slots), 7)
+            for slot in slots[::7]:
+                self.assertTrue(any(abs(slot[3] * 1080 - (y + offset)) < 5 for y in (7, 274, 541, 808)))
+        self.assertEqual(detect_character_slots(np.zeros_like(source)), ())
+
+    def test_last_row_with_two_cards_keeps_the_established_geometry(self):
+        frame = cv2.imread("tests/fixtures/abyss_scroll/scrolled.png")
+        frame[537:900, 610:1760] = 30
+        slots = detect_character_slots(frame)
+        self.assertEqual(len(slots), 14)
+        self.assertAlmostEqual(slots[7][3], 541 / 1080, delta=.004)
+
+    def test_avatar_gold_patches_do_not_count_as_selection(self):
+        crop = np.zeros((160, 100, 3), np.uint8)
+        crop[10:80, :4] = (40, 190, 255)
+        crop[50:120, -4:] = (40, 190, 255)
+        self.assertFalse(selection_marker_present(crop))
+
+    def test_relocation_uses_current_card_identity_not_historical_slot(self):
+        frame = cv2.imread("tests/fixtures/abyss_scroll/scrolled.png")
+        slots = detect_character_slots(frame)
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        target = AutoAbyssTask._slot_crop(frame, slots[9], (.02, .01, .98, .78))
+        task._identify_character = lambda crop: ("a", .9) if np.array_equal(crop, target) else None
+        record = CharacterScanRecord("a", "A", 7, 90, .9, 2, 0, slot=character_card_slots()[0])
+        relocated = task._relocate_record(frame, record)
+        self.assertEqual(relocated.slot, slots[9])
+        self.assertFalse(task._verify_record_identity(frame, record))
+        task._identify_character = lambda _crop: ("a", .9)
+        self.assertIsNone(task._relocate_record(frame, record))
+
+    def test_return_to_page_checks_anchors_even_if_cached_page_matches(self):
+        frame = np.zeros((100, 100, 3), np.uint8)
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task._character_pages = {1: (.3, ())}
+        task._character_page_index = 1
+        task._wait_stable_character_frame = lambda: frame
+        task._page_matches = lambda *_: False
+        task.ensure_in_front = lambda: None
+        calls = []
+        task.swipe_relative = lambda *args, **kw: calls.append(args)
+        task.screenshot = lambda *_args, **_kw: None
+        with patch("src.task.AutoAbyssTask.scroll_thumb_center", return_value=.4):
+            with self.assertRaisesRegex(Exception, "位置或身份不匹配"):
+                task._show_character_page(1)
+        self.assertEqual(len(calls), 2)
+
+    def test_matching_scrollbar_without_matching_identities_is_not_a_page(self):
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        records = tuple(CharacterScanRecord(str(i), str(i), 10, 90, .9, 1, i) for i in range(3))
+        task._character_pages = {1: (.3, records)}
+        task._verify_record_identity = lambda *_: False
+        with patch("src.task.AutoAbyssTask.scroll_thumb_center", return_value=.3):
+            self.assertFalse(task._page_matches(np.zeros((100, 100, 3), np.uint8), 1))
+
+    def test_more_than_three_selected_aborts_before_any_click(self):
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task._selected_records = lambda _: {str(i): i for i in range(4)}
+        task.click_relative = lambda *_args, **_kw: self.fail("must not click")
+        task.screenshot = lambda *_args, **_kw: None
+        with self.assertRaisesRegex(Exception, "超过3人"):
+            task._clear_all_selection([])
+
+    def test_final_selection_rejects_extra_identity(self):
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        records = [CharacterScanRecord(str(i), str(i), 10, 90, .9, 1, i) for i in range(3)]
+        task._show_character_page = lambda _: None
+        task._verify_record_identity = lambda *_: True
+        task._selection_marker_present = lambda *_: True
+        task.log_info = lambda *_: None
+        task._selected_records = lambda _: {str(i): i for i in range(4)}
+        self.assertFalse(task._verify_planned_selection_markers(SimpleNamespace(members=("0", "1", "2")), records))
+
+    def test_scan_covers_three_viewports_and_requires_shared_identity(self):
+        frames = [np.full((4, 4, 3), i, np.uint8) for i in range(3)]
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task._recognize_character_screen = lambda f, page: [
+            CharacterScanRecord(str(i), str(i), 10, 90, .9, page, j)
+            for j, i in enumerate((page - 1, page))]
+        task._scroll_to_second_character_page = lambda f: frames[int(f[0, 0, 0]) + 1]
+        task.log_info = lambda *_: None
+        task.screenshot = lambda *_args, **_kw: None
+        with patch("src.task.AutoAbyssTask.character_list_at_edge", side_effect=lambda f, bottom=False: int(f[0, 0, 0]) == (2 if bottom else 0)):
+            records = task._scan_character_pages(frames[0])
+        self.assertEqual(task._character_page_count, 3)
+        self.assertEqual({r.character_id for r in records}, {"0", "1", "2", "3"})
+
+    def test_scan_rejects_conflicting_energy_in_overlapping_cards(self):
+        frames = [np.zeros((4, 4, 3), np.uint8), np.ones((4, 4, 3), np.uint8)]
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task._recognize_character_screen = lambda f, page: [CharacterScanRecord("a", "A", 7 if page == 1 else 10, 90, .9, page, 0)]
+        task._scroll_to_second_character_page = lambda _: frames[1]
+        task._wait_stable_character_frame = lambda: frames[1]
+        task.log_info = lambda *_: None
+        task.screenshot = lambda *_args, **_kw: None
+        with patch("src.task.AutoAbyssTask.character_list_at_edge", side_effect=lambda f, bottom=False: not bottom):
+            with self.assertRaisesRegex(Exception, "体力读数矛盾"):
+                task._scan_character_pages(frames[0])
+
+    def test_scan_limit_does_not_scroll_to_an_unscanned_thirteenth_page(self):
+        frame = np.zeros((4, 4, 3), np.uint8)
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task._recognize_character_screen = lambda f, page: [CharacterScanRecord("a", "A", 7, 90, .9, page, 0)]
+        steps = []
+        task._scroll_to_second_character_page = lambda f: steps.append(True) or frame
+        task.log_info = lambda *_: None
+        task.screenshot = lambda *_args, **_kw: None
+        with patch("src.task.AutoAbyssTask.character_list_at_edge", side_effect=lambda f, bottom=False: not bottom):
+            with self.assertRaisesRegex(Exception, "超过12屏"):
+                task._scan_character_pages(frame)
+        self.assertEqual(len(steps), 11)
+
+    def test_card_evidence_contains_frame_overlay_and_crop_once(self):
+        frame = cv2.imread("tests/fixtures/abyss_scroll/scrolled.png")
+        original = frame.copy()
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        saved = []
+        task.screenshot = lambda name, frame: saved.append((name, frame.copy()))
+        slot = detect_character_slots(frame)[0]
+        task._save_card_evidence(frame, slot, "energy")
+        task._save_card_evidence(frame, slot, "numbers")
+        self.assertEqual(len(saved), 3)
+        self.assertTrue(np.array_equal(frame, original))
+        self.assertFalse(np.array_equal(saved[0][1], saved[1][1]))
+        self.assertEqual(energy_digit_count(saved[2][1]), 1)
+
     def test_clear_all_selection_reuses_scan_and_checks_only_marker_regions(self):
         selected = [
             CharacterScanRecord("a", "A", 10, 90, .9, 1, 0),
@@ -1093,10 +1273,12 @@ class TestAutoAbyssTask(unittest.TestCase):
         task._selection_records_all_pages = lambda: (_ for _ in ()).throw(
             AssertionError("the existing character scan must be reused")
         )
-        task._selection_marker_locations_all_pages = lambda: []
+        snapshots = iter(({"a": selected[0], "b": selected[1]}, {"b": selected[1]}, {}))
+        task._selected_records = lambda records: next(snapshots)
         task._show_character_page = lambda _page: np.zeros((100, 100, 3), dtype=np.uint8)
         task._selection_marker_present = lambda _frame, _record: True
         task._verify_record_identity = lambda _frame, _record: True
+        task._relocate_record = lambda _frame, record: replace(record, slot=character_card_slots()[record.slot_index])
         task.click_relative = lambda x, y, **kwargs: clicks.append((x, y, kwargs["name"]))
         task._wait_selection_marker = lambda _record, expected: expected is False
         task.screenshot = lambda *_args, **_kwargs: None
@@ -1114,6 +1296,7 @@ class TestAutoAbyssTask(unittest.TestCase):
         task = AutoAbyssTask.__new__(AutoAbyssTask)
         task._show_character_page = lambda page: events.append(("show", page)) or np.zeros((100, 100, 3), dtype=np.uint8)
         task._verify_record_identity = lambda _frame, _record: True
+        task._relocate_record = lambda _frame, record: replace(record, slot=character_card_slots()[record.slot_index])
         task.click_relative = lambda _x, _y, **kwargs: events.append(("click", kwargs["name"]))
         task._wait_selection_marker = lambda record, expected: events.append(("expect", record.character_id, expected)) or True
         task._verify_planned_selection_markers = lambda *_args: events.append(("final-local",)) or True
@@ -1162,10 +1345,12 @@ class TestAutoAbyssTask(unittest.TestCase):
         task = AutoAbyssTask.__new__(AutoAbyssTask)
         task._show_character_page = lambda page: np.full((10, 10, 3), page, dtype=np.uint8)
         task._verify_record_identity = lambda _frame, _record: True
+        task._relocate_record = lambda _frame, record: replace(record, slot=character_card_slots()[record.slot_index])
         task._selection_marker_present = lambda _frame, record: seen.append(record.character_id) or True
         task.log_info = lambda *_args: None
         plan = SimpleNamespace(members=("a", "b", "c"))
 
+        task._selected_records = lambda _records: dict(zip(plan.members, records))
         self.assertTrue(task._verify_planned_selection_markers(plan, records))
         self.assertEqual(seen, ["a", "b", "c"])
 
