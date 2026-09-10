@@ -1,6 +1,7 @@
 """Global settings only: connection, keys, preferences and updates."""
 from pathlib import Path
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from src.gui.ChoiceControls import QtComboBox as QComboBox
 from qfluentwidgets import FluentIcon
 from ok.gui.widget.CustomTab import CustomTab
 from src.gui.SectionPanel import SectionPanel, reveal_widget

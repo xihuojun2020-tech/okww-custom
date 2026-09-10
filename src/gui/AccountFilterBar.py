@@ -5,7 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLineEdit, QWidget
+from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLineEdit, QWidget
+from src.gui.ChoiceControls import QtComboBox as QComboBox
 
 
 @dataclass(frozen=True)

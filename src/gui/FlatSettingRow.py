@@ -2,6 +2,7 @@
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QBoxLayout, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget, QAbstractButton, QAbstractSpinBox
+from qfluentwidgets import ComboBox
 
 
 class FlatSettingRow(QWidget):
@@ -38,7 +39,7 @@ class FlatSettingRow(QWidget):
         layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(8)
         layout.addLayout(copy, 1)
-        compact = isinstance(control, (QAbstractButton, QAbstractSpinBox))
+        compact = isinstance(control, (QAbstractButton, QAbstractSpinBox)) and not isinstance(control, ComboBox)
         control.setSizePolicy(QSizePolicy.Preferred if compact else QSizePolicy.Expanding, QSizePolicy.Fixed)
         layout.addWidget(control, 0 if compact else 1, Qt.AlignVCenter)
 

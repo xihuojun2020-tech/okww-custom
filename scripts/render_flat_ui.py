@@ -175,6 +175,7 @@ def render(output):
                 page.resize(width, height)
                 page.show()
                 for _ in range(8): app.processEvents()
+                assert not page.findChildren(QComboBox), 'Native dropdown remains on page'
                 page.grab().save(str(output / f'{type(page).__name__}-{width}.png'))
                 if sample_state and page is window.task_hub_tab:
                     assert page.task_tab.task_summary.isVisible(), 'Sample status must be visible'
@@ -198,6 +199,10 @@ def render(output):
                 page.grab().save(str(output / f'{type(page).__name__}-{width}-bottom.png'))
             page.hide()
         text_audit = {type(page).__name__: audit_texts(page) for page in pages}
+        from ok.gui.tasks.TaskTab import TaskTab
+        for task_tab in QApplication.allWidgets():
+            if isinstance(task_tab, TaskTab):
+                task_tab.timer.stop()
         for page in pages:
             page.close()
             page.deleteLater()
@@ -210,11 +215,36 @@ def render(output):
             dialog.grab().save(str(output / f'{type(dialog).__name__}.png'))
             text_audit[type(dialog).__name__] = audit_texts(dialog)
             for button in dialog.findChildren(QPushButton):
+                # Fluent dropdowns are buttons inside the scrollable form, not footer actions.
+                if isinstance(button, ComboBox):
+                    continue
                 if button.isVisible() and not dialog.rect().contains(button.mapTo(dialog, button.rect().center())):
                     raise AssertionError(f'Dialog button outside window: {button.text()}')
             dialog.close()
             dialog.deleteLater()
         app.processEvents()
+        from src.gui.ChoiceControls import QtComboBox
+        from PySide6.QtTest import QTest
+        control = QtComboBox()
+        control.resize(300, 36)
+        control.addItems(['无', '测试选项', '较长的测试选项，用于核对完整文字与圆角菜单'])
+        control.show()
+        control.activateWindow()
+        control.setFocus()
+        app.processEvents()
+        control.grab().save(str(output / 'Dropdown-focus.png'))
+        QTest.mouseMove(control, QPoint(20, 20))
+        app.processEvents()
+        control.grab().save(str(output / 'Dropdown-hover.png'))
+        control._toggleComboMenu()
+        QTest.qWait(250)
+        control.dropMenu.grab().save(str(output / 'Dropdown-menu.png'))
+        control._closeComboMenu()
+        control.setEnabled(False)
+        app.processEvents()
+        control.grab().save(str(output / 'Dropdown-disabled.png'))
+        control.close()
+        control.deleteLater()
         (output / 'ui-text-audit.json').write_text(json.dumps(text_audit, ensure_ascii=False, indent=2), encoding='utf-8')
 
 

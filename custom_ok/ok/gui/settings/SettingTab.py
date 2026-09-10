@@ -4,7 +4,8 @@ from qfluentwidgets import InfoBar, Theme
 from qfluentwidgets import (SettingCardGroup, ComboBoxSettingCard, OptionsSettingCard, PushSettingCard)
 from src.gui.FlatSettingGroup import FlatSettingGroup as SettingCardGroup, FlatActionSettingCard as PushSettingCard
 from src.gui.FlatSettingRow import FlatSettingRow
-from PySide6.QtWidgets import QLabel, QComboBox
+from PySide6.QtWidgets import QLabel
+from src.gui.ChoiceControls import QtComboBox as QComboBox
 
 from ok import og
 from ok.gui.common.config import cfg

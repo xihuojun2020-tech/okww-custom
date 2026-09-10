@@ -34,6 +34,65 @@ def example_task(name='周本挑战'):
 
 
 class TestFlatUI(unittest.TestCase):
+    def test_shared_dropdown_values_keyboard_and_elision(self):
+        from PySide6.QtTest import QTest
+        from src.gui.ChoiceControls import QtComboBox
+        from src.gui.FlatSettingRow import FlatSettingRow
+        from PySide6.QtWidgets import QSizePolicy
+        combo = QtComboBox()
+        combo.addItem('无', False)
+        full = 'A1-测试昵称-199****0001' * 5
+        combo.addItem(full, 'legacy-account-key')
+        self.assertIs(combo.itemData(0), False)
+        row = FlatSettingRow('账号', combo)
+        self.assertEqual(combo.sizePolicy().horizontalPolicy(), QSizePolicy.Expanding)
+        combo.setCurrentIndex(-1)
+        self.assertEqual(combo.currentIndex(), -1)
+        self.assertIsNone(combo.currentData())
+        QTest.keyClick(combo, Qt.Key_End)
+        self.assertEqual(combo.currentData(), 'legacy-account-key')
+        combo.resize(180, 36)
+        combo._update_elision()
+        self.assertEqual(combo.currentText(), full)
+        self.assertEqual(combo.toolTip(), full)
+        self.assertIn('…', combo.text())
+        QTest.keyClick(combo, Qt.Key_Home)
+        self.assertEqual(combo.currentIndex(), 0)
+        QTest.keyClick(combo, Qt.Key_Down)
+        self.assertEqual(combo.currentIndex(), 1)
+        QTest.keyClick(combo, Qt.Key_Up)
+        self.assertEqual(combo.currentIndex(), 0)
+        combo.show()
+        self.app.processEvents()
+        QTest.keyClick(combo, Qt.Key_Space)
+        self.assertIsNotNone(combo.dropMenu)
+        popup = combo.dropMenu
+        QTest.keyClick(popup, Qt.Key_Escape)
+        self.app.processEvents()
+        from shiboken6 import isValid
+        self.assertTrue(not isValid(popup) or not popup.isVisible())
+        self.assertEqual(combo.currentIndex(), 0)
+        QTest.keyClick(combo, Qt.Key_Space)
+        self.assertTrue(isValid(combo.dropMenu))
+        self.assertTrue(combo.dropMenu.isVisible())
+        combo._closeComboMenu()
+        combo.clear()
+        self.assertEqual(combo.currentIndex(), -1)
+        row.deleteLater()
+
+    def test_disclosure_uses_line_icon_and_accessible_state(self):
+        from src.gui.DisclosureHeader import DisclosureHeader
+        header = DisclosureHeader('测试')
+        button = header.expandButton
+        self.assertEqual(button.arrowType(), Qt.NoArrow)
+        self.assertFalse(button.icon().isNull())
+        self.assertEqual(button.width(), 36)
+        self.assertFalse(button.isChecked())
+        header.set_expanded(True)
+        self.assertTrue(button.isChecked())
+        self.assertEqual(button.accessibleDescription(), '已展开')
+        header.deleteLater()
+
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
@@ -274,6 +333,16 @@ class TestFlatUI(unittest.TestCase):
         QApplication.sendEvent(spin, event)
         for _ in range(5): self.app.processEvents()
         self.assertEqual(spin.value(), 5)
+        self.assertGreater(page.verticalScrollBar().value(), 0)
+        from src.gui.ChoiceControls import QtComboBox
+        combo = QtComboBox()
+        combo.addItems(['无', '测试'])
+        page.add_widget(combo)
+        page.verticalScrollBar().setValue(0)
+        wheel = QWheelEvent(QPointF(10, 10), QPointF(combo.mapToGlobal(QPoint(10, 10))),
+                            QPoint(), QPoint(0, -120), Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False)
+        QApplication.sendEvent(combo, wheel)
+        self.assertEqual(combo.currentIndex(), 0)
         self.assertGreater(page.verticalScrollBar().value(), 0)
         page.close()
         page.deleteLater()

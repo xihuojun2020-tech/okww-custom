@@ -15,7 +15,7 @@
 import re
 
 from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel
-from qfluentwidgets import ComboBox
+from src.gui.ChoiceControls import ComboBox
 
 from ok import og
 from ok.gui.tasks.ConfigLabelAndWidget import ConfigLabelAndWidget

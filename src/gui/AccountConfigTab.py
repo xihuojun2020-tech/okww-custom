@@ -5,7 +5,7 @@ import copy
 from functools import partial
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
+from PySide6.QtWidgets import (QCheckBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
                                QMessageBox, QPlainTextEdit, QPushButton, QInputDialog, QDialog,
                                QDialogButtonBox,
                                QVBoxLayout, QWidget, QLineEdit, QSizePolicy, QScrollArea)
@@ -23,11 +23,8 @@ from src.gui.BackgroundOperation import BackgroundOperation
 from src.gui.FlatSettingRow import FlatSettingRow
 
 
-class ClickOnlyComboBox(QComboBox):
-    """Keep wheel movement for the page; selection changes only from the menu."""
-
-    def wheelEvent(self, event):
-        event.ignore()
+from src.gui.ChoiceControls import QtComboBox as QComboBox
+ClickOnlyComboBox = QComboBox
 
 
 def _select_account_choice(widget, key, value):

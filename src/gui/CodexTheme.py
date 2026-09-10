@@ -3,7 +3,7 @@
 from PySide6.QtCore import QObject, QEvent
 from PySide6.QtGui import QColor, QPalette, QFont
 from PySide6.QtWidgets import QApplication, QComboBox, QAbstractSpinBox, QAbstractScrollArea
-from qfluentwidgets import Theme, qconfig, setThemeColor
+from qfluentwidgets import Theme, qconfig, setThemeColor, ComboBox
 
 
 COLORS = {
@@ -37,7 +37,7 @@ def size_dialog(dialog, width, height):
 class PageWheelGuard(QObject):
     """Wheel scrolling must never change a numeric or selection setting."""
     def eventFilter(self, widget, event):
-        if event.type() == QEvent.Wheel and isinstance(widget, (QComboBox, QAbstractSpinBox)):
+        if event.type() == QEvent.Wheel and isinstance(widget, (QComboBox, ComboBox, QAbstractSpinBox)):
             parent = widget.parentWidget()
             while parent is not None:
                 if isinstance(parent, QAbstractScrollArea):
@@ -89,8 +89,8 @@ def codex_style_sheet() -> str:
     QPushButton[role="primary"]:pressed {{ background: {COLORS['accent_pressed']}; }}
     QPushButton[role="primary"]:disabled {{ background: {COLORS['disabled']}; color: {COLORS['muted']}; }}
     QToolButton[role="disclosure"] {{ text-align: left; background: transparent;
-        border: 1px solid transparent; border-radius: 6px; padding: 8px 4px;
-        font-size: 15px; font-weight: 600; min-height: 24px; }}
+        border: 1px solid transparent; border-radius: 6px; padding: 0;
+        min-height: 0; }}
     QToolButton[role="disclosure"]:hover {{ background: {COLORS['hover']}; }}
     QToolButton[role="disclosure"]:focus {{ border-color: {COLORS['accent']}; }}
     QToolButton[role="disclosure"]:pressed {{ background: {COLORS['pressed']}; }}

@@ -1,7 +1,7 @@
 """Integer-backed dropdown used for named in-game list entries."""
 
 from PySide6.QtGui import QFontMetrics
-from qfluentwidgets import ComboBox
+from src.gui.ChoiceControls import ComboBox
 
 from ok import og
 from ok.gui.common.design_system import control_width

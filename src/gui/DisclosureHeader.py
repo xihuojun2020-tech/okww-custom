@@ -1,6 +1,7 @@
 """Shared compact header: a clickable summary and independent action controls."""
 from PySide6.QtCore import Qt, Signal, QSize
 from PySide6.QtWidgets import QWidget, QLabel, QHBoxLayout, QVBoxLayout, QToolButton, QSizePolicy
+from qfluentwidgets import FluentIcon
 
 
 class DisclosureHeader(QWidget):
@@ -37,7 +38,8 @@ class DisclosureHeader(QWidget):
         self.text_layout.addWidget(self.summary_label)
         self.expandButton = QToolButton(self)
         self.expandButton.setProperty('role', 'disclosure')
-        self.expandButton.setFixedSize(40, 40)
+        self.expandButton.setFixedSize(36, 36)
+        self.expandButton.setIconSize(QSize(14, 14))
         self.expandButton.setCheckable(True)
         self.expandButton.setAccessibleName(f'{title}：展开或收起详情')
         self.expandButton.toggled.connect(self.toggled)
@@ -75,6 +77,6 @@ class DisclosureHeader(QWidget):
         self.expandButton.blockSignals(True)
         self.expandButton.setChecked(expanded)
         self.expandButton.blockSignals(False)
-        self.expandButton.setArrowType(Qt.DownArrow if expanded else Qt.RightArrow)
+        self.expandButton.setIcon((FluentIcon.ARROW_DOWN if expanded else FluentIcon.CHEVRON_RIGHT).icon())
         self.expandButton.setAccessibleDescription('已展开' if expanded else '已收起')
         self.expandButton.setToolTip('收起详情' if expanded else '展开详情')
