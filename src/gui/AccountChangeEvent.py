@@ -18,6 +18,7 @@ class AccountChangeEvent:
     revision: str = ""
     profile_ids: tuple[str, ...] = ()
     sequence_ids: tuple[str, ...] = ()
+    choices_changed: bool = True
 
 
 __all__ = ["AccountChangeEvent"]

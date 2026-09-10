@@ -2,6 +2,8 @@
 
 import json
 import copy
+import logging
+from time import perf_counter
 from functools import partial
 
 from PySide6.QtCore import Qt, Signal
@@ -12,7 +14,7 @@ from PySide6.QtWidgets import (QCheckBox, QFormLayout, QGroupBox, QHBoxLayout, Q
 from qfluentwidgets import BodyLabel, FluentIcon
 
 from ok.gui.widget.CustomTab import CustomTab
-from src.account_config_editor import AccountConfigEditor, sanitize_error
+from src.account_config_editor import AccountConfigEditor, ProfileDraft, sanitize_error
 from src.account_display import account_display_label
 from src.account_rebind_service import AccountRebindService
 from src.account_repository import AccountRepository, AccountRepositoryError, get_default_repository
@@ -369,10 +371,10 @@ class AccountConfigTab(CustomTab):
             # integrity dialog can explain/recover it instead of crashing UI.
             self.status.setText(f"账号仓库暂不可用：{sanitize_error(exc)}")
         finally:
+            if selected_id:
+                index = self.profile_combo.findData(selected_id)
+                self.profile_combo.setCurrentIndex(index if index >= 0 else 0)
             self.profile_combo.blockSignals(False)
-        if selected_id:
-            index = self.profile_combo.findData(selected_id)
-            self.profile_combo.setCurrentIndex(index if index >= 0 else 0)
         self._load_selected()
 
     def refresh_sequences(self):
@@ -648,12 +650,14 @@ class AccountConfigTab(CustomTab):
                 return None
             submitted = copy.deepcopy(self.draft)
             profile_id = submitted.profile_id
+            membership_changed = sequence_ids != self._loaded_sequences
             return self._submit_action(
                 partial(self.editor.save_draft, submitted.scope, submitted,
                         confirmed_account_label=label, sequence_ids=sequence_ids),
                 '保存成功，已先创建账号备份', lambda result: AccountChangeEvent(
-                    'profile_saved', str(getattr(result, 'revision', '')), (profile_id,), sequence_ids),
-                submitted=submitted)
+                    'profile_saved', str(getattr(result, 'revision', '')), (profile_id,), sequence_ids,
+                    choices_changed=membership_changed or dict(result.account) != submitted.account),
+                submitted=submitted, saved_sequences=sequence_ids)
         except Exception as exc:
             self.status.setText(f"保存失败：{exc}")
             return None
@@ -729,17 +733,45 @@ class AccountConfigTab(CustomTab):
             return None
 
 
-    def _submit_action(self, work, success_text, event=None, *, submitted=None, refresh=True):
+    def _accept_saved_profile(self, result, submitted, sequence_ids):
+        """Accept the published record without rebuilding an unchanged editor."""
+        self.draft = ProfileDraft(result.profile_id, str(result.revision),
+                                  copy.deepcopy(dict(result.account)), copy.deepcopy(dict(result.tasks)))
+        for key, widget in self.form_widgets.items():
+            if self.draft.tasks.get(key) == submitted.tasks.get(key):
+                continue
+            value = self.draft.tasks.get(key)
+            if isinstance(widget, QCheckBox):
+                widget.setChecked(bool(value))
+            elif isinstance(widget, QComboBox):
+                _select_account_choice(widget, key, value)
+            else:
+                display = localize_account_value(value)
+                widget.setText(json.dumps(display, ensure_ascii=False)
+                               if isinstance(display, (list, dict)) else str(display))
+        self.task_editor.setPlainText(json.dumps(self.draft.tasks, ensure_ascii=False, indent=2))
+        self._render_identity()
+        self._loaded_tasks = copy.deepcopy(self.draft.tasks)
+        self._loaded_sequences = tuple(sequence_ids)
+        self.draft_status.setText('尚未编辑')
+
+    def _submit_action(self, work, success_text, event=None, *, submitted=None, refresh=True,
+                       saved_sequences=None):
         origin_id = self.selected_profile_id
         self.status.setText('正在保存配置…')
         def completed(result):
+            started = perf_counter()
             self._failed_drafts.pop(origin_id, None)
             if self.selected_profile_id == origin_id:
-                if refresh:
+                if saved_sequences is not None:
+                    self._accept_saved_profile(result, submitted, saved_sequences)
+                elif refresh:
                     self.refresh(profile_id=getattr(result, 'profile_id', origin_id))
                 self._commit_status(success_text)
             if event:
                 self.changed.emit(event(result))
+            logging.getLogger(__name__).info('account_save_ui_refresh_ms=%.1f',
+                                             (perf_counter() - started) * 1000)
         def failed(error):
             if submitted is not None and self.selected_profile_id != origin_id:
                 self._failed_drafts[origin_id] = submitted

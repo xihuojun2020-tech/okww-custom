@@ -1,5 +1,5 @@
 <div align="center">
-  <p>新版界面：<a href="docs/references/flat-ui.md">1.50.04 下拉框与展开箭头统一</a> · <a href="docs/references/account-naming-rules.md">账号组合名称与资料整理</a> · <a href="docs/references/auto-combat-recovery.md">自动战斗手动重启保护</a></p>
+  <p>新版界面：<a href="docs/references/flat-ui.md">1.50.05 修复账号保存后卡顿</a> · <a href="docs/references/account-naming-rules.md">账号组合名称与资料整理</a> · <a href="docs/references/auto-combat-recovery.md">自动战斗手动重启保护</a></p>
   <h1 align="center">
     <img src="icons/icon.png" width="200" alt="ok-ww logo"/>
     <br/>

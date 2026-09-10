@@ -13,10 +13,10 @@ Navigation and theme settings live in `mkdocs.yml` at the repository root.
 
 ## Architecture and code review
 
-- [程序结构说明（1.50.04）](程序结构说明.md)
+- [程序结构说明（1.50.05）](程序结构说明.md)
 - [账号命名与配置规则（1.50.03）](references/account-naming-rules.md)
 - [自动战斗手动重启保护（1.48.00）](references/auto-combat-recovery.md)
-- [功能分类与统一 Fluent 控件（1.50.04）](references/flat-ui.md)
+- [功能分类、统一 Fluent 控件与保存刷新（1.50.05）](references/flat-ui.md)
 - [UI 验收记录](references/ui-disclosure-verification.md)
 - [全面代码审查报告（2026-09-06）](reviews/2026-09-06全面代码审查.md)
 - [审查整改实施计划（2026-09-06）](superpowers/plans/2026-09-06-review-remediation-plan.md)

@@ -1,7 +1,7 @@
 """Standalone account-sequence management tab."""
 
 from functools import partial
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QSignalBlocker
 from PySide6.QtWidgets import (QAbstractScrollArea, QHBoxLayout, QInputDialog, QListWidget,
                                QMessageBox, QPushButton, QVBoxLayout, QWidget)
 from PySide6.QtWidgets import QSizePolicy
@@ -85,24 +85,37 @@ class SequenceManagementTab(CustomTab):
         return True
 
     def refresh(self, sequence_id=None):
+        from src.account_display import account_display_label
+        previous = [(item.sequence_id, item.profile_ids, item.enabled)
+                    for item in getattr(self, '_drafts', ())]
+        previous_selected = self._selected().sequence_id if getattr(self, '_drafts', None) and self._selected() else None
         selected = sequence_id or (
             self._selected().sequence_id if getattr(self, "_drafts", None) and self._selected() else None)
         try:
             self._drafts = list(self.service.list())
+            labels = {record.profile_id: account_display_label(record.account)
+                      for record in self.service.repository.list_profiles()}
         except AccountRepositoryError as exc:
             self._drafts = []
             self.sequences.clear()
             self.members.clear()
             self.status.setText(f"序列仓库暂不可用：{sanitize_error(exc)}")
             return
-        self.sequences.clear()
-        for item in self._drafts:
-            self.sequences.addItem(item.sequence_id)
+        unchanged = previous == [(item.sequence_id, item.profile_ids, item.enabled) for item in self._drafts]
+        labels_unchanged = labels == getattr(self, '_profile_labels', None)
+        self._profile_labels = labels
+        if unchanged and labels_unchanged and selected == previous_selected:
+            return
+        with QSignalBlocker(self.sequences):
+            self.sequences.clear()
+            for item in self._drafts:
+                self.sequences.addItem(item.sequence_id)
+            if self._drafts:
+                names = [item.sequence_id for item in self._drafts]
+                self.sequences.setCurrentRow(names.index(selected) if selected in names else 0)
         row_height = self.sequences.sizeHintForRow(0) if self.sequences.count() else 24
         self.sequences.setFixedHeight(max(32, row_height * self.sequences.count() + 8))
         if self._drafts:
-            names = [item.sequence_id for item in self._drafts]
-            self.sequences.setCurrentRow(names.index(selected) if selected in names else 0)
             self._show_members()
         else:
             self.members.clear()
@@ -119,9 +132,7 @@ class SequenceManagementTab(CustomTab):
             self.members.setFixedHeight(32)
             self.order_section.set_summary('尚未选择序列。')
             return
-        from src.account_display import account_display_label
-        profiles = {record.profile_id: account_display_label(record.account)
-                    for record in self.service.repository.list_profiles()}
+        profiles = self._profile_labels
         for profile_id in item.profile_ids:
             self.members.addItem(str(profiles.get(profile_id, "缺失账号")))
         self.order_section.set_description(

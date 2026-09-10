@@ -57,6 +57,10 @@ class TestFiveSectionMainWindow(unittest.TestCase):
         for name in ("DailyTask", "MultiAccountDailyTask", "TestAccountSwitchTask"):
             consumers[name] = Mock()
         window.executor = Executor()
+        from src.gui.AccountChangeEvent import AccountChangeEvent
+        window.refresh_account_consumers(AccountChangeEvent('profile_saved', choices_changed=False))
+        for consumer in consumers.values():
+            self.assertEqual(consumer.mock_calls, [])
         window.refresh_account_consumers()
         consumers["DailyTask"].refresh_account_options.assert_called_once_with()
         consumers["MultiAccountDailyTask"].refresh_account_options.assert_called_once_with()

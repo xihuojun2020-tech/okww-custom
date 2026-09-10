@@ -745,7 +745,7 @@ class MainWindow(FluentWindow):
 
     def refresh_account_consumers(self, _event=None):
         """Refresh account-linked task controls after a published graph change."""
-        if self.executor is None:
+        if self.executor is None or getattr(_event, 'choices_changed', True) is False:
             return
         from src.task.DailyTask import DailyTask
         from src.task.MultiAccountDailyTask import MultiAccountDailyTask

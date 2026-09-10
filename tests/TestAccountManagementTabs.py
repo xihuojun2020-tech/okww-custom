@@ -23,6 +23,151 @@ from tests.fixture_support import make_account_environment
 
 
 class TestAccountManagementTabs(unittest.TestCase):
+    def test_save_preserves_widgets_and_updates_revision_without_reloading(self):
+        with tempfile.TemporaryDirectory() as temp:
+            env = make_account_environment(Path(temp))
+            tab = AccountConfigTab(AccountConfigEditor(env.repository))
+            tab.profile_combo.setCurrentIndex(1)
+            field = tab.form_widgets['Farm Nightmare Nest for Daily Echo']
+            field.setChecked(True)
+            widgets = dict(tab.form_widgets)
+            panels = dict(tab.form_sections)
+            next(iter(panels.values())).set_expanded(True)
+            tab.resize(760, 350)
+            tab.show()
+            self.app.processEvents()
+            tab.verticalScrollBar().setValue(tab.verticalScrollBar().maximum())
+            scroll_position = tab.verticalScrollBar().value()
+            revision = tab.draft.revision
+            events = []
+            tab.changed.connect(events.append)
+            try:
+                with patch.object(tab, '_render_form', wraps=tab._render_form) as render, \
+                     patch.object(tab.editor, 'load_draft', wraps=tab.editor.load_draft) as load, \
+                     patch.object(QMessageBox, 'question', return_value=QMessageBox.Yes):
+                    tab.save()
+                    self._drain_until(lambda: not tab.operation.busy)
+                    self.assertEqual(render.call_count, 0)
+                    self.assertEqual(load.call_count, 0)
+                self.assertEqual(tab.form_widgets, widgets)
+                self.assertEqual(tab.form_sections, panels)
+                self.assertTrue(next(iter(panels.values())).toggle_button.isChecked())
+                self.assertEqual(tab.verticalScrollBar().value(), scroll_position)
+                self.assertNotEqual(tab.draft.revision, revision)
+                self.assertFalse(tab.dirty)
+                self.assertFalse(events[0].choices_changed)
+                self.assertTrue(env.repository.load_profile(tab.selected_profile_id).tasks[
+                    'Farm Nightmare Nest for Daily Echo'])
+                with patch.object(QMessageBox, 'question', return_value=QMessageBox.Yes):
+                    field.setChecked(False)
+                    tab.save()
+                    self._drain_until(lambda: not tab.operation.busy)
+                self.assertIn('保存成功', tab.status.text())
+                self.assertFalse(tab.dirty)
+            finally:
+                tab.deleteLater()
+
+    def test_save_accepts_normalized_alias_without_rebuilding(self):
+        with tempfile.TemporaryDirectory() as temp:
+            env = make_account_environment(Path(temp))
+            tab = AccountConfigTab(AccountConfigEditor(env.repository))
+            tab.form_widgets['备用识别名称'].setCurrentText('使用')
+            tab.form_widgets['备用识别名称内容'].setText(' UTEST0099A ')
+            events = []
+            tab.changed.connect(events.append)
+            try:
+                with patch.object(tab, '_render_form', wraps=tab._render_form) as render, \
+                     patch.object(QMessageBox, 'question', return_value=QMessageBox.Yes):
+                    tab.save()
+                    self._drain_until(lambda: not tab.operation.busy)
+                    self.assertEqual(render.call_count, 0)
+                self.assertEqual(tab.form_widgets['备用识别名称内容'].text(), 'UTEST0099A')
+                self.assertEqual(tab.draft.account['alternate_login_name'], 'UTEST0099A')
+                self.assertTrue(events[0].choices_changed)
+                self.assertFalse(tab.dirty)
+            finally:
+                tab.deleteLater()
+
+    def test_explicit_refresh_loads_selected_account_once(self):
+        with tempfile.TemporaryDirectory() as temp:
+            env = make_account_environment(Path(temp))
+            tab = AccountConfigTab(AccountConfigEditor(env.repository))
+            tab.profile_combo.setCurrentIndex(1)
+            try:
+                with patch.object(tab.editor, 'load_draft', wraps=tab.editor.load_draft) as load:
+                    tab.refresh()
+                    self.assertEqual(load.call_count, 1)
+            finally:
+                tab.deleteLater()
+
+    def test_unchanged_sequences_refresh_revision_without_rebuilding(self):
+        from src.sequence_repository import SequenceRepository
+        with tempfile.TemporaryDirectory() as temp:
+            env = make_account_environment(Path(temp))
+            tab = SequenceManagementTab(SequenceRepository(env.repository))
+            member = tab.members.item(0)
+            old_revision = tab._selected().revision
+            editor = AccountConfigEditor(env.repository)
+            draft = editor.load_draft(env.repository.list_profiles()[0].profile_id)
+            draft.tasks['Farm Nightmare Nest for Daily Echo'] = True
+            editor.save_draft(draft.scope, draft, confirmed_account_label=draft.account['display_name'])
+            try:
+                with patch.object(tab, '_show_members', wraps=tab._show_members) as render:
+                    tab.refresh()
+                    self.assertEqual(render.call_count, 0)
+                self.assertIs(tab.members.item(0), member)
+                self.assertNotEqual(tab._selected().revision, old_revision)
+            finally:
+                tab.deleteLater()
+
+    def test_membership_save_still_refreshes_choices_and_sequence_once(self):
+        from src.sequence_repository import SequenceRepository
+        with tempfile.TemporaryDirectory() as temp:
+            env = make_account_environment(Path(temp))
+            tab = AccountConfigTab(AccountConfigEditor(env.repository))
+            sequences = SequenceManagementTab(SequenceRepository(env.repository))
+            events = []
+            tab.changed.connect(events.append)
+            tab.changed.connect(lambda _: sequences.refresh())
+            tab.sequence_widgets['S1'].setChecked(False)
+            try:
+                with patch.object(sequences, '_show_members', wraps=sequences._show_members) as render, \
+                     patch.object(QMessageBox, 'question', return_value=QMessageBox.Yes):
+                    tab.save()
+                    self._drain_until(lambda: not tab.operation.busy)
+                    self.assertEqual(render.call_count, 1)
+                self.assertTrue(events[0].choices_changed)
+                self.assertNotIn(tab.selected_profile_id, sequences._selected().profile_ids)
+                self.assertFalse(tab.dirty)
+            finally:
+                tab.deleteLater()
+                sequences.deleteLater()
+
+    def test_twelve_account_save_refresh_logs_timing_without_rebuilding(self):
+        from src.sequence_repository import SequenceRepository
+        with tempfile.TemporaryDirectory() as temp:
+            env = make_account_environment(Path(temp), names=tuple(f'A{i}' for i in range(1, 13)))
+            tab = AccountConfigTab(AccountConfigEditor(env.repository))
+            sequences = SequenceManagementTab(SequenceRepository(env.repository))
+            tab.profile_combo.setCurrentIndex(8)
+            tab.changed.connect(lambda _: sequences.refresh())
+            tab.form_widgets['Farm Nightmare Nest for Daily Echo'].setChecked(True)
+            try:
+                with patch.object(tab, '_render_form', wraps=tab._render_form) as form_render, \
+                     patch.object(sequences, '_show_members', wraps=sequences._show_members) as member_render, \
+                     patch.object(QMessageBox, 'question', return_value=QMessageBox.Yes), \
+                     self.assertLogs('src.gui.AccountConfigTab', level='INFO') as captured:
+                    tab.save()
+                    self._drain_until(lambda: not tab.operation.busy)
+                self.assertEqual(form_render.call_count, 0)
+                self.assertEqual(member_render.call_count, 0)
+                timing = [line for line in captured.output if 'account_save_ui_refresh_ms=' in line]
+                self.assertEqual(len(timing), 1)
+                print('synthetic_12_accounts: ' + timing[0])
+            finally:
+                tab.deleteLater()
+                sequences.deleteLater()
+
     def test_weekday_template_and_account_roundtrip_preserves_day(self):
         from src.gui.AccountConfigTab import AccountTemplateDialog
         for stored in ('Monday', '星期一', '周一'):
