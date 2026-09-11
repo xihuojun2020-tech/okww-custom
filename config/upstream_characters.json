@@ -14,5 +14,63 @@
     "source_path": "src/char/Qingxiao.py",
     "upstream_commit": "a24c30f2ec90e56e40287bb76caf7c3a52266d77",
     "upstream_repository": "ok-oldking/ok-wuthering-waves"
+  },
+  "GenericPortraits": {
+    "upstream_repository": "ok-oldking/ok-wuthering-waves",
+    "upstream_commit": "6b1bc9d0032b2ce0bd93a693a1e4033fceefbf2b",
+    "local_release": "1.57.00",
+    "source_path": "src/char/CharFactory.py",
+    "labels": [
+      "char_aalto",
+      "char_lingyang",
+      "char_lumi",
+      "char_yangyang"
+    ],
+    "local_customizations": [
+      "portrait_only_BaseChar_registration",
+      "preserve_trial_generic_identity"
+    ]
+  },
+  "Lucy": {
+    "upstream_repository": "ok-oldking/ok-wuthering-waves",
+    "upstream_commit": "6b1bc9d0032b2ce0bd93a693a1e4033fceefbf2b",
+    "local_release": "1.57.00",
+    "source_path": "src/char/Lucy.py",
+    "labels": [
+      "char_lucy"
+    ],
+    "local_customizations": [
+      "local_f_break",
+      "interruptible_waits",
+      "release_held_mouse_on_error"
+    ]
+  },
+  "Rebecca": {
+    "upstream_repository": "ok-oldking/ok-wuthering-waves",
+    "upstream_commit": "6b1bc9d0032b2ce0bd93a693a1e4033fceefbf2b",
+    "local_release": "1.57.00",
+    "source_path": "src/char/Rebecca.py",
+    "labels": [
+      "char_rebecca"
+    ],
+    "local_customizations": [
+      "confirmed_liberation_before_cooldown",
+      "freeze_adjusted_reentry",
+      "no_automatic_f",
+      "release_held_mouse_on_error"
+    ]
+  },
+  "Mornye": {
+    "upstream_repository": "ok-oldking/ok-wuthering-waves",
+    "upstream_commit": "6b1bc9d0032b2ce0bd93a693a1e4033fceefbf2b",
+    "local_release": "1.57.00",
+    "source_path": "src/char/Mornye.py",
+    "labels": [
+      "char_moning",
+      "char_moning_new"
+    ],
+    "local_customizations": [
+      "bounded_concerto_fill_preserve_local_rotation"
+    ]
   }
 }

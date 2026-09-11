@@ -82,7 +82,10 @@ def inspect_character_source(source: str) -> SourceInspection:
     class_name = ""
 
     for node in ast.walk(tree):
-        if isinstance(node, ast.ClassDef) and not class_name:
+        if isinstance(node, ast.ClassDef) and any(
+            isinstance(base, ast.Name) and base.id in {"BaseChar", "Healer"}
+            for base in node.bases
+        ):
             class_name = node.name
         elif isinstance(node, ast.ImportFrom) and node.module:
             imports.add(node.module)
@@ -188,7 +191,7 @@ def build_coco_port_plan(
     for upstream_image_id in selected_image_ids:
         image = images_by_id[upstream_image_id]
         width, height = int(image["width"]), int(image["height"])
-        if (width, height) != (3840, 2160):
+        if (width, height) not in {(1920, 1080), (2560, 1440), (3840, 2160)}:
             raise ValueError(
                 f"unsupported upstream template canvas {image['file_name']}: {width}x{height}"
             )
@@ -329,6 +332,25 @@ def render_canvases(
             raise OSError(f"failed to write template canvas: {destination}")
 
 
+def registered_labels(source: str, character: str) -> tuple[str, ...]:
+    """Read aliases from the upstream registry without importing its runtime."""
+    labels = set()
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Dict):
+            continue
+        for key, value in zip(node.keys, node.values):
+            if not isinstance(value, ast.Dict):
+                continue
+            if not any(isinstance(k, ast.Constant) and k.value == 'cls'
+                       and isinstance(v, ast.Name) and v.id == character
+                       for k, v in zip(value.keys, value.values)):
+                continue
+            for entry in ast.walk(key):
+                if isinstance(entry, ast.Attribute) and isinstance(entry.value, ast.Name) and entry.value.id == 'Labels':
+                    labels.add(entry.attr)
+    return tuple(sorted(labels))
+
+
 def build_report(
     repository: Path,
     reader: GitObjectReader,
@@ -341,7 +363,8 @@ def build_report(
     upstream_coco = json.loads(reader.read_text(ref, "assets/coco_annotations.json"))
     local_coco = json.loads((repository / "assets/coco_annotations.json").read_text(encoding="utf-8"))
     expected_label = f"char_{re.sub(r'[^a-z0-9]+', '_', character.lower()).strip('_')}"
-    labels = tuple(sorted(set(inspection.labels) | {expected_label}))
+    aliases = registered_labels(reader.read_text(ref, "src/char/CharFactory.py"), character)
+    labels = tuple(sorted(set(inspection.labels) | set(aliases or (expected_label,))))
     plan = build_coco_port_plan(character, labels, local_coco, upstream_coco)
 
     source_methods = _class_methods(source)

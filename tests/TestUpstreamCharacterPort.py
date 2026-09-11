@@ -7,12 +7,31 @@ from scripts.port_upstream_character import (
     allocate_ids,
     build_coco_port_plan,
     inspect_character_source,
+    registered_labels,
     prepare_output_directory,
     write_reports,
 )
 
 
 class TestUpstreamCharacterPort(unittest.TestCase):
+    def test_inspection_ignores_enum_before_character(self):
+        self.assertEqual(inspect_character_source(
+            'class State(Enum):\n    READY = 1\nclass Demo(BaseChar):\n    pass\n').class_name, 'Demo')
+
+    def test_registry_aliases_do_not_guess_class_spelling(self):
+        self.assertEqual(registered_labels(
+            "data = {(Labels.char_moning, Labels.char_moning_new): {'cls': Mornye}}", 'Mornye'),
+            ('char_moning', 'char_moning_new'))
+
+    def test_1080p_canvas_keeps_native_coordinates(self):
+        upstream = {'images': [{'id': 1, 'file_name': 'images/36.png', 'width': 1920, 'height': 1080}],
+                    'categories': [{'id': 1, 'name': 'demo'}],
+                    'annotations': [{'id': 1, 'image_id': 1, 'category_id': 1,
+                                     'bbox': [100, 100, 40, 40], 'area': 1600}]}
+        plan = build_coco_port_plan('Demo', ('demo',), {}, upstream)
+        self.assertEqual(plan.canvases[0].width, 1920)
+        self.assertEqual(plan.fragment['annotations'][0]['bbox'], [100, 100, 40, 40])
+
     def test_qingxiao_provenance_is_pinned_and_runtime_independent(self):
         data = json.loads(Path("config/upstream_characters.json").read_text(encoding="utf-8"))
         item = data["Qingxiao"]

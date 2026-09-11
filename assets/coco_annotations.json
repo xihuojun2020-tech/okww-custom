@@ -1404,6 +1404,26 @@
             "id": 278,
             "name": "qingxiao_h2",
             "supercategory": ""
+        },
+        {
+            "id": 279,
+            "name": "char_aalto",
+            "supercategory": ""
+        },
+        {
+            "id": 280,
+            "name": "char_lingyang",
+            "supercategory": ""
+        },
+        {
+            "id": 281,
+            "name": "char_lumi",
+            "supercategory": ""
+        },
+        {
+            "id": 282,
+            "name": "char_yangyang",
+            "supercategory": ""
         }
     ],
     "images": [
@@ -2636,6 +2656,18 @@
             "file_name": "images/characters/qingxiao_source_6.png",
             "width": 3840,
             "height": 2160
+        },
+        {
+            "id": 287,
+            "file_name": "images/characters/genericportraits_source_42.png",
+            "width": 1920,
+            "height": 1080
+        },
+        {
+            "id": 288,
+            "file_name": "images/characters/genericportraits_source_47.png",
+            "width": 2560,
+            "height": 1440
         }
     ],
     "annotations": [
@@ -6613,6 +6645,58 @@
                 89
             ],
             "area": 8010,
+            "iscrowd": 0
+        },
+        {
+            "id": 445,
+            "image_id": 287,
+            "category_id": 279,
+            "bbox": [
+                1770,
+                224,
+                42,
+                51
+            ],
+            "area": 2142,
+            "iscrowd": 0
+        },
+        {
+            "id": 446,
+            "image_id": 287,
+            "category_id": 281,
+            "bbox": [
+                1767,
+                357,
+                50,
+                53
+            ],
+            "area": 2650,
+            "iscrowd": 0
+        },
+        {
+            "id": 447,
+            "image_id": 287,
+            "category_id": 282,
+            "bbox": [
+                1770,
+                493,
+                51,
+                50
+            ],
+            "area": 2550,
+            "iscrowd": 0
+        },
+        {
+            "id": 448,
+            "image_id": 288,
+            "category_id": 280,
+            "bbox": [
+                2355,
+                304,
+                62,
+                52
+            ],
+            "area": 3224,
             "iscrowd": 0
         }
     ]

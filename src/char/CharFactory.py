@@ -53,6 +53,11 @@ from src.char.Zhezhi import Zhezhi
 from src.char.CustomCharLoader import load_custom_char_class
 
 _char_dict_raw = {
+    # Upstream supplies portraits only; retain generic combat until a rotation exists.
+    Labels.char_aalto: {'cls': BaseChar, 'char_type': CharType.SUB_DPS, 'ring_index': Elements.WIND},
+    Labels.char_lingyang: {'cls': BaseChar, 'char_type': CharType.MAIN_DPS, 'ring_index': Elements.ICE},
+    Labels.char_lumi: {'cls': BaseChar, 'char_type': CharType.SUB_DPS, 'ring_index': Elements.ELECTRIC},
+    Labels.char_yangyang: {'cls': BaseChar, 'char_type': CharType.SUB_DPS, 'ring_index': Elements.WIND},
     Labels.yangyang_sp: {'cls': YangYangSp, 'char_type': CharType.MAIN_DPS,
                          'ring_index': Elements.HAVOC},
     Labels.char_yinlin: {'cls': Yinlin, 'char_type': CharType.SUB_DPS,

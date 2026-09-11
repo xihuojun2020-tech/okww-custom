@@ -13,6 +13,8 @@ Navigation and theme settings live in `mkdocs.yml` at the repository root.
 
 ## Architecture and code review
 
+- [框架升级说明与验收方案](references/framework-upgrade-assessment-2026-09-11.md)
+
 - [原版更新检查与融合方案（2026-09-11）](references/upstream-integration-assessment-2026-09-11.md)
 - [账号提醒、任务入口与录像设置（1.56.00）](references/account-ui-1.56.md)
 - [项目交接与发布状态（1.56.00）](项目交接与新对话上下文.md)

@@ -47,6 +47,24 @@ class TestChar(TaskTestCase):
     task_class = AutoCombatTask
     config = config
 
+    def test_upstream_portraits_load_and_match_at_multiple_sizes(self):
+        import cv2
+        import json
+        from pathlib import Path
+
+        data = json.loads(Path('assets/coco_annotations.json').read_text(encoding='utf8'))
+        images = {i['id']: i for i in data['images']}
+        categories = {i['name']: i['id'] for i in data['categories']}
+        features = self.task.executor.feature_set
+        for label in ('char_aalto', 'char_lingyang', 'char_lumi', 'char_yangyang'):
+            annotation = next(a for a in data['annotations'] if a['category_id'] == categories[label])
+            source = cv2.imread(str(Path('assets') / images[annotation['image_id']]['file_name']))
+            for height in (720, 1080, 1440, 2160):
+                frame = cv2.resize(source, (height * 16 // 9, height))
+                with self.subTest(label=label, height=height):
+                    self.assertIsNotNone(features.get_feature_by_name(frame, label))
+                    self.assertTrue(features.find_one_feature(frame, label, threshold=.8))
+
     def test_healer_disables_f_check_on_switch_by_default(self):
         self.assertFalse(BaseChar(None, 0, char_type=CharType.HEALER).check_f_on_switch)
         self.assertTrue(BaseChar(None, 0, char_type=CharType.MAIN_DPS).check_f_on_switch)

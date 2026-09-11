@@ -409,7 +409,10 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
         if loaded:
             for i, char in enumerate(self.chars):
                 if type(char) is BaseChar:
-                    generic = TrialGenericChar(self, i, char_name=f'trial_unknown_{i}', confidence=0)
+                    generic = TrialGenericChar(
+                        self, i, char_name=char.char_name if char.char_name != 'unknown' else f'trial_unknown_{i}',
+                        confidence=char.confidence, ring_index=char.ring_index,
+                        char_type=char.char_type, buff_time=char.buff_time)
                     generic.is_current_char = char.is_current_char
                     self.chars[i] = generic
                     self.log_info(f'试用队伍槽位{i+1}使用通用轮转')

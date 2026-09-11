@@ -4,18 +4,16 @@ from src.char.BaseChar import BaseChar, SwitchPriority
 class Lucy(BaseChar):
     FORTE_TIMEOUT = 8.5
     LIB_CD_WAIT = 1.5
-    ATTACK_DURATION = 1.2
     NORMAL_ATTACK_DURATION = 0.1
-    HEAVY_ATTACK_DURATION = 0.6
+    HEAVY_ATTACK_DURATION = 0.4
     CLICK_INTERVAL = 0.1
     ENHANCED_HEAVY_INTERVAL = 0.2
     LIB_CLICK_COUNT = 11 #包含冗余点击
 
     def do_perform(self):
+        self.f_break()
         if not self.is_forte_full():
             self.perform_standard()  
-        if self.is_forte_full():
-            self.perform_combat()       
         self.perform_liberation()
         return self.switch_next_char()
 
@@ -43,42 +41,49 @@ class Lucy(BaseChar):
         self.continues_normal_attack(self.NORMAL_ATTACK_DURATION)
         return True
 
-    def perform_combat(self):
-        """满能量倾泻输出流程"""
-        if not self.is_forte_full():
-            self.logger.info("Lucy forte not full, skip combat.")
-            return False
-            
-        self.f_break()
-        if self.echo_available():
-            self.click_echo(time_out=0)
-            
-        self.perform_enhanced_heavy()
-        self.continues_normal_attack(self.NORMAL_ATTACK_DURATION)
-        return True
-    
     def perform_liberation(self):
         """大招释放及后续连击流程"""
         if self.resonance_available():
             self.click_resonance()
-        if self.echo_available():
-            self.click_echo(time_out=0)   
         self.f_break()
         self.perform_enhanced_heavy()
+
+        start = time.time()
+        while not self.is_mouse_forte_full() and time.time() - start < 6:
+            self.click()
+            self.sleep(0.1)
+        if self.is_mouse_forte_full():
+            self.heavy_attack(2.5)
+            start = time.time()
+            while not self.liberation_available() and time.time() - start < 2:
+                self.sleep(0.1)
+        if self.echo_available():
+            self.click_echo(time_out=0)
         
         if self.liberation_available():
-            self.click_liberation(send_click=True, wait_if_cd_ready=self.LIB_CD_WAIT)
+            if not self.click_liberation(send_click=True, wait_if_cd_ready=self.LIB_CD_WAIT):
+                return False
             self.record_liberation_use()
             self.logger.info('Lucy perform lib: Started')
             
             for _ in range(self.LIB_CLICK_COUNT):
                 self.click()
-                self.sleep(self.CLICK_INTERVAL, check_combat=False)
+                self.sleep(self.CLICK_INTERVAL)
                 
             self.logger.info('Lucy perform lib: Ended')
             
-        self.logger.debug("Liberation not available, skipping.")
+        else:
+            self.logger.debug("Liberation not available, skipping.")
         return True
+
+    def heavy_attack(self, duration=0.6):
+        self.check_combat()
+        try:
+            self.task.mouse_down()
+            self.sleep(duration)
+        finally:
+            self.task.mouse_up()
+        self.sleep(0.01)
 
     def perform_enhanced_heavy(self):
         """强化重击执行逻辑"""

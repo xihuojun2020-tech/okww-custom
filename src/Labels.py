@@ -2,6 +2,10 @@ from enum import Enum
 
 
 class Labels(str, Enum):
+    char_aalto = 'char_aalto'
+    char_lingyang = 'char_lingyang'
+    char_lumi = 'char_lumi'
+    char_yangyang = 'char_yangyang'
     Augusta = 'Augusta'
     Augusta_jump_attack = 'Augusta_jump_attack'
     Augusta_lib1 = 'Augusta_lib1'
