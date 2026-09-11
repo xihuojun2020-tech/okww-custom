@@ -15,6 +15,114 @@ ACCOUNT = '00000000-0000-4000-8000-000000000001'
 
 
 class TestCompletionEvidence(unittest.TestCase):
+    def test_progress_task_page_selects_daily_tab_instead_of_remembered_weekly_tab(self):
+        from unittest.mock import Mock
+        from src.task.DailyTask import DailyTask
+        task = SimpleNamespace(openF2Book=Mock(), click=Mock())
+        self.assertTrue(DailyTask._open_record_page(task, '任务页'))
+        task.openF2Book.assert_called_once_with('gray_book_quest')
+        task.click.assert_called_once_with(.17, .12, after_sleep=1)
+
+    def progress_task(self, service, *, screenshot=True, video=False):
+        from unittest.mock import Mock
+        from src.task.DailyTask import DailyTask
+        task = object.__new__(DailyTask)
+        task._verified_profile_id = ACCOUNT
+        task._executor = SimpleNamespace(completion_evidence_service=service, current_task=SimpleNamespace(start_time=123))
+        flags = {'Screenshot After Daily Task': screenshot, 'Record After Daily Task': video, 'Record Duration': .2}
+        task._profile_get = lambda key, default=None: flags.get(key, default)
+        task._publish_daily_stage = Mock()
+        task._open_record_page = Mock(return_value=True)
+        task.next_frame = Mock(return_value=np.zeros((12, 16, 3), np.uint8))
+        task.ocr = Mock(side_effect=lambda *a, **k: [SimpleNamespace(name='100')] if a[0] == .19 else [])
+        for name in ('ensure_main', 'log_warning', 'log_info', 'log_error', 'sleep'):
+            setattr(task, name, Mock())
+        task.get_active_profile_name = Mock(return_value='synthetic')
+        task._completion_run_record = {'video_paths': []}
+        return task
+
+    def test_daily_screenshots_without_video_save_all_pages_under_bound_account(self):
+        from src.evidence.service import EvidenceService
+        from src.recording_policy import RECORDING_PAGES
+        with tempfile.TemporaryDirectory() as root:
+            service = EvidenceService(EvidenceRepository(root))
+            task = self.progress_task(service)
+            try:
+                with patch('cv2.VideoWriter') as writer:
+                    task.record_progress()
+                    writer.assert_not_called()
+                task.sleep.assert_not_called()
+                task._verified_profile_id = '00000000-0000-4000-8000-000000000002'
+            finally:
+                service.close()
+            rows = service.repository.list_records(ACCOUNT)
+            self.assertEqual(len(rows), 4)
+            self.assertEqual({r['project_id'] for r in rows}, {'daily_activity','weekly_garden','battle_pass','nightmare_nest'})
+            self.assertTrue(all(r['asset_status'] == 'available' for r in rows))
+            self.assertEqual(next(r['completion_status'] for r in rows if r['project_id']=='daily_activity'), 'completed')
+            self.assertTrue(all(r['completion_status']=='unknown' for r in rows if r['project_id']!='daily_activity'))
+            self.assertEqual([c.args[0] for c in task._open_record_page.call_args_list], list(RECORDING_PAGES))
+
+    def test_screenshot_and_video_share_page_visits(self):
+        from src.evidence.service import EvidenceService
+        with tempfile.TemporaryDirectory() as root:
+            service = EvidenceService(EvidenceRepository(root))
+            task = self.progress_task(service, video=True)
+            try:
+                with patch('cv2.VideoWriter') as writer, patch('src.storage.get_warehouse_sub',return_value=root):
+                    task.record_progress()
+                    self.assertEqual(writer.return_value.write.call_count, 4)
+                    writer.return_value.release.assert_called_once()
+            finally:
+                service.close()
+            self.assertEqual(task._open_record_page.call_count,4)
+            self.assertEqual(len(service.repository.list_records(ACCOUNT)),4)
+            self.assertEqual(len(task._completion_run_record['video_paths']),1)
+
+    def test_disabled_capture_skips_navigation_and_failed_page_does_not_skip_others(self):
+        from src.evidence.service import EvidenceService
+        with tempfile.TemporaryDirectory() as root:
+            service=EvidenceService(EvidenceRepository(root))
+            task=self.progress_task(service,screenshot=False)
+            task.record_progress()
+            task._open_record_page.assert_not_called()
+            task=self.progress_task(service)
+            task._open_record_page.side_effect=[False,True,True,True]
+            try: task.record_progress()
+            finally: service.close()
+            self.assertEqual(len(service.repository.list_records(ACCOUNT)),3)
+            task.log_warning.assert_called_once()
+
+    def test_stop_releases_writer_without_navigation_or_more_capture(self):
+        from src.evidence.service import EvidenceService
+        from ok import TaskDisabledException
+        with tempfile.TemporaryDirectory() as root:
+            service=EvidenceService(EvidenceRepository(root))
+            task=self.progress_task(service,video=True)
+            task.sleep.side_effect=TaskDisabledException('stop')
+            try:
+                with patch('cv2.VideoWriter') as writer, patch('src.storage.get_warehouse_sub',return_value=root):
+                    with self.assertRaises(TaskDisabledException):task.record_progress()
+                    writer.return_value.release.assert_called_once()
+            finally:service.close()
+            self.assertEqual(task._open_record_page.call_count,1)
+            task.ensure_main.assert_not_called()
+            self.assertEqual(len(service.repository.list_records(ACCOUNT)),1)
+
+    def test_ocr_unknown_keeps_picture_and_video_failure_does_not_block_screenshots(self):
+        from src.evidence.service import EvidenceService
+        with tempfile.TemporaryDirectory() as root:
+            service=EvidenceService(EvidenceRepository(root))
+            task=self.progress_task(service,video=True)
+            task.ocr.side_effect=RuntimeError('ocr unavailable')
+            try:
+                with patch('cv2.VideoWriter',side_effect=OSError('video unavailable')), patch('src.storage.get_warehouse_sub',return_value=root):
+                    task.record_progress()
+            finally:service.close()
+            rows=service.repository.list_records(ACCOUNT)
+            self.assertEqual(len(rows),4)
+            self.assertTrue(all(r['completion_status']=='unknown' and r['asset_status']=='available' for r in rows))
+
     def test_daily_run_observer_preserves_return_stop_and_error(self):
         from contextlib import nullcontext
         from unittest.mock import Mock
@@ -42,7 +150,8 @@ class TestCompletionEvidence(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             task = SimpleNamespace(_profile_get=lambda key, default: {'Record Pages': ['任务页']}.get(key, default),
                 get_active_profile_name=lambda: 'synthetic', _open_record_page=Mock(return_value=False),
-                ensure_main=Mock(), log_warning=Mock(), log_info=Mock(), log_error=Mock(), screenshot=Mock())
+                ensure_main=Mock(), log_warning=Mock(), log_info=Mock(), log_error=Mock(), screenshot=Mock(),
+                _publish_daily_stage=Mock())
             with patch('src.storage.get_warehouse_sub', return_value=root):
                 DailyTask.record_progress(task)
             self.assertEqual([call.args[0] for call in task._open_record_page.call_args_list], list(RECORDING_PAGES))

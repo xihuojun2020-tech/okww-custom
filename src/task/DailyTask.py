@@ -110,6 +110,7 @@ LC_MERGE = 'Last Completed - Merge Echo'
 
 # 每日任务完成后录像（进度留档）：打开指定页面各录一段视频
 RECORD_AFTER_DAILY = 'Record After Daily Task'
+SCREENSHOT_AFTER_DAILY = 'Screenshot After Daily Task'
 RECORD_PAGES = 'Record Pages'
 RECORD_DURATION = 'Record Duration'
 from src.recording_policy import RECORDING_PAGES
@@ -201,6 +202,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             LC_GARDEN: '',
             MERGE_ECHO_ON_SUNDAY: False,
             RECORD_AFTER_DAILY: True,
+            SCREENSHOT_AFTER_DAILY: True,
             LOGOUT_AFTER_DAILY: True,
             RECORD_PAGES: list(RECORD_PAGE_OPTIONS),
             RECORD_DURATION: 1.5,
@@ -230,6 +232,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             ALIAS_TEXT: '多个用逗号分隔（如 UTEST1001A，识别登录界面账号时与手机号掩码同等有效）',
             MERGE_ECHO_ON_SUNDAY: '勾选 = 开启',
             RECORD_AFTER_DAILY: '',
+            SCREENSHOT_AFTER_DAILY: 'Save the four progress pages to Completion Check before logout.',
             LOGOUT_AFTER_DAILY: '',
             RECORD_PAGES: '',
             RECORD_DURATION: '',
@@ -553,7 +556,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self._publish_daily_stage('每周任务', '正在检查每周乐园')
         self.log_info('正在检查每周乐园...')
         self.run_weekly_tasks()
-        if self._profile_get(RECORD_AFTER_DAILY, True):
+        if self._profile_get(SCREENSHOT_AFTER_DAILY, True) or self._profile_get(RECORD_AFTER_DAILY, True):
             self.record_progress()
         if nightmare_error is not None:
             self._publish_daily_stage('刷梦魇巢穴', '执行失败，账号未标记为完成')
@@ -1850,80 +1853,64 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
     # ==================== 每日任务完成后录像（进度留档） ====================
 
     def record_progress(self):
-        """每日任务完成后，按固定全选范围打开页面，把各页画面合成 1 个监控视频。
-
-        视频只包含鸣潮游戏窗口画面（基于 WGC 捕获帧）。
-        存储：okww监控室/【账号方案名】/【YYYY-MM-DD HH-MM-SS】.mp4
-        同一天运行多次每日任务会生成多个时间文件（一天 1~3 段）。
-        """
-        import os
-
+        """Visit each progress page once for screenshots and optional video."""
         import cv2
-        from datetime import datetime
-
-        pages = list(RECORDING_PAGES)
-        if not pages:
-            self.log_info('record pages empty, skip recording')
+        screenshot_enabled = self._profile_get(SCREENSHOT_AFTER_DAILY, True)
+        video_enabled = self._profile_get(RECORD_AFTER_DAILY, True)
+        if not screenshot_enabled and not video_enabled:
             return
+        self._publish_daily_stage('每日留档', '正在保存进度截图与可选录像')
         try:
-            duration = int(float(self._profile_get(RECORD_DURATION, 3)))
-        except (TypeError, ValueError):
-            duration = 3
+            duration = max(0.2, min(60, float(self._profile_get(RECORD_DURATION, 1.5))))
+        except (ValueError, TypeError):
+            duration = 1.5
         fps = 5
-
-        profile_name = self.get_active_profile_name() or '未命名'
-        # 录像保存位置：优先数据仓库（设置 → 通用设置 → 数据仓库文件夹）→ ok仓库\okww监控室；未设置用程序目录
-        out_dir = None
-        try:
-            from src.storage import get_warehouse_sub
-            wh = get_warehouse_sub('okww监控室')
-            if wh:
-                out_dir = os.path.join(wh, profile_name)
-        except Exception:
-            pass
-        if out_dir is None:
-            out_dir = get_relative_path('okww监控室', profile_name)
-        try:
-            os.makedirs(out_dir, exist_ok=True)
-        except OSError as e:
-            self.log_error(f'create monitor dir failed: {e}')
-            return
-        fname = os.path.join(out_dir, f'【{datetime.now():%Y-%m-%d %H-%M-%S-%f}】.mp4')
-
+        fname = None
         writer = None
         recorded_pages = []
         try:
-            for page in pages:
+            for page in RECORDING_PAGES:
                 try:
                     if not self._open_record_page(page):
-                        self.log_warning(f'录像页面未打开：{page}；本页未录制')
-                        continue
-                    frame = self.frame
-                    if frame is None:
-                        self.log_warning(f'record {page} skipped: no frame')
-                        continue
-                    if writer is None:
-                        h, w = frame.shape[:2]
-                        writer = cv2.VideoWriter(fname, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
-                        if not writer.isOpened():
-                            self.log_error(f'record writer open failed: {fname}')
-                            return
-                    written = 0
-                    for _ in range(max(1, duration) * fps):
-                        frame = self.frame
-                        if frame is not None:
-                            writer.write(frame)
-                            written += 1
-                        self.sleep(1.0 / fps)
-                    if written:
-                        recorded_pages.append(page)
+                        self.log_warning(f'留档页面未打开：{page}；本页未保存')
                     else:
-                        self.log_warning(f'录像页面没有有效帧：{page}；本页未录制')
-                except Exception as e:
-                    self.log_error(f'record page {page} failed', e)
-                    self.screenshot(f'record_{page}')
-                finally:
-                    self.ensure_main(time_out=30)
+                        frame = self.next_frame()
+                        if frame is None or not frame.size:
+                            self.log_warning(f'留档页面没有有效画面：{page}；本页未保存')
+                        else:
+                            if screenshot_enabled:
+                                self._capture_progress_page(page, frame)
+                            if video_enabled:
+                                try:
+                                    if writer is None:
+                                        from src.storage import get_warehouse_sub
+                                        profile = self.get_active_profile_name() or '未命名'
+                                        warehouse = get_warehouse_sub('okww监控室')
+                                        out_dir = os.path.join(warehouse, profile) if warehouse else get_relative_path('okww监控室', profile)
+                                        os.makedirs(out_dir, exist_ok=True)
+                                        fname = os.path.join(out_dir, f'【{datetime.now():%Y-%m-%d %H-%M-%S-%f}】.mp4')
+                                        h, w = frame.shape[:2]
+                                        writer = cv2.VideoWriter(fname, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
+                                        if not writer.isOpened():
+                                            raise OSError('录像文件无法打开')
+                                    for _ in range(max(1, round(duration * fps))):
+                                        writer.write(frame)
+                                        self.sleep(1 / fps)
+                                        frame = self.next_frame()
+                                        if frame is None or not frame.size:
+                                            raise FrameUnavailable('录像画面不可用')
+                                    recorded_pages.append(page)
+                                except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked, GameProcessLost):
+                                    raise
+                                except Exception as error:
+                                    video_enabled = False
+                                    self.log_warning(f'录像失败：{page}（{type(error).__name__}）；后续页面仍尝试截图')
+                except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked, GameProcessLost):
+                    raise
+                except Exception as error:
+                    self.log_warning(f'页面留档失败：{page}（{type(error).__name__}）；继续其余页面')
+                # Never send navigation input from a finally block after Stop.
+                self.ensure_main(time_out=30)
         finally:
             if writer is not None:
                 writer.release()
@@ -1931,18 +1918,53 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                     record = getattr(self, '_completion_run_record', None)
                     if isinstance(record, dict):
                         record['video_paths'].append(os.path.abspath(fname))
-                    self.log_info(f'监控录像已保存: {fname}（{len(recorded_pages)} 页: {" / ".join(recorded_pages)}）', notify=True)
-                else:
-                    try:
-                        os.remove(fname)
-                    except OSError:
-                        pass
+                    self.log_info(f'监控录像已保存（{len(recorded_pages)} 页）', notify=True)
+
+    def _capture_progress_page(self, page, frame):
+        from src.evidence.service import record_task_evidence
+        projects = {'任务页': 'daily_activity', '每周乐园': 'weekly_garden',
+                    '战令': 'battle_pass', '残像聚落': 'nightmare_nest'}
+        status, reason, progress = 'unknown', '每日收尾页面截图，完成情况待核验', {}
+        try:
+            if page == '任务页':
+                boxes = self.ocr(0.19, 0.8, 0.30, 0.93, match=DAILY_POINTS_RE, frame=frame) or []
+                values = [int(box.name.strip()) for box in boxes
+                          if DAILY_POINTS_RE.fullmatch(box.name.strip()) and 0 <= int(box.name.strip()) <= 180]
+                if values:
+                    points = max(values)
+                    status = 'completed' if points >= 100 else 'partial'
+                    reason = f'收尾活跃度识别为 {points}，达标阈值 100；不代表奖励已领取'
+                    progress = dict(points=points, target=100)
+            elif page == '每周乐园':
+                boxes = self.ocr(0.102, 0.793, 0.284, 0.956, match=GardenTask.GARDEN_TARGET_POINTS, frame=frame) or []
+                if boxes:
+                    status, reason = 'completed', '收尾周常目标积分已达标；不代表奖励已领取'
+        except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked, GameProcessLost):
+            raise
+        except Exception:
+            self.log_warning(f'收尾结果识别失败：{page}；截图保留为待核验')
+        future = record_task_evidence(self, projects[page], status, reason, frame=frame,
+                                      progress=progress, capture_stage='daily_finish', page=page)
+        if future is None:
+            self.log_warning(f'完成检查截图未提交：{page}；请检查账号绑定、证据服务或保存队列', notify=True)
+            return
+
+        def saved(result):
+            try:
+                record = result.result()
+                if record.get('asset_status') != 'available':
+                    raise OSError('未保存图片')
+                logger.info(f'完成检查截图已保存：{page}')
+            except Exception as error:
+                logger.error(f'完成检查截图保存失败：{page}（{type(error).__name__}）')
+        future.add_done_callback(saved)
 
     def _open_record_page(self, page):
         """打开指定页面并停留，返回是否成功。"""
         if page == '任务页':
             self.openF2Book('gray_book_quest')
-            self.sleep(1.5)
+            # The guidebook remembers the weekly tab; explicitly select daily progress.
+            self.click(0.17, 0.12, after_sleep=1)
             return True
         if page == '每周乐园':
             self.get_task_by_class(GardenTask).open_garden_weekly_page()
@@ -1955,13 +1977,15 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             self.open_boss_book('canxiang')
             return True
         if page in ('大月卡', '战令'):
-            # 大月卡：Alt + 左上角战令图标（与每日任务领取战令 claim_battle_pass 一致）
-            self.send_key_down('alt')
-            self.sleep(0.05)
-            self.click_relative(0.86, 0.05)
-            self.send_key_up('alt')
+            try:
+                self.send_key_down('alt')
+                self.sleep(0.05)
+                self.click_relative(0.86, 0.05)
+            finally:
+                self.send_key_up('alt')
             self.sleep(2)
-            return True
+            return bool(self.wait_ocr(0.2, 0.13, 0.32, 0.22, match=re.compile(r'\d+'),
+                                      settle_time=0.2, time_out=5, raise_if_not_found=False))
         self.log_warning(f'unknown record page {page}')
         return False
 

@@ -762,10 +762,14 @@ msgstr "周本挑战"
 msgid "Weekly Boss"
 msgstr "目标周本"
 
-msgid "Claim all remaining weekly rewards from one boss, then verify zero remaining. Current stamina only; keep default difficulty and team."
+msgid ""
+"Claim all remaining weekly rewards from one boss, then verify zero "
+"remaining. Current stamina only; keep default difficulty and team."
 msgstr "领取同一周本的全部剩余奖励，结束后复核次数为零。仅使用当前体力；保留默认难度和当前队伍。"
 
-msgid "Use this boss for every remaining reward this run. Does not change difficulty or team."
+msgid ""
+"Use this boss for every remaining reward this run. Does not change "
+"difficulty or team."
 msgstr "本轮所有剩余次数刷同一个周本，不调整难度或队伍。"
 
 msgid "weekly_fallen_court"
@@ -1796,7 +1800,9 @@ msgstr "手动进入活动后开始，约每秒短按 F；切出游戏时等待�
 msgid "Piano Teaching"
 msgstr "清弦纪流年"
 
-msgid "Open the piano teaching screen first; highlighted notes and chords are played automatically."
+msgid ""
+"Open the piano teaching screen first; highlighted notes and chords are "
+"played automatically."
 msgstr "请先打开弹琴教学界面；程序会自动弹奏高亮的音符和和弦。"
 
 msgid "Sample Interval"
@@ -1820,7 +1826,9 @@ msgstr "每个已识别音符的按住秒数（0.02–0.08）。"
 msgid "Pause after every note to imitate human input (0.05–0.50 seconds)."
 msgstr "每个音符后模拟人工操作的停顿时间（0.05–0.50 秒）。"
 
-msgid "Open piano teaching first; single highlighted notes are played until you stop the task."
+msgid ""
+"Open piano teaching first; single highlighted notes are played until you "
+"stop the task."
 msgstr "请先打开弹琴教学；程序会逐个弹奏高亮音符，直到你手动停止任务。"
 
 msgid "Weekly Boss Target"
@@ -1880,3 +1888,18 @@ msgstr "每个角色战斗的最长秒数（60–600）。"
 #: src/task/CharacterTrialTask.py
 msgid "Trial Combat Timeout must be between 60 and 600."
 msgstr "单角色战斗时限必须在60到600秒之间。"
+
+msgid "Screenshot After Daily Task"
+msgstr "每日任务后截图"
+
+msgid "Save the four progress pages to Completion Check before logout."
+msgstr "退出账号前将四个进度页面保存到完成检查。"
+
+msgid "每日任务后截图"
+msgstr "每日任务后截图"
+
+msgid "依次保存四页到完成检查；关闭录像仍可截图。"
+msgstr "依次保存四页到完成检查；关闭录像仍可截图。"
+
+msgid "截图与录像"
+msgstr "截图与录像"

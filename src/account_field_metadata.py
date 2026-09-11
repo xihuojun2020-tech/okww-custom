@@ -34,6 +34,7 @@ class AccountFieldMetadata:
 
 
 _LABELS = {
+    'Screenshot After Daily Task': ('每日任务后截图', '依次保存四页到完成检查；关闭录像仍可截图。'),
     'Record After Daily Task': ('每日任务后录像', ''),
     'Record Pages': ('录像页面（固定全选）', ''),
     'Record Duration': ('每页录像时长（秒）', ''),

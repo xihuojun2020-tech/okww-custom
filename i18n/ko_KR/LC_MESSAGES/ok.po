@@ -785,10 +785,15 @@ msgstr "주간 보스 도전"
 msgid "Weekly Boss"
 msgstr "대상 주간 보스"
 
-msgid "Claim all remaining weekly rewards from one boss, then verify zero remaining. Current stamina only; keep default difficulty and team."
-msgstr "같은 보스의 남은 주간 보상을 모두 수령한 후 잔여 횟수가 0인지 확인합니다. 현재 스태미나만 사용하며 난이도와 파티는 유지합니다."
+msgid ""
+"Claim all remaining weekly rewards from one boss, then verify zero "
+"remaining. Current stamina only; keep default difficulty and team."
+msgstr ""
+"같은 보스의 남은 주간 보상을 모두 수령한 후 잔여 횟수가 0인지 확인합니다. 현재 스태미나만 사용하며 난이도와 파티는 유지합니다."
 
-msgid "Use this boss for every remaining reward this run. Does not change difficulty or team."
+msgid ""
+"Use this boss for every remaining reward this run. Does not change "
+"difficulty or team."
 msgstr "이번 실행의 모든 잔여 보상은 같은 보스에서 수령합니다. 난이도와 파티는 변경하지 않습니다."
 
 msgid "weekly_fallen_court"
@@ -1500,12 +1505,15 @@ msgid "第二索拉·诡影迷踪"
 msgstr "제2의 소라·궤영미종"
 
 msgid "手动进入活动后开始，约每秒短按 F；切出游戏时等待，活动结束后请手动停止。"
-msgstr "이벤트에 직접 입장한 후 시작하세요. 약 1초마다 F를 짧게 누릅니다. 게임이 비활성화되면 대기하며, 이벤트 종료 후 직접 중지하세요."
+msgstr ""
+"이벤트에 직접 입장한 후 시작하세요. 약 1초마다 F를 짧게 누릅니다. 게임이 비활성화되면 대기하며, 이벤트 종료 후 직접 중지하세요."
 
 msgid "Piano Teaching"
 msgstr "피아노 레슨"
 
-msgid "Open the piano teaching screen first; highlighted notes and chords are played automatically."
+msgid ""
+"Open the piano teaching screen first; highlighted notes and chords are "
+"played automatically."
 msgstr "먼저 피아노 레슨 화면을 여세요. 강조된 음과 화음을 자동으로 연주합니다."
 
 msgid "Sample Interval"
@@ -1529,7 +1537,9 @@ msgstr "감지된 음을 누르는 시간(초, 0.02–0.08)."
 msgid "Pause after every note to imitate human input (0.05–0.50 seconds)."
 msgstr "사람처럼 입력하기 위한 음 사이 대기 시간(0.05–0.50초)."
 
-msgid "Open piano teaching first; single highlighted notes are played until you stop the task."
+msgid ""
+"Open piano teaching first; single highlighted notes are played until you "
+"stop the task."
 msgstr "먼저 피아노 레슨을 여세요. 작업을 직접 중지할 때까지 강조된 음을 하나씩 연주합니다."
 
 msgid "Weekly Boss Target"
@@ -1545,7 +1555,9 @@ msgid "Circle Scale"
 msgstr "회전 범위 배율"
 
 msgid "当前世界中已经登录的账号，仅作为本轮起点；结束后保留最后执行账号。留空时才退登并自动识别当前账号"
-msgstr "현재 월드에 로그인한 계정을 시작점으로만 사용합니다. 종료 후 마지막으로 실행한 계정을 유지합니다. 비워 두면 로그아웃 후 현재 계정을 자동으로 식별합니다."
+msgstr ""
+"현재 월드에 로그인한 계정을 시작점으로만 사용합니다. 종료 후 마지막으로 실행한 계정을 유지합니다. 비워 두면 로그아웃 후 현재 계정을 "
+"자동으로 식별합니다."
 
 msgid "Shop Click Interval"
 msgstr "상점 클릭 간격"
@@ -1589,3 +1601,18 @@ msgstr "캐릭터별 최대 전투 시간(60~600초)."
 #: src/task/CharacterTrialTask.py
 msgid "Trial Combat Timeout must be between 60 and 600."
 msgstr "전투 제한 시간은 60~600초여야 합니다."
+
+msgid "Screenshot After Daily Task"
+msgstr "일일 임무 후 스크린샷"
+
+msgid "Save the four progress pages to Completion Check before logout."
+msgstr "로그아웃 전에 진행 화면 4개를 완료 확인에 저장합니다."
+
+msgid "每日任务后截图"
+msgstr "일일 임무 후 스크린샷"
+
+msgid "依次保存四页到完成检查；关闭录像仍可截图。"
+msgstr "화면 4개를 완료 확인에 저장합니다. 녹화가 꺼져도 사용 가능합니다."
+
+msgid "截图与录像"
+msgstr "스크린샷 및 녹화"

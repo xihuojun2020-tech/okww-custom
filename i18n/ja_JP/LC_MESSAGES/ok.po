@@ -785,10 +785,14 @@ msgstr "週ボス挑戦"
 msgid "Weekly Boss"
 msgstr "対象の週ボス"
 
-msgid "Claim all remaining weekly rewards from one boss, then verify zero remaining. Current stamina only; keep default difficulty and team."
+msgid ""
+"Claim all remaining weekly rewards from one boss, then verify zero "
+"remaining. Current stamina only; keep default difficulty and team."
 msgstr "同じボスの残り週間報酬をすべて受け取り、残数ゼロを確認します。現在のスタミナのみ使用し、難易度とチームは変更しません。"
 
-msgid "Use this boss for every remaining reward this run. Does not change difficulty or team."
+msgid ""
+"Use this boss for every remaining reward this run. Does not change "
+"difficulty or team."
 msgstr "今回の残り報酬は同じボスで受け取ります。難易度とチームは変更しません。"
 
 msgid "weekly_fallen_court"
@@ -1502,7 +1506,9 @@ msgstr "イベントに手動で入り、開始してください。約1秒ご�
 msgid "Piano Teaching"
 msgstr "ピアノレッスン"
 
-msgid "Open the piano teaching screen first; highlighted notes and chords are played automatically."
+msgid ""
+"Open the piano teaching screen first; highlighted notes and chords are "
+"played automatically."
 msgstr "先にピアノレッスン画面を開いてください。ハイライトされた音符と和音を自動演奏します。"
 
 msgid "Sample Interval"
@@ -1526,7 +1532,9 @@ msgstr "検出した音符を押し続ける時間（秒、0.02～0.08）。"
 msgid "Pause after every note to imitate human input (0.05–0.50 seconds)."
 msgstr "人の操作を模した音符ごとの待機時間（0.05～0.50秒）。"
 
-msgid "Open piano teaching first; single highlighted notes are played until you stop the task."
+msgid ""
+"Open piano teaching first; single highlighted notes are played until you "
+"stop the task."
 msgstr "先にピアノレッスンを開いてください。停止するまでハイライトされた音符を順番に演奏します。"
 
 msgid "Weekly Boss Target"
@@ -1542,7 +1550,8 @@ msgid "Circle Scale"
 msgstr "周回範囲の倍率"
 
 msgid "当前世界中已经登录的账号，仅作为本轮起点；结束后保留最后执行账号。留空时才退登并自动识别当前账号"
-msgstr "現在ワールドにログイン中のアカウントを開始点としてのみ使用します。終了後は最後に実行したアカウントを維持します。空欄の場合のみログアウトして現在のアカウントを自動識別します。"
+msgstr ""
+"現在ワールドにログイン中のアカウントを開始点としてのみ使用します。終了後は最後に実行したアカウントを維持します。空欄の場合のみログアウトして現在のアカウントを自動識別します。"
 
 msgid "Shop Click Interval"
 msgstr "ショップのクリック間隔"
@@ -1586,3 +1595,18 @@ msgstr "各キャラクターの戦闘上限秒数（60～600）。"
 #: src/task/CharacterTrialTask.py
 msgid "Trial Combat Timeout must be between 60 and 600."
 msgstr "戦闘制限時間は60～600秒にしてください。"
+
+msgid "Screenshot After Daily Task"
+msgstr "デイリー終了後にスクリーンショット"
+
+msgid "Save the four progress pages to Completion Check before logout."
+msgstr "ログアウト前に4つの進捗画面を完了チェックへ保存します。"
+
+msgid "每日任务后截图"
+msgstr "デイリー終了後にスクリーンショット"
+
+msgid "依次保存四页到完成检查；关闭录像仍可截图。"
+msgstr "4つの画面を完了チェックに保存。録画オフでも利用できます。"
+
+msgid "截图与录像"
+msgstr "スクリーンショットと録画"

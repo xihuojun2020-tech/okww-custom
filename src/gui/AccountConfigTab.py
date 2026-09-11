@@ -34,7 +34,8 @@ def recording_defaults():
     task = next((task for task in getattr(getattr(og, 'executor', None), 'onetime_tasks', [])
                  if type(task).__name__ == 'DailyTask'), None)
     config = getattr(task, 'config', None) or {}
-    return {'Record After Daily Task': config.get('Record After Daily Task', True),
+    return {'Screenshot After Daily Task': config.get('Screenshot After Daily Task', True),
+            'Record After Daily Task': config.get('Record After Daily Task', True),
             'Record Duration': config.get('Record Duration', 1.5)}
 
 
@@ -539,7 +540,7 @@ class AccountConfigTab(CustomTab):
                  'Auto Farm all Nightmare Nest'}
         weekly = {'Weekly Garden Check Day', 'Merge Echo on Sunday'}
         def group(field):
-            if field.key in ('Record Pages', 'Record After Daily Task', 'Record Duration'): return 6
+            if field.key in ('Record Pages', 'Screenshot After Daily Task', 'Record After Daily Task', 'Record Duration'): return 6
             if field.key == 'Weekly Boss Target': return 2
             if field.key in stamina: return 1
             if field.key in daily: return 0
@@ -552,7 +553,7 @@ class AccountConfigTab(CustomTab):
             identity_field = field.key in ('备用识别名称', '备用识别名称内容')
             if not identity_field and group(field) != last_group:
                 last_group = group(field)
-                heading = SectionPanel(('日常与声骸', '清理体力', '周本挑战', '周常安排', '收尾行为', '高级任务参数', '录像留档')[last_group],
+                heading = SectionPanel(('日常与声骸', '清理体力', '周本挑战', '周常安排', '收尾行为', '高级任务参数', '截图与录像')[last_group],
                                        parent=self.form_host, collapsible=True,
                                        expanded=states.get(last_group, False))
                 self.form_sections[last_group] = heading
