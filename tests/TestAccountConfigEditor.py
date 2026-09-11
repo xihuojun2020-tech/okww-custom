@@ -50,6 +50,17 @@ class FakeRepository:
 
 
 class TestAccountConfigEditor(unittest.TestCase):
+    def test_recording_pages_are_normalized_only_after_backup(self):
+        from src.recording_policy import RECORDING_PAGES
+        self.repository.record.tasks.update({'Record Pages': ['任务页'], 'Record After Daily Task': False,
+                                             'Record Duration': 7.5})
+        draft = self.editor.load_draft('id')
+        saved = self.editor.save_draft(draft.scope, draft, confirmed_account_label='A3')
+        self.assertEqual(self.repository.backups[0][1]['tasks']['Record Pages'], ['任务页'])
+        self.assertEqual(saved.tasks['Record Pages'], list(RECORDING_PAGES))
+        self.assertFalse(saved.tasks['Record After Daily Task'])
+        self.assertEqual(saved.tasks['Record Duration'], 7.5)
+
     def test_gui_error_text_is_redacted(self):
         text = sanitize_error(RuntimeError(
             "phone 19910000004 token abcdefghijklmnopqrstuvwxyz123456"))

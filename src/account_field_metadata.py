@@ -34,6 +34,9 @@ class AccountFieldMetadata:
 
 
 _LABELS = {
+    'Record After Daily Task': ('每日任务后录像', ''),
+    'Record Pages': ('录像页面（固定全选）', ''),
+    'Record Duration': ('每页录像时长（秒）', ''),
     "Weekly Boss Target": ("每周周本", "无表示关闭；周一检查、周二至周六补检、周日独立复检。优先使用当前体力。"),
     "Which to Farm": ("体力用途", "每天优先消耗体力的副本类型。不会影响账号识别。"),
     "Which Tacet Suppression to Farm": ("无音区选择", "选择要刷取的无音区编号。不会影响账号识别。"),
@@ -100,7 +103,7 @@ def account_field_metadata(tasks: Mapping[str, Any]) -> tuple[AccountFieldMetada
         options = tuple(_OPTIONS.get(key, ()))
         result.append(AccountFieldMetadata(
             str(key), label, help_text, editor, options,
-            tuple(str(localize_account_value(option)) for option in options), identity, identity))
+            tuple(str(localize_account_value(option)) for option in options), identity, identity or key == 'Record Pages'))
     return tuple(result)
 
 

@@ -23,6 +23,35 @@ from tests.fixture_support import make_account_environment
 
 
 class TestAccountManagementTabs(unittest.TestCase):
+    def test_reminders_are_dirty_and_persist_without_changing_tasks_or_sequence_order(self):
+        from src.account_reminders import get_reminders
+        from src.recording_policy import RECORDING_PAGES
+        from PySide6.QtWidgets import QCheckBox
+        with tempfile.TemporaryDirectory() as temp:
+            env = make_account_environment(Path(temp))
+            tab = AccountConfigTab(AccountConfigEditor(env.repository))
+            try:
+                before = env.repository.get_detached_projection()
+                tasks = dict(tab.draft.tasks)
+                self.assertFalse(tab.dirty)
+                tab.reminder_panel.choices['weekly_boss'].setChecked(True)
+                self.assertTrue(tab.dirty)
+                tab.refresh(preserve_draft=True)
+                self.assertTrue(tab.reminder_panel.choices['weekly_boss'].isChecked())
+                pages = tab.form_widgets['Record Pages'].findChildren(QCheckBox)
+                self.assertEqual([p.text() for p in pages], list(RECORDING_PAGES))
+                self.assertTrue(all(p.isChecked() and not p.isEnabled() for p in pages))
+                with patch.object(QMessageBox, 'question', return_value=QMessageBox.Yes):
+                    tab.save()
+                    self._drain_until(lambda: not tab.operation.busy)
+                saved = env.repository.load_profile(tab.selected_profile_id)
+                self.assertEqual(get_reminders(saved.account), ['weekly_boss'])
+                self.assertEqual(saved.tasks, tasks)
+                self.assertEqual(env.repository.get_detached_projection()['sequences'], before['sequences'])
+                self.assertFalse(tab.dirty)
+            finally:
+                tab.deleteLater()
+
     def test_save_preserves_widgets_and_updates_revision_without_reloading(self):
         with tempfile.TemporaryDirectory() as temp:
             env = make_account_environment(Path(temp))

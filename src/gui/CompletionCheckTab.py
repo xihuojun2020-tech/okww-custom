@@ -38,14 +38,17 @@ class EvidenceCaptureDialog(QDialog):
         preview.setPixmap(QPixmap.fromImage(image).scaled(600, 280, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         layout.addWidget(preview)
         self.account = QtComboBox(self)
+        self.account.addItem('请选择账号', None)
         for profile_id, label in profiles.items():
             self.account.addItem(label, profile_id)
         binding = capture.get('profile_id')
-        candidate = binding or selected
-        self.account.setCurrentIndex(self.account.findData(candidate))
-        self.account.setEnabled(not bool(binding))
+        self.account.setCurrentIndex(0)
         layout.addWidget(QLabel('截图所属账号（不是游戏自动登录操作）'))
         layout.addWidget(self.account)
+        if binding:
+            hint = QLabel('采集时运行绑定：' + profiles.get(binding, binding), self)
+            hint.setWordWrap(True)
+            layout.addWidget(hint)
         self.project = QtComboBox(self)
         for key, (title, _) in PROJECTS.items():
             self.project.addItem(title, key)
@@ -72,9 +75,20 @@ class EvidenceCaptureDialog(QDialog):
             checked and self.account.currentData() is not None))
         self.account.currentIndexChanged.connect(lambda _: self.buttons.button(QDialogButtonBox.Save).setEnabled(
             self.confirm.isChecked() and self.account.currentData() is not None))
-        self.buttons.accepted.connect(self.accept)
+        self.buttons.accepted.connect(self.confirm_accept)
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
+
+    def confirm_accept(self):
+        if not self.confirm.isChecked() or not self.account.currentData():
+            return
+        binding = self.capture.get('profile_id')
+        if binding and binding != self.account.currentData():
+            if QMessageBox.question(self, '确认截图归属',
+                    '所选账号与采集时的运行绑定不同，确认将此截图保存到所选账号？',
+                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+                return
+        self.accept()
 
     def metadata(self):
         if not self.confirm.isChecked() or self.account.currentData() is None:
@@ -82,7 +96,8 @@ class EvidenceCaptureDialog(QDialog):
         status = self.status.currentData()
         return dict(profile_id=self.account.currentData(), project_id=self.project.currentData(),
                     completion_status=status, source='manual_capture' if status == 'unknown' else 'manual_confirmation',
-                    captured_at=self.capture['captured_at'], identity_source=self.capture['identity_source'],
+                    captured_at=self.capture['captured_at'], identity_source='user_confirmed',
+                    runtime_profile_id=self.capture.get('profile_id'),
                     note=self.note.toPlainText().strip())
 
 
@@ -149,6 +164,9 @@ class CompletionCheckTab(QWidget):
         self._periods = (period_for('daily_activity'), period_for('weekly_boss'))
         self._reload_pending = False
         self._cards = []
+        self._run_record, self._completions = None, {}
+        self._run_panel = None
+        self._history_error = ''
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 16)
         title = QLabel('完成检查', self)
@@ -182,6 +200,10 @@ class CompletionCheckTab(QWidget):
         self.account_title = QLabel('请选择账号', right)
         self.account_title.setWordWrap(True)
         content.addWidget(self.account_title)
+        self.reminder_summary = QLabel('待办提醒：未设置', right)
+        self.reminder_summary.setWordWrap(True)
+        content.addWidget(self.reminder_summary)
+        self._reminders = {}
         tools = QHBoxLayout()
         self.mode = QtComboBox(right)
         for title, key in [('当前周期', 'current'), ('历史记录', 'history'), ('回收区', 'trash')]:
@@ -195,8 +217,10 @@ class CompletionCheckTab(QWidget):
         content.addLayout(tools)
         actions = QHBoxLayout()
         self.pending_only = QCheckBox('仅待检查', right)
+        self.reminders_only = QCheckBox('仅看提醒项目', right)
         self.capture_button = PrimaryPushButton('保存当前画面', right)
         actions.addWidget(self.pending_only)
+        actions.addWidget(self.reminders_only)
         actions.addStretch()
         actions.addWidget(self.capture_button)
         content.addLayout(actions)
@@ -233,6 +257,7 @@ class CompletionCheckTab(QWidget):
         self.mode.currentIndexChanged.connect(self.reload_records)
         self.project_filter.currentIndexChanged.connect(self.reload_records)
         self.pending_only.toggled.connect(self._display_records)
+        self.reminders_only.toggled.connect(self._display_records)
         self.capture_button.clicked.connect(lambda: self.capture_evidence())
         self.more.clicked.connect(self.next_page)
         self.previous.clicked.connect(self.previous_page)
@@ -263,6 +288,13 @@ class CompletionCheckTab(QWidget):
     def _accounts_loaded(self, result):
         projection, archived, preferred = result
         profiles = projection.get('profiles', {})
+        from src.account_reminders import get_reminders
+        self._reminders = {}
+        for profile in profiles.values():
+            try:
+                self._reminders[profile['profile_id']] = get_reminders(profile)
+            except ValueError:
+                self.notice.setText('部分账号的待办提醒格式无效，请检查账号配置；原有证据仍可查看。')
         self._profiles = {p['profile_id']: account_display_label(p) for p in profiles.values()}
         names = {name: p['profile_id'] for name, p in profiles.items()}
         self._sequences = {key: [names[n] for n in values if n in names]
@@ -306,13 +338,20 @@ class CompletionCheckTab(QWidget):
         if not self.accounts.count():
             self._selected = None
             self.account_title.setText('没有匹配的账号')
+            self.reminder_summary.setText('待办提醒：未设置')
             self._rows = []
             self._display_records()
 
     def _select_account(self, current, _previous=None):
         if current:
+            self._run_record, self._completions, self._history_error = None, {}, ''
             self._selected = current.data(Qt.UserRole)
             self.account_title.setText(self._profiles[self._selected])
+            from src.account_reminders import REMINDERS
+            values = self._reminders.get(self._selected, [])
+            self.reminder_summary.setText('待办提醒：' + ('、'.join(REMINDERS[key] for key in values) or '未设置'))
+            self._rows = []
+            self._display_records()
             self.reload_records()
 
     def reload_records(self, *_):
@@ -347,15 +386,25 @@ class CompletionCheckTab(QWidget):
         self._reload_pending = False
         identity, project = self._selected, self.project_filter.currentData()
         mode, offset, repo = self.mode.currentData(), self._offset, self.repository
+        provider = self.account_provider
         def work():
             # View preferences are not account task configuration or completion state.
             repo.set_preference('selected_account', identity)
-            return (repo.read_current(identity, project) if mode == 'current' else
+            rows = (repo.read_current(identity, project) if mode == 'current' else
                     repo.read_page(identity, project, mode == 'trash', offset=offset))
-        def loaded(rows):
+            completions, error = {}, ''
+            try:
+                source = provider()
+                if source and any(p.profile_id == identity for p in source.list_profiles()):
+                    completions = source.get_profile_completions(identity)
+            except Exception:
+                error = '完成记录暂不可读取；截图记录不受影响。'
+            return rows, repo.latest_run(identity), completions, error
+        def loaded(result):
             if (identity, project, mode, offset) != (self._selected, self.project_filter.currentData(), self.mode.currentData(), self._offset):
                 self._load_records()
                 return
+            rows, self._run_record, self._completions, self._history_error = result
             self._rows = rows
             self.more.setVisible(mode != 'current' and len(rows) == 60)
             self.previous.setVisible(mode != 'current' and offset > 0)
@@ -371,17 +420,22 @@ class CompletionCheckTab(QWidget):
             self._load_records()
 
     def _display_records(self, *_):
+        expanded = bool(self._run_panel and self._run_panel.toggle_button.isChecked())
         while self.grid.count():
             item = self.grid.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
         self._cards = []
         if not self._selected:
+            self._run_panel = None
             return
+        self._add_run_panel(expanded)
         mode = self.mode.currentData()
         if mode == 'current':
             projects = [self.project_filter.currentData()] if self.project_filter.currentData() else list(PROJECTS)
             for project in projects:
+                if self.reminders_only.isChecked() and project not in self._reminders.get(self._selected, []):
+                    continue
                 period = period_for(project)
                 rows = [r for r in self._rows if r['project_id'] == project and r['period_id'] == period]
                 record, conflict = summarize(rows)
@@ -390,12 +444,59 @@ class CompletionCheckTab(QWidget):
                 self._add_card(project, record, conflict)
         else:
             for record in self._rows:
+                if self.reminders_only.isChecked() and record['project_id'] not in self._reminders.get(self._selected, []):
+                    continue
                 if self.pending_only.isChecked() and record['completion_status'] == 'completed':
                     continue
                 self._add_card(record['project_id'], record)
         if not self._cards:
-            self.grid.addWidget(QLabel('暂无符合条件的证据；没有截图不代表未完成。'), 0, 0)
+            self.grid.addWidget(QLabel('暂无符合条件的证据；没有截图不代表未完成。'), 1, 0)
         self._layout_cards()
+
+    def _add_run_panel(self, expanded):
+        from pathlib import Path
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        from src.gui.SectionPanel import SectionPanel
+        panel = self._run_panel = SectionPanel('运行记录', parent=self.grid_widget,
+                                              collapsible=True, expanded=expanded)
+        panel.setStyleSheet('QWidget#codexSection { border: 0; }')
+        panel.layout().setContentsMargins(0, 0, 0, 0)
+        record = self._run_record or {}
+        results = {'running': '未记录结束（结果未确认）', 'returned': '正常返回（不代表全部完成）',
+                   'failed': '执行出错', 'stopped': '已停止'}
+        lines = ['最近执行范围：' + ('周本单独执行' if record.get('scope') == 'weekly_boss' else '每日任务' if record else '无记录'),
+                 '最近开始时间：' + str(record.get('started_at') or '无记录'),
+                 '最近结束时间：' + str(record.get('finished_at') or '无记录'),
+                 '最近执行结果：' + results.get(record.get('result'), '无记录')]
+        names = {'Daily Task': '每日任务', 'Nightmare Nest': '残像聚落', 'Weekly Garden': '每周乐园',
+                 'Weekly Boss Monday Check': '周本周一检查', 'Weekly Boss Sunday Check': '周本周日复检',
+                 'Tacet Suppression': '无音区', 'Forgery Challenge': '凝素领域',
+                 'Simulation Challenge': '模拟训练', 'Merge Echo': '声骸合成'}
+        completed = [(names.get(key, key), stamp) for key, stamp in self._completions.items() if isinstance(stamp, str)]
+        lines.append('上次完成时间（仅有完成记录，不等于图片证据）：')
+        lines.extend(f'{name}：{stamp}' for name, stamp in completed)
+        if not completed:
+            lines.append('无记录')
+        if self._history_error:
+            lines.append(self._history_error)
+        label = QLabel('\n'.join(lines), panel)
+        label.setWordWrap(True)
+        label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        panel.add_widget(label)
+        for index, value in enumerate(record.get('video_paths', []), 1):
+            path = Path(value)
+            button = PushButton(f'打开关联录像 {index}', panel)
+            # Only explicit local video paths recorded by this run; never infer ownership from folders.
+            button.setEnabled(path.is_absolute() and path.suffix.lower() == '.mp4')
+            def open_video(*_, path=path):
+                if path.is_file():
+                    QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+                else:
+                    self.notice.setText('关联录像不存在或设备路径不可用；未删除任何记录。')
+            button.clicked.connect(open_video)
+            panel.add_widget(button)
+        self.grid.addWidget(panel, 0, 0, 1, 3)
 
     def _add_card(self, project, record, conflict=False):
         card = QWidget(self.grid_widget)
@@ -452,7 +553,7 @@ class CompletionCheckTab(QWidget):
     def _layout_cards(self):
         columns = max(1, min(3, self.scroll.viewport().width() // 250))
         for index, card in enumerate(self._cards):
-            self.grid.addWidget(card, index // columns, index % columns)
+            self.grid.addWidget(card, 1 + index // columns, index % columns)
         for column in range(3):
             self.grid.setColumnStretch(column, int(column < columns))
 

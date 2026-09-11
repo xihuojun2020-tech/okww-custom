@@ -29,6 +29,29 @@ from src.gui.ChoiceControls import QtComboBox as QComboBox
 ClickOnlyComboBox = QComboBox
 
 
+def recording_defaults():
+    from ok import og
+    task = next((task for task in getattr(getattr(og, 'executor', None), 'onetime_tasks', [])
+                 if type(task).__name__ == 'DailyTask'), None)
+    config = getattr(task, 'config', None) or {}
+    return {'Record After Daily Task': config.get('Record After Daily Task', True),
+            'Record Duration': config.get('Record Duration', 1.5)}
+
+
+class FixedRecordingPages(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        from src.recording_policy import RECORDING_PAGES
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        for page in RECORDING_PAGES:
+            control = QCheckBox(page, self)
+            control.setChecked(True)
+            layout.addWidget(control)
+        self.setEnabled(False)
+
+
 def _select_account_choice(widget, key, value):
     if key == 'Weekly Garden Check Day':
         try:
@@ -56,6 +79,10 @@ class AccountTemplateDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("编辑新账号模板")
         self._tasks = dict(tasks)
+        from src.recording_policy import RECORDING_PAGES
+        self._tasks['Record Pages'] = list(RECORDING_PAGES)
+        for key, value in recording_defaults().items():
+            self._tasks.setdefault(key, value)
         self._widgets = {}
         layout = QVBoxLayout(self)
         layout.addWidget(BodyLabel("模板只复制每日任务设置，不复制账号身份、序列或完成记录。"))
@@ -68,7 +95,9 @@ class AccountTemplateDialog(QDialog):
             if field.affects_identity or field.key in ("备用识别名称", "备用识别名称内容"):
                 continue
             value = self._tasks.get(field.key)
-            if field.editor_type == "bool":
+            if field.key == 'Record Pages':
+                widget = FixedRecordingPages(self)
+            elif field.editor_type == "bool":
                 widget = QCheckBox(self)
                 widget.setChecked(bool(value))
             elif field.editor_type == "choice":
@@ -97,6 +126,8 @@ class AccountTemplateDialog(QDialog):
     def tasks(self):
         result = dict(self._tasks)
         for key, widget in self._widgets.items():
+            if key == 'Record Pages':
+                continue
             if isinstance(widget, QCheckBox):
                 result[key] = widget.isChecked()
             elif isinstance(widget, QComboBox):
@@ -191,7 +222,8 @@ class AccountConfigTab(CustomTab):
         root.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         layout = QVBoxLayout(root)
         layout.setAlignment(Qt.AlignTop)
-        layout.addWidget(BodyLabel("账号配置（登录身份与唯一编号只读；删除操作仅针对当前账号）"))
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
         row = QHBoxLayout()
         row.addWidget(QLabel("账号"))
         self.profile_combo = ClickOnlyComboBox(root)
@@ -225,12 +257,18 @@ class AccountConfigTab(CustomTab):
         self.identity_task_layout.setContentsMargins(0, 0, 0, 0)
         self.identity_group.content_layout.addWidget(self.identity_task_fields)
         layout.addWidget(self.identity_group)
+        from src.gui.AccountReminderPanel import AccountReminderPanel
+        self.reminder_panel = AccountReminderPanel(root)
+        self.reminder_panel.edited.connect(self._mark_draft_edited)
+        layout.addWidget(self.reminder_panel)
         self.sequence_group = QGroupBox("所属序列（勾选后保存即可调整当前账号归属）", root)
         self.sequence_layout = QVBoxLayout(self.sequence_group)
         self.sequence_widgets = {}
         layout.addWidget(self.sequence_group)
         self.form_host = QWidget(root)
         self.form_layout = QFormLayout(self.form_host)
+        self.form_layout.setContentsMargins(0, 0, 0, 0)
+        self.form_layout.setVerticalSpacing(4)
         self.form_widgets = {}
         layout.addWidget(self.form_host)
         self.task_editor = QPlainTextEdit(root)
@@ -252,13 +290,13 @@ class AccountConfigTab(CustomTab):
         for button in (self.preview_button, self.save_button, self.discard_button):
             actions.addWidget(button)
         actions.addWidget(self.draft_status, 1)
-        layout.insertLayout(3, actions)
+        layout.insertLayout(2, actions)
         maintenance = SectionPanel('高级账号操作', '模板、JSON、身份重新绑定与删除。', root, collapsible=True)
         for button in (self.json_button, self.template_button, self.rebind_button, self.delete_button):
             maintenance.add_widget(button)
         layout.addWidget(maintenance)
         self.status = BodyLabel("等待操作")
-        layout.insertWidget(4, self.status)
+        layout.insertWidget(3, self.status)
         self.add_widget(root, stretch=1)
         self.profile_combo.currentIndexChanged.connect(self._load_selected)
         self.preview_button.clicked.connect(self.preview)
@@ -271,7 +309,7 @@ class AccountConfigTab(CustomTab):
         self.operation = BackgroundOperation(self, (
             self.save_button, self.delete_button, self.rebind_button, self.template_button,
             self.new_button, self.discard_button, self.preview_button,
-            self.form_host, self.task_editor, self.sequence_group, self.json_button))
+            self.form_host, self.task_editor, self.sequence_group, self.json_button, self.reminder_panel))
         self.refresh()
 
     def edit_json(self):
@@ -320,7 +358,8 @@ class AccountConfigTab(CustomTab):
         try:
             self._apply_text()
             members = tuple(name for name, box in self.sequence_widgets.items() if box.isChecked())
-            return (self.draft.tasks != self._loaded_tasks or members != self._loaded_sequences)
+            return (self.draft.tasks != self._loaded_tasks or self.draft.account != self._loaded_account
+                    or members != self._loaded_sequences)
         except Exception:
             return True
 
@@ -400,8 +439,11 @@ class AccountConfigTab(CustomTab):
         self._render_sequences()
         self._render_identity()
         self.task_editor.setPlainText(json.dumps(self.draft.tasks, ensure_ascii=False, indent=2))
+        self.reminder_panel.load_account(self.draft.account)
         self._render_form()
         self._loaded_tasks = copy.deepcopy(self.draft.tasks)
+        self._loaded_account = copy.deepcopy(self.draft.account)
+        self.task_editor.setPlainText(json.dumps(self.draft.tasks, ensure_ascii=False, indent=2))
         self._loaded_sequences = tuple(name for name, box in self.sequence_widgets.items() if box.isChecked())
         self.status.setText("已载入独立草稿")
         self.draft_status.setText('尚未编辑')
@@ -410,12 +452,15 @@ class AccountConfigTab(CustomTab):
         self.draft_status.setText('草稿已编辑，尚未保存')
 
     def _apply_text(self):
+        self.draft.account = self.reminder_panel.apply_account(self.draft.account)
         # Identity widgets are intentionally read-only.  Identity changes use
         # AccountRebindService so they cannot be mixed into task edits.
         value = json.loads(self.task_editor.toPlainText())
         if not isinstance(value, dict):
             raise ValueError("任务配置必须是 JSON 对象")
         self.draft.tasks = value
+        from src.recording_policy import RECORDING_PAGES
+        self.draft.tasks['Record Pages'] = list(RECORDING_PAGES)
         for key, widget in self.form_widgets.items():
             if not widget.isEnabled():
                 continue
@@ -475,6 +520,10 @@ class AccountConfigTab(CustomTab):
 
     def _render_form(self):
         from src.gui.SectionPanel import SectionPanel
+        from src.recording_policy import RECORDING_PAGES
+        self.draft.tasks['Record Pages'] = list(RECORDING_PAGES)
+        for key, value in recording_defaults().items():
+            self.draft.tasks.setdefault(key, value)
         states = {key: panel.toggle_button.isChecked()
                   for key, panel in getattr(self, 'form_sections', {}).items()}
         while self.form_layout.rowCount():
@@ -490,6 +539,7 @@ class AccountConfigTab(CustomTab):
                  'Auto Farm all Nightmare Nest'}
         weekly = {'Weekly Garden Check Day', 'Merge Echo on Sunday'}
         def group(field):
+            if field.key in ('Record Pages', 'Record After Daily Task', 'Record Duration'): return 6
             if field.key == 'Weekly Boss Target': return 2
             if field.key in stamina: return 1
             if field.key in daily: return 0
@@ -502,13 +552,15 @@ class AccountConfigTab(CustomTab):
             identity_field = field.key in ('备用识别名称', '备用识别名称内容')
             if not identity_field and group(field) != last_group:
                 last_group = group(field)
-                heading = SectionPanel(('日常与声骸', '清理体力', '周本挑战', '周常安排', '收尾行为', '高级任务参数')[last_group],
+                heading = SectionPanel(('日常与声骸', '清理体力', '周本挑战', '周常安排', '收尾行为', '高级任务参数', '录像留档')[last_group],
                                        parent=self.form_host, collapsible=True,
                                        expanded=states.get(last_group, False))
                 self.form_sections[last_group] = heading
                 self.form_layout.addRow(heading)
             value = self.draft.tasks.get(field.key)
-            if field.editor_type == "bool":
+            if field.key == 'Record Pages':
+                widget = FixedRecordingPages(self.form_host)
+            elif field.editor_type == "bool":
                 widget = QCheckBox(self.form_host)
                 widget.setChecked(bool(value))
             elif field.editor_type == "choice":
@@ -534,7 +586,7 @@ class AccountConfigTab(CustomTab):
                 widget.toggled.connect(self._mark_draft_edited)
             elif isinstance(widget, QComboBox):
                 widget.currentIndexChanged.connect(self._mark_draft_edited)
-            else:
+            elif isinstance(widget, QLineEdit):
                 widget.textEdited.connect(self._mark_draft_edited)
             if field.key == 'Weekly Boss Target':
                 self._render_weekly_status()
@@ -552,6 +604,8 @@ class AccountConfigTab(CustomTab):
                     self.form_sections[key].set_summary(widget.currentText())
                 widget.currentTextChanged.connect(update_group_summary)
                 update_group_summary()
+        from src.gui.compact_settings import compact_settings
+        compact_settings(self)
 
     def _render_weekly_status(self):
         from src.config_integrity import get_default_service
@@ -737,7 +791,10 @@ class AccountConfigTab(CustomTab):
         """Accept the published record without rebuilding an unchanged editor."""
         self.draft = ProfileDraft(result.profile_id, str(result.revision),
                                   copy.deepcopy(dict(result.account)), copy.deepcopy(dict(result.tasks)))
+        self.reminder_panel.load_account(self.draft.account)
         for key, widget in self.form_widgets.items():
+            if key == 'Record Pages':
+                continue
             if self.draft.tasks.get(key) == submitted.tasks.get(key):
                 continue
             value = self.draft.tasks.get(key)
@@ -752,6 +809,7 @@ class AccountConfigTab(CustomTab):
         self.task_editor.setPlainText(json.dumps(self.draft.tasks, ensure_ascii=False, indent=2))
         self._render_identity()
         self._loaded_tasks = copy.deepcopy(self.draft.tasks)
+        self._loaded_account = copy.deepcopy(self.draft.account)
         self._loaded_sequences = tuple(sequence_ids)
         self.draft_status.setText('尚未编辑')
 

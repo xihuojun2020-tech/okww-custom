@@ -65,6 +65,10 @@ class OneTimeTaskTab(TaskTab):
             og.task_manager.delete_imported_script(self.imported_file_name)
 
     def refresh_ui(self):
+        for card in getattr(self, '_activity_placeholders', []):
+            self.remove_task_card(card)
+            card.deleteLater()
+        self._activity_placeholders = []
         # Remove old cards
         for w in self.card_widgets:
             self.remove_task_card(w)
@@ -88,11 +92,24 @@ class OneTimeTaskTab(TaskTab):
             elif self.group_name and task_group == self.group_name:
                 self.tasks.append(task)
                 
-        self.empty_label.setVisible(not self.tasks)
         from src.gui.navigation_sections import task_category, TASK_CATEGORIES
+        entries = list(self.tasks)
         if self.group_tasks:
-            self.tasks.sort(key=lambda task: TASK_CATEGORIES.index(task_category(task)))
-        for task in self.tasks:
+            from src.gui.activity_catalog import activity_revision, PLACEHOLDERS, PLACEHOLDER_REVISION
+            self.tasks.sort(key=lambda task: (TASK_CATEGORIES.index(task_category(task)),
+                                             -activity_revision(task) if task_category(task) == '活动' else 0))
+            entries = list(PLACEHOLDERS) + self.tasks
+            entries.sort(key=lambda entry: (TASK_CATEGORIES.index('活动' if isinstance(entry, tuple) else task_category(entry)),
+                         -PLACEHOLDER_REVISION if isinstance(entry, tuple) else
+                         -activity_revision(entry) if task_category(entry) == '活动' else 0))
+        self.empty_label.setVisible(not entries)
+        for task in entries:
+            if isinstance(task, tuple):
+                from src.gui.activity_catalog import placeholder_card
+                card = placeholder_card(*task, self.task_cards_view)
+                self.add_task_card(card, '活动')
+                self._activity_placeholders.append(card)
+                continue
             task_card = TaskCard(task, True, fluent_sample=self.fluent_sample)
             if task_category(task) == '活动' and not (self.fluent_sample and type(task).__name__ == 'EventTask'):
                 task_card.card.set_summary(getattr(task, 'activity_category', getattr(task, 'group_name', '活动')))

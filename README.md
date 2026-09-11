@@ -1,5 +1,5 @@
 <div align="center">
-  <p>当前版本：<a href="docs/references/lan-diagnostics.md">1.54.02 局域网错误前后截图同步</a> · <a href="docs/references/completion-evidence.md">完成检查与永久留证</a> · <a href="docs/references/multi-account-retry.md">多账号失败补跑</a></p>
+  <p>当前版本：<a href="docs/references/account-ui-1.56.md">1.56.00 账号提醒与界面整理</a> · <a href="docs/references/completion-evidence.md">完成检查与永久留证</a> · <a href="docs/references/multi-account-retry.md">多账号失败补跑</a></p>
   <h1 align="center">
     <img src="icons/icon.png" width="200" alt="ok-ww logo"/>
     <br/>

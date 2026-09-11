@@ -84,7 +84,7 @@ class PianoTeachingTask(WWOneTimeTask, BaseWWTask):
     def run(self):
         WWOneTimeTask.run(self)
         if self.game_lang != "zh_CN":
-            raise RuntimeError("弹琴教学首版仅支持简体中文游戏")
+            raise RuntimeError("清弦纪流年首版仅支持简体中文游戏")
         detector = PianoDetector()
         tracker = PianoStateMachine()
         interval = float(self.config.get("Sample Interval", 0.05))

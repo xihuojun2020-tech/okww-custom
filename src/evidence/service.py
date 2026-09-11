@@ -35,7 +35,7 @@ class EvidenceService:
         self.revision = 0
         self.last_error = ''
 
-    def submit(self, metadata, frame):
+    def submit(self, metadata, frame, *, run=False):
         if not self._slots.acquire(blocking=False):
             self.last_error = '证据保存队列已满，未删除旧截图，请稍后重试'
             raise RuntimeError(self.last_error)
@@ -44,7 +44,8 @@ class EvidenceService:
             if frame is not None and frame.nbytes > 64 * 1024 * 1024:
                 raise ValueError('截图过大，请检查游戏分辨率')
             frame = frame.copy() if frame is not None else None
-            future = self._pool.submit(self._save, metadata, frame)
+            future = (self._pool.submit(self.repository.save_run, metadata) if run else
+                      self._pool.submit(self._save, metadata, frame))
         except Exception:
             self._slots.release()
             raise
@@ -85,6 +86,35 @@ def get_evidence_service():
             root = Path(os.environ.get('LOCALAPPDATA', str(Path.home() / '.local/share'))) / 'OKWW' / 'CompletionEvidence'
             _service = EvidenceService(EvidenceRepository(root))
         return _service
+
+
+def begin_daily_run(task):
+    from uuid import uuid4
+    try:
+        service = getattr(getattr(task, 'executor', None), 'completion_evidence_service', None)
+        identity = getattr(task, '_verified_profile_id', None)
+        if not isinstance(service, EvidenceService) or not identity:
+            return None
+        record = dict(run_id=str(uuid4()), profile_id=identity, started_at=now_iso(),
+                      finished_at=None, result='running', video_paths=[],
+                      scope='weekly_boss' if (getattr(task, '_runtime_overrides', None) or {}).get('_weekly_boss_only') else 'daily')
+        service.submit(record, None, run=True)
+        return record
+    except Exception:
+        logger.warning('运行记录开始保存失败，不改变任务流程')
+        return None
+
+
+def finish_daily_run(task, result):
+    try:
+        record = getattr(task, '_completion_run_record', None)
+        if not isinstance(record, dict):
+            return
+        record = copy.deepcopy(record)
+        record.update(finished_at=now_iso(), result=result)
+        task.executor.completion_evidence_service.submit(record, None, run=True)
+    except Exception:
+        logger.warning('运行记录结束保存失败，不改变任务结果')
 
 
 def bound_profile(executor):

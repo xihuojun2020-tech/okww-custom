@@ -22,6 +22,7 @@ from ok import og
 from tests.TestFlatUI import MemoryConfig, example_task
 from tests.fixture_support import make_account_environment
 from src.gui.CodexTheme import apply_codex_light_theme
+from src.evidence.model import PROJECTS
 
 
 class InertConfig(MemoryConfig):
@@ -198,9 +199,9 @@ def render(output):
                     from PySide6.QtTest import QTest
                     for _ in range(250):
                         QTest.qWait(20)
-                        if len(page._cards) == 10 and not page.load_operation.busy:
+                        if len(page._cards) == len(PROJECTS) and not page.load_operation.busy:
                             break
-                    assert len(page._cards) == 10, 'Completion dashboard has not finished loading'
+                    assert len(page._cards) == len(PROJECTS), 'Completion dashboard has not finished loading'
                     QTest.qWait(100)
                     page.grab().save(str(output / f'{type(page).__name__}-{width}.png'))
                     assert page.scroll.horizontalScrollBar().maximum() == 0

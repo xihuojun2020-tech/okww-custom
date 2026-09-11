@@ -157,6 +157,8 @@ class AccountConfigEditor:
         })
         account = copy.deepcopy(draft.account)
         tasks = copy.deepcopy(draft.tasks)
+        from src.recording_policy import RECORDING_PAGES
+        tasks['Record Pages'] = list(RECORDING_PAGES)
         if alias_enabled is not None:
             tasks[_ALIAS_TEXT] = alias_text
             account["alternate_login_name"] = alias_text if alias_enabled == "使用" else ""
@@ -171,6 +173,8 @@ class AccountConfigEditor:
     def save_template(self, tasks: Mapping[str, Any], *, expected_revision: str) -> Any:
         if not isinstance(tasks, Mapping):
             raise AccountConfigEditorError("新账号模板必须是 JSON 对象")
+        from src.recording_policy import RECORDING_PAGES
+        tasks = {**copy.deepcopy(dict(tasks)), 'Record Pages': list(RECORDING_PAGES)}
         return self.repository.publish_profile_template(tasks, expected_revision=expected_revision)
 
     def create_profile(self, template: Any, *, display_name: str, phone: str, nickname: str,
@@ -193,6 +197,8 @@ class AccountConfigEditor:
         if alias_enabled and not alias:
             raise AccountConfigEditorError("启用备用识别名称后必须填写具体名称")
         tasks = copy.deepcopy(dict(template.tasks))
+        from src.recording_policy import RECORDING_PAGES
+        tasks['Record Pages'] = list(RECORDING_PAGES)
         tasks[_ALIAS_ENABLE] = "使用" if alias_enabled else "无"
         tasks[_ALIAS_TEXT] = alias
         account = {

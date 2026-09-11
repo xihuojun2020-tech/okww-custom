@@ -37,6 +37,10 @@ class ToolsHubTab(CustomTab):
         self.add_widget(self.developer_section)
         start_panel.tools_button.hide()
         start_panel.overlay_card.hide()
+        from src.gui.compact_settings import compact_settings
+        compact_settings(self)
+        title.content.hide()
+        title.layout().setContentsMargins(0, 0, 0, 4)
 
     def goto_config(self, key):
         return self.maintenance_tab.goto_config(key)

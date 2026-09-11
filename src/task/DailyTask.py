@@ -112,7 +112,8 @@ LC_MERGE = 'Last Completed - Merge Echo'
 RECORD_AFTER_DAILY = 'Record After Daily Task'
 RECORD_PAGES = 'Record Pages'
 RECORD_DURATION = 'Record Duration'
-RECORD_PAGE_OPTIONS = ['任务页', '每周乐园', '战令', '残像聚落']
+from src.recording_policy import RECORDING_PAGES
+RECORD_PAGE_OPTIONS = list(RECORDING_PAGES)
 # 每日任务完成后自动退登 PC 端（取代"完成任务后退出应用"，为下一个账号扫码登录做准备）
 LOGOUT_AFTER_DAILY = 'Logout PC After Daily Task'
 # 只读标签键 → 子任务名（record_last_completed 使用的名称）
@@ -347,6 +348,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             return None
 
     def run(self):
+        self._completion_run_record = None
         self._daily_from_verified_snapshot = bool(
             getattr(self, '_snapshot_bound_externally', False)
             and getattr(self, '_verified_profile_snapshot', None)
@@ -357,7 +359,15 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self._profile_run_active = True
         try:
             with self.account_input_guard(self._guard_bound_profile_identity):
-                return self._run_daily_inner()
+                result = self._run_daily_inner()
+        except BaseException as error:
+            from src.evidence.service import finish_daily_run
+            finish_daily_run(self, 'stopped' if isinstance(error, TaskDisabledException) else 'failed')
+            raise
+        else:
+            from src.evidence.service import finish_daily_run
+            finish_daily_run(self, 'returned')
+            return result
         finally:
             self._profile_run_active = False
             self._daily_from_verified_snapshot = False
@@ -411,6 +421,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             self.ensure_daily_profiles()
         self._ensure_run_account_confirmation()
         self.validate_daily_tasks()
+        from src.evidence.service import begin_daily_run
+        self._completion_run_record = begin_daily_run(self)
         self.log_info(f'开始执行每日任务（账号：{self.get_active_profile_name()}）', notify=True)
 
         WWOneTimeTask.run(self)
@@ -1838,7 +1850,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
     # ==================== 每日任务完成后录像（进度留档） ====================
 
     def record_progress(self):
-        """每日任务完成后，按选中顺序打开页面，把各页画面合成 1 个监控视频。
+        """每日任务完成后，按固定全选范围打开页面，把各页画面合成 1 个监控视频。
 
         视频只包含鸣潮游戏窗口画面（基于 WGC 捕获帧）。
         存储：okww监控室/【账号方案名】/【YYYY-MM-DD HH-MM-SS】.mp4
@@ -1849,7 +1861,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         import cv2
         from datetime import datetime
 
-        pages = self._profile_get(RECORD_PAGES) or []
+        pages = list(RECORDING_PAGES)
         if not pages:
             self.log_info('record pages empty, skip recording')
             return
@@ -1876,7 +1888,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         except OSError as e:
             self.log_error(f'create monitor dir failed: {e}')
             return
-        fname = os.path.join(out_dir, f'【{datetime.now():%Y-%m-%d %H-%M-%S}】.mp4')
+        fname = os.path.join(out_dir, f'【{datetime.now():%Y-%m-%d %H-%M-%S-%f}】.mp4')
 
         writer = None
         recorded_pages = []
@@ -1884,6 +1896,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             for page in pages:
                 try:
                     if not self._open_record_page(page):
+                        self.log_warning(f'录像页面未打开：{page}；本页未录制')
                         continue
                     frame = self.frame
                     if frame is None:
@@ -1895,12 +1908,17 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                         if not writer.isOpened():
                             self.log_error(f'record writer open failed: {fname}')
                             return
+                    written = 0
                     for _ in range(max(1, duration) * fps):
                         frame = self.frame
                         if frame is not None:
                             writer.write(frame)
+                            written += 1
                         self.sleep(1.0 / fps)
-                    recorded_pages.append(page)
+                    if written:
+                        recorded_pages.append(page)
+                    else:
+                        self.log_warning(f'录像页面没有有效帧：{page}；本页未录制')
                 except Exception as e:
                     self.log_error(f'record page {page} failed', e)
                     self.screenshot(f'record_{page}')
@@ -1910,6 +1928,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             if writer is not None:
                 writer.release()
                 if recorded_pages:
+                    record = getattr(self, '_completion_run_record', None)
+                    if isinstance(record, dict):
+                        record['video_paths'].append(os.path.abspath(fname))
                     self.log_info(f'监控录像已保存: {fname}（{len(recorded_pages)} 页: {" / ".join(recorded_pages)}）', notify=True)
                 else:
                     try:

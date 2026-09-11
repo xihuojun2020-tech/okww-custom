@@ -13,17 +13,29 @@ logger = Logger.get_logger(__name__)
 class TaskCard(ConfigCard):
     def __init__(self, task: BaseTask, onetime, *, fluent_sample=False):
         config_type = dict(task.config_type or {})
-        if type(task).__name__ == 'DailyTask':
-            config_type['Manage Daily Profiles'] = {'type': 'button', 'text': '编辑账号计划',
-                                                   'callback': self.open_account_editor}
-        elif type(task).__name__ == 'MultiAccountDailyTask':
-            config_type['管理序列'] = {'type': 'button', 'text': '编辑账号序列',
-                                      'callback': self.open_sequence_editor}
-        description = '' if fluent_sample and type(task).__name__ in (
-            'DailyTask', 'MultiAccountDailyTask', 'GardenTask', 'WeeklyBossTask', 'EventTask') else task.description
-        super().__init__(task, task.name, task.config, description, task.default_config, task.config_description,
+        config_description = task.config_description
+        if type(task).__name__ in ('DailyTask', 'MultiAccountDailyTask'):
+            allowed = ({'方案序列', 'Daily Profile', '备用识别名称', '备用识别名称内容'}
+                       if type(task).__name__ == 'DailyTask' else
+                       {'当前序列', '当前执行账号', '当前序列账号'})
+            config_type = {key: dict(value) if isinstance(value, dict) else value for key, value in config_type.items()}
+            for key in set(task.config) | set(config_type):
+                if key not in allowed:
+                    config_type[key] = {'hidden': True}
+            config_description = {key: '' for key in task.config}
+            for value in config_type.values():
+                if isinstance(value, dict):
+                    value.pop('last_completed_provider', None)
+        if type(task).__name__ in ('DailyTask', 'MultiAccountDailyTask'):
+            config_type['Manage Daily Profiles'] = {'hidden': True}
+            config_type['管理序列'] = {'hidden': True}
+        description = '' if (type(task).__name__ in ('DailyTask', 'MultiAccountDailyTask') or
+                              fluent_sample and type(task).__name__ in ('GardenTask', 'WeeklyBossTask', 'EventTask')) else task.description
+        super().__init__(task, task.name, task.config, description, task.default_config, config_description,
                          config_type, config_icon=task.icon or FluentIcon.INFO)
         self.task = task
+        if type(task).__name__ == 'PianoTeachingTask':
+            self.card.titleLabel.setText('清弦纪流年')
         from src.evidence.model import TASK_PROJECTS
         self._evidence_project = TASK_PROJECTS.get(type(task).__name__)
         if self._evidence_project:
@@ -109,6 +121,12 @@ class TaskCard(ConfigCard):
                 margins = layout.contentsMargins()
                 layout.setContentsMargins(margins.left(), 4, margins.right(), 4)
                 widget.setMinimumHeight(44)
+        if type(task).__name__ in ('DailyTask', 'MultiAccountDailyTask') and self.reset_config is not None:
+            self.reset_config.hide()
+
+    def add_buttons(self):
+        if type(self.task).__name__ not in ('DailyTask', 'MultiAccountDailyTask'):
+            super().add_buttons()
 
     def show_evidence_menu(self, position):
         menu = QMenu(self)
@@ -273,7 +291,8 @@ class TaskCard(ConfigCard):
     def update_buttons(self, task):
         if task == self.task or self.onetime:
             # Determine visibility for instructions button
-            has_instructions = bool(getattr(self.task, 'instructions', None))
+            has_instructions = (type(self.task).__name__ not in ('DailyTask', 'MultiAccountDailyTask')
+                                and bool(getattr(self.task, 'instructions', None)))
             self.instructions_button.setVisible(has_instructions)
             self.update_content()
 

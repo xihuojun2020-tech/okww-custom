@@ -1626,7 +1626,7 @@ msgid "手动进入活动后开始，约每秒短按 F；切出游戏时等待�
 msgstr "手動進入活動後開始，約每秒短按 F；切出遊戲時等待，活動結束後請手動停止。"
 
 msgid "Piano Teaching"
-msgstr "彈琴教學"
+msgstr "清弦紀流年"
 
 msgid "Open the piano teaching screen first; highlighted notes and chords are played automatically."
 msgstr "請先開啟彈琴教學介面；程式會自動彈奏高亮的音符與和弦。"

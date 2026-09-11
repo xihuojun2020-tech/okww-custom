@@ -703,7 +703,7 @@ class TestFlatUI(unittest.TestCase):
             self.assertEqual(tab.draft.tasks, before)
             tab.deleteLater()
 
-    def test_task_management_buttons_navigate_without_mutating_task_metadata_or_draft(self):
+    def test_hidden_management_actions_do_not_mutate_task_metadata_or_draft(self):
         from ok.gui.tasks.TaskCard import TaskCard
         for name, key, callback in (('DailyTask', 'Manage Daily Profiles', 'open_account_editor'),
                                     ('MultiAccountDailyTask', '管理序列', 'open_sequence_editor')):
@@ -717,14 +717,44 @@ class TestFlatUI(unittest.TestCase):
                     patch.object(og, 'executor', SimpleNamespace(waiting_for_task=lambda _: '')), \
                     patch.object(og, 'main_window', window), patch('src.gui.SectionPanel.reveal_widget') as reveal:
                 card = TaskCard(task, True)
-                self.assertIn(key, card.config_widget_by_key)
-                card.config_type[key]['callback']()
+                self.assertNotIn(key, card.config_widget_by_key)
+                self.assertIsNone(card.reset_config)
+                getattr(card, callback)()
                 window.navigate_tab.assert_called_once_with('accounts')
                 reveal.assert_called_once()
                 self.assertEqual(task.config_type, original)
                 self.assertIs(window.account_settings_tab.account_tab.draft, draft)
                 self.assertFalse(card.isExpand)
                 card.deleteLater()
+
+    def test_activity_placeholders_are_not_executable_and_follow_release_order(self):
+        from ok.gui.tasks.OneTimeTaskTab import OneTimeTaskTab
+        from src.gui.activity_catalog import ACTIVITY_REVISIONS
+        from qfluentwidgets import PrimaryPushButton
+        piano = type('PianoTeachingTask', (), {})()
+        piano.__dict__.update(vars(example_task()))
+        piano.navigation_section = 'activities'
+        piano.activity_category = '常驻活动'
+        piano.visible = True
+        executor = SimpleNamespace(onetime_tasks=[piano], current_task=None, waiting_for_task=lambda _: '')
+        with patch.object(og, 'app', SimpleNamespace(tr=str)), patch.object(og, 'executor', executor), \
+             patch.object(og, 'task_manager', SimpleNamespace(imported_scripts={})), \
+             patch.dict(ACTIVITY_REVISIONS, {'PianoTeachingTask': 2026091201}):
+            page = OneTimeTaskTab(section='tasks', group_tasks=True, fluent_sample=True)
+            try:
+                self.assertEqual([card.task for card in page.card_widgets], [piano])
+                self.assertEqual(len(page._activity_placeholders), 2)
+                placeholder = page._activity_placeholders[0]
+                self.assertLess(page.taskCardLayout.indexOf(page.card_widgets[0]), page.taskCardLayout.indexOf(placeholder))
+                self.assertFalse(placeholder.isExpand)
+                self.assertFalse(placeholder.findChildren(PrimaryPushButton))
+                placeholder.setExpand(True)
+                page.refresh_ui()
+                self.assertTrue(page._activity_placeholders[0].isExpand)
+                self.assertEqual(executor.onetime_tasks, [piano])
+            finally:
+                page.timer.stop()
+                page.deleteLater()
 
     def test_auto_combat_manual_control_is_not_called_by_state_refresh(self):
         from ok.gui.tasks.TaskCard import TaskCard

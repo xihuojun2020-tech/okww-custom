@@ -30,6 +30,8 @@ class EvidenceRepository:
                 metadata TEXT NOT NULL)''')
             db.execute('CREATE INDEX IF NOT EXISTS evidence_lookup ON evidence(profile_id, project_id, captured_at DESC)')
             db.execute('CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+            db.execute('CREATE TABLE IF NOT EXISTS account_runs (id TEXT PRIMARY KEY, profile_id TEXT NOT NULL, started_at TEXT NOT NULL, metadata TEXT NOT NULL)')
+            db.execute('CREATE INDEX IF NOT EXISTS account_runs_lookup ON account_runs(profile_id, started_at DESC)')
             with db:
                 yield db
         finally:
@@ -40,6 +42,38 @@ class EvidenceRepository:
         if path == self.root or self.root not in path.parents:
             raise ValueError('证据路径越界')
         return path
+
+    def save_run(self, record):
+        record = json.loads(json.dumps(record, ensure_ascii=False))
+        identity = str(UUID(record['profile_id']))
+        record['profile_id'] = identity
+        record['run_id'] = str(UUID(record['run_id']))
+        if record.get('result') not in ('running', 'returned', 'failed', 'stopped'):
+            raise ValueError('运行结果无效')
+        for key in ('started_at', 'finished_at'):
+            if key == 'finished_at' and record.get(key) is None:
+                continue
+            stamp = datetime.fromisoformat(record[key])
+            if stamp.tzinfo is None:
+                raise ValueError('运行时间必须包含时区')
+            record[key] = stamp.astimezone(GAME_ZONE).isoformat()
+        if not isinstance(record.get('video_paths'), list) or any(not isinstance(p, str) for p in record['video_paths']):
+            raise ValueError('录像路径格式无效')
+        with self._connect() as db:
+            previous = db.execute('SELECT profile_id, started_at FROM account_runs WHERE id=?', (record['run_id'],)).fetchone()
+            if previous and previous != (identity, record['started_at']):
+                raise ValueError('不能修改运行记录的账号或开始时间')
+            db.execute('INSERT OR REPLACE INTO account_runs VALUES (?, ?, ?, ?)',
+                (record['run_id'], identity, record['started_at'], json.dumps(record, ensure_ascii=False)))
+        return record
+
+    def latest_run(self, profile_id):
+        if not self.database.exists():
+            return None
+        with self._connect() as db:
+            row = db.execute('SELECT metadata FROM account_runs WHERE profile_id=? ORDER BY started_at DESC LIMIT 1',
+                             (profile_id,)).fetchone()
+        return json.loads(row[0]) if row else None
 
     def backup(self):
         """Explicit consistent snapshot under a new folder; no backup rotation."""
@@ -165,7 +199,7 @@ class EvidenceRepository:
         if not self.database.exists():
             return []
         with self._connect() as db:
-            return [row[0] for row in db.execute('SELECT DISTINCT profile_id FROM evidence')]
+            return [row[0] for row in db.execute('SELECT profile_id FROM evidence UNION SELECT profile_id FROM account_runs')]
 
     def get_preference(self, key):
         if not self.database.exists():

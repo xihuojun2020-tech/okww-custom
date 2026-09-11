@@ -15,6 +15,61 @@ ACCOUNT = '00000000-0000-4000-8000-000000000001'
 
 
 class TestCompletionEvidence(unittest.TestCase):
+    def test_daily_run_observer_preserves_return_stop_and_error(self):
+        from contextlib import nullcontext
+        from unittest.mock import Mock
+        from src.task.DailyTask import DailyTask
+        from ok import TaskDisabledException
+        for error, expected in ((None, 'returned'), (RuntimeError('failed'), 'failed'),
+                                (TaskDisabledException('stopped'), 'stopped')):
+            task = SimpleNamespace(clear_profile_binding=Mock(), _guard_bound_profile_identity=Mock(),
+                                   account_input_guard=lambda _: nullcontext(),
+                                   _run_daily_inner=Mock(side_effect=error, return_value='original'))
+            with patch('src.evidence.service.finish_daily_run') as finish:
+                if error:
+                    with self.assertRaises(type(error)) as raised:
+                        DailyTask.run(task)
+                    self.assertIs(raised.exception, error)
+                else:
+                    self.assertEqual(DailyTask.run(task), 'original')
+                finish.assert_called_once_with(task, expected)
+                self.assertFalse(task._profile_run_active)
+
+    def test_recording_attempts_all_pages_even_with_legacy_partial_selection(self):
+        from unittest.mock import Mock
+        from src.task.DailyTask import DailyTask
+        from src.recording_policy import RECORDING_PAGES
+        with tempfile.TemporaryDirectory() as root:
+            task = SimpleNamespace(_profile_get=lambda key, default: {'Record Pages': ['任务页']}.get(key, default),
+                get_active_profile_name=lambda: 'synthetic', _open_record_page=Mock(return_value=False),
+                ensure_main=Mock(), log_warning=Mock(), log_info=Mock(), log_error=Mock(), screenshot=Mock())
+            with patch('src.storage.get_warehouse_sub', return_value=root):
+                DailyTask.record_progress(task)
+            self.assertEqual([call.args[0] for call in task._open_record_page.call_args_list], list(RECORDING_PAGES))
+            self.assertEqual(task.log_warning.call_count, len(RECORDING_PAGES))
+
+    def test_run_records_are_observations_not_completion_and_keep_account_binding(self):
+        from src.evidence.service import EvidenceService, begin_daily_run, finish_daily_run
+        with tempfile.TemporaryDirectory() as root:
+            repo = EvidenceRepository(root)
+            service = EvidenceService(repo)
+            task = SimpleNamespace(executor=SimpleNamespace(completion_evidence_service=service),
+                                   _verified_profile_id=ACCOUNT)
+            task._completion_run_record = begin_daily_run(task)
+            finish_daily_run(task, 'returned')
+            service.close()
+            record = repo.latest_run(ACCOUNT)
+            self.assertEqual(record['result'], 'returned')
+            self.assertIsNotNone(record['finished_at'])
+            self.assertEqual(repo.list_records(ACCOUNT), [])
+            self.assertIn(ACCOUNT, repo.profiles())
+            record['profile_id'] = '00000000-0000-4000-8000-000000000002'
+            with self.assertRaises(ValueError):
+                repo.save_run(record)
+            with patch.object(service, 'submit', side_effect=OSError('disk full')):
+                self.assertIsNone(begin_daily_run(task))
+                finish_daily_run(task, 'failed')
+
     def test_capture_expiration_switch_and_missing_window_are_rejected(self):
         from src.evidence.service import request_capture, process_capture
         from unittest.mock import Mock
