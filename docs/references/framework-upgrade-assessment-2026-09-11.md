@@ -56,3 +56,7 @@ ok-script 提供截图与设备连接、OCR、鼠标键盘输入、任务运行/
 - [PyPI ok-script 1.0.190](https://pypi.org/project/ok-script/1.0.190/)
 - [PyPI ok-script 2.0.7b1](https://pypi.org/project/ok-script/2.0.7b1/)
 - [原版 OK-WW 升级依赖的提交](https://github.com/ok-oldking/ok-wuthering-waves/commit/c3fef9a06f61f96abeb53571fb47dd578b6f7063)
+
+## 1.57.00 发布后的文档复核
+
+本轮框架仍为 1.0.190。1.57.00 本地全量 1170 项中 1162 通过、8 项既有跳过；GitHub 构建 #34563119497 则在隔离测试步骤失败，安装器打包与 Release 发布被跳过。失败根因尚未从测试日志定位，不能归因于尚未执行的框架升级，也不能以本地通过替代 CI 验收。下一步先排查当前版本 CI，再推进独立框架迁移。
