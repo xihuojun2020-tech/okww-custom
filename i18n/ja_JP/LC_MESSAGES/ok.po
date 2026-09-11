@@ -1564,3 +1564,25 @@ msgstr "毎日の初回起動時に設定を自動バックアップ"
 
 msgid "Leave empty to use the default: <project>/configs_backup"
 msgstr "空欄の場合は既定の場所を使用：<project>/configs_backup"
+
+#: src/task/CharacterTrialTask.py
+msgid "Character Trial"
+msgstr "キャラクターお試し"
+
+#: src/task/CharacterTrialTask.py
+msgid ""
+"Complete current character trials and claim rewards. Available rewards are "
+"claimed directly."
+msgstr "今期のキャラクターお試しを完了して報酬を受け取ります。受取可能な報酬は直接受け取ります。"
+
+#: src/task/CharacterTrialTask.py
+msgid "Trial Combat Timeout"
+msgstr "キャラクターごとの戦闘制限時間"
+
+#: src/task/CharacterTrialTask.py
+msgid "Maximum combat seconds per character (60–600)."
+msgstr "各キャラクターの戦闘上限秒数（60～600）。"
+
+#: src/task/CharacterTrialTask.py
+msgid "Trial Combat Timeout must be between 60 and 600."
+msgstr "戦闘制限時間は60～600秒にしてください。"

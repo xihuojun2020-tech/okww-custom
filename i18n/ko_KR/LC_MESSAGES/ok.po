@@ -1567,3 +1567,25 @@ msgstr "매일 처음 실행할 때 설정 자동 백업"
 
 msgid "Leave empty to use the default: <project>/configs_backup"
 msgstr "비워 두면 기본 경로 사용: <project>/configs_backup"
+
+#: src/task/CharacterTrialTask.py
+msgid "Character Trial"
+msgstr "캐릭터 체험"
+
+#: src/task/CharacterTrialTask.py
+msgid ""
+"Complete current character trials and claim rewards. Available rewards are "
+"claimed directly."
+msgstr "이번 캐릭터 체험을 완료하고 보상을 수령합니다. 수령 가능한 보상은 바로 받습니다."
+
+#: src/task/CharacterTrialTask.py
+msgid "Trial Combat Timeout"
+msgstr "캐릭터별 전투 제한 시간"
+
+#: src/task/CharacterTrialTask.py
+msgid "Maximum combat seconds per character (60–600)."
+msgstr "캐릭터별 최대 전투 시간(60~600초)."
+
+#: src/task/CharacterTrialTask.py
+msgid "Trial Combat Timeout must be between 60 and 600."
+msgstr "전투 제한 시간은 60~600초여야 합니다."

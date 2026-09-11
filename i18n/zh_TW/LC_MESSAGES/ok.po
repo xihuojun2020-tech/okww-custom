@@ -1690,3 +1690,25 @@ msgstr "每天首次啟動時自動備份設定"
 
 msgid "Leave empty to use the default: <project>/configs_backup"
 msgstr "留空使用預設位置：<project>/configs_backup"
+
+#: src/task/CharacterTrialTask.py
+msgid "Character Trial"
+msgstr "角色試用"
+
+#: src/task/CharacterTrialTask.py
+msgid ""
+"Complete current character trials and claim rewards. Available rewards are "
+"claimed directly."
+msgstr "自動完成本期角色試用並領取獎勵；可領取的獎勵直接領取。"
+
+#: src/task/CharacterTrialTask.py
+msgid "Trial Combat Timeout"
+msgstr "單角色戰鬥時限"
+
+#: src/task/CharacterTrialTask.py
+msgid "Maximum combat seconds per character (60–600)."
+msgstr "每個角色戰鬥的最長秒數（60–600）。"
+
+#: src/task/CharacterTrialTask.py
+msgid "Trial Combat Timeout must be between 60 and 600."
+msgstr "單角色戰鬥時限必須在60到600秒之間。"

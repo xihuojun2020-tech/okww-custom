@@ -1559,3 +1559,27 @@ msgstr "Respaldar la configuración al iniciar por primera vez cada día"
 
 msgid "Leave empty to use the default: <project>/configs_backup"
 msgstr "Dejar vacío para usar la ruta predeterminada: <project>/configs_backup"
+
+#: src/task/CharacterTrialTask.py
+msgid "Character Trial"
+msgstr "Prueba de personajes"
+
+#: src/task/CharacterTrialTask.py
+msgid ""
+"Complete current character trials and claim rewards. Available rewards are "
+"claimed directly."
+msgstr ""
+"Completa las pruebas actuales y recoge las recompensas. Las disponibles se "
+"recogen directamente."
+
+#: src/task/CharacterTrialTask.py
+msgid "Trial Combat Timeout"
+msgstr "Tiempo límite de combate por personaje"
+
+#: src/task/CharacterTrialTask.py
+msgid "Maximum combat seconds per character (60–600)."
+msgstr "Duración máxima de combate por personaje, en segundos (60–600)."
+
+#: src/task/CharacterTrialTask.py
+msgid "Trial Combat Timeout must be between 60 and 600."
+msgstr "El límite de combate debe estar entre 60 y 600 segundos."

@@ -1,0 +1,37 @@
+"""Real OCR of sanitized supplied UI; never sends game input."""
+from config import config
+from ok.test.TaskTestCase import TaskTestCase
+from src.task.CharacterTrialTask import CharacterTrialTask
+from src.task.character_trial import reward_state, start_prompt
+
+config['debug']=True
+
+
+class TestCharacterTrialImages(TaskTestCase):
+    task_class=CharacterTrialTask
+    config=config
+
+    def load(self,name):
+        self.set_image(f'tests/fixtures/character_trial/{name}.png')
+
+    def test_three_reward_states(self):
+        for name,state in [('pending','pending'),('claim','claim'),('complete','complete')]:
+            self.load(name)
+            self.assertEqual(reward_state(self.task._ocr(self.task.REWARD)),state)
+            self.assertTrue(self.task._page())
+        self.load('complete')
+        self.assertIsNotNone(self.task._button(self.task.ENTER,'前往试用'))
+
+    def test_start_key_is_distinct_from_left_objective(self):
+        self.load('start')
+        self.assertTrue(start_prompt(self.task._ocr(self.task.INTERACT),self.task.height))
+        self.assertFalse(start_prompt(self.task._ocr(self.task.HINT),self.task.height))
+
+    def test_intro_obtain_finish_and_exit(self):
+        for name,region,text in [('intro','INTRO','战斗特色'),('intro','NEXT','下一页'),
+                                 ('obtained','OBTAIN','获得'),('obtained','DISMISS','点击空白处继续'),
+                                 ('finished','HINT','离开模拟领域'),('exit','EXIT_MESSAGE','确认离开'),
+                                 ('exit','EXIT_CONFIRM','确认')]:
+            self.load(name)
+            self.assertIsNotNone(self.task._button(getattr(self.task,region),text),(name,text))
+        self.assertIsNone(self.task._button(self.task.EXIT_MESSAGE,'确认'))
