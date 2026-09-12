@@ -31,6 +31,7 @@ def prepare_runtime(source_repo=None, *, home=None, code_repo=CODE_ROOT):
     source = Path(source_repo or code_repo).resolve()
     code_repo = Path(code_repo).resolve()
     files = list((code_repo / 'src/runtime').glob('diagnostic_*.py'))
+    files += [code_repo / 'src/runtime/nas_location.py']
     files += [code_repo / 'src/observability.py', code_repo / 'src/runtime/install_diagnostic_task.ps1']
     fingerprint = hashlib.sha256((str(source) + sys.version + str(sys.base_prefix)).encode())
     for path in sorted(files):

@@ -295,7 +295,8 @@ class AccountRepository:
             raise AccountRepositoryError(f"账号不存在：{profile_id}")
         profile = copy.deepcopy(accounts[profile_id])
         tasks = profile.pop("task_config", {})
-        tasks.setdefault('Weekly Boss Target', '无')
+        tasks.setdefault('Weekly Boss Target', '自动（列表首项）')
+        tasks.setdefault('Material Planner Enabled', False)
         return ProfileRecord(profile_id, self._revision(raw), profile, copy.deepcopy(tasks))
 
     def load_profile_template(self, fallback_profile_id: str | None = None) -> ProfileTemplateRecord:
@@ -307,7 +308,8 @@ class AccountRepository:
             source = source or next(iter(accounts.values()), {})
             template = source.get("task_config", {}) if isinstance(source, Mapping) else {}
         tasks = copy.deepcopy(dict(template)) if isinstance(template, Mapping) else {}
-        tasks.setdefault('Weekly Boss Target', '无')
+        tasks.setdefault('Weekly Boss Target', '自动（列表首项）')
+        tasks.setdefault('Material Planner Enabled', False)
         # Login aliases identify an account and must never leak from the template.
         tasks["备用识别名称"] = "无"
         tasks["备用识别名称内容"] = ""

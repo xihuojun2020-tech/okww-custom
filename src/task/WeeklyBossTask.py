@@ -8,7 +8,7 @@ from src.task.BaseCombatTask import (
 )
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.weekly_boss import (
-    WEEKLY_BOSSES, WeeklyBossResult, compact, boss_title, match_target_button,
+    WEEKLY_BOSSES, WEEKLY_AUTO, WeeklyBossResult, compact, boss_title, match_target_button,
     combat_phase, parse_cost, parse_remaining, parse_stamina,
 )
 
@@ -48,12 +48,12 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         self.group_name = None
         self.supported_languages = ['zh_CN']
         self.default_config.update({
-            'Weekly Boss': WEEKLY_BOSSES[0].key,
+            'Weekly Boss': WEEKLY_AUTO,
             'Use Liberation': True,
             'Switch to Healer before and after Combat': True,
         })
         self.config_type['Weekly Boss'] = {
-            'type': 'drop_down', 'options': [boss.key for boss in WEEKLY_BOSSES],
+            'type': 'drop_down', 'options': [WEEKLY_AUTO, *(boss.key for boss in WEEKLY_BOSSES)],
         }
         self.config_description['Weekly Boss'] = 'Use this boss for every remaining reward this run. Does not change difficulty or team.'
         self.target_enemy_time_out = 3
@@ -387,14 +387,23 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         return self.last_result
 
     def run_weekly(self, target_key=None):
+        target_key = target_key if target_key is not None else self.config.get('Weekly Boss',WEEKLY_AUTO)
         self.last_result = None
         self.info['已确认领奖'] = 0
         self.use_liberation = self.config.get('Use Liberation', True)
         boss = next((b for b in WEEKLY_BOSSES if b.key == (target_key if target_key is not None else self.config.get('Weekly Boss'))), None)
-        if boss is None:
+        if boss is None and target_key != WEEKLY_AUTO:
             raise ValueError('请选择有效的周本名称')
         self._stage('检查本周剩余次数')
         self._open_weekly_book()
+        if target_key == WEEKLY_AUTO:
+            self.scroll_relative(.92,.5,30)
+            self.sleep(1)
+            self.next_frame()
+            titles = sorted((b for b in self._ocr(self.LIST) if '战歌重奏' in compact(b.name)), key=lambda b:b.y)
+            boss = next((b for b in WEEKLY_BOSSES if titles and b.name == boss_title(titles[0].name)),None)
+            if boss is None:
+                raise WeeklyPageTimeout('未识别游戏列表首个周本，停止自动选择')
         initial = self._read_remaining()
         self.info_set('计划领奖', initial)
         if initial == 0:

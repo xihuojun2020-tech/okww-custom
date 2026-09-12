@@ -1,5 +1,5 @@
 <div align="center">
-  <p>当前版本：<a href="docs/references/completion-evidence.md">1.58.00 每日截图与录像共用巡检</a> · <a href="docs/references/completion-evidence.md">完成检查与永久留证</a> · <a href="docs/references/multi-account-retry.md">多账号失败补跑</a></p>
+  <p>当前版本：<a href="docs/references/material-planner-1.59.md">1.59.00 养成材料规划与 NAS 地址回退</a> · <a href="docs/references/completion-evidence.md">完成检查与永久留证</a> · <a href="docs/references/multi-account-retry.md">多账号失败补跑</a></p>
   <h1 align="center">
     <img src="icons/icon.png" width="200" alt="ok-ww logo"/>
     <br/>

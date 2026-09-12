@@ -9,6 +9,10 @@ import socket
 import ssl
 import time
 import urllib.parse
+import subprocess
+import sys
+import json
+import base64
 from pathlib import Path
 
 
@@ -25,6 +29,13 @@ class FileShareClient:
 
     @staticmethod
     def get_bytes(path: str, *, max_bytes: int, deadline_seconds: float) -> bytes:
+        if os.name == 'nt' and str(path).startswith('\\\\'):
+            result = _smb_call('read',dict(path=path,max_bytes=max_bytes),deadline_seconds)
+            return base64.b64decode(result['data'],validate=True)
+        return FileShareClient._read_local(path,max_bytes=max_bytes)
+
+    @staticmethod
+    def _read_local(path, *, max_bytes):
         source = Path(path)
         try:
             if source.stat().st_size > max_bytes:
@@ -39,6 +50,15 @@ class FileShareClient:
     @staticmethod
     def download(path: str, destination: Path, *, expected_size: int, expected_sha256: str,
                  deadline_seconds: float = 120.0) -> Path:
+        if os.name == 'nt' and str(path).startswith('\\\\'):
+            _smb_call('download',dict(path=path,destination=str(destination),expected_size=expected_size,
+                                      expected_sha256=expected_sha256),deadline_seconds)
+            return Path(destination)
+        return FileShareClient._download_local(path,destination,expected_size=expected_size,
+                                               expected_sha256=expected_sha256,deadline_seconds=deadline_seconds)
+
+    @staticmethod
+    def _download_local(path, destination, *, expected_size, expected_sha256, deadline_seconds=120):
         source, destination = Path(path), Path(destination)
         destination.parent.mkdir(parents=True, exist_ok=True)
         pending = destination.with_suffix(destination.suffix + ".part")
@@ -64,6 +84,21 @@ class FileShareClient:
             raise LanTransportError("无法下载 NAS 共享文件") from exc
         finally:
             pending.unlink(missing_ok=True)
+
+
+def _smb_call(operation, payload, timeout):
+    command = [sys.executable,'-E','-s','-m','src.update.lan_transport',operation,json.dumps(payload)]
+    try:
+        result = subprocess.run(command,cwd=Path(__file__).resolve().parents[2],capture_output=True,
+                                timeout=timeout,creationflags=subprocess.CREATE_NO_WINDOW)
+    except subprocess.TimeoutExpired as error:
+        raise LanTransportError('NAS 共享访问超时') from error
+    if result.returncode:
+        raise LanTransportError('无法访问 NAS 共享，请检查连接和 Windows 共享凭据')
+    try:
+        return json.loads(result.stdout.decode('utf-8').strip().splitlines()[-1])
+    except (ValueError,IndexError) as error:
+        raise LanTransportError('NAS 共享工作进程响应无效') from error
 
 
 class HttpsPinnedClient:
@@ -157,3 +192,17 @@ class HttpsPinnedClient:
             return destination
         finally:
             pending.unlink(missing_ok=True)
+
+
+if __name__ == '__main__':
+    from src.runtime.diagnostic_policy import connect
+    operation, payload = sys.argv[1], json.loads(sys.argv[2])
+    connect(payload['path'])
+    if operation == 'read':
+        data = FileShareClient._read_local(**payload)
+        print(json.dumps(dict(data=base64.b64encode(data).decode('ascii'))))
+    elif operation == 'download':
+        FileShareClient._download_local(**payload)
+        print('{}')
+    else:
+        raise ValueError('Unknown SMB worker operation')

@@ -9,11 +9,12 @@ from pathlib import Path
 from typing import Literal, Sequence
 
 from .lan_manifest import LanManifestError, LanRelease
-from .lan_transport import FileShareClient, HttpsPinnedClient
+from .lan_transport import FileShareClient, HttpsPinnedClient, LanTransportError
+from src.runtime.nas_location import DEFAULT_TARGET, candidates
 from .package_validation import validate_package
 
 MANIFEST_LIMIT = 65536
-DEFAULT_SMB_MANIFEST = r"\\192.168.3.161\xihuojun 共享给我\AI诊断\OKWW-Updates\stable\latest.json"
+DEFAULT_SMB_MANIFEST = DEFAULT_TARGET + r'\OKWW-Updates\stable\latest.json'
 
 
 class LanUpdateError(RuntimeError):
@@ -65,12 +66,11 @@ class LanUpdateService:
         self.config_path = Path(config_path)
         self.config = LanUpdateConfig.load(self.config_path)
         self.transport = transport
+        self.manifest_source = self.config.manifest_url
 
     def _transport(self):
         if self.transport is None:
             if self.config.manifest_url.startswith("\\\\"):
-                from src.runtime.diagnostic_policy import connect
-                connect(self.config.manifest_url)
                 self.transport = FileShareClient()
             else:
                 ca = Path(self.config.ca_file) if self.config.ca_file else None
@@ -80,8 +80,15 @@ class LanUpdateService:
     def check(self, current_version: str) -> UpdateAvailability:
         if not self.config.enabled:
             return UpdateAvailability("disabled", None, "局域网更新未启用")
-        data = self._transport().get_bytes(self.config.manifest_url, max_bytes=MANIFEST_LIMIT,
-                                           deadline_seconds=5.0)
+        for source in candidates(self.config.manifest_url):
+            try:
+                data = self._transport().get_bytes(source, max_bytes=MANIFEST_LIMIT,
+                                                   deadline_seconds=5.0)
+                self.manifest_source = source
+                break
+            except (OSError, LanTransportError):
+                if source == candidates(self.config.manifest_url)[-1]:
+                    raise
         release = LanRelease.from_bytes(data, expected_channel=self.config.channel)
         if not release.is_newer_than(current_version):
             return UpdateAvailability("up_to_date", None, "当前已是最新版本")
@@ -100,9 +107,9 @@ class LanUpdateService:
                 return archive
             except (OSError, ValueError):
                 archive.unlink(missing_ok=True)
-        source = (str(release.package_path(Path(self.config.manifest_url)))
-                  if self.config.manifest_url.startswith("\\\\")
-                  else release.package_url(self.config.manifest_url))
+        source = (str(release.package_path(Path(self.manifest_source)))
+                  if self.manifest_source.startswith("\\\\")
+                  else release.package_url(self.manifest_source))
         self._transport().download(source, archive,
                                    expected_size=release.size, expected_sha256=release.sha256)
         validate_package(archive, expected_version=release.version, expected_sha256=release.sha256,

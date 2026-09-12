@@ -543,7 +543,9 @@ class BaseWWTask(BaseTask):
             return False
         return int(current) + int(back_up) >= int(budget)
 
-    def use_stamina(self, once=60, must_use=0, allow_backup=True):
+    def use_stamina(self, once=60, must_use=0, allow_backup=True, max_claims=2):
+        if max_claims not in (1, 2):
+            raise ValueError('max_claims must be 1 or 2')
         self.sleep(1)
         if not self.has_claim_stamina():
             raise RuntimeError('未确认体力领取界面，停止消费')
@@ -553,11 +555,11 @@ class BaseWWTask(BaseTask):
         if (total if allow_backup else current) < once:
             return False, 0
         requested_before = must_use
-        if current >= once * 2 and (must_use <= 0 or must_use >= once * 2):
+        if max_claims == 2 and current >= once * 2 and (must_use <= 0 or must_use >= once * 2):
             used = once * 2
             use_double = True
             logger.info(f"当前体力大于等于双倍, {current} >= {once * 2}")
-        elif allow_backup and must_use > once and total >= once * 2:
+        elif max_claims == 2 and allow_backup and must_use >= once * 2 and total >= once * 2:
             used = once * 2
             use_double = True
             logger.info(f"当前加备用大于日常剩余所需, 使用双倍, {must_use} >= {once} and {total} >= {once * 2}")

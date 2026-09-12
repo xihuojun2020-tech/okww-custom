@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 
 WEEKLY_TARGET = 'Weekly Boss Target'
+WEEKLY_AUTO = '自动（列表首项）'
 WEEKLY_DISABLED = '无'
 WEEKLY_MONDAY = 'Weekly Boss Monday Check'
 WEEKLY_SUNDAY = 'Weekly Boss Sunday Check'
@@ -23,7 +24,7 @@ def weekly_check_window(now=None):
 def weekly_check_due(target, completed, now=None):
     if target == WEEKLY_DISABLED:
         return False
-    if target not in {boss.key for boss in WEEKLY_BOSSES}:
+    if target != WEEKLY_AUTO and target not in {boss.key for boss in WEEKLY_BOSSES}:
         raise ValueError('请选择有效的账号周本目标')
     if not completed:
         return True

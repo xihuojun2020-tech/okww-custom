@@ -1616,3 +1616,15 @@ msgstr "화면 4개를 완료 확인에 저장합니다. 녹화가 꺼져도 사
 
 msgid "截图与录像"
 msgstr "스크린샷 및 녹화"
+
+msgid "Material Planner Enabled"
+msgstr "육성 재료 계획"
+
+msgid "养成材料规划"
+msgstr "육성 재료 계획"
+
+msgid "自动（列表首项）"
+msgstr "자동 (목록 첫 항목)"
+
+msgid "读取培养目标、校准仓库并永久保存凝素收益；由账号每日任务调用。"
+msgstr "육성 목표와 창고를 확인하고 응소 보상을 영구 저장합니다. 계정 일일 임무에서 실행합니다."

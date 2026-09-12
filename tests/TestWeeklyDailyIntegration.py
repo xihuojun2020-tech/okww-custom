@@ -166,7 +166,7 @@ class TestWeeklyDailyIntegration(unittest.TestCase):
     def test_config_option_roundtrip(self):
         from src.account_field_metadata import account_field_metadata, restore_account_value
         field = account_field_metadata({WEEKLY_TARGET: '无'})[0]
-        self.assertEqual(len(field.options), 11)
+        self.assertEqual(len(field.options), 12)
         for stored, shown in zip(field.options, field.option_labels):
             self.assertEqual(restore_account_value(shown), stored)
 

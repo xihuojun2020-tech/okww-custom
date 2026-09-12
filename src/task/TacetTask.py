@@ -46,11 +46,15 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
         self.wait_in_team_and_world(esc=True)
         self.farm_tacet()
 
-    def farm_tacet(self, daily=False, used_stamina=0, config=None, activity_ready=False):
+    def farm_tacet(self, daily=False, used_stamina=0, config=None, activity_ready=False, stamina_budget=None):
         if config is None:
             config = self.config
         del used_stamina
         must_use = self.daily_stamina_budget(activity_ready, self.stamina_once) if daily else 0
+        if stamina_budget is not None:
+            if stamina_budget < self.stamina_once:
+                return
+            must_use = stamina_budget - stamina_budget % self.stamina_once
         allow_backup = not daily
         backup_policy_decided = not daily
         self.info_incr('used stamina', 0)

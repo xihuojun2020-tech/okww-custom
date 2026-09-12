@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from typing import Any, Mapping
-from src.task.weekly_boss import WEEKLY_BOSSES
+from src.task.weekly_boss import WEEKLY_BOSSES, WEEKLY_AUTO
 
 WEEKDAYS = ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
 _WEEKDAY_ALIASES = {prefix + day: english for english, day in zip(WEEKDAYS, '一二三四五六日')
@@ -34,6 +34,7 @@ class AccountFieldMetadata:
 
 
 _LABELS = {
+    'Material Planner Enabled': ('养成材料规划', '按游戏培养目标刷凝素，材料满足后刷声骸；每周校准仓库，收益原图和统计永久保留。首版仅简体中文16:9。'),
     'Screenshot After Daily Task': ('每日任务后截图', '依次保存四页到完成检查；关闭录像仍可截图。'),
     'Record After Daily Task': ('每日任务后录像', ''),
     'Record Pages': ('录像页面（固定全选）', ''),
@@ -54,7 +55,7 @@ _LABELS = {
     "备用识别名称内容": ("备用识别名称内容", "可填写 U…A 等登录页显示名称；停用时保留但不会用于识别。"),
 }
 _OPTIONS = {
-    "Weekly Boss Target": ("无", *(boss.key for boss in WEEKLY_BOSSES)),
+    "Weekly Boss Target": ("无", WEEKLY_AUTO, *(boss.key for boss in WEEKLY_BOSSES)),
     "Which to Farm": ("Tacet Suppression", "Forgery Challenge", "Simulation Challenge"),
     "Material Selection": ("Resonator EXP", "Weapon EXP", "Shell Credit"),
     "Weekly Garden Check Day": ("无", *WEEKDAYS),

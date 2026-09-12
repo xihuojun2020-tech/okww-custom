@@ -1624,3 +1624,17 @@ msgstr "Guarda cuatro páginas en la revisión, incluso sin grabación."
 
 msgid "截图与录像"
 msgstr "Capturas y grabación"
+
+msgid "Material Planner Enabled"
+msgstr "Planificación de materiales"
+
+msgid "养成材料规划"
+msgstr "Planificación de materiales"
+
+msgid "自动（列表首项）"
+msgstr "Automático (primero de la lista)"
+
+msgid "读取培养目标、校准仓库并永久保存凝素收益；由账号每日任务调用。"
+msgstr ""
+"Lee los objetivos, comprueba el inventario y conserva las recompensas. Se "
+"ejecuta desde la tarea diaria de la cuenta."

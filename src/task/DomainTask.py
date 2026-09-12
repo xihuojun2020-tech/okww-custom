@@ -2,7 +2,9 @@ import re
 import time
 
 
-from ok import Logger, WaitFailedException
+from ok import Logger, WaitFailedException, TaskDisabledException
+from src.runtime.game_runtime_errors import FrameUnavailable, GameProcessLost
+from src.config_integrity import ConfigIntegrityBlocked, ConfigWriteBlocked
 from src.task.BaseCombatTask import BaseCombatTask, CombatStateUnknown, CharDeadException
 from src.task.WWOneTimeTask import WWOneTimeTask
 
@@ -127,8 +129,25 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
                 self.log_info('farm_in_domain: death recovered, exiting domain')
                 self.make_sure_in_world()
                 return False, must_use
-            can_continue, used = self.use_stamina(
-                once=self.stamina_once, must_use=must_use, allow_backup=allow_backup)
+            planner = getattr(self, 'material_planner', None)
+            if planner:
+                planner.begin_claim()
+            try:
+                options = {'max_claims': planner.max_claims} if planner else {}
+                can_continue, used = self.use_stamina(
+                    once=self.stamina_once, must_use=must_use, allow_backup=allow_backup, **options)
+                if planner:
+                    planner.collect_claim(used)
+                    can_continue = False  # Refresh cultivation counts before spending again.
+            except (TaskDisabledException, FrameUnavailable, GameProcessLost, ConfigIntegrityBlocked, ConfigWriteBlocked):
+                raise
+            except Exception:
+                if planner:
+                    try:
+                        planner.capture_failure()
+                    except Exception as evidence_error:
+                        self.log_warning(f'收益补充截图失败，领取意图仍保留：{evidence_error}')
+                raise
             self.info_incr('used stamina', used)
             must_use -= used
             self.sleep(4)

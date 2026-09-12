@@ -534,7 +534,7 @@ class AccountConfigTab(CustomTab):
         while self.identity_task_layout.count():
             item = self.identity_task_layout.takeAt(0)
             if item.widget(): item.widget().deleteLater()
-        stamina = {'Which to Farm', 'Which Tacet Suppression to Farm', 'Which Forgery Challenge to Farm',
+        stamina = {'Material Planner Enabled', 'Which to Farm', 'Which Tacet Suppression to Farm', 'Which Forgery Challenge to Farm',
                    'Material Selection'}
         daily = {'Farm Nightmare Nest for Daily Echo', 'Nightmare Which to Farm', 'Tacet Discord Nests to Farm',
                  'Auto Farm all Nightmare Nest'}

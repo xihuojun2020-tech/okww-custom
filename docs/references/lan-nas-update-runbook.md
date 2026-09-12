@@ -25,14 +25,22 @@ $tls.Dispose(); $tcp.Dispose()
 
 只允许在可信管理网络中执行这次初始取值，并与 NAS 管理界面显示的证书核对。
 
+## 1.59.00 地址迁移
+
+2026-09-12 已验证 `\\192.168.3.172\羲火君 共享给我\AI诊断` 可访问。172/173 为用户指定的同一 NAS 候选地址；当前172为首选，173为备用，备用路径尚未完成实际下载验收。
+
+`http://192.168.3.172:5666/` 是飞牛管理页面，不是更新包源。已知旧默认161/170和旧共享名会映射到新共享；自定义服务器、共享和HTTPS配置保持原样。更新清单成功读取后，下载绑定该地址。SMB读取/下载在有超时的独立进程执行；诊断上传也在既有超时内尝试候选地址。Windows凭据从本NAS的已知旧/新别名读取，不写入明文配置。
+
+另一台设备需要先取得1.59.00代码才具备回退能力：旧版若连不上原默认地址，先按下例修改本机`configs/lan_update.json`至172的新共享，或手动安装NAS上的更新包。升级后不再需要跟随172/173变动反复改地址。保留该设备账号配置、运行环境和本地材料资料。
+
 ## 客户端配置
 
-个人环境不创建配置时，程序默认读取 `\\192.168.3.161\xihuojun 共享给我\AI诊断\OKWW-Updates\stable\latest.json`。需要改用其他共享或 HTTPS 时再创建 `configs/lan_update.json`：
+个人环境不创建配置时，程序默认读取 `\\192.168.3.172\羲火君 共享给我\AI诊断\OKWW-Updates\stable\latest.json`。需要改用其他共享或 HTTPS 时再创建 `configs/lan_update.json`：
 
 ```json
 {
   "enabled": true,
-  "manifest_url": "\\\\192.168.3.161\\xihuojun 共享给我\\AI诊断\\OKWW-Updates\\stable\\latest.json",
+  "manifest_url": "\\\\192.168.3.172\\羲火君 共享给我\\AI诊断\\OKWW-Updates\\stable\\latest.json",
   "certificate_sha256": "",
   "ca_file": "",
   "channel": "stable"

@@ -1735,3 +1735,15 @@ msgstr "依序儲存四頁至完成檢查；關閉錄影仍可截圖。"
 
 msgid "截图与录像"
 msgstr "截圖與錄影"
+
+msgid "Material Planner Enabled"
+msgstr "養成材料規劃"
+
+msgid "养成材料规划"
+msgstr "養成材料規劃"
+
+msgid "自动（列表首项）"
+msgstr "自動（清單首項）"
+
+msgid "读取培养目标、校准仓库并永久保存凝素收益；由账号每日任务调用。"
+msgstr "讀取培養目標、校準倉庫並永久儲存凝素收益；由帳號每日任務呼叫。"

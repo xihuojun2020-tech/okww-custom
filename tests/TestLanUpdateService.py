@@ -35,7 +35,7 @@ class TestLanUpdateService(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             config = LanUpdateConfig.load(Path(temp) / "missing.json")
             self.assertTrue(config.enabled)
-            self.assertTrue(config.manifest_url.startswith(r"\\192.168.3.161"))
+            self.assertTrue(config.manifest_url.startswith(r"\\192.168.3.172"))
 
     def test_reports_newer_and_up_to_date(self):
         with tempfile.TemporaryDirectory() as temp:

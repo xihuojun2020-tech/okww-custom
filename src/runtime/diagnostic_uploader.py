@@ -204,6 +204,17 @@ def retry_pending(root, target, *, timeout=30, now=None, transfer=None):
 
 
 def bounded_upload(batch, target, timeout):
+    from src.runtime.nas_location import candidates
+    sources = candidates(target)
+    for index, source in enumerate(sources):
+        try:
+            return _bounded_upload_one(batch, source, timeout / len(sources))
+        except OSError:
+            if index == len(sources) - 1:
+                raise
+
+
+def _bounded_upload_one(batch, target, timeout):
     command = [sys.executable, '-E', '-s', '-m', 'src.runtime.diagnostic_uploader', '--upload-one', str(batch), '--target', str(target)]
     flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
     try:
@@ -244,6 +255,19 @@ def probe_target(target):
 
 
 def bounded_probe(target, timeout=30):
+    from src.runtime.nas_location import candidates
+    sources = candidates(target)
+    for index, source in enumerate(sources):
+        try:
+            result = _bounded_probe_one(source,timeout/len(sources))
+            result['target'] = source
+            return result
+        except (OSError,subprocess.TimeoutExpired):
+            if index == len(sources)-1:
+                raise
+
+
+def _bounded_probe_one(target, timeout):
     result = subprocess.run([sys.executable, '-E', '-s', '-m', 'src.runtime.diagnostic_uploader',
                              '--probe-worker', '--target', str(target)],
                             cwd=str(Path(__file__).resolve().parents[2]),

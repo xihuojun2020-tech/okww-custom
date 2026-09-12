@@ -12,9 +12,10 @@ from PySide6.QtWidgets import QApplication
 from ok import Logger, TaskDisabledException
 from ok.util.file import get_relative_path, read_json_file, write_json_file
 from src.task.ForgeryTask import ForgeryTask
+from src.task.MaterialPlannerTask import MaterialPlannerTask, MATERIAL_PLANNER
 from src.task.GardenTask import GardenTask
 from src.task.WeeklyBossTask import WeeklyBossTask
-from src.task.weekly_boss import (WEEKLY_TARGET, WEEKLY_DISABLED, WEEKLY_BOSSES,
+from src.task.weekly_boss import (WEEKLY_TARGET, WEEKLY_DISABLED, WEEKLY_BOSSES, WEEKLY_AUTO,
                                 WEEKLY_MONDAY, WEEKLY_SUNDAY, weekly_check_window, weekly_check_due)
 from src.task.MergeEchoTask import MergeEchoTask
 from src.task.NightmareNestTask import NightmareNestTask
@@ -189,12 +190,13 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             'Which Tacet Suppression to Farm': 1,  # starts with 1
             'Which Forgery Challenge to Farm': 1,  # starts with 1
             'Material Selection': 'Shell Credit',
+            MATERIAL_PLANNER: False,
             'Farm Nightmare Nest for Daily Echo': True,
             AUTO_FARM_NIGHTMARE_NEST: False,
             'Nightmare Which to Farm': ['Tacet Discord Nest'],
             'Tacet Discord Nests to Farm': list(NEST_NAMES),
             GARDEN_CHECK_DAY: '无',
-            WEEKLY_TARGET: WEEKLY_DISABLED,
+            WEEKLY_TARGET: WEEKLY_AUTO,
             'Last Completed - Weekly Boss Monday': '',
             'Last Completed - Weekly Boss Sunday': '',
             ALIAS_ENABLE: '无',
@@ -246,7 +248,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         except ConfigIntegrityBlocked:
             initial_sequences, initial_profiles = [], []
         self.config_type = {
-            WEEKLY_TARGET: {'type': 'drop_down', 'options': [WEEKLY_DISABLED, *(b.key for b in WEEKLY_BOSSES)]},
+            WEEKLY_TARGET: {'type': 'drop_down', 'options': [WEEKLY_DISABLED, WEEKLY_AUTO, *(b.key for b in WEEKLY_BOSSES)]},
             DAILY_PROFILE: {'type': 'drop_down', 'options': initial_profiles},
             # 方案序列：选序列后「账号配置」下拉随之只显示该序列的方案（两级联动，避免翻页）
             PROFILE_SEQUENCE: {
@@ -507,7 +509,11 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             }
             self._publish_daily_stage('清理体力', stamina_labels.get(target, str(target)))
             self.log_info(f'开始清体力（打 {target}）', notify=True)
-            if target == self.support_tasks[0]:
+            if self._profile_get(MATERIAL_PLANNER, False):
+                self.get_task_by_class(MaterialPlannerTask).run_for_profile(
+                    self._active_profile_id(), profile_runtime_config, self._guard_bound_profile_identity,
+                    activity_ready=stamina_activity_ready, report=self.info_set)
+            elif target == self.support_tasks[0]:
                 self.get_task_by_class(TacetTask).farm_tacet(daily=True, used_stamina=used_stamina,
                                                              config=profile_runtime_config,
                                                              activity_ready=stamina_activity_ready)
@@ -693,7 +699,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         """Return a detached execution mapping for child task compatibility."""
         result = dict(self.config)
         for key in PROFILE_KEYS:
-            result[key] = copy.deepcopy(self._profile_get(key))
+            result[key] = copy.deepcopy(self._profile_get(key,{MATERIAL_PLANNER:False,WEEKLY_TARGET:WEEKLY_AUTO}.get(key)))
         return result
 
     def bind_verified_profile(self, profile_name, expected_profile_id=None, *, snapshot_profile=None):
@@ -1110,7 +1116,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         try:
             completed = self.get_last_completed(task_name)
             if task_name in (WEEKLY_MONDAY, WEEKLY_SUNDAY):
-                target = self._profile_get(WEEKLY_TARGET, WEEKLY_DISABLED)
+                target = self._profile_get(WEEKLY_TARGET, WEEKLY_AUTO)
                 if target == WEEKLY_DISABLED:
                     return '已关闭'
                 current_week = weekly_check_window()[0]
@@ -1749,7 +1755,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def check_weekly_boss(self):
         self.info_set('周本检查结果', '无需检查')
-        target = self._profile_get(WEEKLY_TARGET, WEEKLY_DISABLED)
+        target = self._profile_get(WEEKLY_TARGET, WEEKLY_AUTO)
         window = weekly_check_window()
         if not weekly_check_due(target, self.get_last_completed(window[1])):
             return False

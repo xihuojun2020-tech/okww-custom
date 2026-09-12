@@ -9,11 +9,12 @@ import uuid
 from pathlib import Path
 
 from src.runtime.diagnostic_export import atomic_json
+from src.runtime.nas_location import DEFAULT_TARGET, candidates, credential_shares
 
 POLICY = 'automatic-v1'
 SCHEDULER_REVISION = 5
-DEFAULT_TARGET = r'\\192.168.3.161\xihuojun 共享给我\AI诊断'
 LEGACY_TARGETS = {
+    r'\\192.168.3.161\xihuojun 共享给我\AI诊断',
     r'\\192.168.3.170\xihuojun 共享给我\AI诊断',
     r'\\192.168.3.170\AI诊断',
 }
@@ -34,8 +35,8 @@ def settings(root):
     if changed:
         value = {'policy': POLICY, 'started_at': time.time(), 'device_id': uuid.uuid4().hex,
                  'target': DEFAULT_TARGET}
-    elif value.get('target') in LEGACY_TARGETS:
-        value['target'] = DEFAULT_TARGET
+    elif value.get('target') in LEGACY_TARGETS or candidates(value.get('target', ''))[0] != value.get('target'):
+        value['target'] = candidates(value.get('target', ''))[0] if value.get('target') not in LEGACY_TARGETS else DEFAULT_TARGET
         changed = True
     # The owner's mandatory upload policy supersedes the former opt-in flag.
     if changed or value.get('enabled') is not True:
@@ -70,12 +71,16 @@ def connect(target):
         return
     import win32cred
     import win32wnet
-    try:
-        credential = win32cred.CredRead('okww-nas:' + share.casefold(), win32cred.CRED_TYPE_GENERIC)
-    except Exception as error:
-        if getattr(error, 'winerror', error.args[0] if error.args else None) == 1168:
-            return  # Windows may already have a valid SMB session/domain login.
-        raise
+    credential = None
+    for saved_share in credential_shares(share):
+        try:
+            credential = win32cred.CredRead('okww-nas:' + saved_share.casefold(), win32cred.CRED_TYPE_GENERIC)
+            break
+        except Exception as error:
+            if getattr(error, 'winerror', error.args[0] if error.args else None) != 1168:
+                raise
+    if credential is None:
+        return  # Windows may already have a valid SMB session/domain login.
     secret = credential['CredentialBlob']
     if isinstance(secret, bytes):
         secret = secret.decode('utf-16-le')

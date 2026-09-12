@@ -1,0 +1,559 @@
+[
+  {
+    "item_id": "sword_a_green",
+    "group_id": "sword_a",
+    "weapon_type": "迅刀",
+    "rarity": "green",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/sword_a_green.png"
+    ],
+    "source_frame": "17_02_46"
+  },
+  {
+    "item_id": "sword_a_blue",
+    "group_id": "sword_a",
+    "weapon_type": "迅刀",
+    "rarity": "blue",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/sword_a_blue.png"
+    ],
+    "source_frame": "17_02_22"
+  },
+  {
+    "item_id": "sword_a_purple",
+    "group_id": "sword_a",
+    "weapon_type": "迅刀",
+    "rarity": "purple",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/sword_a_purple.png"
+    ],
+    "source_frame": "17_02_22"
+  },
+  {
+    "item_id": "sword_a_gold",
+    "group_id": "sword_a",
+    "weapon_type": "迅刀",
+    "rarity": "gold",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/sword_a_gold.png"
+    ],
+    "source_frame": "17_02_22"
+  },
+  {
+    "item_id": "sword_b_green",
+    "group_id": "sword_b",
+    "weapon_type": "迅刀",
+    "rarity": "green",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/sword_b_green.png"
+    ],
+    "source_frame": "17_03_16"
+  },
+  {
+    "item_id": "sword_b_blue",
+    "group_id": "sword_b",
+    "weapon_type": "迅刀",
+    "rarity": "blue",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/sword_b_blue.png"
+    ],
+    "source_frame": "17_03_16"
+  },
+  {
+    "item_id": "sword_b_purple",
+    "group_id": "sword_b",
+    "weapon_type": "迅刀",
+    "rarity": "purple",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/sword_b_purple.png"
+    ],
+    "source_frame": "17_03_16"
+  },
+  {
+    "item_id": "sword_b_gold",
+    "group_id": "sword_b",
+    "weapon_type": "迅刀",
+    "rarity": "gold",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/sword_b_gold.png"
+    ],
+    "source_frame": "17_03_02"
+  },
+  {
+    "item_id": "rectifier_a_green",
+    "group_id": "rectifier_a",
+    "weapon_type": "音感仪",
+    "rarity": "green",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/rectifier_a_green.png"
+    ],
+    "source_frame": "17_02_46"
+  },
+  {
+    "item_id": "rectifier_a_blue",
+    "group_id": "rectifier_a",
+    "weapon_type": "音感仪",
+    "rarity": "blue",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/rectifier_a_blue.png"
+    ],
+    "source_frame": "17_02_22"
+  },
+  {
+    "item_id": "rectifier_a_purple",
+    "group_id": "rectifier_a",
+    "weapon_type": "音感仪",
+    "rarity": "purple",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/rectifier_a_purple.png"
+    ],
+    "source_frame": "17_02_22"
+  },
+  {
+    "item_id": "rectifier_a_gold",
+    "group_id": "rectifier_a",
+    "weapon_type": "音感仪",
+    "rarity": "gold",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/rectifier_a_gold.png"
+    ],
+    "source_frame": "17_02_22"
+  },
+  {
+    "item_id": "rectifier_b_green",
+    "group_id": "rectifier_b",
+    "weapon_type": "音感仪",
+    "rarity": "green",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/rectifier_b_green.png"
+    ],
+    "source_frame": "17_03_16"
+  },
+  {
+    "item_id": "rectifier_b_blue",
+    "group_id": "rectifier_b",
+    "weapon_type": "音感仪",
+    "rarity": "blue",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/rectifier_b_blue.png"
+    ],
+    "source_frame": "17_03_16"
+  },
+  {
+    "item_id": "rectifier_b_purple",
+    "group_id": "rectifier_b",
+    "weapon_type": "音感仪",
+    "rarity": "purple",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/rectifier_b_purple.png"
+    ],
+    "source_frame": "17_03_16"
+  },
+  {
+    "item_id": "rectifier_b_gold",
+    "group_id": "rectifier_b",
+    "weapon_type": "音感仪",
+    "rarity": "gold",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/rectifier_b_gold.png"
+    ],
+    "source_frame": "17_03_02"
+  },
+  {
+    "item_id": "broadblade_a_green",
+    "group_id": "broadblade_a",
+    "weapon_type": "长刃",
+    "rarity": "green",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/broadblade_a_green.png"
+    ],
+    "source_frame": "17_02_46"
+  },
+  {
+    "item_id": "broadblade_a_blue",
+    "group_id": "broadblade_a",
+    "weapon_type": "长刃",
+    "rarity": "blue",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/broadblade_a_blue.png"
+    ],
+    "source_frame": "17_02_22"
+  },
+  {
+    "item_id": "broadblade_a_purple",
+    "group_id": "broadblade_a",
+    "weapon_type": "长刃",
+    "rarity": "purple",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/broadblade_a_purple.png"
+    ],
+    "source_frame": "17_02_22"
+  },
+  {
+    "item_id": "broadblade_a_gold",
+    "group_id": "broadblade_a",
+    "weapon_type": "长刃",
+    "rarity": "gold",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/broadblade_a_gold.png"
+    ],
+    "source_frame": "17_02_22"
+  },
+  {
+    "item_id": "broadblade_b_green",
+    "group_id": "broadblade_b",
+    "weapon_type": "长刃",
+    "rarity": "green",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/broadblade_b_green.png"
+    ],
+    "source_frame": "17_03_16"
+  },
+  {
+    "item_id": "broadblade_b_blue",
+    "group_id": "broadblade_b",
+    "weapon_type": "长刃",
+    "rarity": "blue",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/broadblade_b_blue.png"
+    ],
+    "source_frame": "17_03_16"
+  },
+  {
+    "item_id": "broadblade_b_purple",
+    "group_id": "broadblade_b",
+    "weapon_type": "长刃",
+    "rarity": "purple",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/broadblade_b_purple.png"
+    ],
+    "source_frame": "17_03_16"
+  },
+  {
+    "item_id": "broadblade_b_gold",
+    "group_id": "broadblade_b",
+    "weapon_type": "长刃",
+    "rarity": "gold",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/broadblade_b_gold.png"
+    ],
+    "source_frame": "17_03_02"
+  },
+  {
+    "item_id": "gauntlet_a_green",
+    "group_id": "gauntlet_a",
+    "weapon_type": "臂铠",
+    "rarity": "green",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/gauntlet_a_green.png"
+    ],
+    "source_frame": "17_02_46"
+  },
+  {
+    "item_id": "gauntlet_a_blue",
+    "group_id": "gauntlet_a",
+    "weapon_type": "臂铠",
+    "rarity": "blue",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/gauntlet_a_blue.png"
+    ],
+    "source_frame": "17_02_22"
+  },
+  {
+    "item_id": "gauntlet_a_purple",
+    "group_id": "gauntlet_a",
+    "weapon_type": "臂铠",
+    "rarity": "purple",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/gauntlet_a_purple.png"
+    ],
+    "source_frame": "17_02_22"
+  },
+  {
+    "item_id": "gauntlet_a_gold",
+    "group_id": "gauntlet_a",
+    "weapon_type": "臂铠",
+    "rarity": "gold",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/gauntlet_a_gold.png"
+    ],
+    "source_frame": "17_02_22"
+  },
+  {
+    "item_id": "gauntlet_b_green",
+    "group_id": "gauntlet_b",
+    "weapon_type": "臂铠",
+    "rarity": "green",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/gauntlet_b_green.png"
+    ],
+    "source_frame": "17_03_16"
+  },
+  {
+    "item_id": "gauntlet_b_blue",
+    "group_id": "gauntlet_b",
+    "weapon_type": "臂铠",
+    "rarity": "blue",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/gauntlet_b_blue.png"
+    ],
+    "source_frame": "17_03_16"
+  },
+  {
+    "item_id": "gauntlet_b_purple",
+    "group_id": "gauntlet_b",
+    "weapon_type": "臂铠",
+    "rarity": "purple",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/gauntlet_b_purple.png"
+    ],
+    "source_frame": "17_03_16"
+  },
+  {
+    "item_id": "gauntlet_b_gold",
+    "group_id": "gauntlet_b",
+    "weapon_type": "臂铠",
+    "rarity": "gold",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/gauntlet_b_gold.png"
+    ],
+    "source_frame": "17_03_02"
+  },
+  {
+    "item_id": "pistol_a_green",
+    "group_id": "pistol_a",
+    "weapon_type": "佩枪",
+    "rarity": "green",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/pistol_a_green.png"
+    ],
+    "source_frame": "17_02_46"
+  },
+  {
+    "item_id": "pistol_a_blue",
+    "group_id": "pistol_a",
+    "weapon_type": "佩枪",
+    "rarity": "blue",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/pistol_a_blue.png"
+    ],
+    "source_frame": "17_02_22"
+  },
+  {
+    "item_id": "pistol_a_purple",
+    "group_id": "pistol_a",
+    "weapon_type": "佩枪",
+    "rarity": "purple",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/pistol_a_purple.png"
+    ],
+    "source_frame": "17_02_22"
+  },
+  {
+    "item_id": "pistol_a_gold",
+    "group_id": "pistol_a",
+    "weapon_type": "佩枪",
+    "rarity": "gold",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/pistol_a_gold.png"
+    ],
+    "source_frame": "17_02_22"
+  },
+  {
+    "item_id": "pistol_b_green",
+    "group_id": "pistol_b",
+    "weapon_type": "佩枪",
+    "rarity": "green",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/pistol_b_green.png"
+    ],
+    "source_frame": "17_03_16"
+  },
+  {
+    "item_id": "pistol_b_blue",
+    "group_id": "pistol_b",
+    "weapon_type": "佩枪",
+    "rarity": "blue",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/pistol_b_blue.png"
+    ],
+    "source_frame": "17_03_16"
+  },
+  {
+    "item_id": "pistol_b_purple",
+    "group_id": "pistol_b",
+    "weapon_type": "佩枪",
+    "rarity": "purple",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/pistol_b_purple.png"
+    ],
+    "source_frame": "17_03_16"
+  },
+  {
+    "item_id": "pistol_b_gold",
+    "group_id": "pistol_b",
+    "weapon_type": "佩枪",
+    "rarity": "gold",
+    "source_type": "forgery",
+    "names": [],
+    "template_paths": [
+      "templates/pistol_b_gold.png"
+    ],
+    "source_frame": "17_03_02"
+  },
+  {
+    "item_id": "monster_star_green",
+    "group_id": "monster_star",
+    "weapon_type": "",
+    "rarity": "green",
+    "source_type": "monster",
+    "names": [],
+    "template_paths": [
+      "templates/monster_star_green.png"
+    ]
+  },
+  {
+    "item_id": "monster_star_blue",
+    "group_id": "monster_star",
+    "weapon_type": "",
+    "rarity": "blue",
+    "source_type": "monster",
+    "names": [],
+    "template_paths": [
+      "templates/monster_star_blue.png"
+    ]
+  },
+  {
+    "item_id": "monster_star_purple",
+    "group_id": "monster_star",
+    "weapon_type": "",
+    "rarity": "purple",
+    "source_type": "monster",
+    "names": [],
+    "template_paths": [
+      "templates/monster_star_purple.png"
+    ]
+  },
+  {
+    "item_id": "monster_star_gold",
+    "group_id": "monster_star",
+    "weapon_type": "",
+    "rarity": "gold",
+    "source_type": "monster",
+    "names": [],
+    "template_paths": [
+      "templates/monster_star_gold.png"
+    ]
+  },
+  {
+    "item_id": "monster_necklace_blue",
+    "group_id": "monster_necklace",
+    "weapon_type": "",
+    "rarity": "blue",
+    "source_type": "monster",
+    "names": [],
+    "template_paths": [
+      "templates/monster_necklace_blue.png"
+    ]
+  },
+  {
+    "item_id": "monster_necklace_purple",
+    "group_id": "monster_necklace",
+    "weapon_type": "",
+    "rarity": "purple",
+    "source_type": "monster",
+    "names": [],
+    "template_paths": [
+      "templates/monster_necklace_purple.png"
+    ]
+  },
+  {
+    "item_id": "monster_necklace_gold",
+    "group_id": "monster_necklace",
+    "weapon_type": "",
+    "rarity": "gold",
+    "source_type": "monster",
+    "names": [],
+    "template_paths": [
+      "templates/monster_necklace_gold.png"
+    ]
+  }
+]

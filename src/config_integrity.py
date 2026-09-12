@@ -58,6 +58,7 @@ PROTECTED_PROFILE_FIELDS = (
 )
 
 PROTECTED_TASK_KEYS = (
+    "Material Planner Enabled",
     "Which to Farm",
     "Which Tacet Suppression to Farm",
     "Which Forgery Challenge to Farm",
@@ -73,6 +74,7 @@ PROTECTED_TASK_KEYS = (
     "备用识别名称内容",
 )
 _TASK_KEY_TYPES = {
+    "Material Planner Enabled": bool,
     "Which to Farm": str,
     "Which Tacet Suppression to Farm": int,
     "Which Forgery Challenge to Farm": int,
@@ -92,6 +94,7 @@ _TASK_KEY_TYPES = {
 # explicitly confirmed first-anchor transaction.  Existing values are copied
 # byte-for-byte through deepcopy and are never coerced into a different type.
 _BOOTSTRAP_TASK_DEFAULTS = {
+    "Material Planner Enabled": False,
     "Which to Farm": "Tacet Suppression",
     "Which Tacet Suppression to Farm": 1,
     "Which Forgery Challenge to Farm": 1,
@@ -101,7 +104,7 @@ _BOOTSTRAP_TASK_DEFAULTS = {
     "Tacet Discord Nests to Farm": [],
     "Auto Farm all Nightmare Nest": False,
     "Weekly Garden Check Day": "无",
-    "Weekly Boss Target": "无",
+    "Weekly Boss Target": "自动（列表首项）",
     "Merge Echo on Sunday": False,
     "备用识别名称": "无",
     "备用识别名称内容": "",
@@ -314,12 +317,12 @@ def validate_master(data: Any) -> list[str]:
                     else:
                         identity_owner[candidate] = str(profile_id)
         if isinstance(task_config, Mapping):
-            # Old anchors remain valid; the additive weekly option is disabled
-            # until explicitly saved through the account editor transaction.
+            # Additive fields do not invalidate old anchors. Runtime defaults do
+            # not rewrite stored account intent; explicit disabled remains disabled.
             missing_keys = [key for key in PROTECTED_TASK_KEYS
-                            if key not in task_config and key != 'Weekly Boss Target']
+                            if key not in task_config and key not in ('Weekly Boss Target', 'Material Planner Enabled')]
             from src.task.weekly_boss import WEEKLY_BOSSES
-            if task_config.get('Weekly Boss Target', '无') not in ('无', *(b.key for b in WEEKLY_BOSSES)):
+            if task_config.get('Weekly Boss Target', '无') not in ('无', '自动（列表首项）', *(b.key for b in WEEKLY_BOSSES)):
                 errors.append(f'{path}.task_config weekly boss target is invalid')
             if missing_keys:
                 errors.append(f"{path}.task_config missing protected keys: {', '.join(missing_keys)}")
