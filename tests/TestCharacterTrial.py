@@ -25,6 +25,13 @@ def box(name, x=0, y=0):
 
 
 class TestTrialRecognition(unittest.TestCase):
+    def test_activity_title_only_normalizes_known_glyphs(self):
+        for text in ('初露峥嵘','初露崢嵘','初露崢嶸','初露崢蝶'):
+            candidate=box(text)
+            self.assertIs(CharacterTrialTask._activity_title([candidate]),candidate)
+        self.assertIsNone(CharacterTrialTask._activity_title([box('初露峥嵘奖励')]))
+        self.assertIsNone(CharacterTrialTask._activity_title([box('初露峥嵘'),box('初露崢嵘')]))
+
     def test_reward_states_are_exclusive(self):
         for text, state in [('进行中','pending'), ('领取','claim'), ('已完成','complete')]:
             self.assertEqual(reward_state([box(text)]), state)

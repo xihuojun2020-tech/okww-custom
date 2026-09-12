@@ -163,7 +163,14 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
         return self._wait(read, message, timeout)[0]
 
     def _page(self):
-        return bool(self._button(self.TITLE, '初露峥嵘') and self._button(self.ENTER, '前往试用'))
+        return bool(self._activity_title(self._ocr(self.TITLE)) and self._button(self.ENTER, '前往试用'))
+
+    @staticmethod
+    def _activity_title(boxes):
+        # OCR of the game's title mixes simplified/traditional glyphs.
+        matches = [box for box in boxes if compact(box.name).replace('崢', '峥').replace('嶸', '嵘')
+                   in ('初露峥嵘', '初露峥蝶')]
+        return matches[0] if len(matches) == 1 else None
 
     def _open(self):
         self.next_frame()
@@ -179,7 +186,7 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
             for _ in range(16):
                 self.next_frame()
                 boxes = self._ocr(self.LIST)
-                target = exact_button(boxes, '初露峥嵘')
+                target = self._activity_title(boxes)
                 if target:
                     self.click(target)
                     self._wait(self._page, '无法确认初露峥嵘页面')

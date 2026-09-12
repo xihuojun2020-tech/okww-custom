@@ -25,6 +25,18 @@ class TestCharacterTrialImages(TaskTestCase):
         self.load('complete')
         self.assertIsNotNone(self.task._button(self.task.ENTER,'前往试用'))
 
+    def test_current_page_at_both_resolutions(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source=cv2.imread('tests/fixtures/character_trial/current_page.png')
+            for width,height in ((1920,1080),(2560,1440)):
+                path=Path(folder)/f'{width}.png'
+                cv2.imwrite(str(path),cv2.resize(source,(width,height)))
+                self.set_image(str(path))
+                title=[b.name for b in self.task._ocr(self.task.TITLE)]
+                enter=[b.name for b in self.task._ocr(self.task.ENTER)]
+                print('CURRENT PAGE OCR',width,title,enter)
+                self.assertTrue(self.task._page(),(width,title,enter))
+
     def test_start_key_is_distinct_from_left_objective(self):
         self.load('start')
         self.assertTrue(start_prompt(self.task._ocr(self.task.INTERACT),self.task.height))

@@ -1869,7 +1869,7 @@ msgstr "留空使用默认位置：<project>/configs_backup"
 
 #: src/task/CharacterTrialTask.py
 msgid "Character Trial"
-msgstr "角色试用"
+msgstr "初露峥嵘"
 
 #: src/task/CharacterTrialTask.py
 msgid ""

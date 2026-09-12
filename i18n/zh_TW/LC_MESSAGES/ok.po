@@ -1701,7 +1701,7 @@ msgstr "留空使用預設位置：<project>/configs_backup"
 
 #: src/task/CharacterTrialTask.py
 msgid "Character Trial"
-msgstr "角色試用"
+msgstr "初露崢嶸"
 
 #: src/task/CharacterTrialTask.py
 msgid ""
