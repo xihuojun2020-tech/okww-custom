@@ -22,8 +22,19 @@ class TestCharacterTrialImages(TaskTestCase):
             self.load(name)
             self.assertEqual(reward_state(self.task._ocr(self.task.REWARD)),state)
             self.assertTrue(self.task._page())
+            self.assertFalse(self.task._intro())
         self.load('complete')
         self.assertIsNotNone(self.task._button(self.task.ENTER,'前往试用'))
+
+    def test_current_intro_at_both_resolutions(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source=cv2.imread('tests/fixtures/character_trial/current_intro.png')
+            for width,height in ((1920,1080),(2560,1440)):
+                path=Path(folder)/f'{width}.png'
+                cv2.imwrite(str(path),cv2.resize(source,(width,height)))
+                self.set_image(str(path))
+                self.assertIsNotNone(self.task._button(self.task.NEXT,'下一页'))
+                self.assertTrue(self.task._intro())
 
     def test_wrong_activity_is_rejected_at_both_resolutions(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -33,6 +44,7 @@ class TestCharacterTrialImages(TaskTestCase):
                 cv2.imwrite(str(path),cv2.resize(source,(width,height)))
                 self.set_image(str(path))
                 self.assertFalse(self.task._page())
+                self.assertFalse(self.task._intro())
                 self.assertIsNotNone(self.task._activity_title(self.task._ocr(self.task.LIST)))
 
     def test_current_page_at_both_resolutions(self):

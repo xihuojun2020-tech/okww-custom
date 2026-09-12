@@ -1424,6 +1424,11 @@
             "id": 282,
             "name": "char_yangyang",
             "supercategory": ""
+        },
+        {
+            "id": 283,
+            "name": "trial_intro_close",
+            "supercategory": ""
         }
     ],
     "images": [
@@ -2668,6 +2673,12 @@
             "file_name": "images/characters/genericportraits_source_47.png",
             "width": 2560,
             "height": 1440
+        },
+        {
+            "id": 289,
+            "file_name": "images/character_trial_intro.png",
+            "width": 1280,
+            "height": 720
         }
     ],
     "annotations": [
@@ -6698,6 +6709,21 @@
             ],
             "area": 3224,
             "iscrowd": 0
+        },
+        {
+            "id": 449,
+            "image_id": 289,
+            "category_id": 283,
+            "bbox": [
+                1188,
+                26,
+                38,
+                34
+            ],
+            "area": 1292,
+            "iscrowd": 0,
+            "ignore": 0,
+            "segmentation": []
         }
     ]
 }

@@ -289,6 +289,10 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
     def _map_ready(self):
         return bool(self.in_team()[0] and not self._button(self.NEXT, '下一页') and not self._page())
 
+    def _intro(self):
+        return bool(self._button(self.NEXT, '下一页') and
+                    self.find_one('trial_intro_close', horizontal_variance=.01, vertical_variance=.01))
+
     def _enter(self):
         self._stage('进入角色试用')
         self.chars = []
@@ -300,19 +304,34 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
         if button is None:
             raise RuntimeError('未找到前往试用按钮')
         self.click(button)
-        for _ in range(6):
-            def loaded():
-                if self._button(self.INTRO, '战斗特色') and self._button(self.NEXT, '下一页'):
-                    return 'intro'
-                if self._map_ready():
-                    return 'map'
-            state = self._wait(loaded, '试用加载或介绍页面超时', 60)
-            if state == 'map':
-                self._stable(lambda: True if self._map_ready() else None, '试用地图未稳定')
-                return
-            self._click_button(self.NEXT, '下一页')
-            self.sleep(.5)
-        raise TrialTimeout('角色介绍页数超出上限')
+        self._wait_trial_map()
+
+    def _wait_trial_map(self):
+        deadline = time.monotonic() + 60
+        ready_since = None
+        attempts = 0
+        last_escape = float('-inf')
+        while time.monotonic() < deadline:
+            self.next_frame()
+            if self._intro():
+                ready_since = None
+                if time.monotonic() - last_escape >= 3:
+                    if attempts >= 3:
+                        raise TrialTimeout('角色介绍页按Esc三次后仍未关闭')
+                    attempts += 1
+                    self.log_info(f'识别到下一页和关闭标记，按Esc关闭角色介绍 {attempts}/3')
+                    self.send_key('esc')
+                    last_escape = time.monotonic()
+            elif self._map_ready():
+                now = time.monotonic()
+                if ready_since is None:
+                    ready_since = now
+                elif now - ready_since >= 2:
+                    return
+            else:
+                ready_since = None
+            self.sleep(.2)
+        raise TrialTimeout('试用加载或介绍关闭后地图未稳定')
 
     def _start(self):
         self._stage('寻找开启挑战')

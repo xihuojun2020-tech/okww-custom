@@ -91,6 +91,35 @@ class TestTrialRecognition(unittest.TestCase):
 
 
 class TestTrialFlow(unittest.TestCase):
+    def test_intro_appearing_during_map_settle_is_closed_with_escape(self):
+        t=self.task();clock=[0.0];t.next_frame=Mock();t.send_key=Mock()
+        t.sleep=Mock(side_effect=lambda seconds:clock.__setitem__(0,clock[0]+seconds))
+        t._intro=Mock(side_effect=lambda: .4 <= clock[0] < .8)
+        t._map_ready=Mock(return_value=True)
+        with patch('src.task.CharacterTrialTask.time.monotonic',side_effect=lambda:clock[0]):
+            t._wait_trial_map()
+        t.send_key.assert_called_once_with('esc')
+        self.assertGreaterEqual(clock[0],2.8)
+
+    def test_intro_close_retries_are_bounded(self):
+        t=self.task();clock=[0.0];t.next_frame=Mock();t.send_key=Mock()
+        t.sleep=Mock(side_effect=lambda seconds:clock.__setitem__(0,clock[0]+seconds))
+        t._intro=Mock(return_value=True);t._map_ready=Mock()
+        with patch('src.task.CharacterTrialTask.time.monotonic',side_effect=lambda:clock[0]):
+            with self.assertRaisesRegex(TrialTimeout,'Esc三次'):t._wait_trial_map()
+        self.assertEqual(t.send_key.call_count,3);t._map_ready.assert_not_called()
+
+    def test_intro_stop_prevents_escape(self):
+        t=self.task();t.next_frame=Mock(side_effect=TaskDisabledException());t.send_key=Mock()
+        with self.assertRaises(TaskDisabledException):t._wait_trial_map()
+        t.send_key.assert_not_called()
+
+    def test_intro_needs_next_and_close_marker(self):
+        t=self.task()
+        for next_button,close in ((False,True),(True,False),(True,True)):
+            t._button=Mock(return_value=next_button);t.find_one=Mock(return_value=close)
+            self.assertEqual(t._intro(),next_button and close)
+
     def activity_task(self):
         t=self.task()
         t.next_frame=Mock(); t._page=Mock(return_value=False)
@@ -260,7 +289,7 @@ class TestTrialFlow(unittest.TestCase):
         t=self.task(); t.chars=[object()]; t.reset_to_false=Mock()
         t._button=Mock(return_value=box('前往试用'))
         t.click=Mock(side_effect=lambda *a:self.assertEqual(t.chars,[]))
-        t._wait=Mock(return_value='map'); t._stable=Mock()
+        t._wait_trial_map=Mock()
         t._enter(); self.assertEqual(t.chars,[])
 
     def test_fallback_only_replaces_basechar(self):
