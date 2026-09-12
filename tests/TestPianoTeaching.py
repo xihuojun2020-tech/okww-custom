@@ -147,12 +147,51 @@ class TestPianoTeaching(unittest.TestCase):
         task.next_frame = Mock(side_effect=[np.zeros((720, 1280, 3), np.uint8), TaskDisabledException()])
         task.screenshot = Mock()
         task.send_key_up = Mock()
+        task.find_f_with_text = Mock(return_value=None)
+        task.send_key = Mock()
         with patch.object(PianoTeachingTask, "game_lang", new_callable=PropertyMock,
                           return_value="zh_CN"), \
                 patch("src.task.PianoTeachingTask.WWOneTimeTask.run"), \
                 self.assertRaises(TaskDisabledException):
             task.run()
         task.info_set.assert_any_call("弹琴状态", "剧情或转场中，等待弹琴界面")
+        task.screenshot.assert_not_called()
+        task.send_key.assert_not_called()
+
+    def test_dialog_f_is_throttled_and_piano_frames_keep_playing(self):
+        task = PianoTeachingTask.__new__(PianoTeachingTask)
+        task.config = {"Sample Interval": 0.03, "Key Hold Time": 0.03, "Post Key Delay": 0.15}
+        task._pressed_keys = []
+        task.info_set = Mock()
+        task.log_info = Mock()
+        task.sleep = Mock()
+        task.screenshot = Mock()
+        task.send_key = Mock()
+        task.find_f_with_text = Mock(return_value=True)
+        task._press_event = Mock()
+        now = [0.0]
+        story = np.zeros((720, 1280, 3), np.uint8)
+        frames = iter([(1.0, story), (1.1, story), (1.51, story),
+                       (2.1, piano_frame({"S"})), (2.15, piano_frame({"S"}))])
+
+        def next_frame():
+            try:
+                now[0], frame = next(frames)
+                return frame
+            except StopIteration:
+                raise TaskDisabledException()
+
+        task.next_frame = next_frame
+        with patch.object(PianoTeachingTask, "game_lang", new_callable=PropertyMock,
+                          return_value="zh_CN"), \
+                patch("src.task.PianoTeachingTask.WWOneTimeTask.run"), \
+                patch("src.task.PianoTeachingTask.time.monotonic", side_effect=lambda: now[0]), \
+                self.assertRaises(TaskDisabledException):
+            task.run()
+        self.assertEqual([call.args for call in task.send_key.call_args_list], [('f',), ('f',)])
+        self.assertEqual(task.find_f_with_text.call_count, 2)
+        task._press_event.assert_called_once()
+        self.assertEqual(task._press_event.call_args.args[0].keys, ("S",))
         task.screenshot.assert_not_called()
 
 

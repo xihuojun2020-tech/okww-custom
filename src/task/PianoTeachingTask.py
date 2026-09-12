@@ -92,6 +92,7 @@ class PianoTeachingTask(WWOneTimeTask, BaseWWTask):
         post_key_delay = float(self.config.get("Post Key Delay", 0.15))
         frame = None
         last_detection_state = None
+        next_dialog_at = 0.0
         self.info_set("弹琴状态", "等待高亮")
         try:
             while True:
@@ -107,6 +108,10 @@ class PianoTeachingTask(WWOneTimeTask, BaseWWTask):
                 if result.status == "invalid_roi":
                     tracker.reset()
                     self.info_set("弹琴状态", "剧情或转场中，等待弹琴界面")
+                    if time.monotonic() >= next_dialog_at and self.find_f_with_text():
+                        self.send_key('f')
+                        next_dialog_at = time.monotonic() + 0.5
+                        self.log_info("检测到 F 交互选项，按 F 推进对话")
                 else:
                     event = tracker.step(result, time.monotonic())
                     if event:
