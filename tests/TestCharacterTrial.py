@@ -91,6 +91,48 @@ class TestTrialRecognition(unittest.TestCase):
 
 
 class TestTrialFlow(unittest.TestCase):
+    def activity_task(self):
+        t=self.task()
+        t.next_frame=Mock(); t._page=Mock(return_value=False)
+        t._ocr=Mock(return_value=[box('初露峥嵘',100,200)])
+        t.click=Mock(); t._wait=Mock()
+        return t
+
+    def test_activity_retries_with_fresh_target(self):
+        t=self.activity_task()
+        first,second=box('初露峥嵘',100,200),box('初露峥嵘',100,300)
+        t._ocr.side_effect=lambda region: ([first if t.next_frame.call_count==1 else second]
+                                         if region==t.LIST else [box('若梦仍有回声')])
+        t._wait.side_effect=[TrialTimeout('ignored click'),True]
+        t._select_activity()
+        self.assertEqual(t.next_frame.call_count,2)
+        self.assertEqual([c.args[0] for c in t.click.call_args_list],[first,second])
+
+    def test_activity_already_open_never_clicks(self):
+        t=self.activity_task();t._page.return_value=True
+        t._select_activity();t.click.assert_not_called()
+
+    def test_activity_failure_is_bounded(self):
+        t=self.activity_task();t._wait.side_effect=TrialTimeout('wrong page')
+        with self.assertRaisesRegex(TrialTimeout,'3次后仍未切换'):t._select_activity()
+        self.assertEqual(t.click.call_count,3)
+
+    def test_activity_disappeared_never_reuses_old_target(self):
+        t=self.activity_task();t._wait.side_effect=TrialTimeout('wrong page')
+        t._ocr.side_effect=lambda region: [box('初露峥嵘')] if t.next_frame.call_count==1 else []
+        with self.assertRaisesRegex(TrialTimeout,'入口消失'):t._select_activity()
+        self.assertEqual(t.click.call_count,1)
+
+    def test_activity_stop_and_capture_errors_do_not_retry(self):
+        for error in (TaskDisabledException(),RuntimeError('capture failed')):
+            t=self.activity_task();t._wait.side_effect=error
+            with self.assertRaises(type(error)):t._select_activity()
+            self.assertEqual(t.click.call_count,1)
+
+    def test_open_routes_visible_entry_to_confirmed_selection(self):
+        t=self.activity_task();t._button=Mock(return_value=True);t._select_activity=Mock()
+        t._open();t._select_activity.assert_called_once();t.click.assert_not_called()
+
     def task(self):
         task=object.__new__(CharacterTrialTask)
         task._executor=Mock()

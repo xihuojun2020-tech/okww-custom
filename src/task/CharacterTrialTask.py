@@ -188,8 +188,7 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
                 boxes = self._ocr(self.LIST)
                 target = self._activity_title(boxes)
                 if target:
-                    self.click(target)
-                    self._wait(self._page, '无法确认初露峥嵘页面')
+                    self._select_activity()
                     return
                 signature = tuple(compact(b.name) for b in boxes)
                 unchanged = unchanged + 1 if signature and signature == previous else 0
@@ -200,6 +199,26 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
                 self.scroll_relative(.15, .50, direction)
                 self.sleep(.35)
         raise TrialTimeout('活动列表中未找到初露峥嵘')
+
+    def _select_activity(self):
+        for attempt in range(1, 4):
+            self.next_frame()
+            if self._page():
+                return
+            target = self._activity_title(self._ocr(self.LIST))
+            if target is None:
+                raise TrialTimeout('初露峥嵘入口消失或不唯一，停止点击')
+            self.log_info(f'初露峥嵘入口点击 {attempt}/3：({target.x}, {target.y})')
+            self.click(target, after_sleep=.3)
+            try:
+                self._wait(self._page, '初露峥嵘入口点击后未切换', timeout=3)
+                return
+            except TrialTimeout:
+                self._guard()
+                title = [b.name for b in self._ocr(self.TITLE)]
+                buttons = [b.name for b in self._ocr(self.ENTER)]
+                self.log_warning(f'初露峥嵘入口未确认 {attempt}/3：标题={title}，按钮={buttons}')
+        raise TrialTimeout('初露峥嵘入口点击3次后仍未切换，请检查输入响应及故障截图')
 
     def _trial_point(self, x, y):
         if abs(self.width / self.height - 16 / 9) > .02:
