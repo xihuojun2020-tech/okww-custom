@@ -1021,7 +1021,6 @@ class TestAutoAbyssTask(unittest.TestCase):
 
     def test_slot_energy_ocr_uses_visual_digit_count(self):
         task = AutoAbyssTask.__new__(AutoAbyssTask)
-        task.ocr = lambda *_args, **_kwargs: [SimpleNamespace(name="10")]
         corrections = []
         task.log_info = corrections.append
         task.log_warning = lambda *_args: None
@@ -1029,6 +1028,7 @@ class TestAutoAbyssTask(unittest.TestCase):
         _row, _column, x, y, width, height, _complete = slot
 
         for image_name, expected in (("abyss_energy_0.png", 0), ("abyss_energy_10.png", 10)):
+            task.ocr = lambda *_args, **_kwargs: [SimpleNamespace(name=str(expected))]
             with self.subTest(image=image_name):
                 frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
                 crop = cv2.imread(f"tests/images/{image_name}")
@@ -1229,6 +1229,9 @@ class TestAutoAbyssTask(unittest.TestCase):
         task._recognize_character_screen = lambda f, page: [CharacterScanRecord("a", "A", 7 if page == 1 else 10, 90, .9, page, 0)]
         task._scroll_to_second_character_page = lambda _: frames[1]
         task._wait_stable_character_frame = lambda: frames[1]
+        task._revisit_energy_page = lambda _: None
+        task._fresh_record_energy = lambda r, page: (7 if page == 1 else 10, [7 if page == 1 else 10] * 2, frames[1])
+        task.log_warning = lambda *_: None
         task.log_info = lambda *_: None
         task.screenshot = lambda *_args, **_kw: None
         with patch("src.task.AutoAbyssTask.character_list_at_edge", side_effect=lambda f, bottom=False: not bottom):

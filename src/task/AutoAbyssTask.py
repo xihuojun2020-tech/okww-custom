@@ -3,6 +3,7 @@
 from dataclasses import dataclass, replace
 from pathlib import Path
 import re
+import time
 
 import cv2
 import numpy as np
@@ -21,6 +22,7 @@ from src.task.abyss_team_planner import (
 from src.task.BaseCombatTask import BaseCombatTask, CharDeadException, CombatStateUnknown
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task_status import publish_task_status
+from src.task.abyss_energy import energy_digits, confirmed_energy
 from src.task.abyss_allocation import (
     CONFIG_FIELDS, OPTIONS, FloorRequest, allocate, rules_from_config,
     candidate_teams, team_preference,
@@ -1329,6 +1331,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                 raise Exception("角色列表顶部无法确认，仓库扫描不完整")
         self._character_pages = {}
         records, frame, previous_ids = [], first, None
+        page_frames = {}
         for page_index in range(1, 13):
             self._recognized_frame = frame
             current = self._recognize_character_screen(frame, page_index)
@@ -1345,16 +1348,11 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             conflicts = [r for r in current if r.energy is not None
                          and effective_character_id(r) in known
                          and known[effective_character_id(r)] != r.energy]
+            self._character_pages[page_index] = (scroll_thumb_center(frame), tuple(current))
+            page_frames[page_index] = frame.copy()
             if conflicts:
-                frame = self._wait_stable_character_frame()
-                retry = self._recognize_character_screen(frame, page_index)
-                retry_energy = {effective_character_id(r): r.energy for r in retry}
-                if any(retry_energy.get(effective_character_id(r)) != known[effective_character_id(r)]
-                       for r in conflicts):
-                    self.screenshot("abyss_energy_conflict", frame=frame)
-                    raise Exception("重复角色体力读数矛盾，停止共享体力规划")
-                current = retry
-                frame = self._recognized_frame
+                records, current, frame = self._reconcile_energy_conflicts(
+                    records, current, conflicts, page_index, page_frames)
             self._character_pages[page_index] = (scroll_thumb_center(frame), tuple(current))
             records.extend(current)
             self._character_page_count = self._character_page_index = page_index
@@ -1369,6 +1367,72 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                 raise Exception("角色列表滚动未生效，仓库扫描不完整；停止配队")
         self.screenshot("abyss_scan_limit", frame=frame)
         raise Exception("角色扫描超过12屏，仓库扫描不完整；停止配队")
+
+    def _revisit_energy_page(self, page_index):
+        """Use observed wheel progress to revisit a scan, never click stale slots."""
+        target, _anchors = self._character_pages[page_index]
+        deadline = time.monotonic() + 30
+        previous, unchanged = None, 0
+        for attempt in range(24):
+            frame = self._wait_stable_character_frame()
+            if self._page_matches(frame, page_index):
+                return frame
+            current = scroll_thumb_center(frame)
+            unchanged = unchanged + 1 if current is not None and current == previous else 0
+            if current is None or target is None or unchanged >= 2 or time.monotonic() >= deadline:
+                break
+            previous = current
+            delta = target - current
+            if abs(delta) <= .006:
+                break  # Position is right but identities changed; do not guess.
+            amount = 3 if abs(delta) > .04 else 1
+            self.ensure_in_front()
+            self.scroll_relative(.50, .50, -amount if delta > 0 else amount)
+            self.sleep(.4)
+            self.log_info(f"体力复核定位：页={page_index}，当前={current:.4f}，目标={target:.4f}，轮次={attempt + 1}")
+        self.screenshot("abyss_energy_revisit_failed")
+        raise Exception(f"体力读数矛盾：无法重新定位第{page_index}屏，未修改账本")
+
+    def _fresh_record_energy(self, record, page_index):
+        values = []
+        for sample in range(2):
+            frame = self._wait_stable_character_frame()
+            located = self._relocate_record(frame, record)
+            self._scanning_page = page_index
+            value = self._read_slot_energy(frame, located.slot) if located else None
+            values.append(value)
+            self.screenshot(f"abyss_energy_recheck_p{page_index}_{record.character_id}_{sample}", frame=frame)
+        return values[0] if values[0] is not None and values[0] == values[1] else None, values, frame
+
+    def _reconcile_energy_conflicts(self, records, current, conflicts, page_index, page_frames):
+        resolved = {}
+        for new in conflicts:
+            identity = effective_character_id(new)
+            old = next(r for r in records if effective_character_id(r) == identity and r.energy is not None)
+            self.log_warning(f"体力冲突：角色={new.display_name}/{identity}，"
+                             f"旧页={old.screen_index}，旧值={old.energy}，旧坐标={old.slot}，"
+                             f"新页={page_index}，新值={new.energy}，新坐标={new.slot}")
+            for label, record in (("old", old), ("new", new)):
+                self.screenshot(f"abyss_energy_conflict_{identity}_{label}",
+                                frame=page_frames[record.screen_index])
+            self._revisit_energy_page(old.screen_index)
+            old_value, old_samples, _ = self._fresh_record_energy(old, old.screen_index)
+            self._revisit_energy_page(page_index)
+            new_value, new_samples, frame = self._fresh_record_energy(new, page_index)
+            self.log_info(f"体力冲突复核：角色={identity}，旧页新帧={old_samples}，新页新帧={new_samples}")
+            if old_value is None or new_value is None or old_value != new_value:
+                raise Exception(f"重复角色体力读数矛盾：{new.display_name}，"
+                                f"原记录 {old.energy}/{new.energy}，复核 {old_samples}/{new_samples}，停止共享体力规划")
+            resolved[identity] = new_value
+        # Commit only after every conflict is independently resolved on both pages.
+        def corrected(record):
+            identity = effective_character_id(record)
+            return replace(record, energy=resolved[identity]) if identity in resolved else record
+        records = [corrected(r) for r in records]
+        current = [corrected(r) for r in current]
+        for page, (thumb, anchors) in self._character_pages.items():
+            self._character_pages[page] = (thumb, tuple(corrected(r) for r in anchors))
+        return records, current, frame
 
     def _wait_exact_text(self, text, region, time_out):
         x1, y1, x2, y2 = region
@@ -1734,25 +1798,6 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                     continue
                 if 1 <= number <= 100:
                     values[column]["level"] = number
-            elif 0.58 <= local_y < 0.82:
-                slot = next(slot for slot in row_slots if slot[1] == column)
-                energy_crop = self._slot_crop(frame, slot, (0.50, 0.52, 1.00, 0.84))
-                digit_count = energy_digit_count(energy_crop)
-                number = parse_energy_number(text, digit_count=digit_count) if digit_count else None
-                if number is None:
-                    if re.search(r"\d", text):
-                        self.log_warning(
-                            f"角色第 {row + 1} 行第 {column + 1} 列体力 OCR 无法确认："
-                            f"原始={text!r}，数字轮廓={digit_count}"
-                        )
-                        self._save_card_evidence(frame, slot, "abyss_energy_ambiguous")
-                    continue
-                if parse_energy_number(text) != number:
-                    self.log_info(
-                        f"角色第 {row + 1} 行第 {column + 1} 列体力 OCR 修正："
-                        f"原始={text!r}，数字轮廓={digit_count}，结果={number}"
-                    )
-                values[column]["energy"] = number
         return values
 
     def _read_slot_number(self, frame, slot, local_region, parser):
@@ -1772,62 +1817,30 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         )
 
     def _read_slot_energy(self, frame, slot):
-        energy_crop = self._slot_crop(frame, slot, (0.50, 0.52, 1.00, 0.84))
-        digit_count = energy_digit_count(energy_crop)
-        if digit_count is None:
-            self.log_warning(f"角色体力数字轮廓无法确认：行{slot[0] + 1}列{slot[1] + 1}，卡片坐标={slot[2:6]}")
+        crop = self._slot_crop(frame, slot, (.50, .52, 1.00, .84))
+        located = energy_digits(crop)
+        if located is None:
+            self.log_warning(f"体力数字区域未确认：行列={slot[:2]}，坐标={slot[2:6]}")
             self._save_card_evidence(frame, slot, "abyss_energy_ambiguous")
             return None
-        raw_texts = []
-
-        def parse_confirmed_energy(text):
-            raw_texts.append(text)
-            return parse_energy_number(text, digit_count=digit_count)
-
-        value = self._read_slot_number(
-            frame,
-            slot,
-            (0.58, 0.55, 1.00, 0.82),
-            parse_confirmed_energy,
-        )
-        if value is not None:
-            if any(parse_energy_number(text) != value for text in raw_texts):
-                self.log_info(
-                    f"角色体力 OCR 修正：原始={raw_texts!r}，数字轮廓={digit_count}，结果={value}"
-                )
-            return value
-        crop = self._slot_crop(frame, slot, (0.67, 0.52, 1.00, 0.84))
-        if crop is None or crop.size == 0:
-            return None
-        hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
-        yellow = cv2.inRange(hsv, (15, 70, 100), (45, 255, 255))
-        yellow = cv2.copyMakeBorder(yellow, 30, 30, 60, 60, cv2.BORDER_CONSTANT, value=0)
-        scale = ocr_resize_scale(yellow.shape[0], 256)
-        prepared = cv2.resize(
-            cv2.cvtColor(yellow, cv2.COLOR_GRAY2BGR),
-            None,
-            fx=scale,
-            fy=scale,
-            interpolation=cv2.INTER_CUBIC,
-        )
-        try:
+        mask, count = located
+        values, observations = [], []
+        for target_height in (128, 160, 192):
+            scale = target_height / mask.shape[0]
+            prepared = cv2.resize(cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR), None,
+                                  fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
             boxes = self.ocr(0, 0, 1, 1, frame=prepared)
-        except Exception as exc:
-            self.log_warning(f"角色体力颜色分离 OCR 失败：{exc}")
-            return None
-        return next(
-            (
-                value
-                for box in boxes or ()
-                if (
-                    value := parse_energy_number(
-                        str(getattr(box, "name", box)),
-                        digit_count=digit_count,
-                    )
-                ) is not None
-            ),
-            None,
-        )
+            texts = [str(b.name) for b in boxes or ()]
+            values.append(confirmed_energy(texts, count))
+            observations.append(texts)
+        valid = [value for value in values if value is not None]
+        value = valid[0] if len(valid) >= 2 and len(set(valid)) == 1 else None
+        self.log_info(f"体力局部复核：页={getattr(self, '_scanning_page', 0)}，"
+                      f"行列={slot[:2]}，坐标={slot[2:6]}，数字数={count}，"
+                      f"OCR={observations}，候选={values}，结果={value}")
+        if value is None:
+            self._save_card_evidence(frame, slot, "abyss_energy_ambiguous")
+        return value
 
     def _read_selection_number(self, frame, slot):
         crop = self._slot_crop(frame, slot, (0.76, -0.06, 1.06, 0.25))

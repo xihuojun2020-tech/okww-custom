@@ -25,6 +25,7 @@ $groups = @{
     "test_extract_issue_log.py", "TestAccountConfigEditor.py", "TestAccountDirectoryAssessment.py",
     "TestAccountFieldMetadata.py", "TestAccountGraphStore.py", "TestAccountIdentity.py",
     "TestAccountIdentityProtection.py", "TestAccountProfileStore.py", "TestAccountRepositoryRuntime.py",
+    "TestAbyssEnergyRecovery.py",
     "TestAccountRuntimeBootstrap.py", "TestAccountSwitch.py", "TestAbyssTeamPlanner.py", "TestAutoAbyssTask.py",
     "TestBaseCombatTask.py", "TestConfig.py", "TestCustomCharLoader.py", "TestDiagnosisRetention.py",
     "TestDiagnosisTask.py", "TestDomainRecoveryLoop.py", "TestForgeryDomainLabels.py",
