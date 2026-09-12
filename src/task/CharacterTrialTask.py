@@ -447,10 +447,31 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
         self.send_key('esc')
         self._wait(lambda: self._button(self.EXIT_MESSAGE, '确认离开') and
                    self._button(self.EXIT_CONFIRM, '确认'), '未找到确认离开弹窗')
-        self._click_button(self.EXIT_CONFIRM, '确认')
-        self._wait(self._page, '未返回初露峥嵘活动页', 60)
+        self._confirm_trial_exit()
         self._trial_map = False
         self.reset_to_false('trial returned to activity')
+
+    def _confirm_trial_exit(self):
+        deadline = time.monotonic() + 60
+        attempts = 0
+        last_click = float('-inf')
+        while time.monotonic() < deadline:
+            self.next_frame()
+            if self._page():
+                return
+            if (self._button(self.EXIT_MESSAGE, '确认离开') and
+                    self._button(self.EXIT_CONFIRM, '确认') and
+                    time.monotonic() - last_click >= 3):
+                if attempts >= 3:
+                    raise TrialTimeout('离开弹窗确认点击3次后仍未关闭')
+                attempts += 1
+                # Center of the right black button, never the dialog message.
+                x, y = self._trial_point(.657, .628)
+                self.log_info(f'点击离开弹窗右侧确认 {attempts}/3：({x}, {y})')
+                self.click(x, y, after_sleep=.3)
+                last_click = time.monotonic()
+            self.sleep(.2)
+        raise TrialTimeout('确认离开后未返回初露峥嵘活动页')
 
     def _process(self, target):
         self._select(target)

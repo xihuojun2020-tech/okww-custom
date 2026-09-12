@@ -36,6 +36,20 @@ class TestCharacterTrialImages(TaskTestCase):
                 self.assertIsNotNone(self.task._button(self.task.NEXT,'下一页'))
                 self.assertTrue(self.task._intro())
 
+    def test_current_exit_targets_black_confirm_at_both_resolutions(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source=cv2.imread('tests/fixtures/character_trial/current_exit.png')
+            for width,height in ((1920,1080),(2560,1440)):
+                path=Path(folder)/f'{width}.png'
+                cv2.imwrite(str(path),cv2.resize(source,(width,height)))
+                self.set_image(str(path))
+                self.assertIsNotNone(self.task._button(self.task.EXIT_MESSAGE,'确认离开'))
+                self.assertIsNotNone(self.task._button(self.task.EXIT_CONFIRM,'确认'))
+                self.assertIsNone(self.task._button(self.task.EXIT_MESSAGE,'确认'))
+                x,y=self.task._trial_point(.657,.628)
+                self.assertTrue(.568*width < x < .747*width)
+                self.assertTrue(.605*height < y < .651*height)
+
     def test_wrong_activity_is_rejected_at_both_resolutions(self):
         with tempfile.TemporaryDirectory() as folder:
             source=cv2.imread('tests/fixtures/character_trial/wrong_activity.png')

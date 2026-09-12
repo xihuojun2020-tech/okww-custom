@@ -91,6 +91,40 @@ class TestTrialRecognition(unittest.TestCase):
 
 
 class TestTrialFlow(unittest.TestCase):
+    def exit_task(self):
+        t=self.task();clock=[0.0]
+        t.next_frame=Mock();t._page=Mock(return_value=False)
+        t._button=Mock(return_value=True);t.click=Mock()
+        t._trial_point=Mock(return_value=(1682,904))
+        t.sleep=Mock(side_effect=lambda seconds:clock.__setitem__(0,clock[0]+seconds))
+        return t,clock
+
+    def test_exit_ignored_first_click_retries_confirm_center(self):
+        t,clock=self.exit_task();t._page.side_effect=lambda:t.click.call_count==2
+        with patch('src.task.CharacterTrialTask.time.monotonic',side_effect=lambda:clock[0]):
+            t._confirm_trial_exit()
+        self.assertEqual(t.click.call_count,2)
+        t.click.assert_called_with(1682,904,after_sleep=.3)
+        t._trial_point.assert_called_with(.657,.628)
+
+    def test_exit_disappeared_dialog_is_not_clicked_during_loading(self):
+        t,clock=self.exit_task();t._button.side_effect=lambda *args:t.click.call_count==0
+        t._page.side_effect=lambda:clock[0]>=4
+        with patch('src.task.CharacterTrialTask.time.monotonic',side_effect=lambda:clock[0]):
+            t._confirm_trial_exit()
+        self.assertEqual(t.click.call_count,1)
+
+    def test_exit_persistent_dialog_is_bounded(self):
+        t,clock=self.exit_task()
+        with patch('src.task.CharacterTrialTask.time.monotonic',side_effect=lambda:clock[0]):
+            with self.assertRaisesRegex(TrialTimeout,'3次后仍未关闭'):t._confirm_trial_exit()
+        self.assertEqual(t.click.call_count,3)
+
+    def test_exit_stop_prevents_input(self):
+        t,clock=self.exit_task();t.next_frame.side_effect=TaskDisabledException()
+        with self.assertRaises(TaskDisabledException):t._confirm_trial_exit()
+        t.click.assert_not_called()
+
     def test_intro_appearing_during_map_settle_is_closed_with_escape(self):
         t=self.task();clock=[0.0];t.next_frame=Mock();t.send_key=Mock()
         t.sleep=Mock(side_effect=lambda seconds:clock.__setitem__(0,clock[0]+seconds))
