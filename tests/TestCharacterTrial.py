@@ -199,10 +199,13 @@ class TestTrialFlow(unittest.TestCase):
 
     def test_scroll_waits_for_delayed_motion(self):
         t, clock, view = self.scroll_task([0, 0, 0, 30, 30])
+        # A separate one-shot OCR read can fail despite a confirmed stable view.
+        t._page.return_value = False
         with patch('src.task.CharacterTrialTask.time.monotonic', side_effect=lambda: clock[0]), \
                 patch.object(CharacterTrialTask, 'width', property(lambda self: 2048)):
             self.assertEqual(t._scroll_view(view, -1), (view, 30))
         self.assertEqual(t._drag_portraits.call_count, 1)
+        t._page.assert_not_called()
 
     def test_scroll_retries_no_response_then_succeeds(self):
         t, clock, view = self.scroll_task(None)
@@ -224,10 +227,24 @@ class TestTrialFlow(unittest.TestCase):
 
     def test_scroll_page_change_prevents_input(self):
         t, clock, view = self.scroll_task([])
-        t._page.return_value = False
-        with self.assertRaisesRegex(RuntimeError, '页面已改变'):
+        t._view.side_effect = TrialTimeout('头像列表无法稳定识别')
+        with self.assertRaisesRegex(TrialTimeout, '未发送输入'):
             t._scroll_view(view, 1)
         t._drag_portraits.assert_not_called()
+
+    def test_view_recovers_after_single_page_ocr_miss(self):
+        t = self.task()
+        t.next_frame = Mock()
+        t.sleep = Mock()
+        t._page = Mock(side_effect=[False, True, True])
+        t.require_game_frame = Mock()
+        card = SimpleNamespace(x=100, image=object())
+        view = ([card], False, True)
+        with patch('src.task.CharacterTrialTask.detect_portraits', return_value=view), \
+                patch('src.task.CharacterTrialTask.unique_match', return_value=0), \
+                patch.object(CharacterTrialTask, 'width', property(lambda self: 2048)):
+            self.assertEqual(t._view(timeout=3), view)
+        self.assertEqual(t._page.call_count, 3)
 
     def test_scroll_stop_during_hover_prevents_input(self):
         t, clock, view = self.scroll_task([])

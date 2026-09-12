@@ -1,5 +1,5 @@
 <div align="center">
-  <p>当前版本：<a href="docs/references/character-trial-scroll.md">1.60.03 角色试用横向拖拽扫描</a> · <a href="docs/references/completion-evidence.md">完成检查分组与图片复制</a> · <a href="docs/references/material-planner-1.59.md">养成材料规划</a></p>
+  <p>当前版本：<a href="docs/references/character-trial-scroll.md">1.60.04 角色试用横向拖拽扫描</a> · <a href="docs/references/completion-evidence.md">完成检查分组与图片复制</a> · <a href="docs/references/material-planner-1.59.md">养成材料规划</a></p>
   <h1 align="center">
     <img src="icons/icon.png" width="200" alt="ok-ww logo"/>
     <br/>

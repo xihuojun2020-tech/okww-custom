@@ -216,9 +216,12 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
         after = before
         for attempt in range(1, 4):
             self._guard()
-            self.next_frame()
-            if not self._page():
-                raise RuntimeError('滚动前角色试用页面已改变')
+            # OCR may miss a single fresh frame even while the page is unchanged.
+            # Reuse the stable page+portrait probe before any input is sent.
+            try:
+                after = self._view(timeout=3)
+            except TrialTimeout as error:
+                raise TrialTimeout('拖拽前无法稳定确认角色试用页面，未发送输入') from error
             x, y = after[0][len(after[0])//2].center
             self.move(x, y)
             self.sleep(.15)
