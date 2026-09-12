@@ -8,6 +8,12 @@
 - Fall back to `python` only when no local `.venv` interpreter exists.
 - Prefer invoking the interpreter directly, for example `.\.venv\Scripts\python.exe -m pytest`, instead of relying on shell activation.
 
+## NAS
+
+- Use only `\\192.168.3.173\羲火君 共享给我\AI诊断` for this project's NAS diagnostics, reading, handoffs and update publishing.
+- `.172`, `.161` and `.170` are legacy addresses, not fallback destinations. Retain them only for migrating old configuration and reading saved credential aliases.
+- Historical reports may contain old addresses; they are not current operating instructions.
+
 ## Versioning and GitHub publishing
 
 - Every change that modifies code must update the version in `config.py` in the same release.

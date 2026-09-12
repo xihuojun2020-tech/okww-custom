@@ -1,6 +1,6 @@
 """Owner's NAS aliases; custom hosts and shares are never rewritten."""
-HOSTS = ('192.168.3.172', '192.168.3.173')
-LEGACY_HOSTS = ('192.168.3.161', '192.168.3.170')
+HOSTS = ('192.168.3.173',)
+LEGACY_HOSTS = ('192.168.3.172', '192.168.3.161', '192.168.3.170')
 SHARE = '羲火君 共享给我'
 LEGACY_SHARE = 'xihuojun 共享给我'
 DEFAULT_TARGET = rf'\\{HOSTS[0]}\{SHARE}\AI诊断'

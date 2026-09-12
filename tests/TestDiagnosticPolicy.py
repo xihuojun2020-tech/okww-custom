@@ -18,7 +18,7 @@ from src.runtime.diagnostic_retention import weekly_cleanup, purge_remote_logs, 
 
 class TestDiagnosticPolicy(unittest.TestCase):
     def test_default_nas_uses_current_smb_host(self):
-        self.assertEqual(r'\\192.168.3.172\羲火君 共享给我\AI诊断', DEFAULT_TARGET)
+        self.assertEqual(r'\\192.168.3.173\羲火君 共享给我\AI诊断', DEFAULT_TARGET)
 
     @unittest.skipUnless(os.name == 'nt', 'Windows isolated uploader runtime')
     def test_independent_runtime_preserves_source_identity_and_ignores_pythonpath(self):
@@ -133,7 +133,8 @@ catch { $failed=$true }
 
     def test_legacy_official_nas_targets_migrate_without_resetting_identity(self):
         for target in (r'\\192.168.3.170\xihuojun 共享给我\AI诊断',
-                       r'\\192.168.3.170\AI诊断'):
+                       r'\\192.168.3.170\AI诊断',
+                       r'\\192.168.3.172\羲火君 共享给我\AI诊断'):
             with self.subTest(target=target):
                 value = {'policy': POLICY, 'started_at': 123.0, 'device_id': 'device',
                          'target': target, 'enabled': True}
