@@ -181,7 +181,7 @@ class TestTrialFlow(unittest.TestCase):
             t._scroll_view=Mock(return_value=(([],False,True),0))
             with self.assertRaisesRegex(RuntimeError,'截断'):t._edge(([],False,True),1,'right')
             t._view=Mock(return_value=([],False,True))
-            with self.assertRaisesRegex(RuntimeError,'滚轮未生效'):t._scan()
+            with self.assertRaisesRegex(RuntimeError,'拖拽未生效'):t._scan()
 
     def scroll_task(self, deltas):
         t = self.task()
@@ -191,7 +191,7 @@ class TestTrialFlow(unittest.TestCase):
         t.next_frame = Mock()
         t._page = Mock(return_value=True)
         t.move = Mock()
-        t.scroll = Mock()
+        t._drag_portraits = Mock()
         t.sleep = Mock(side_effect=lambda seconds: clock.__setitem__(0, clock[0]+seconds))
         t._view = Mock(return_value=view)
         t._scroll_displacement = Mock(side_effect=deltas)
@@ -202,15 +202,15 @@ class TestTrialFlow(unittest.TestCase):
         with patch('src.task.CharacterTrialTask.time.monotonic', side_effect=lambda: clock[0]), \
                 patch.object(CharacterTrialTask, 'width', property(lambda self: 2048)):
             self.assertEqual(t._scroll_view(view, -1), (view, 30))
-        self.assertEqual(t.scroll.call_count, 1)
+        self.assertEqual(t._drag_portraits.call_count, 1)
 
     def test_scroll_retries_no_response_then_succeeds(self):
         t, clock, view = self.scroll_task(None)
-        t._scroll_displacement.side_effect = lambda *args: 30 if t.scroll.call_count == 2 else 0
+        t._scroll_displacement.side_effect = lambda *args: 30 if t._drag_portraits.call_count == 2 else 0
         with patch('src.task.CharacterTrialTask.time.monotonic', side_effect=lambda: clock[0]), \
                 patch.object(CharacterTrialTask, 'width', property(lambda self: 2048)):
             self.assertEqual(t._scroll_view(view, -1)[1], 30)
-        self.assertEqual(t.scroll.call_count, 2)
+        self.assertEqual(t._drag_portraits.call_count, 2)
 
     def test_scroll_no_response_is_bounded(self):
         t, clock, view = self.scroll_task(None)
@@ -219,7 +219,7 @@ class TestTrialFlow(unittest.TestCase):
         with patch('src.task.CharacterTrialTask.time.monotonic', side_effect=lambda: clock[0]):
             with patch.object(CharacterTrialTask, 'width', property(lambda self: 2048)):
                 self.assertEqual(t._scroll_view(view, 1)[1], 0)
-        self.assertEqual(t.scroll.call_count, 3)
+        self.assertEqual(t._drag_portraits.call_count, 3)
         self.assertLess(clock[0], 6)
 
     def test_scroll_page_change_prevents_input(self):
@@ -227,14 +227,14 @@ class TestTrialFlow(unittest.TestCase):
         t._page.return_value = False
         with self.assertRaisesRegex(RuntimeError, '页面已改变'):
             t._scroll_view(view, 1)
-        t.scroll.assert_not_called()
+        t._drag_portraits.assert_not_called()
 
     def test_scroll_stop_during_hover_prevents_input(self):
         t, clock, view = self.scroll_task([])
         t.sleep.side_effect = TaskDisabledException()
         with self.assertRaises(TaskDisabledException):
             t._scroll_view(view, 1)
-        t.scroll.assert_not_called()
+        t._drag_portraits.assert_not_called()
 
     def test_scan_deadline_is_cleared_on_failure(self):
         t = self.task()
@@ -242,6 +242,28 @@ class TestTrialFlow(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'failed'):
             t._scan()
         self.assertIsNone(t._scan_deadline)
+
+    def test_horizontal_drag_preserves_overlap_and_releases(self):
+        for direction in (-1, 1):
+            t = self.task()
+            t.swipe = Mock()
+            cards = [SimpleNamespace(x=x, width=160, center=(x+80, 1040))
+                     for x in (575, 751, 927, 1103)]
+            t._drag_portraits((cards, False, True), direction)
+            t.swipe.assert_called_once_with(1007, 1040, 1007+direction*176, 1040,
+                                            duration=.5, after_sleep=.1)
+            t.executor.interaction.mouse_up.assert_called_once_with(key='left')
+            self.assertFalse(t._held_mouse)
+
+    def test_drag_failure_releases_mouse(self):
+        t = self.task()
+        t.swipe = Mock(side_effect=TaskDisabledException())
+        cards = [SimpleNamespace(x=x, width=160, center=(x+80, 1040))
+                 for x in (575, 751, 927, 1103)]
+        with self.assertRaises(TaskDisabledException):
+            t._drag_portraits((cards, False, True), -1)
+        t.executor.interaction.mouse_up.assert_called_once_with(key='left')
+        self.assertFalse(t._held_mouse)
 
     def test_scan_deadline_prevents_further_input(self):
         t = self.task()

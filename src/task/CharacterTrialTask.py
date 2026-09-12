@@ -211,7 +211,7 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
 
     def _scroll_view(self, before, direction):
         if not before[0]:
-            raise RuntimeError('头像列表为空，不能发送滚轮')
+            raise RuntimeError('头像列表为空，不能拖拽')
         original = before
         after = before
         for attempt in range(1, 4):
@@ -223,7 +223,7 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
             self.move(x, y)
             self.sleep(.15)
             self._guard()
-            self.scroll(x, y, direction)
+            self._drag_portraits(after, direction)
             deadline = time.monotonic() + 1.5
             # Stable old frames are not proof of a failed input: wait for response.
             previous_delta = None
@@ -242,10 +242,29 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
             delta = self._scroll_displacement(original, after)
             self.log_info(f'头像滚动观察：方向={direction} 尝试={attempt} 坐标=({x},{y}) '
                           f'位移={delta:.1f} 头像={len(after[0])} 截断={after[1:]} '
-                          f'输入={type(self.executor.interaction).__name__}')
+                          f'输入=横向拖拽/{type(self.executor.interaction).__name__}')
             if abs(delta) >= self.width*.008:
                 raise TrialTimeout('头像滚动尚未稳定，停止以防漏角色')
         return after, self._scroll_displacement(original, after)
+
+    def _drag_portraits(self, view, direction):
+        cards = view[0]
+        if direction not in (-1, 1) or len(cards) < 3:
+            raise RuntimeError('头像不足，不能保证拖拽重叠')
+        pitch = float(np.median(np.diff([card.x for card in cards])))
+        x, y = cards[len(cards)//2].center
+        end_x = round(x + direction*pitch)
+        if pitch <= 0 or not cards[0].x < end_x < cards[-1].x+cards[-1].width:
+            raise RuntimeError('头像拖拽范围无效')
+        self._guard()
+        # Framework swipe performs down/move/up; retain cleanup ownership on errors.
+        self._held_mouse.add('left')
+        try:
+            self.swipe(x, y, end_x, y, duration=.5, after_sleep=.1)
+        finally:
+            self.executor.interaction.mouse_up(key='left')
+            self._held_mouse.discard('left')
+        self._guard()
 
     def _scroll_displacement(self, before, after):
         moves = []
@@ -253,8 +272,8 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
             index = unique_match(card.image, after[0])
             if index is not None:
                 moves.append(after[0][index].x - card.x)
-        if not moves:
-            raise RuntimeError('滚轮步进失去头像重叠，停止以防漏角色')
+        if len(moves) < 2:
+            raise RuntimeError('拖拽步进失去头像重叠，停止以防漏角色')
         displacement = float(np.median(moves))
         if any(abs(move-displacement) > self.width*.008 for move in moves):
             raise RuntimeError('头像滚动位移不一致，停止以防错误匹配')
@@ -268,7 +287,7 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
             view = after
             if unchanged >= 3:
                 if view[1 if side == 'left' else 2]:
-                    raise RuntimeError('滚轮未覆盖边缘截断头像')
+                    raise RuntimeError('拖拽未覆盖边缘截断头像')
                 return view
         raise TrialTimeout('无法确认头像列表边界')
 
@@ -282,7 +301,7 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
     def _scan_list(self):
         self._stage('扫描本期角色列表')
         before = self._view()
-        # Determine the wheel sign from actual content displacement.
+        # Confirm the drag direction from actual content displacement.
         for direction in (1, -1):
             after, delta = self._scroll_view(before, direction)
             if abs(delta) >= self.width*.008:
@@ -290,7 +309,7 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
                 break
             before = after
         else:
-            raise RuntimeError('头像滚轮未生效，无法确认完整名单')
+            raise RuntimeError('头像拖拽未生效，无法确认完整名单')
         view = self._edge(after, self._toward_left, 'left')
         known, unchanged = list(view[0]), 0
         for _ in range(24):
