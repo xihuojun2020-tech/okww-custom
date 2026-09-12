@@ -47,6 +47,7 @@ class TestWeeklyDailyIntegration(unittest.TestCase):
         task.get_task_by_class = Mock(return_value=SimpleNamespace(run_for_target=Mock(return_value=result)))
         task.info_set = Mock()
         task.log_error = Mock()
+        task.log_info = Mock()
         task.screenshot = Mock()
         task.ensure_main = Mock()
         return task

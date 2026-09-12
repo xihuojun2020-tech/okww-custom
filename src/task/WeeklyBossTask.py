@@ -9,7 +9,7 @@ from src.task.BaseCombatTask import (
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.weekly_boss import (
     WEEKLY_BOSSES, WEEKLY_AUTO, WeeklyBossResult, compact, boss_title, match_target_button,
-    combat_phase, parse_cost, parse_remaining, parse_stamina,
+    combat_phase, parse_cost, parse_remaining, parse_stamina, weekly_title_rows,
 )
 
 
@@ -108,16 +108,101 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         self._wait_for(lambda: '本周剩余可收取次数' in compact(self._text(self.BOOK_COUNT)),
                        '未进入战歌重奏页面')
 
+    def _list_signature(self):
+        self.next_frame()
+        boxes = self._ocr(self.LIST)
+        rows = weekly_title_rows(boxes, self.height)
+        signature = tuple((boss_title(b.name), round(b.y / self.height, 2)) for b in rows)
+        self.log_info(f'周本列表识别：{signature}；原文={[b.name for b in boxes]}')
+        return signature
+
+    def _confirm_list_top(self):
+        # Prove that scrolling works before treating an unchanged page as the top.
+        # The downward probe also works when the list was already at the top.
+        self.scroll_relative(.92, .5, -3)
+        self.sleep(.7)
+        previous = self._list_signature()
+        moved = False
+        stable = 0
+        for index in range(6):
+            self.scroll_relative(.92, .5, 30)
+            self.click_relative(.973, .25)
+            self.sleep(.7)
+            current = self._list_signature()
+            changed = bool(current and previous and current != previous)
+            moved = moved or changed
+            stable = stable + 1 if current and current == previous else 0
+            self.log_info(f'周本回顶 {index + 1}/6：变化={changed}，已移动={moved}，稳定={stable}')
+            if moved and stable >= 2:
+                return
+            previous = current
+        raise WeeklyPageTimeout('无法确认周本列表已回到顶部，未选择默认周本')
+
+    def _select_first_target(self):
+        self._confirm_list_top()
+        previous = None
+        for _ in range(6):
+            self.next_frame()
+            boxes = self._ocr(self.LIST)
+            rows = weekly_title_rows(boxes, self.height)
+            title = boss_title(rows[0].name) if rows else None
+            button = match_target_button(boxes, title, self.height) if title else None
+            buttons = sorted((b for b in boxes if compact(b.name) == '直接挑战'), key=lambda b: b.y)
+            if button is not None and buttons and button is not buttons[0]:
+                button = None  # An unreadable earlier row must not become "first".
+            boss = next((b for b in WEEKLY_BOSSES if b.name == title), None)
+            signature = (title, round(rows[0].y / self.height, 2)) if boss and button else None
+            self.log_info(f'周本自动首项：标题={title}，同行按钮={button is not None}；原文={[b.name for b in boxes]}')
+            if signature is not None and signature == previous:
+                self._stage(f'自动首个周本：{boss.name}')
+                self.click_box(button)
+                self._wait_for(lambda: self._detail_ready(boss),
+                               f'进入的周本与所选目标不一致：{boss.name}，已停止')
+                return boss
+            previous = signature
+            self.sleep(.25)
+        if boss and not button:
+            raise WeeklyPageTimeout(f'已识别首个周本「{boss.name}」，但未找到对应挑战按钮')
+        raise WeeklyPageTimeout('无法稳定识别列表首个周本及对应挑战按钮，未选择其他目标')
+
+    def _prepare_weekly(self, target_key, boss):
+        # Retry navigation only, never battle or reward collection.
+        for attempt in range(2):
+            try:
+                self._open_weekly_book()
+                initial = self._read_remaining()
+                self.info_set('计划领奖', initial)
+                if initial:
+                    if target_key == WEEKLY_AUTO:
+                        boss = self._select_first_target()
+                    else:
+                        self._select_target(boss)
+                return initial, boss
+            except WeeklyPageTimeout as error:
+                self.log_warning(f'周本导航第 {attempt + 1}/2 次失败：{error}')
+                self.screenshot(f'weekly_navigation_failed_{attempt + 1}')
+                if attempt:
+                    raise
+                self._stage('周本页面识别失败，重新打开列表复核一次')
+
     def _select_target(self, boss):
         self._stage(f'寻找周本：{boss.name}')
+        seen_title = False
 
         def scan(label):
+            nonlocal seen_title
             self.next_frame()
             boxes = self._ocr(self.LIST)
             signature = tuple((compact(b.name), round(b.y / self.height, 2)) for b in boxes)
-            titles = [boss_title(b.name) for b in boxes if '战歌重奏' in compact(b.name)]
+            titles = [boss_title(b.name) for b in weekly_title_rows(boxes, self.height)]
+            seen_title = seen_title or boss.name in titles
             self.log_info(f'周本搜索 {label}：可见标题={titles}，OCR框数={len(boxes)}')
             target = match_target_button(boxes, boss.name, self.height)
+            if target:
+                # Re-read a new frame so an animation cannot supply the clicked row.
+                self.sleep(.25)
+                self.next_frame()
+                target = match_target_button(self._ocr(self.LIST), boss.name, self.height)
             if target:
                 self.log_info(f'周本目标与同行挑战按钮已确认：{boss.name}')
                 self.click_box(target)
@@ -129,11 +214,13 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         self.sleep(1)
         previous = None
         unchanged = 0
+        progressed = False
         for index in range(16):
             found, signature = scan(f'滚轮第{index + 1}轮')
             if found:
                 return
             unchanged = unchanged + 1 if signature and signature == previous else 0
+            progressed = progressed or bool(signature and previous and signature != previous)
             self.log_info(f'周本列表：连续未变化={unchanged}')
             if unchanged >= 2:
                 break
@@ -145,7 +232,6 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         # Same track x as BaseWWTask.click_on_book_target; small overlapping
         # steps avoid skipping rows. A click inside the thumb need not move it.
         self.log_info('周本滚轮搜索未定位目标，改用右侧滚动条从上到下分段搜索')
-        progressed = False
         for index in range(14):
             y = min(0.25 + index * 0.05, 0.88)
             self.log_info(f'周本滚动条：第{index + 1}/14段 x=0.973 y={y:.3f}')
@@ -158,9 +244,11 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
             progressed = progressed or changed
             self.log_info(f'周本滚动条：页面内容变化={changed}')
             previous = signature
+        if seen_title:
+            raise WeeklyPageTimeout(f'已识别「{boss.name}」，但未能稳定确认对应挑战按钮')
         if not progressed:
-            raise RuntimeError(f'未确认列表翻页，无法完成周本搜索：{boss.name}；未选择其他目标')
-        raise RuntimeError(f'滚动条分段搜索后仍未找到周本：{boss.name}，未选择其他目标')
+            raise WeeklyPageTimeout(f'未确认列表翻页，无法完成周本搜索：{boss.name}；未选择其他目标')
+        raise WeeklyPageTimeout(f'滚动条分段搜索后仍未找到周本或对应挑战按钮：{boss.name}，未选择其他目标')
 
     def _detail_ready(self, boss):
         frame = self.frame
@@ -395,17 +483,7 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         if boss is None and target_key != WEEKLY_AUTO:
             raise ValueError('请选择有效的周本名称')
         self._stage('检查本周剩余次数')
-        self._open_weekly_book()
-        if target_key == WEEKLY_AUTO:
-            self.scroll_relative(.92,.5,30)
-            self.sleep(1)
-            self.next_frame()
-            titles = sorted((b for b in self._ocr(self.LIST) if '战歌重奏' in compact(b.name)), key=lambda b:b.y)
-            boss = next((b for b in WEEKLY_BOSSES if titles and b.name == boss_title(titles[0].name)),None)
-            if boss is None:
-                raise WeeklyPageTimeout('未识别游戏列表首个周本，停止自动选择')
-        initial = self._read_remaining()
-        self.info_set('计划领奖', initial)
+        initial, boss = self._prepare_weekly(target_key, boss)
         if initial == 0:
             self.last_result = WeeklyBossResult(0, 0, 0)
             from src.evidence.service import record_task_evidence
@@ -414,7 +492,6 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
             self.ensure_main(time_out=60)
             self._stage('本周奖励已全部领取')
             return self.last_result
-        self._select_target(boss)
         if self._read_remaining(detail=True) != initial:
             raise RuntimeError('列表与难度页的次数不一致，停止周本')
         cost, stamina = self._read_entry_resources()

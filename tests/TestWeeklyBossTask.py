@@ -479,6 +479,7 @@ class TestWeeklyBossBoundaries(unittest.TestCase):
         boss = WEEKLY_BOSSES[8]
         button = box('直接挑战', 1750, 640)
         task._ocr = Mock(side_effect=[[box('other title')],
+                        [box(boss.name, 900, 600, 350), button],
                         [box(boss.name, 900, 600, 350), button]])
         task._select_target(boss)
         task.click_box.assert_called_once_with(button)

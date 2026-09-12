@@ -1760,6 +1760,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         if not weekly_check_due(target, self.get_last_completed(window[1])):
             return False
         profile_id = self._active_profile_id()
+        self.log_info(f'周本检查：账号={profile_id}，目标={target}，检查周期={window}')
         self._publish_daily_stage('清理体力', '优先检查每周周本')
         try:
             result = self.get_task_by_class(WeeklyBossTask).run_for_target(target)

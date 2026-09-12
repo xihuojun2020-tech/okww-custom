@@ -3,6 +3,7 @@ import re
 import unicodedata
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 WEEKLY_TARGET = 'Weekly Boss Target'
 WEEKLY_AUTO = '自动（列表首项）'
@@ -106,8 +107,38 @@ def combat_phase(text):
     return None
 
 
+def weekly_title_rows(boxes, height):
+    """Join nearby title fragments only; never merge rewards or challenge buttons."""
+    parts = sorted((b for b in boxes if b.x < height * 1.11), key=lambda b: (b.y, b.x))
+    rows = []
+    for part in parts:
+        row = next((r for r in rows if abs(r[0].y - part.y) <= height * .012), None)
+        if row is None:
+            rows.append([part])
+        else:
+            row.append(part)
+    result = []
+    for row in rows:
+        row.sort(key=lambda b: b.x)
+        groups = [[]]
+        for part in row:
+            group = groups[-1]
+            if group and part.x - (group[-1].x + group[-1].width) > height * .035:
+                groups.append([])
+            groups[-1].append(part)
+        for group in groups:
+            name = ''.join(b.name for b in group)
+            if '战歌重奏' not in compact(name) and boss_title(name) not in {b.name for b in WEEKLY_BOSSES}:
+                continue
+            result.append(SimpleNamespace(name=name, x=group[0].x,
+                          y=min(b.y for b in group),
+                          width=max(b.x + b.width for b in group) - group[0].x,
+                          height=max(b.height for b in group)))
+    return sorted(result, key=lambda b: b.y)
+
+
 def match_target_button(boxes, target_name, height):
-    titles = [b for b in boxes if boss_title(b.name) == target_name]
+    titles = [b for b in weekly_title_rows(boxes, height) if boss_title(b.name) == target_name]
     if len(titles) != 1:
         return None
     title = titles[0]
