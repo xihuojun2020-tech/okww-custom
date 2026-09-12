@@ -1,5 +1,5 @@
 <div align="center">
-  <p>当前版本：<a href="docs/references/completion-evidence.md">1.60.00 完成检查分组与图片复制</a> · <a href="docs/references/material-planner-1.59.md">养成材料规划</a> · <a href="docs/references/multi-account-retry.md">多账号失败补跑</a></p>
+  <p>当前版本：<a href="docs/references/character-trial-scroll.md">1.60.02 角色试用滚动响应复核</a> · <a href="docs/references/completion-evidence.md">完成检查分组与图片复制</a> · <a href="docs/references/material-planner-1.59.md">养成材料规划</a></p>
   <h1 align="center">
     <img src="icons/icon.png" width="200" alt="ok-ww logo"/>
     <br/>

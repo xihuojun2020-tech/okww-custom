@@ -63,6 +63,9 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
 
     def _guard(self):
         self.executor.check_enabled()
+        scan_deadline = getattr(self, '_scan_deadline', None)
+        if scan_deadline is not None and time.monotonic() >= scan_deadline:
+            raise TrialTimeout('角色列表扫描超时')
         if self._battle_deadline is not None and time.monotonic() >= self._battle_deadline:
             raise TrialTimeout('角色试用战斗超时')
 
@@ -191,7 +194,7 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
                 self.sleep(.35)
         raise TrialTimeout('活动列表中未找到初露峥嵘')
 
-    def _view(self):
+    def _view(self, timeout=15):
         previous = None
         def read():
             nonlocal previous
@@ -204,16 +207,47 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
                 for i, (a, b) in enumerate(zip(previous[0], cards)))
             previous = view
             return view if stable else None
-        return self._wait(read, '头像列表无法稳定识别')
+        return self._wait(read, '头像列表无法稳定识别', timeout)
 
     def _scroll_view(self, before, direction):
-        x, y = before[0][len(before[0])//2].center
-        self._guard()
-        self.move(x, y)
-        self._guard()
-        self.scroll(x, y, direction)
-        self.sleep(.35)
-        after = self._view()
+        if not before[0]:
+            raise RuntimeError('头像列表为空，不能发送滚轮')
+        original = before
+        after = before
+        for attempt in range(1, 4):
+            self._guard()
+            self.next_frame()
+            if not self._page():
+                raise RuntimeError('滚动前角色试用页面已改变')
+            x, y = after[0][len(after[0])//2].center
+            self.move(x, y)
+            self.sleep(.15)
+            self._guard()
+            self.scroll(x, y, direction)
+            deadline = time.monotonic() + 1.5
+            # Stable old frames are not proof of a failed input: wait for response.
+            previous_delta = None
+            while time.monotonic() < deadline:
+                self._guard()
+                after = self._view(timeout=2)
+                delta = self._scroll_displacement(original, after)
+                if abs(delta) >= self.width*.008:
+                    if previous_delta is not None and abs(delta-previous_delta) < self.width*.004:
+                        self.log_info(f'头像滚动已确认：方向={direction} 尝试={attempt} 位移={delta:.1f}')
+                        return after, delta
+                    previous_delta = delta
+                else:
+                    previous_delta = None
+                self.sleep(.1)
+            delta = self._scroll_displacement(original, after)
+            self.log_info(f'头像滚动观察：方向={direction} 尝试={attempt} 坐标=({x},{y}) '
+                          f'位移={delta:.1f} 头像={len(after[0])} 截断={after[1:]} '
+                          f'输入={type(self.executor.interaction).__name__}')
+            if abs(delta) >= self.width*.008:
+                raise TrialTimeout('头像滚动尚未稳定，停止以防漏角色')
+        return after, self._scroll_displacement(original, after)
+
+    def _scroll_displacement(self, before, after):
         moves = []
         for card in before[0]:
             index = unique_match(card.image, after[0])
@@ -222,7 +256,9 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
         if not moves:
             raise RuntimeError('滚轮步进失去头像重叠，停止以防漏角色')
         displacement = float(np.median(moves))
-        return after, displacement
+        if any(abs(move-displacement) > self.width*.008 for move in moves):
+            raise RuntimeError('头像滚动位移不一致，停止以防错误匹配')
+        return displacement
 
     def _edge(self, view, direction, side):
         unchanged = 0
@@ -237,6 +273,13 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
         raise TrialTimeout('无法确认头像列表边界')
 
     def _scan(self):
+        self._scan_deadline = time.monotonic() + 90
+        try:
+            return self._scan_list()
+        finally:
+            self._scan_deadline = None
+
+    def _scan_list(self):
         self._stage('扫描本期角色列表')
         before = self._view()
         # Determine the wheel sign from actual content displacement.

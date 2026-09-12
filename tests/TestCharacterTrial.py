@@ -183,6 +183,73 @@ class TestTrialFlow(unittest.TestCase):
             t._view=Mock(return_value=([],False,True))
             with self.assertRaisesRegex(RuntimeError,'滚轮未生效'):t._scan()
 
+    def scroll_task(self, deltas):
+        t = self.task()
+        clock = [0.]
+        card = SimpleNamespace(center=(100, 100))
+        view = ([card], False, True)
+        t.next_frame = Mock()
+        t._page = Mock(return_value=True)
+        t.move = Mock()
+        t.scroll = Mock()
+        t.sleep = Mock(side_effect=lambda seconds: clock.__setitem__(0, clock[0]+seconds))
+        t._view = Mock(return_value=view)
+        t._scroll_displacement = Mock(side_effect=deltas)
+        return t, clock, view
+
+    def test_scroll_waits_for_delayed_motion(self):
+        t, clock, view = self.scroll_task([0, 0, 0, 30, 30])
+        with patch('src.task.CharacterTrialTask.time.monotonic', side_effect=lambda: clock[0]), \
+                patch.object(CharacterTrialTask, 'width', property(lambda self: 2048)):
+            self.assertEqual(t._scroll_view(view, -1), (view, 30))
+        self.assertEqual(t.scroll.call_count, 1)
+
+    def test_scroll_retries_no_response_then_succeeds(self):
+        t, clock, view = self.scroll_task(None)
+        t._scroll_displacement.side_effect = lambda *args: 30 if t.scroll.call_count == 2 else 0
+        with patch('src.task.CharacterTrialTask.time.monotonic', side_effect=lambda: clock[0]), \
+                patch.object(CharacterTrialTask, 'width', property(lambda self: 2048)):
+            self.assertEqual(t._scroll_view(view, -1)[1], 30)
+        self.assertEqual(t.scroll.call_count, 2)
+
+    def test_scroll_no_response_is_bounded(self):
+        t, clock, view = self.scroll_task(None)
+        t._scroll_displacement.side_effect = None
+        t._scroll_displacement.return_value = 0
+        with patch('src.task.CharacterTrialTask.time.monotonic', side_effect=lambda: clock[0]):
+            with patch.object(CharacterTrialTask, 'width', property(lambda self: 2048)):
+                self.assertEqual(t._scroll_view(view, 1)[1], 0)
+        self.assertEqual(t.scroll.call_count, 3)
+        self.assertLess(clock[0], 6)
+
+    def test_scroll_page_change_prevents_input(self):
+        t, clock, view = self.scroll_task([])
+        t._page.return_value = False
+        with self.assertRaisesRegex(RuntimeError, '页面已改变'):
+            t._scroll_view(view, 1)
+        t.scroll.assert_not_called()
+
+    def test_scroll_stop_during_hover_prevents_input(self):
+        t, clock, view = self.scroll_task([])
+        t.sleep.side_effect = TaskDisabledException()
+        with self.assertRaises(TaskDisabledException):
+            t._scroll_view(view, 1)
+        t.scroll.assert_not_called()
+
+    def test_scan_deadline_is_cleared_on_failure(self):
+        t = self.task()
+        t._scan_list = Mock(side_effect=RuntimeError('failed'))
+        with self.assertRaisesRegex(RuntimeError, 'failed'):
+            t._scan()
+        self.assertIsNone(t._scan_deadline)
+
+    def test_scan_deadline_prevents_further_input(self):
+        t = self.task()
+        t._scan_deadline = 10
+        with patch('src.task.CharacterTrialTask.time.monotonic', return_value=10):
+            with self.assertRaisesRegex(TrialTimeout, '扫描超时'):
+                t._guard()
+
     def test_enter_clears_old_party_before_click(self):
         t=self.task(); t.chars=[object()]; t.reset_to_false=Mock()
         t._button=Mock(return_value=box('前往试用'))
