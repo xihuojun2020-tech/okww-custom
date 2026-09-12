@@ -3,6 +3,9 @@ from config import config
 from ok.test.TaskTestCase import TaskTestCase
 from src.task.CharacterTrialTask import CharacterTrialTask
 from src.task.character_trial import reward_state, start_prompt
+import cv2
+import tempfile
+from pathlib import Path
 
 config['debug']=True
 
@@ -26,6 +29,20 @@ class TestCharacterTrialImages(TaskTestCase):
         self.load('start')
         self.assertTrue(start_prompt(self.task._ocr(self.task.INTERACT),self.task.height))
         self.assertFalse(start_prompt(self.task._ocr(self.task.HINT),self.task.height))
+
+    def test_name_and_state_at_1080p(self):
+        with tempfile.TemporaryDirectory() as folder:
+            for name in ('pending','claim','complete'):
+                self.load(name)
+                expected = [b.name for b in self.task._ocr(self.task.NAME)]
+                self.assertEqual(len(expected),1)
+                source = cv2.imread(f'tests/fixtures/character_trial/{name}.png')
+                path = Path(folder)/f'{name}.png'
+                cv2.imwrite(str(path),cv2.resize(source,(1920,1080)))
+                self.set_image(str(path))
+                self.assertEqual([b.name for b in self.task._ocr(self.task.NAME)],expected)
+                self.assertTrue(self.task._page())
+                self.assertIsNotNone(reward_state(self.task._ocr(self.task.REWARD)))
 
     def test_intro_obtain_finish_and_exit(self):
         for name,region,text in [('intro','INTRO','战斗特色'),('intro','NEXT','下一页'),

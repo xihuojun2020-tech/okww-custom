@@ -174,120 +174,48 @@ class TestTrialFlow(unittest.TestCase):
         t._fight()
         self.assertIsNone(t._battle_deadline)
 
-    def test_edge_cannot_accept_clipped_or_unmoving_list(self):
-        t=self.task(); t._width=2048
-        # Width property comes from executor.capture; supply deterministic value.
-        with patch.object(CharacterTrialTask,'width',new_callable=lambda:property(lambda self:2048)):
-            t._scroll_view=Mock(return_value=(([],False,True),0))
-            with self.assertRaisesRegex(RuntimeError,'截断'):t._edge(([],False,True),1,'right')
-            t._view=Mock(return_value=([],False,True))
-            with self.assertRaisesRegex(RuntimeError,'拖拽未生效'):t._scan()
-
-    def scroll_task(self, deltas):
+    def test_fixed_coordinates_scale_to_1080p(self):
         t = self.task()
-        clock = [0.]
-        card = SimpleNamespace(center=(100, 100))
-        view = ([card], False, True)
-        t.next_frame = Mock()
-        t._page = Mock(return_value=True)
-        t.move = Mock()
-        t._drag_portraits = Mock()
-        t.sleep = Mock(side_effect=lambda seconds: clock.__setitem__(0, clock[0]+seconds))
-        t._view = Mock(return_value=view)
-        t._scroll_displacement = Mock(side_effect=deltas)
-        return t, clock, view
+        for width, height in ((1920,1080),(2560,1440),(3840,2160)):
+            with patch.object(CharacterTrialTask,'width',property(lambda self:width)), \
+                    patch.object(CharacterTrialTask,'height',property(lambda self:height)):
+                self.assertEqual(t._trial_point(1362,1043),
+                                 (round(1362*width/2048),round(1043*height/1152)))
 
-    def test_scroll_waits_for_delayed_motion(self):
-        t, clock, view = self.scroll_task([0, 0, 0, 30, 30])
-        # A separate one-shot OCR read can fail despite a confirmed stable view.
-        t._page.return_value = False
-        with patch('src.task.CharacterTrialTask.time.monotonic', side_effect=lambda: clock[0]), \
-                patch.object(CharacterTrialTask, 'width', property(lambda self: 2048)):
-            self.assertEqual(t._scroll_view(view, -1), (view, 30))
-        self.assertEqual(t._drag_portraits.call_count, 1)
-        t._page.assert_not_called()
-
-    def test_scroll_retries_no_response_then_succeeds(self):
-        t, clock, view = self.scroll_task(None)
-        t._scroll_displacement.side_effect = lambda *args: 30 if t._drag_portraits.call_count == 2 else 0
-        with patch('src.task.CharacterTrialTask.time.monotonic', side_effect=lambda: clock[0]), \
-                patch.object(CharacterTrialTask, 'width', property(lambda self: 2048)):
-            self.assertEqual(t._scroll_view(view, -1)[1], 30)
-        self.assertEqual(t._drag_portraits.call_count, 2)
-
-    def test_scroll_no_response_is_bounded(self):
-        t, clock, view = self.scroll_task(None)
-        t._scroll_displacement.side_effect = None
-        t._scroll_displacement.return_value = 0
-        with patch('src.task.CharacterTrialTask.time.monotonic', side_effect=lambda: clock[0]):
-            with patch.object(CharacterTrialTask, 'width', property(lambda self: 2048)):
-                self.assertEqual(t._scroll_view(view, 1)[1], 0)
-        self.assertEqual(t._drag_portraits.call_count, 3)
-        self.assertLess(clock[0], 6)
-
-    def test_scroll_page_change_prevents_input(self):
-        t, clock, view = self.scroll_task([])
-        t._view.side_effect = TrialTimeout('头像列表无法稳定识别')
-        with self.assertRaisesRegex(TrialTimeout, '未发送输入'):
-            t._scroll_view(view, 1)
-        t._drag_portraits.assert_not_called()
-
-    def test_view_recovers_after_single_page_ocr_miss(self):
-        t = self.task()
-        t.next_frame = Mock()
-        t.sleep = Mock()
-        t._page = Mock(side_effect=[False, True, True])
-        t.require_game_frame = Mock()
-        card = SimpleNamespace(x=100, image=object())
-        view = ([card], False, True)
-        with patch('src.task.CharacterTrialTask.detect_portraits', return_value=view), \
-                patch('src.task.CharacterTrialTask.unique_match', return_value=0), \
-                patch.object(CharacterTrialTask, 'width', property(lambda self: 2048)):
-            self.assertEqual(t._view(timeout=3), view)
-        self.assertEqual(t._page.call_count, 3)
-
-    def test_scroll_stop_during_hover_prevents_input(self):
-        t, clock, view = self.scroll_task([])
-        t.sleep.side_effect = TaskDisabledException()
-        with self.assertRaises(TaskDisabledException):
-            t._scroll_view(view, 1)
-        t._drag_portraits.assert_not_called()
-
-    def test_scan_deadline_is_cleared_on_failure(self):
-        t = self.task()
-        t._scan_list = Mock(side_effect=RuntimeError('failed'))
-        with self.assertRaisesRegex(RuntimeError, 'failed'):
-            t._scan()
-        self.assertIsNone(t._scan_deadline)
-
-    def test_horizontal_drag_preserves_overlap_and_releases(self):
-        for direction in (-1, 1):
-            t = self.task()
-            t.swipe = Mock()
-            cards = [SimpleNamespace(x=x, width=160, center=(x+80, 1040))
-                     for x in (575, 751, 927, 1103)]
-            t._drag_portraits((cards, False, True), direction)
-            t.swipe.assert_called_once_with(1007, 1040, 1007+direction*176, 1040,
-                                            duration=.5, after_sleep=.1)
-            t.executor.interaction.mouse_up.assert_called_once_with(key='left')
-            self.assertFalse(t._held_mouse)
-
-    def test_drag_failure_releases_mouse(self):
-        t = self.task()
-        t.swipe = Mock(side_effect=TaskDisabledException())
-        cards = [SimpleNamespace(x=x, width=160, center=(x+80, 1040))
-                 for x in (575, 751, 927, 1103)]
-        with self.assertRaises(TaskDisabledException):
-            t._drag_portraits((cards, False, True), -1)
+    def test_long_drag_and_stop_cleanup(self):
+        t=self.task(); t._wait=Mock(); t._trial_point=Mock(side_effect=lambda x,y:(x,y))
+        t.swipe=Mock(side_effect=TaskDisabledException())
+        with self.assertRaises(TaskDisabledException): t._drag_strip('right')
+        t.swipe.assert_called_once_with(1362,1043,586,1043,duration=.8,after_sleep=.5)
         t.executor.interaction.mouse_up.assert_called_once_with(key='left')
         self.assertFalse(t._held_mouse)
 
-    def test_scan_deadline_prevents_further_input(self):
-        t = self.task()
-        t._scan_deadline = 10
-        with patch('src.task.CharacterTrialTask.time.monotonic', return_value=10):
-            with self.assertRaisesRegex(TrialTimeout, '扫描超时'):
-                t._guard()
+    def test_name_scan_covers_five_and_six_characters(self):
+        for right, expected in [(('B','C','D','E'),list('ABCDE')),
+                                (('C','D','E','F'),list('ABCDEF'))]:
+            t=self.task(); t._endpoint_names=Mock(side_effect=[tuple('ABCD'),right,tuple('ABCD')])
+            self.assertEqual(t._scan(),expected)
+            self.assertIsNone(t._scan_deadline)
+
+    def test_static_or_disjoint_lists_are_not_complete(self):
+        for right in (tuple('ABCD'),tuple('EFGH')):
+            t=self.task(); t._endpoint_names=Mock(side_effect=[tuple('ABCD'),right])
+            with self.assertRaisesRegex(RuntimeError,'连续重叠'):t._scan()
+            self.assertIsNone(t._scan_deadline)
+
+    def test_endpoint_requires_repeat_and_unique_names(self):
+        t=self.task(); t._drag_strip=Mock()
+        t._slot_identity=Mock(side_effect=list('ABCDABCD'))
+        self.assertEqual(t._endpoint_names('left'),tuple('ABCD'))
+        self.assertEqual(t._drag_strip.call_count,2)
+        t._slot_identity=Mock(return_value='same')
+        with self.assertRaisesRegex(RuntimeError,'不同角色'):t._endpoint_names('left')
+
+    def test_selection_verifies_name_and_retries(self):
+        t=self.task(); t._trial_slots={'target':('right',3)}; t._drag_strip=Mock()
+        t._slot_identity=Mock(side_effect=['wrong','target'])
+        t._select('target')
+        self.assertEqual(t._drag_strip.call_count,2)
 
     def test_enter_clears_old_party_before_click(self):
         t=self.task(); t.chars=[object()]; t.reset_to_false=Mock()

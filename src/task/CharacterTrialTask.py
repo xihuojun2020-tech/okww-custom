@@ -2,14 +2,13 @@
 import re
 import time
 
-import numpy as np
 from ok import TaskDisabledException
 
 from src.char.BaseChar import BaseChar
 from src.char.TrialGenericChar import TrialGenericChar
 from src.task.BaseCombatTask import BaseCombatTask, CharDeadException, CombatStateUnknown, NotInCombatException
 from src.task.WWOneTimeTask import WWOneTimeTask
-from src.task.character_trial import compact, exact_button, reward_state, start_prompt, detect_portraits, unique_match, merge_view, portrait_selected
+from src.task.character_trial import compact, exact_button, reward_state, start_prompt
 
 
 class TrialTimeout(RuntimeError):
@@ -194,168 +193,85 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
                 self.sleep(.35)
         raise TrialTimeout('活动列表中未找到初露峥嵘')
 
-    def _view(self, timeout=15):
-        previous = None
-        def read():
-            nonlocal previous
-            if not self._page():
-                return None
-            view = detect_portraits(self.require_game_frame())
-            cards = view[0]
-            stable = previous is not None and len(cards) == len(previous[0]) and all(
-                abs(a.x-b.x) < self.width*.004 and unique_match(a.image, cards) == i
-                for i, (a, b) in enumerate(zip(previous[0], cards)))
-            previous = view
-            return view if stable else None
-        return self._wait(read, '头像列表无法稳定识别', timeout)
+    def _trial_point(self, x, y):
+        if abs(self.width / self.height - 16 / 9) > .02:
+            raise RuntimeError('角色试用仅支持16:9画面')
+        return round(x*self.width/2048), round(y*self.height/1152)
 
-    def _scroll_view(self, before, direction):
-        if not before[0]:
-            raise RuntimeError('头像列表为空，不能拖拽')
-        original = before
-        after = before
-        for attempt in range(1, 4):
-            self._guard()
-            # OCR may miss a single fresh frame even while the page is unchanged.
-            # Reuse the stable page+portrait probe before any input is sent.
-            try:
-                after = self._view(timeout=3)
-            except TrialTimeout as error:
-                raise TrialTimeout('拖拽前无法稳定确认角色试用页面，未发送输入') from error
-            x, y = after[0][len(after[0])//2].center
-            self.move(x, y)
-            self.sleep(.15)
-            self._guard()
-            self._drag_portraits(after, direction)
-            deadline = time.monotonic() + 1.5
-            # Stable old frames are not proof of a failed input: wait for response.
-            previous_delta = None
-            while time.monotonic() < deadline:
-                self._guard()
-                after = self._view(timeout=2)
-                delta = self._scroll_displacement(original, after)
-                if abs(delta) >= self.width*.008:
-                    if previous_delta is not None and abs(delta-previous_delta) < self.width*.004:
-                        self.log_info(f'头像滚动已确认：方向={direction} 尝试={attempt} 位移={delta:.1f}')
-                        return after, delta
-                    previous_delta = delta
-                else:
-                    previous_delta = None
-                self.sleep(.1)
-            delta = self._scroll_displacement(original, after)
-            self.log_info(f'头像滚动观察：方向={direction} 尝试={attempt} 坐标=({x},{y}) '
-                          f'位移={delta:.1f} 头像={len(after[0])} 截断={after[1:]} '
-                          f'输入=横向拖拽/{type(self.executor.interaction).__name__}')
-            if abs(delta) >= self.width*.008:
-                raise TrialTimeout('头像滚动尚未稳定，停止以防漏角色')
-        return after, self._scroll_displacement(original, after)
-
-    def _drag_portraits(self, view, direction):
-        cards = view[0]
-        if direction not in (-1, 1) or len(cards) < 3:
-            raise RuntimeError('头像不足，不能保证拖拽重叠')
-        pitch = float(np.median(np.diff([card.x for card in cards])))
-        x, y = cards[len(cards)//2].center
-        end_x = round(x + direction*pitch)
-        if pitch <= 0 or not cards[0].x < end_x < cards[-1].x+cards[-1].width:
-            raise RuntimeError('头像拖拽范围无效')
+    def _drag_strip(self, side):
+        self._wait(self._page, '拖拽前无法确认角色试用页面', 3)
+        start, end = (1362, 586) if side == 'right' else (586, 1362)
+        x, y = self._trial_point(start, 1043)
+        end_x, _ = self._trial_point(end, 1043)
         self._guard()
-        # Framework swipe performs down/move/up; retain cleanup ownership on errors.
         self._held_mouse.add('left')
         try:
-            self.swipe(x, y, end_x, y, duration=.5, after_sleep=.1)
+            self.swipe(x, y, end_x, y, duration=.8, after_sleep=.5)
         finally:
             self.executor.interaction.mouse_up(key='left')
             self._held_mouse.discard('left')
         self._guard()
+        self.log_info(f'头像栏长拖拽：到{side}端 ({x},{y})->({end_x},{y})')
 
-    def _scroll_displacement(self, before, after):
-        moves = []
-        for card in before[0]:
-            index = unique_match(card.image, after[0])
-            if index is not None:
-                moves.append(after[0][index].x - card.x)
-        if len(moves) < 2:
-            raise RuntimeError('拖拽步进失去头像重叠，停止以防漏角色')
-        displacement = float(np.median(moves))
-        if any(abs(move-displacement) > self.width*.008 for move in moves):
-            raise RuntimeError('头像滚动位移不一致，停止以防错误匹配')
-        return displacement
+    def _slot_identity(self, side, slot):
+        # Four full slots at either endpoint; rightmost clipped slot is never clicked.
+        positions = (655, 831, 1007, 1183) if side == 'left' else (763, 939, 1115, 1291)
+        self._wait(self._page, '点击前无法确认角色试用页面', 3)
+        self.click(*self._trial_point(positions[slot], 1043))
+        self.sleep(.6)
+        def read():
+            if not self._page():
+                return None
+            names = [compact(b.name) for b in self._ocr(self.NAME) if compact(b.name)]
+            state = reward_state(self._ocr(self.REWARD))
+            if len(names) != 1 or not re.fullmatch(r'[\u4e00-\u9fff·]{1,12}', names[0]) or state is None:
+                return None
+            return names[0], state
+        name, state = self._stable(read, '无法稳定确认角色名称与奖励状态', 5)
+        self.info_set('试用角色', name)
+        return name
 
-    def _edge(self, view, direction, side):
-        unchanged = 0
-        for _ in range(24):
-            after, delta = self._scroll_view(view, direction)
-            unchanged = unchanged + 1 if abs(delta) < self.width*.008 else 0
-            view = after
-            if unchanged >= 3:
-                if view[1 if side == 'left' else 2]:
-                    raise RuntimeError('拖拽未覆盖边缘截断头像')
-                return view
-        raise TrialTimeout('无法确认头像列表边界')
+    def _endpoint_names(self, side):
+        previous = None
+        for attempt in range(3):
+            self._drag_strip(side)
+            names = tuple(self._slot_identity(side, slot) for slot in range(4))
+            if len(set(names)) != 4:
+                raise RuntimeError('固定槽位未选中不同角色，停止以防漏角色')
+            if names == previous:
+                return names
+            previous = names
+        raise TrialTimeout('长拖拽后角色名单未稳定，无法确认列表端点')
 
     def _scan(self):
-        self._scan_deadline = time.monotonic() + 90
+        self._scan_deadline = time.monotonic() + 180
         try:
-            return self._scan_list()
+            self._stage('固定槽位扫描本期角色')
+            left = self._endpoint_names('left')
+            right = self._endpoint_names('right')
+            overlaps = [n for n in (2, 3) if left[-n:] == right[:n]]
+            if len(overlaps) != 1:
+                raise RuntimeError('两端角色名称缺少唯一连续重叠，无法确认完整名单')
+            names = left + right[overlaps[0]:]
+            if len(set(names)) != len(names):
+                raise RuntimeError('两端角色名称重复或顺序异常')
+            # Return to the other endpoint to verify the drag was not a static no-op.
+            if self._endpoint_names('left') != left:
+                raise RuntimeError('反向复核角色名单不一致')
+            self._trial_slots = {name: ('left', i) for i, name in enumerate(left)}
+            self._trial_slots.update({name: ('right', i) for i, name in enumerate(right)
+                                      if name not in self._trial_slots})
+            return list(names)
         finally:
             self._scan_deadline = None
 
-    def _scan_list(self):
-        self._stage('扫描本期角色列表')
-        before = self._view()
-        # Confirm the drag direction from actual content displacement.
-        for direction in (1, -1):
-            after, delta = self._scroll_view(before, direction)
-            if abs(delta) >= self.width*.008:
-                self._toward_left = direction if delta > 0 else -direction
-                break
-            before = after
-        else:
-            raise RuntimeError('头像拖拽未生效，无法确认完整名单')
-        view = self._edge(after, self._toward_left, 'left')
-        known, unchanged = list(view[0]), 0
-        for _ in range(24):
-            after, delta = self._scroll_view(view, -self._toward_left)
-            if delta > self.width*.008:
-                raise RuntimeError('头像滚动方向发生变化')
-            known = merge_view(known, after[0])
-            unchanged = unchanged + 1 if abs(delta) < self.width*.008 else 0
-            view = after
-            if unchanged >= 3:
-                if view[2]:
-                    raise RuntimeError('右侧仍有未覆盖头像')
-                if not 5 <= len(known) <= 6:
-                    raise RuntimeError(f'发现{len(known)}个角色，布局超出已验证范围')
-                return known
-        raise TrialTimeout('角色列表扫描超时')
-
     def _select(self, target):
-        view = self._view()
-        for direction in (self._toward_left, -self._toward_left):
-            unchanged = 0
-            for _ in range(24):
-                index = unique_match(target.image, view[0])
-                if index is not None:
-                    card = view[0][index]
-                    self.click(*card.center)
-                    self.sleep(.3)
-                    def selected():
-                        cards, _, _ = detect_portraits(self.require_game_frame())
-                        i = unique_match(target.image, cards)
-                        if i is None:
-                            return None
-                        return True if portrait_selected(self.require_game_frame(), cards[i]) else None
-                    self._stable(selected, '无法确认目标头像已选中')
-                    name = ''.join(b.name for b in self._ocr(self.NAME))
-                    self.info_set('试用角色', name or '未识别名称（按头像核对）')
-                    return
-                after, delta = self._scroll_view(view, direction)
-                unchanged = unchanged + 1 if abs(delta) < self.width*.008 else 0
-                view = after
-                if unchanged >= 3:
-                    break
-        raise RuntimeError('返回页面后无法重新定位目标角色')
+        side, slot = self._trial_slots[target]
+        for attempt in range(3):
+            self._drag_strip(side)
+            if self._slot_identity(side, slot) == target:
+                return
+        raise RuntimeError(f'固定槽位未确认目标角色：{target}')
 
     def _state(self):
         return self._stable(lambda: reward_state(self._ocr(self.REWARD)) if self._page() else None,
