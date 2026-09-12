@@ -174,48 +174,38 @@ class TestTrialFlow(unittest.TestCase):
         t._fight()
         self.assertIsNone(t._battle_deadline)
 
-    def test_fixed_coordinates_scale_to_1080p(self):
-        t = self.task()
-        for width, height in ((1920,1080),(2560,1440),(3840,2160)):
+    def test_normalized_slots_at_1080p_and_1440p(self):
+        for width,height in ((1920,1080),(2560,1440)):
+            t=self.task(); t._drag_strip=Mock();t._wait=Mock();t.click=Mock();t.sleep=Mock();t._state=Mock()
             with patch.object(CharacterTrialTask,'width',property(lambda self:width)), \
                     patch.object(CharacterTrialTask,'height',property(lambda self:height)):
-                self.assertEqual(t._trial_point(1362,1043),
-                                 (round(1362*width/2048),round(1043*height/1152)))
+                for target,x in enumerate((.324,.410,.495,.581,.650,.650)):
+                    t._select(target)
+                    t.click.assert_called_with(round(width*x),round(height*.905))
+                    t._drag_strip.assert_called_with('right' if target==5 else 'left')
+            self.assertEqual(t._state.call_count,6)
 
-    def test_long_drag_and_stop_cleanup(self):
-        t=self.task(); t._wait=Mock(); t._trial_point=Mock(side_effect=lambda x,y:(x,y))
-        t.swipe=Mock(side_effect=TaskDisabledException())
-        with self.assertRaises(TaskDisabledException): t._drag_strip('right')
-        t.swipe.assert_called_once_with(1362,1043,586,1043,duration=.8,after_sleep=.5)
+    def test_configured_roster_count(self):
+        t=self.task()
+        self.assertEqual(t._scan(),list(range(5)))
+        t.config['试用人数']='6人'
+        self.assertEqual(t._scan(),list(range(6)))
+        t.config['试用人数']='7人'
+        with self.assertRaises(ValueError):t._scan()
+
+    def test_drag_scales_and_releases_on_stop(self):
+        t=self.task(); t._wait=Mock();t.swipe=Mock(side_effect=TaskDisabledException())
+        with patch.object(CharacterTrialTask,'width',property(lambda self:1920)), \
+                patch.object(CharacterTrialTask,'height',property(lambda self:1080)):
+            with self.assertRaises(TaskDisabledException):t._drag_strip('right')
+        t.swipe.assert_called_once_with(1277,977,549,977,duration=.8,after_sleep=.5)
         t.executor.interaction.mouse_up.assert_called_once_with(key='left')
         self.assertFalse(t._held_mouse)
 
-    def test_name_scan_covers_five_and_six_characters(self):
-        for right, expected in [(('B','C','D','E'),list('ABCDE')),
-                                (('C','D','E','F'),list('ABCDEF'))]:
-            t=self.task(); t._endpoint_names=Mock(side_effect=[tuple('ABCD'),right,tuple('ABCD')])
-            self.assertEqual(t._scan(),expected)
-            self.assertIsNone(t._scan_deadline)
-
-    def test_static_or_disjoint_lists_are_not_complete(self):
-        for right in (tuple('ABCD'),tuple('EFGH')):
-            t=self.task(); t._endpoint_names=Mock(side_effect=[tuple('ABCD'),right])
-            with self.assertRaisesRegex(RuntimeError,'连续重叠'):t._scan()
-            self.assertIsNone(t._scan_deadline)
-
-    def test_endpoint_requires_repeat_and_unique_names(self):
-        t=self.task(); t._drag_strip=Mock()
-        t._slot_identity=Mock(side_effect=list('ABCDABCD'))
-        self.assertEqual(t._endpoint_names('left'),tuple('ABCD'))
-        self.assertEqual(t._drag_strip.call_count,2)
-        t._slot_identity=Mock(return_value='same')
-        with self.assertRaisesRegex(RuntimeError,'不同角色'):t._endpoint_names('left')
-
-    def test_selection_verifies_name_and_retries(self):
-        t=self.task(); t._trial_slots={'target':('right',3)}; t._drag_strip=Mock()
-        t._slot_identity=Mock(side_effect=['wrong','target'])
-        t._select('target')
-        self.assertEqual(t._drag_strip.call_count,2)
+    def test_unknown_state_is_not_skipped(self):
+        t=self.task();t._drag_strip=Mock();t._wait=Mock();t._trial_point=Mock(return_value=(100,100))
+        t.click=Mock();t.sleep=Mock();t._state=Mock(side_effect=TrialTimeout('unknown'))
+        with self.assertRaises(TrialTimeout):t._select(4)
 
     def test_enter_clears_old_party_before_click(self):
         t=self.task(); t.chars=[object()]; t.reset_to_false=Mock()

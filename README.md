@@ -1,5 +1,5 @@
 <div align="center">
-  <p>当前版本：<a href="docs/references/character-trial-scroll.md">1.60.05 角色试用固定槽位扫描</a> · <a href="docs/references/completion-evidence.md">完成检查分组与图片复制</a> · <a href="docs/references/material-planner-1.59.md">养成材料规划</a></p>
+  <p>当前版本：<a href="docs/references/character-trial-scroll.md">1.60.06 角色试用手动人数与固定位置</a> · <a href="docs/references/completion-evidence.md">完成检查分组与图片复制</a> · <a href="docs/references/material-planner-1.59.md">养成材料规划</a></p>
   <h1 align="center">
     <img src="icons/icon.png" width="200" alt="ok-ww logo"/>
     <br/>

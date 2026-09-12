@@ -44,7 +44,9 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
         self.group_name = '常驻活动'
         self.supported_languages = ['zh_CN']
         self.support_schedule_task = False
-        self.default_config.update({'Trial Combat Timeout': 180})
+        self.default_config.update({'Trial Combat Timeout': 180, '试用人数': '5人'})
+        self.config_type['试用人数'] = {'type': 'drop_down', 'options': ['5人', '6人']}
+        self.config_description['试用人数'] = '手动选择本期人数；6人模式处理完第五人后拖到末端，再点击第五位置。'
         self.config_description['Trial Combat Timeout'] = 'Maximum combat seconds per character (60–600).'
         self.skip_combat_check = True
         self._battle_deadline = None
@@ -57,14 +59,13 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
         self.last_result = None
 
     def validate_config(self, key, value):
+        if key == '试用人数' and value not in ('5人', '6人'):
+            return '试用人数必须为5人或6人'
         if key == 'Trial Combat Timeout' and (type(value) not in (int, float) or not 60 <= value <= 600):
             return 'Trial Combat Timeout must be between 60 and 600.'
 
     def _guard(self):
         self.executor.check_enabled()
-        scan_deadline = getattr(self, '_scan_deadline', None)
-        if scan_deadline is not None and time.monotonic() >= scan_deadline:
-            raise TrialTimeout('角色列表扫描超时')
         if self._battle_deadline is not None and time.monotonic() >= self._battle_deadline:
             raise TrialTimeout('角色试用战斗超时')
 
@@ -196,13 +197,13 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
     def _trial_point(self, x, y):
         if abs(self.width / self.height - 16 / 9) > .02:
             raise RuntimeError('角色试用仅支持16:9画面')
-        return round(x*self.width/2048), round(y*self.height/1152)
+        return round(x*self.width), round(y*self.height)
 
     def _drag_strip(self, side):
         self._wait(self._page, '拖拽前无法确认角色试用页面', 3)
-        start, end = (1362, 586) if side == 'right' else (586, 1362)
-        x, y = self._trial_point(start, 1043)
-        end_x, _ = self._trial_point(end, 1043)
+        start, end = (.665, .286) if side == 'right' else (.286, .665)
+        x, y = self._trial_point(start, .905)
+        end_x, _ = self._trial_point(end, .905)
         self._guard()
         self._held_mouse.add('left')
         try:
@@ -213,65 +214,29 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
         self._guard()
         self.log_info(f'头像栏长拖拽：到{side}端 ({x},{y})->({end_x},{y})')
 
-    def _slot_identity(self, side, slot):
-        # Four full slots at either endpoint; rightmost clipped slot is never clicked.
-        positions = (655, 831, 1007, 1183) if side == 'left' else (763, 939, 1115, 1291)
-        self._wait(self._page, '点击前无法确认角色试用页面', 3)
-        self.click(*self._trial_point(positions[slot], 1043))
-        self.sleep(.6)
-        def read():
-            if not self._page():
-                return None
-            names = [compact(b.name) for b in self._ocr(self.NAME) if compact(b.name)]
-            state = reward_state(self._ocr(self.REWARD))
-            if len(names) != 1 or not re.fullmatch(r'[\u4e00-\u9fff·]{1,12}', names[0]) or state is None:
-                return None
-            return names[0], state
-        name, state = self._stable(read, '无法稳定确认角色名称与奖励状态', 5)
-        self.info_set('试用角色', name)
-        return name
-
-    def _endpoint_names(self, side):
-        previous = None
-        for attempt in range(3):
-            self._drag_strip(side)
-            names = tuple(self._slot_identity(side, slot) for slot in range(4))
-            if len(set(names)) != 4:
-                raise RuntimeError('固定槽位未选中不同角色，停止以防漏角色')
-            if names == previous:
-                return names
-            previous = names
-        raise TrialTimeout('长拖拽后角色名单未稳定，无法确认列表端点')
-
     def _scan(self):
-        self._scan_deadline = time.monotonic() + 180
-        try:
-            self._stage('固定槽位扫描本期角色')
-            left = self._endpoint_names('left')
-            right = self._endpoint_names('right')
-            overlaps = [n for n in (2, 3) if left[-n:] == right[:n]]
-            if len(overlaps) != 1:
-                raise RuntimeError('两端角色名称缺少唯一连续重叠，无法确认完整名单')
-            names = left + right[overlaps[0]:]
-            if len(set(names)) != len(names):
-                raise RuntimeError('两端角色名称重复或顺序异常')
-            # Return to the other endpoint to verify the drag was not a static no-op.
-            if self._endpoint_names('left') != left:
-                raise RuntimeError('反向复核角色名单不一致')
-            self._trial_slots = {name: ('left', i) for i, name in enumerate(left)}
-            self._trial_slots.update({name: ('right', i) for i, name in enumerate(right)
-                                      if name not in self._trial_slots})
-            return list(names)
-        finally:
-            self._scan_deadline = None
+        # User selects the roster size; no portrait or name scan is performed.
+        choice = self.config.get('试用人数', '5人')
+        if self.validate_config('试用人数', choice):
+            raise ValueError('试用人数必须为5人或6人')
+        count = 5 if choice == '5人' else 6
+        self._stage(f'按配置依次处理{count}个角色')
+        return list(range(count))
 
     def _select(self, target):
-        side, slot = self._trial_slots[target]
-        for attempt in range(3):
-            self._drag_strip(side)
-            if self._slot_identity(side, slot) == target:
-                return
-        raise RuntimeError(f'固定槽位未确认目标角色：{target}')
+        if type(target) is not int or not 0 <= target < 6:
+            raise ValueError('角色序号无效')
+        # Always establish the requested endpoint again after returning from trials.
+        # The sixth character uses the fifth position at the right endpoint.
+        self._drag_strip('right' if target == 5 else 'left')
+        self._wait(self._page, '点击前无法确认角色试用页面', 3)
+        positions = (.324, .410, .495, .581, .650)
+        x, y = self._trial_point(positions[min(target, 4)], .905)
+        self.click(x, y)
+        self.sleep(.6)
+        self.info_set('试用角色', f'第{target+1}人（按配置位置）')
+        self.log_info(f'固定位置选择：第{target+1}人 ({x},{y})')
+        self._state()  # Unknown rewards never mean already complete.
 
     def _state(self):
         return self._stable(lambda: reward_state(self._ocr(self.REWARD)) if self._page() else None,
@@ -484,7 +449,7 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
                 if self._state() != 'complete':
                     raise RuntimeError('最终复核发现角色未完成')
             self.last_result['complete'] = True
-            self._stage(f'本期{len(targets)}个角色奖励已全部确认完成')
+            self._stage(f'配置的{len(targets)}个角色奖励状态均已确认完成')
         except TaskDisabledException:
             raise
         except Exception:
