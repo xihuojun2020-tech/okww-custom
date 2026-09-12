@@ -1,15 +1,8 @@
 """Display-only account reminders. Never consulted by task scheduling."""
 import copy
+from src.evidence.model import PROJECTS
 
-REMINDERS = {
-    'daily_activity': '活跃度',
-    'nightmare_nest': '残像聚落',
-    'weekly_boss': '周本',
-    'weekly_garden': '每周乐园',
-    'activity_1': '活动1',
-    'activity_2': '活动2',
-    'activity_3': '活动3',
-}
+REMINDERS = {key: title for key, (title, _) in PROJECTS.items()}
 
 
 def get_reminders(account):

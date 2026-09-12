@@ -1,16 +1,18 @@
 """Read-only account evidence dashboard and explicit manual capture/recycle UI."""
 from functools import partial
+import json
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QPixmap, QImage
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
     QListWidget, QListWidgetItem, QLineEdit, QScrollArea, QDialog, QDialogButtonBox,
-    QMessageBox, QCheckBox, QPlainTextEdit, QSizePolicy, QPushButton)
+    QMessageBox, QCheckBox, QPlainTextEdit, QSizePolicy, QPushButton, QApplication, QMenu)
 from qfluentwidgets import FluentIcon, PushButton, PrimaryPushButton
 
 from src.account_display import account_display_label
 from src.account_repository import get_default_repository
-from src.evidence.model import PROJECTS, STATUSES, SOURCES, ASSETS, period_for, period_label, summarize
+from src.evidence.model import (PROJECTS, CURRENT_PROJECTS, GROUPS, project_group,
+    STATUSES, SOURCES, ASSETS, period_for, period_label, summarize)
 from src.evidence.service import EvidenceService, get_evidence_service, request_capture
 from src.gui.BackgroundOperation import BackgroundOperation
 from src.gui.ChoiceControls import QtComboBox
@@ -22,6 +24,23 @@ def picture(data, width=280, height=140):
     if data:
         pixmap.loadFromData(data)
     return pixmap.scaled(width, height, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+
+
+def copy_image(data):
+    """Decode before touching the clipboard; always copy original pixels."""
+    image = QImage.fromData(data or b'')
+    if image.isNull():
+        raise ValueError('原图缺失或无法读取，未更改剪贴板')
+    QApplication.clipboard().setImage(image)
+
+
+def image_copy_menu(widget, callback):
+    widget.setContextMenuPolicy(Qt.CustomContextMenu)
+    def show(position):
+        menu = QMenu(widget)
+        menu.addAction('复制图片', callback)
+        menu.exec(widget.mapToGlobal(position))
+    widget.customContextMenuRequested.connect(show)
 
 
 class EvidenceCaptureDialog(QDialog):
@@ -50,8 +69,8 @@ class EvidenceCaptureDialog(QDialog):
             hint.setWordWrap(True)
             layout.addWidget(hint)
         self.project = QtComboBox(self)
-        for key, (title, _) in PROJECTS.items():
-            self.project.addItem(title, key)
+        for key in CURRENT_PROJECTS:
+            self.project.addItem(PROJECTS[key][0], key)
         if project in PROJECTS:
             self.project.setCurrentIndex(self.project.findData(project))
         layout.addWidget(QLabel('证据项目'))
@@ -107,6 +126,7 @@ class EvidenceDetailDialog(QDialog):
         self.setWindowTitle(PROJECTS[record['project_id']][0] + ' · 证据详情')
         self.resize(880, 680)
         self.pixmap = QPixmap()
+        self._original_data = data
         if data:
             self.pixmap.loadFromData(data)
         layout = QVBoxLayout(self)
@@ -120,18 +140,28 @@ class EvidenceDetailDialog(QDialog):
                   'points': '识别积分', 'target': '达标积分'}
         progress = '，'.join(f'{labels[key]}：{value}' for key, value in record.get('progress', {}).items() if key in labels)
         text = QLabel(f"{STATUSES[record['completion_status']]} · {SOURCES[record['source']]}\n"
-                      f"记录时间：{record['captured_at']}\n{period_label(record['period_id'])}\n{progress}\n"
+                      f"记录时间：{record['captured_at']}\n{period_label(record['period_id'], record['project_id'])}\n{progress}\n"
                       f"{record.get('reason', '')}\n{record.get('note', '')}", self)
         text.setWordWrap(True)
         text.setTextInteractionFlags(Qt.TextSelectableByMouse)
         layout.addWidget(text)
+        self.copy_notice = QLabel('', self)
+        layout.addWidget(self.copy_notice)
         controls = QHBoxLayout()
-        for title, callback in [('适应窗口', self.fit), ('原始大小', self.original), ('关闭', self.accept)]:
+        for title, callback in [('复制图片', self.copy_original), ('适应窗口', self.fit), ('原始大小', self.original), ('关闭', self.accept)]:
             button = PushButton(title, self)
             button.clicked.connect(callback)
             controls.addWidget(button)
         layout.addLayout(controls)
+        image_copy_menu(self.image, self.copy_original)
         QTimer.singleShot(0, self.fit)
+
+    def copy_original(self):
+        try:
+            copy_image(self._original_data)
+            self.copy_notice.setText('图片已复制，可在微信中粘贴')
+        except ValueError as error:
+            self.copy_notice.setText(str(error))
 
     def fit(self):
         if not self.pixmap.isNull():
@@ -164,6 +194,7 @@ class CompletionCheckTab(QWidget):
         self._periods = (period_for('daily_activity'), period_for('weekly_boss'))
         self._reload_pending = False
         self._cards = []
+        self._group_headers = {}
         self._run_record, self._completions = None, {}
         self._run_panel = None
         self._history_error = ''
@@ -206,7 +237,7 @@ class CompletionCheckTab(QWidget):
         self._reminders = {}
         tools = QHBoxLayout()
         self.mode = QtComboBox(right)
-        for title, key in [('当前周期', 'current'), ('历史记录', 'history'), ('回收区', 'trash')]:
+        for title, key in [('当前检查', 'current'), ('历史记录', 'history'), ('回收区', 'trash')]:
             self.mode.addItem(title, key)
         self.project_filter = QtComboBox(right)
         self.project_filter.addItem('全部项目', None)
@@ -399,6 +430,9 @@ class CompletionCheckTab(QWidget):
                     completions = source.get_profile_completions(identity)
             except Exception:
                 error = '完成记录暂不可读取；截图记录不受影响。'
+            migration = json.loads(repo.get_preference('daily_periods_v2') or '{}')
+            if migration.get('invalid'):
+                error += f" {len(migration['invalid'])} 条旧证据时间无效，保留在历史记录中，未猜测周期。"
             return rows, repo.latest_run(identity), completions, error
         def loaded(result):
             if (identity, project, mode, offset) != (self._selected, self.project_filter.currentData(), self.mode.currentData(), self._offset):
@@ -406,6 +440,8 @@ class CompletionCheckTab(QWidget):
                 return
             rows, self._run_record, self._completions, self._history_error = result
             self._rows = rows
+            if self._history_error:
+                self.notice.setText(self._history_error)
             self.more.setVisible(mode != 'current' and len(rows) == 60)
             self.previous.setVisible(mode != 'current' and offset > 0)
             self._display_records()
@@ -426,6 +462,7 @@ class CompletionCheckTab(QWidget):
             if item.widget():
                 item.widget().deleteLater()
         self._cards = []
+        self._group_headers = {}
         if not self._selected:
             self._run_panel = None
             return
@@ -434,12 +471,14 @@ class CompletionCheckTab(QWidget):
         if mode == 'current':
             projects = [self.project_filter.currentData()] if self.project_filter.currentData() else list(PROJECTS)
             for project in projects:
+                if project not in CURRENT_PROJECTS and not any(r['project_id'] == project for r in self._rows):
+                    continue
                 if self.reminders_only.isChecked() and project not in self._reminders.get(self._selected, []):
                     continue
                 period = period_for(project)
                 rows = [r for r in self._rows if r['project_id'] == project and r['period_id'] == period]
                 record, conflict = summarize(rows)
-                if self.pending_only.isChecked() and period and record and record['completion_status'] == 'completed' and not conflict:
+                if self.pending_only.isChecked() and record and record['completion_status'] == 'completed' and not conflict:
                     continue
                 self._add_card(project, record, conflict)
         else:
@@ -500,6 +539,7 @@ class CompletionCheckTab(QWidget):
 
     def _add_card(self, project, record, conflict=False):
         card = QWidget(self.grid_widget)
+        card.setProperty('project_id', project)
         card.setObjectName('completionEvidenceCard')
         card.setStyleSheet(f'QWidget#completionEvidenceCard {{ background: {COLORS["panel"]}; border: 1px solid {COLORS["border"]}; border-radius: 10px; }}')
         card.setMinimumWidth(160)
@@ -525,18 +565,26 @@ class CompletionCheckTab(QWidget):
         if record:
             text = (f"{STATUSES[record['completion_status']]} · {SOURCES[record['source']]}\n"
                     f"{ASSETS[record['asset_status']]}\n{record['captured_at'][:19].replace('T', ' ')}\n"
-                    f"{period_label(record['period_id'])}")
+                    f"{period_label(record['period_id'], project)}")
             if conflict:
                 text += '\n自动与人工结论不同，请核验历史'
+            observation = record.get('_period_observation')
+            if observation:
+                text += (f"\n本周期另有记录：{STATUSES[observation['completion_status']]}"
+                         f" · {SOURCES[observation['source']]}\n{observation['captured_at'][:19]}（不替代本图判断）")
         else:
-            text = '暂无当前周期证据\n可手动保存；未识别不等于未完成'
-            if project not in ('daily_activity', 'weekly_garden', 'weekly_boss'):
-                text += '\n尚未接入自动采集'
+            text = {'day': '本日暂无记录', 'week': '本周暂无记录'}.get(PROJECTS[project][1], '暂无截图')
+            text += '\n可查看历史或手动保存；没有记录不代表未完成'
         description = QLabel(text, card)
         description.setWordWrap(True)
         description.setProperty('role', 'description')
         layout.addWidget(description)
         if record:
+            copy_button = PushButton('复制图片', card)
+            copy_button.clicked.connect(partial(self.copy_record, record))
+            layout.addWidget(copy_button)
+            image_copy_menu(card, partial(self.copy_record, record))
+            image_copy_menu(preview, partial(self.copy_record, record))
             actions = QHBoxLayout()
             if record['trashed']:
                 for title, action in [('恢复', 'restore'), ('永久删除', 'delete')]:
@@ -552,15 +600,35 @@ class CompletionCheckTab(QWidget):
 
     def _layout_cards(self):
         columns = max(1, min(3, self.scroll.viewport().width() // 250))
-        for index, card in enumerate(self._cards):
-            self.grid.addWidget(card, 1 + index // columns, index % columns)
+        for card in self._cards:
+            self.grid.removeWidget(card)
+        for header in self._group_headers.values():
+            self.grid.removeWidget(header)
+        row = 1
+        if self.mode.currentData() == 'current':
+            for group, title in GROUPS.items():
+                cards = [card for card in self._cards if project_group(card.property('project_id')) == group]
+                if not cards:
+                    continue
+                if group not in self._group_headers:
+                    header = QLabel(title, self.grid_widget)
+                    header.setProperty('role', 'sectionTitle')
+                    self._group_headers[group] = header
+                self.grid.addWidget(self._group_headers[group], row, 0, 1, columns)
+                row += 1
+                for index, card in enumerate(cards):
+                    self.grid.addWidget(card, row + index // columns, index % columns)
+                row += (len(cards) + columns - 1) // columns
+        else:
+            for index, card in enumerate(self._cards):
+                self.grid.addWidget(card, row + index // columns, index % columns)
         for column in range(3):
             self.grid.setColumnStretch(column, int(column < columns))
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if hasattr(self, '_cards'):
-            self._layout_cards()
+            QTimer.singleShot(0, self._layout_cards)
 
     def show_detail(self, record):
         if self.action_operation.busy:
@@ -570,6 +638,20 @@ class CompletionCheckTab(QWidget):
             relative = record.get('image_path')
             return repo.asset_path(relative).read_bytes() if relative and repo.asset_path(relative).is_file() else None
         self.action_operation.start(work, lambda data: EvidenceDetailDialog(record, data, self).exec(), self._error)
+
+    def copy_record(self, record):
+        if self.action_operation.busy:
+            return
+        repo, relative = self.repository, record.get('image_path')
+        def work():
+            return repo.asset_path(relative).read_bytes() if relative else None
+        def copied(data):
+            try:
+                copy_image(data)
+                self.notice.setText('图片已复制，可在微信中粘贴')
+            except ValueError as error:
+                self._error(error)
+        self.action_operation.start(work, copied, self._error)
 
     def change_record(self, record, action):
         if self.action_operation.busy:

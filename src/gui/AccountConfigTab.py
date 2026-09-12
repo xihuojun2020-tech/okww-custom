@@ -606,7 +606,7 @@ class AccountConfigTab(CustomTab):
                 widget.currentTextChanged.connect(update_group_summary)
                 update_group_summary()
         from src.gui.compact_settings import compact_settings
-        compact_settings(self)
+        compact_settings(self, account=True)
 
     def _render_weekly_status(self):
         from src.config_integrity import get_default_service

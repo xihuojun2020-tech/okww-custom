@@ -15,6 +15,80 @@ ACCOUNT = '00000000-0000-4000-8000-000000000001'
 
 
 class TestCompletionEvidence(unittest.TestCase):
+    def test_daily_projects_and_weekly_boundaries(self):
+        for project in ('daily_activity', 'nightmare_nest', 'battle_pass'):
+            self.assertEqual(period_for(project, '2026-09-15T03:59:59+08:00'), 'day:2026-09-14')
+            self.assertEqual(period_for(project, '2026-09-15T04:00:00+08:00'), 'day:2026-09-15')
+        for project in ('weekly_boss', 'weekly_garden'):
+            self.assertEqual(period_for(project, '2026-09-15T04:00:00+08:00'), 'week:2026-09-14')
+        from src.activity_catalog import ACTIVITIES
+        for project in (*ACTIVITIES, 'adversity_tower', 'sea_ruins', 'matrix'):
+            self.assertIsNone(period_for(project, '2026-09-15T04:00:00+08:00'))
+
+    def test_new_photo_replaces_old_verdict_but_failed_capture_does_not_hide_photo(self):
+        with tempfile.TemporaryDirectory() as root:
+            repo = EvidenceRepository(root)
+            common = dict(profile_id=ACCOUNT, project_id='sea_ruins')
+            old = repo.save(dict(common, captured_at='2026-09-01T12:00:00+08:00',
+                source='manual_confirmation', completion_status='completed'), np.zeros((5, 5, 3), np.uint8))
+            new = repo.save(dict(common, captured_at='2026-09-02T12:00:00+08:00'), np.ones((5, 5, 3), np.uint8))
+            repo.save(dict(common, captured_at='2026-09-03T12:00:00+08:00'), None)
+            repo.save(dict(common, captured_at='2026-08-01T12:00:00+08:00'), np.zeros((5, 5, 3), np.uint8))
+            chosen, conflict = summarize(repo.read_current(ACCOUNT, 'sea_ruins'))
+            self.assertEqual(chosen['evidence_id'], new['evidence_id'])
+            self.assertEqual(chosen['completion_status'], 'unknown')
+            self.assertFalse(conflict)
+            self.assertTrue(repo.asset_path(old['image_path']).exists())
+            equal_time = repo.save(dict(common, captured_at=new['captured_at']), np.full((5, 5, 3), 2, np.uint8))
+            self.assertEqual(summarize(repo.read_current(ACCOUNT, 'sea_ruins'))[0]['evidence_id'], equal_time['evidence_id'])
+
+    def test_daily_period_migration_is_backed_up_idempotent_and_keeps_originals(self):
+        import json
+        import sqlite3
+        from contextlib import closing
+        with tempfile.TemporaryDirectory() as root:
+            repo = EvidenceRepository(root)
+            saved = repo.save(dict(profile_id=ACCOUNT, project_id='battle_pass',
+                captured_at='2026-09-12T03:00:00+08:00'), np.zeros((5, 5, 3), np.uint8))
+            original = repo.asset_path(saved['image_path']).read_bytes()
+            with closing(sqlite3.connect(repo.database)) as db, db:
+                saved.update(period_id=None, period_rule='unknown')
+                db.execute('UPDATE evidence SET period_id=NULL, metadata=?', (json.dumps(saved),))
+                db.execute("DELETE FROM preferences WHERE key='daily_periods_v2'")
+            migrated = repo.list_records(ACCOUNT)[0]
+            self.assertEqual(migrated['period_id'], 'day:2026-09-11')
+            self.assertEqual(migrated['period_rule'], 'day')
+            self.assertEqual(repo.asset_path(migrated['image_path']).read_bytes(), original)
+            self.assertEqual(repo.list_records(ACCOUNT)[0], migrated)
+            backups = list(repo.root.glob('backups/daily-periods-*/index.sqlite3'))
+            self.assertEqual(len(backups), 1)
+            with closing(sqlite3.connect(backups[0])) as db:
+                self.assertIsNone(db.execute('SELECT period_id FROM evidence').fetchone()[0])
+
+    def test_migration_failure_rolls_back_and_invalid_dates_stay_in_history(self):
+        import json
+        import sqlite3
+        from contextlib import closing
+        with tempfile.TemporaryDirectory() as root:
+            repo = EvidenceRepository(root)
+            for project in ('battle_pass', 'nightmare_nest'):
+                repo.save(dict(profile_id=ACCOUNT, project_id=project), None)
+            with closing(sqlite3.connect(repo.database)) as db, db:
+                db.execute('UPDATE evidence SET period_id=NULL')
+                db.execute("DELETE FROM preferences WHERE key='daily_periods_v2'")
+            with patch('src.evidence.repository.period_for', side_effect=['day:2026-09-12', RuntimeError('injected')]):
+                with self.assertRaises(RuntimeError):
+                    repo.list_records(ACCOUNT)
+            with closing(sqlite3.connect(repo.database)) as db, db:
+                self.assertEqual(db.execute('SELECT COUNT(*) FROM evidence WHERE period_id IS NULL').fetchone()[0], 2)
+                self.assertIsNone(db.execute("SELECT value FROM preferences WHERE key='daily_periods_v2'").fetchone())
+                db.execute("UPDATE evidence SET captured_at='invalid' WHERE project_id='battle_pass'")
+            self.assertEqual(len(repo.list_records(ACCOUNT)), 2)
+            report = json.loads(repo.get_preference('daily_periods_v2'))
+            self.assertEqual(len(report['invalid']), 1)
+            with closing(sqlite3.connect(repo.database)) as db:
+                self.assertIsNone(db.execute("SELECT period_id FROM evidence WHERE project_id='battle_pass'").fetchone()[0])
+
     def test_progress_task_page_selects_daily_tab_instead_of_remembered_weekly_tab(self):
         from unittest.mock import Mock
         from src.task.DailyTask import DailyTask
@@ -400,7 +474,7 @@ class TestCompletionEvidence(unittest.TestCase):
         self.assertEqual(chosen['completion_status'], 'completed')
         self.assertFalse(conflict)
         rows.insert(0, dict(completion_status='incomplete', source='manual_confirmation'))
-        self.assertTrue(summarize(rows)[1])
+        self.assertFalse(summarize(rows)[1])  # Different observations are not a permanent conflict.
 
 
 if __name__ == '__main__':

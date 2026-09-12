@@ -35,7 +35,8 @@ class TaskCard(ConfigCard):
                          config_type, config_icon=task.icon or FluentIcon.INFO)
         self.task = task
         if type(task).__name__ == 'PianoTeachingTask':
-            self.card.titleLabel.setText('清弦纪流年')
+            from src.activity_catalog import ACTIVITIES
+            self.card.titleLabel.setText(ACTIVITIES['piano_activity'])
         from src.evidence.model import TASK_PROJECTS
         self._evidence_project = TASK_PROJECTS.get(type(task).__name__)
         if self._evidence_project:

@@ -4,7 +4,7 @@ import json
 import os
 import sqlite3
 from datetime import datetime
-from contextlib import contextmanager
+from contextlib import contextmanager, closing
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -32,10 +32,42 @@ class EvidenceRepository:
             db.execute('CREATE TABLE IF NOT EXISTS preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS account_runs (id TEXT PRIMARY KEY, profile_id TEXT NOT NULL, started_at TEXT NOT NULL, metadata TEXT NOT NULL)')
             db.execute('CREATE INDEX IF NOT EXISTS account_runs_lookup ON account_runs(profile_id, started_at DESC)')
+            self._migrate_daily_periods(db)
             with db:
                 yield db
         finally:
             db.close()
+
+    def _migrate_daily_periods(self, db):
+        """One transactional index migration; immutable images/sidecars stay intact."""
+        marker = 'daily_periods_v2'
+        if db.execute('SELECT 1 FROM preferences WHERE key=?', (marker,)).fetchone():
+            return
+        db.commit()
+        with db:
+            db.execute('BEGIN IMMEDIATE')
+            if db.execute('SELECT 1 FROM preferences WHERE key=?', (marker,)).fetchone():
+                return
+            rows = db.execute("SELECT id, project_id, captured_at, metadata FROM evidence "
+                              "WHERE project_id IN ('nightmare_nest','battle_pass') AND period_id IS NULL").fetchall()
+            if rows:
+                folder = self.root / 'backups' / ('daily-periods-' + str(uuid4()))
+                folder.mkdir(parents=True)
+                # A separate reader can snapshot while this writer holds the reservation.
+                with closing(sqlite3.connect(self.database)) as source, closing(sqlite3.connect(folder / 'index.sqlite3')) as target:
+                    source.backup(target)
+            invalid = []
+            for identity, project, captured, payload in rows:
+                try:
+                    record = json.loads(payload)
+                    period = period_for(project, captured)
+                    record.update(period_id=period, period_rule='day')
+                except (TypeError, ValueError, AttributeError):
+                    invalid.append(identity)
+                    continue
+                db.execute('UPDATE evidence SET period_id=?, metadata=? WHERE id=?',
+                           (period, json.dumps(record, ensure_ascii=False), identity))
+            db.execute('INSERT INTO preferences VALUES (?, ?)', (marker, json.dumps({'invalid': invalid})))
 
     def asset_path(self, relative):
         path = (self.root / relative).resolve()
@@ -130,7 +162,7 @@ class EvidenceRepository:
         if record['source'] == 'manual_capture' and record['completion_status'] != 'unknown':
             raise ValueError('人工结论必须明确标记为手动确认')
         record['period_id'] = period_for(project, record['captured_at'])
-        record['period_rule'] = PROJECTS[project][1] or 'unknown'
+        record['period_rule'] = PROJECTS[project][1] or 'snapshot'
         record.update(schema_version=1, evidence_id=str(uuid4()), created_at=now_iso(), trashed=False)
         record.setdefault('identity_source', 'user_confirmed')
         for key in ('target_id', 'run_id', 'event_id', 'reason', 'note'):
@@ -226,7 +258,8 @@ class EvidenceRepository:
                 rows = db.execute('''SELECT metadata FROM (
                     SELECT metadata, captured_at, rowid AS seq,
                         ROW_NUMBER() OVER (PARTITION BY json_extract(metadata, '$.source'),
-                            json_extract(metadata, '$.completion_status')
+                            json_extract(metadata, '$.completion_status'),
+                            (json_extract(metadata, '$.image_path') IS NOT NULL)
                             ORDER BY captured_at DESC, rowid DESC) AS rank
                     FROM evidence WHERE profile_id=? AND project_id=?
                         AND period_id IS ? AND trashed=0)

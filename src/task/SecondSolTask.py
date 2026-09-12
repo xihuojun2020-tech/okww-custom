@@ -4,6 +4,7 @@ import time
 
 import win32gui
 from ok import BaseTask
+from src.activity_catalog import ACTIVITIES
 
 
 class SecondSolTask(BaseTask):
@@ -11,7 +12,7 @@ class SecondSolTask(BaseTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.name = "第二索拉·诡影迷踪"
+        self.name = ACTIVITIES['second_sol']
         self.description = "手动进入活动后开始，约每秒短按 F；切出游戏时等待，活动结束后请手动停止。"
         self.group_name = "限时活动"
         self.support_schedule_task = False

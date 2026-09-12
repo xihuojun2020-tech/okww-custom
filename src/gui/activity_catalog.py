@@ -1,10 +1,11 @@
 """Display revisions are release metadata, never filesystem/user-edit times."""
+from src.activity_catalog import ACTIVITIES
 ACTIVITY_REVISIONS = {'PianoTeachingTask': 2026091101, 'CharacterTrialTask': 2026091100,
                       'SecondSolTask': 2026091001}
 PLACEHOLDER_REVISION = 2026091101
 PLACEHOLDERS = (
-    ('echoes_remain', '若梦仍有回声'),
-    ('resonance_simulation', '群声共振模拟域'),
+    ('echoes_remain', ACTIVITIES['echoes_remain']),
+    ('resonance_simulation', ACTIVITIES['resonance_simulation']),
 )
 
 

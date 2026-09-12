@@ -4,6 +4,16 @@ from src.account_reminders import get_reminders, set_reminders
 
 
 class TestAccountReminders(unittest.TestCase):
+    def test_all_current_projects_and_legacy_reminders_roundtrip(self):
+        from src.evidence.model import CURRENT_PROJECTS
+        from src.account_reminders import REMINDERS
+        from src.activity_catalog import ACTIVITIES
+        self.assertEqual(len(CURRENT_PROJECTS), 12)
+        self.assertEqual({key: REMINDERS[key] for key in ACTIVITIES}, ACTIVITIES)
+        account = {'extensions': {'completion_reminders': ['activity_1', 'activity_3']}}
+        self.assertEqual(get_reminders(set_reminders(account, get_reminders(account))), ['activity_1', 'activity_3'])
+        self.assertEqual(get_reminders(set_reminders(account, list(CURRENT_PROJECTS))), list(CURRENT_PROJECTS))
+
     def test_reminders_are_empty_by_default(self):
         self.assertEqual(get_reminders({}), [])
 
