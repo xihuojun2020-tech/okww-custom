@@ -81,6 +81,8 @@ class EvidenceWindow:
         self.last_error = None
         self.dropped_frames = 0
         self.last_source = None
+        self.last_save = float('-inf')
+        self.last_publish = float('-inf')
 
     def _trim(self, now):
         while self.ring and (self.ring[0][0]['sample_monotonic'] < now - PRE_SECONDS
@@ -124,7 +126,7 @@ class EvidenceWindow:
         self.want_at = True
         self.next_post = at + SAMPLE_INTERVAL
         self.deadline = at + POST_SECONDS
-        self._save()
+        self._save(force=True)
 
     def _reason(self, reason):
         if self.active and reason not in self.active['incomplete_reasons']:
@@ -161,11 +163,15 @@ class EvidenceWindow:
         if height <= 0 or width <= 0:
             self.unavailable('invalid_frame', now)
             return
-        scale = min(1., 3840 / width, 2160 / height)
+        # Diagnostic context only: material receipts and verified completion
+        # originals use their separate full-resolution save paths.
+        scale = min(1., 1920 / width, 1080 / height)
         if scale < 1:
             frame = cv2.resize(frame, (max(1, int(width * scale)), max(1, int(height * scale))))
         # Isolate from overlay mutation before the encoder releases the GIL.
         frame = frame[:, :, :3].copy()
+        # OpenCV's default strategy outperformed explicit level=1 in the local
+        # benchmark; keep it instead of trading more CPU for smaller files.
         ok, encoded = cv2.imencode('.png', frame)
         if not ok or encoded.nbytes > IMAGE_BYTES:
             self.unavailable('image_size_limit', now)
@@ -190,7 +196,7 @@ class EvidenceWindow:
                 self.want_at = False
                 self.next_post = max(self.next_post + (0 if phase == 'at' else SAMPLE_INTERVAL),
                                      now + .5)
-                self._save()
+                self._save(checkpoint=True)
         self.ring.append((record, data))
         self.ring_bytes += len(data)
         self._trim(now)
@@ -213,11 +219,19 @@ class EvidenceWindow:
         if frame['freshness'] == 'unknown':
             self._reason('freshness_unknown')
 
-    def _save(self):
+    def _save(self, force=False, checkpoint=False):
+        # Merge error storms and per-frame revisions; first/final are durable
+        # immediately, intervening frames remain on disk for recovery.
+        if not force and not checkpoint and self.clock() - self.last_save < 2:
+            return
+        self.last_save = self.clock()
         self.active['revision'] += 1
         atomic_json(self.directory / 'event.json', self.active)
+        if not force and self.clock() - self.last_publish < 5:
+            return
         try:
             self.active = flush_event(self.directory, self.publish)
+            self.last_publish = self.clock()
         except Exception as error:
             # The durable event will be retried by seal_pending/recovery.
             self.last_error = 'event_seal_failed:' + type(error).__name__
@@ -239,7 +253,7 @@ class EvidenceWindow:
         self.active['state'] = 'incomplete' if self.active['incomplete_reasons'] else 'complete'
         self.active['ended_monotonic'] = min(self.clock(), self.deadline)
         self.last_closed = (self.active['incident_id'], self.active['ended_monotonic'])
-        self._save()
+        self._save(force=True)
         self.active = None
         self.want_at = False
 

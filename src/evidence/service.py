@@ -86,6 +86,8 @@ def get_evidence_service():
     with _service_lock:
         if _service is None:
             root = Path(os.environ.get('LOCALAPPDATA', str(Path.home() / '.local/share'))) / 'OKWW' / 'CompletionEvidence'
+            from src.runtime.diagnostic_storage import storage_path
+            root = storage_path('CompletionEvidence', root)
             _service = EvidenceService(EvidenceRepository(root))
         return _service
 

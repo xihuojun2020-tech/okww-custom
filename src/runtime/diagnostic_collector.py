@@ -33,14 +33,17 @@ class FileCollector:
     def files(self):
         for folder in ('logs', 'screenshots'):
             base = safe_path(self.source, folder)
+            if folder == 'screenshots':
+                from src.runtime.diagnostic_storage import storage_path
+                base = storage_path('screenshots', base, repo=self.source)
             for directory, folders, names in os.walk(base, followlinks=False):
                 folders[:] = [n for n in folders if not (Path(directory) / n).is_symlink()
                               and not (Path(directory) / n).is_junction()]
                 for name in sorted(names):
                     path = Path(directory) / name
                     if path.suffix.lower() in LOG_TYPES | IMAGE_TYPES:
-                        relative = path.relative_to(self.source).as_posix()
-                        yield relative, safe_path(self.source, relative)
+                        relative = folder + '/' + path.relative_to(base).as_posix()
+                        yield relative, safe_path(base, path.relative_to(base).as_posix())
 
     @staticmethod
     def stamp(path):
@@ -79,7 +82,12 @@ class FileCollector:
         try:
             relative = path.relative_to(self.source).as_posix()
         except ValueError:
-            return False
+            from src.runtime.diagnostic_storage import storage_path
+            base = storage_path('screenshots', self.source / 'screenshots', repo=self.source).resolve()
+            try:
+                relative = 'screenshots/' + path.relative_to(base).as_posix()
+            except ValueError:
+                return False
         if not relative.startswith(('logs/', 'screenshots/')) or path.suffix.lower() not in LOG_TYPES | IMAGE_TYPES:
             return False
         self.cursors[relative] = self.stamp(path)
@@ -88,8 +96,14 @@ class FileCollector:
 
     def _collect_file(self, run, name, path):
         from src.runtime.diagnostic_session import seal_run
-        current = self.stamp(path)
         previous = self.cursors.get(name, {})
+        stat = path.stat()
+        # Unchanged history needs no open/hash. Changed files still undergo the
+        # prefix and identity checks below, including truncation/replacement.
+        if (stat.st_size, stat.st_mtime_ns, stat.st_ino) == (
+                previous.get('size'), previous.get('mtime'), previous.get('inode')):
+            return False
+        current = self.stamp(path)
         if self.same_stamp(current, previous.get('failed_stamp', {})):
             return False
         current.update(pre_policy=previous.get('pre_policy', False), run_id=run.name,
@@ -147,7 +161,8 @@ class FileCollector:
         return all(current.get(k) == previous.get(k) for k in ('size', 'mtime', 'inode'))
 
     def changed(self, name, path):
-        current = self.stamp(path)
+        stat = path.stat()
+        current = {'size': stat.st_size, 'mtime': stat.st_mtime_ns, 'inode': stat.st_ino}
         previous = self.cursors.get(name, {})
         return not self.same_stamp(current, previous) and not self.same_stamp(current, previous.get('failed_stamp', {}))
 

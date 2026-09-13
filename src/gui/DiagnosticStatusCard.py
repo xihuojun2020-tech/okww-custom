@@ -123,8 +123,8 @@ class DiagnosticStatusCard(SectionPanel):
         except (OSError, ValueError):
             pass
         self.timer = QTimer(self)
-        self.timer.timeout.connect(self.refresh)
-        self.timer.start(5000)
+        self.timer.timeout.connect(lambda: self.refresh() if self.isVisible() else None)
+        self.timer.start(30000)
         self.refresh()
 
     def refresh(self):

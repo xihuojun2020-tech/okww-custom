@@ -110,6 +110,8 @@ def ensure_task(root):
                 and state.get('working_directory') == working_directory
                 and time.time() - state.get('checked_at', 0) < 86400)
         if cached:
+            if state.get('system_verified') and time.time() - state.get('verified_at', 0) < 3600:
+                return
             verified = subprocess.run(command + ['-Verify'], capture_output=True, timeout=20,
                                       creationflags=subprocess.CREATE_NO_WINDOW)
             if verified.returncode == 0:

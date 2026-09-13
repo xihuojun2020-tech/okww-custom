@@ -54,6 +54,10 @@ def normalize_monthly_hour(value):
 class BaseWWTask(BaseTask):
     map_zoomed = False
 
+    def ocr(self, *args, **kwargs):
+        from src.runtime.ocr_reuse import cached_ocr
+        return cached_ocr(self, super().ocr, args, kwargs)
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.monthly_card_config = self.get_global_config('Monthly Card Config')

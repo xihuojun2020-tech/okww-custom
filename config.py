@@ -1,6 +1,7 @@
 import os
 import re
 from pathlib import Path
+from src.runtime.diagnostic_storage import storage_path
 
 from src.observability import install_redaction_filters
 
@@ -18,7 +19,7 @@ from src.task.process_feature import process_feature
 # okww 版本号（固定宽度 X.YY.ZZ）：
 #   小改动 → 第三位 +1；中等改动 → 第二位 +1 且第三位归 00；
 #   大改动 → 第一位 +1 且后两位归 00（仅用户明确提出时执行）
-version = "1.61.00"
+version = "1.62.00"
 
 
 def _find_most_recently_run_pc_exe():
@@ -275,7 +276,7 @@ config = {
         <strong>使用本软件可能会导致账号被封。</strong> 请在了解风险后再使用。
     </p>
 """,
-    'screenshots_folder': "screenshots",
+    'screenshots_folder': str(storage_path('screenshots', 'screenshots')),
     'gui_title': 'OK-WW',  # Optional
     # 'coco_feature_folder': get_path(__file__, 'assets/coco_feature'),  # required if using feature detection
     'log_file': 'logs/ok-ww.log',  # Optional, auto rotating every day

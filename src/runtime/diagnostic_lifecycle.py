@@ -20,6 +20,7 @@ _session = None
 _uploader = None
 _last_wake = 0
 _wake_lock = threading.Lock()
+_runtime_bundle = None
 
 
 def reset_incomplete_runtime_retries(root):
@@ -35,21 +36,23 @@ def reset_incomplete_runtime_retries(root):
 
 
 def wake_uploader(root=None):
-    global _uploader, _last_wake
+    global _uploader, _last_wake, _runtime_bundle
     root = Path(root or default_root())
     with _wake_lock:
         if _uploader is not None and _uploader.poll() is None:
             return
-        if time.monotonic() - _last_wake < 5:
+        if time.monotonic() - _last_wake < 60:
             return
         settings(root)
         _last_wake = time.monotonic()
         from src.runtime.diagnostic_runtime import prepare_runtime, uploader_command, isolated_environment
-        bundle = prepare_runtime(REPO)
+        if _runtime_bundle is None:
+            _runtime_bundle = prepare_runtime(REPO)
+            reset_incomplete_runtime_retries(root)
+        bundle = _runtime_bundle
         # A repaired immutable runtime should retry batches that were waiting
         # specifically because the previous bundle was incomplete.
-        reset_incomplete_runtime_retries(root)
-        flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+        flags = (subprocess.CREATE_NO_WINDOW | subprocess.BELOW_NORMAL_PRIORITY_CLASS) if os.name == 'nt' else 0
         _uploader = subprocess.Popen(
             uploader_command(bundle, root), env=isolated_environment(),
             cwd=str(bundle), creationflags=flags,
@@ -127,6 +130,7 @@ def attach_framework_hooks():
             if executor is None:
                 return None
             executor._diagnostic_capture_enabled = True
+            _session.metadata['capture_last_ms'] = getattr(executor, '_capture_last_ms', None)
             return getattr(executor, '_diagnostic_frame', None)
         _session.sample_provider = sample
         original = Screenshot.save_pil_image

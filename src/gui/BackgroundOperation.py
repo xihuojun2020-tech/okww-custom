@@ -19,7 +19,14 @@ class _Work(QRunnable):
             value, error = self.callback(), None
         except Exception as exception:
             value, error = None, exception
-        self.signals.finished.emit(self.request_id, value, error)
+        try:
+            self.signals.finished.emit(self.request_id, value, error)
+        except RuntimeError:
+            from shiboken6 import isValid
+            if isValid(self.signals):
+                raise
+            # App shutdown may destroy the signal source before disk work
+            # returns. The work completed; there is no surviving UI receiver.
 
 
 class BackgroundOperation(QObject):

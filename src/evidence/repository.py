@@ -318,7 +318,8 @@ class EvidenceRepository:
 
     def set_preference(self, key, value):
         with self._connect() as db:
-            db.execute('INSERT OR REPLACE INTO preferences VALUES (?, ?)', (key, value))
+            db.execute('INSERT INTO preferences VALUES (?, ?) ON CONFLICT(key) DO UPDATE '
+                       'SET value=excluded.value WHERE preferences.value IS NOT excluded.value', (key, value))
 
     def read_page(self, profile_id, project_id=None, trashed=False, limit=60, offset=0):
         rows = self.list_records(profile_id, project_id, trashed, limit, offset)

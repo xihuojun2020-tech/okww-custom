@@ -259,7 +259,7 @@ class TaskExecutor:
             if time_out is not None and time.time() - start >= time_out:
                 return None
             if self.can_capture():
-                frame = self.method.get_frame()
+                frame = TaskExecutor._capture_frame(self)
                 if frame is not None:
                     height, width = frame.shape[:2]
                     if height <= 0 or width <= 0:
@@ -281,6 +281,31 @@ class TaskExecutor:
     def is_executor_thread(self):
         return self.thread == threading.current_thread()
 
+    def _capture_frame(self):
+        """Back off failed captures shared by task and diagnostic sampling."""
+        method = self.method
+        now = time.monotonic()
+        if (getattr(self, '_failed_capture_method', None) is method
+                and now < getattr(self, '_capture_retry_at', 0)):
+            return None
+        started = time.monotonic()
+        frame = method.get_frame()
+        self._capture_last_ms = (time.monotonic() - started) * 1000
+        if frame is None:
+            self._failed_capture_method = method
+            self._capture_retry_at = now + 2
+            window = getattr(method, 'hwnd_window', None)
+            refresh = getattr(window, 'do_update_window_size', None)
+            if callable(refresh):
+                try:
+                    refresh()
+                except Exception:
+                    pass
+        else:
+            self._failed_capture_method = None
+            self._capture_retry_at = 0
+        return frame
+
     def _service_diagnostic_capture(self):
         """Refresh idle/error-window frames on the capture owner's thread only."""
         if not getattr(self, '_diagnostic_capture_enabled', False) or not self.is_executor_thread():
@@ -294,12 +319,19 @@ class TaskExecutor:
             return
         try:
             if not self.exit_event.is_set() and self.can_capture():
-                frame = self.method.get_frame()
+                frame = TaskExecutor._capture_frame(self)
                 if frame is not None:
                     self._diagnostic_frame = (frame, time.time(), time.monotonic())
+                    self._diagnostic_failures = 0
+                else:
+                    failures = min(4, getattr(self, '_diagnostic_failures', 0) + 1)
+                    self._diagnostic_failures = failures
+                    self._diagnostic_capture_after = now + min(8, 2 ** failures)
         except Exception:
             # No logging here: capture failure must not cause diagnostic error storms.
-            pass
+            failures = min(4, getattr(self, '_diagnostic_failures', 0) + 1)
+            self._diagnostic_failures = failures
+            self._diagnostic_capture_after = now + min(8, 2 ** failures)
 
     def connected(self):
         return self.method is not None and self.method.connected()

@@ -22,6 +22,7 @@ SYNC_ITEMS = [
     'src', 'custom_ok', 'assets', 'icons', 'i18n',
     'auto_proxy.py', 'config.py', 'main.py', 'fix_venv.py', '启动okww.bat',
     '更新日志.md', 'requirements.txt', 'requirements.in', 'requirements-dev.txt', 'setup.py', 'pyappify.yml',
+    'scripts/migrate_runtime_storage.py',
 ]
 MANIFEST_NAME = 'update-manifest.json'
 

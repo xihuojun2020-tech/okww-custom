@@ -18,7 +18,8 @@ def now_iso():
 
 
 def default_root():
-    return Path(os.environ.get('LOCALAPPDATA', str(Path.home()/'.local/share'))) / 'OKWW/MaterialPlanner'
+    from src.runtime.diagnostic_storage import storage_path
+    return storage_path('MaterialPlanner', Path(os.environ.get('LOCALAPPDATA', str(Path.home()/'.local/share'))) / 'OKWW/MaterialPlanner')
 
 
 def encoded(value):

@@ -166,18 +166,26 @@ def retry_pending(root, target, *, timeout=30, now=None, transfer=None):
     with lease:
         recover_sessions(root)
         pending = []
-        for ready in root.glob('*/batches/*/_READY'):
-            batch = ready.parent
+        deadline = time.monotonic() + 30
+        from src.runtime.diagnostic_queue import pending_batches, acknowledge
+        for batch in pending_batches(root):
+            if time.monotonic() >= deadline:
+                break
             try:
                 safe_path(root, batch.relative_to(root).as_posix())
+                state_file = root / 'states' / (batch.parents[1].name + '--' + batch.name + '.json')
+                state = json.loads(state_file.read_text(encoding='utf-8')) if state_file.exists() else {}
+                if state.get('status') in ('uploaded', 'logs_purged'):
+                    acknowledge(batch)
+                if state.get('status') in ('uploaded', 'blocked', 'logs_purged') or state.get('next_retry', 0) > now:
+                    continue
                 manifest = json.loads((batch / 'manifest.json').read_text(encoding='utf-8'))
                 if manifest.get('policy') != POLICY:
                     continue
                 pending.append((0 if manifest['kind'] == 'error' else 1, manifest['created_at'], batch))
             except (ValueError, OSError, KeyError):
                 continue
-        deadline = time.monotonic() + 120
-        for _, created, batch in sorted(pending):
+        for _, created, batch in sorted(pending)[:16]:
             if time.monotonic() >= deadline:
                 break
             state_file = root / 'states' / (batch.parents[1].name + '--' + batch.name + '.json')
@@ -197,6 +205,8 @@ def retry_pending(root, target, *, timeout=30, now=None, transfer=None):
                     state.update(status='retrying', next_retry=now + RETRY[min(attempts - 1, len(RETRY) - 1)],
                                  last_error=sanitize_text(error))
                 atomic_json(state_file, state)
+                if state.get('status') == 'uploaded':
+                    acknowledge(batch)
                 atomic_json(batch.parents[1] / 'upload-status.json', dict(state, latest_batch=batch.name))
             except (OSError, ValueError, KeyError) as error:
                 atomic_json(root / 'uploader-error.json', {'error': sanitize_text(error), 'time': now})
@@ -216,7 +226,7 @@ def bounded_upload(batch, target, timeout):
 
 def _bounded_upload_one(batch, target, timeout):
     command = [sys.executable, '-E', '-s', '-m', 'src.runtime.diagnostic_uploader', '--upload-one', str(batch), '--target', str(target)]
-    flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+    flags = (subprocess.CREATE_NO_WINDOW | subprocess.BELOW_NORMAL_PRIORITY_CLASS) if os.name == 'nt' else 0
     try:
         result = subprocess.run(command, cwd=str(Path(__file__).resolve().parents[2]),
                                 capture_output=True, text=True, timeout=timeout, creationflags=flags)
@@ -296,6 +306,8 @@ def main():
     parser.add_argument('--reviewed-image', type=Path)
     parser.add_argument('--run', type=Path)
     args = parser.parse_args()
+    from src.runtime.diagnostic_storage import redirected_diagnostics
+    args.root = redirected_diagnostics(args.root)
     if args.probe or args.probe_worker:
         target = args.target or settings(args.root)['target']
         if args.probe_worker:

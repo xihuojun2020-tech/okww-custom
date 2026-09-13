@@ -17,12 +17,14 @@ from src.runtime.diagnostic_export import atomic_json, digest, sanitize_data, sa
 from src.runtime.diagnostic_policy import POLICY, installation_id, settings
 
 PART_LIMIT = 4 * 1024 * 1024
-LOG_INTERVAL = 2.
+LOG_INTERVAL = 30.
 
 
 def default_root():
+    from src.runtime.diagnostic_storage import storage_path
     root = (Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'okww-custom' / 'diagnostics'
             / POLICY / installation_id())
+    root = storage_path('diagnostics', root)
     root.mkdir(parents=True, exist_ok=True)
     # MSIX hosts can redirect files while returning an unredirected directory.
     # Resolve an owned file so child processes and scheduled tasks share one root.
@@ -116,6 +118,8 @@ def seal_run(run, kind, *, sizes=None, reviewed_images=(), offsets=None, inciden
                 'log_ranges': {p.name: [int((offsets or {}).get(p.name, 0)), n] for p, n in sources.items()}}
     atomic_json(batch / 'manifest.json', manifest)
     (batch / '_READY').write_text(digest((batch / 'manifest.json').read_bytes()), encoding='ascii')
+    from src.runtime.diagnostic_queue import queue_batch
+    queue_batch(batch)
     atomic_json(run / 'upload-status.json', {'latest_batch': batch_id, 'status': 'pending'})
     return batch
 
@@ -176,6 +180,7 @@ class DiagnosticSession(logging.Handler):
                          'started_at': datetime.now().astimezone().isoformat(), 'run_id': self.run_id,
                          'process_status': 'running', 'error_events': 0, 'dropped_batches': 0}
         self.parts, self.total, self.last_error_batch = {}, 0, 0
+        self.streams = {}
         self.sequence = 0
         self.frame_provider = None
         self.sample_provider = None
@@ -192,6 +197,10 @@ class DiagnosticSession(logging.Handler):
                                        lambda index, pictures: publish_incident(self.run, index, pictures))
         self.capacity_checked_at = 0
         self.capacity_warning = None
+        self.status_saved_at = 0.
+        self.collect_after = 0.
+        from src.runtime.diagnostic_performance import PerformanceSampler
+        self.performance = PerformanceSampler()
         self._save_metadata()
         self.worker = threading.Thread(target=self._work, name='diagnostic-local', daemon=True)
         self.worker.start()
@@ -205,8 +214,14 @@ class DiagnosticSession(logging.Handler):
         if size + len(data) > PART_LIMIT:
             index, size = index + 1, 0
         name = stem + (f'-{index:04d}' if index else '') + suffix
-        with (self.run / name).open('ab') as stream:
-            stream.write(data)
+        stream = self.streams.get(stem)
+        if stream is None or Path(stream.name).name != name:
+            if stream is not None:
+                stream.close()
+            # Unbuffered writes remain visible to recovery; reuse the handle
+            # instead of opening/closing the same file on every log line.
+            stream = self.streams[stem] = (self.run / name).open('ab', buffering=0)
+        stream.write(data)
         self.parts[stem] = (index, size + len(data))
         self.total += len(data)
 
@@ -258,13 +273,13 @@ class DiagnosticSession(logging.Handler):
 
     def _sample_evidence(self):
         now = time.monotonic()
-        if now - self.capacity_checked_at >= 30:
+        if now - self.capacity_checked_at >= 300:
             self.capacity_checked_at = now
             free = shutil.disk_usage(self.root).free
             # Stop walking as soon as the quota is reached. Never delete pending evidence.
             pending_bytes = 0
-            for ready in self.root.glob('*/batches/*/_READY'):
-                batch = ready.parent
+            from src.runtime.diagnostic_queue import pending_batches
+            for batch in pending_batches(self.root):
                 state_path = self.root / 'states' / (batch.parents[1].name + '--' + batch.name + '.json')
                 try:
                     state = json.loads(state_path.read_text(encoding='utf-8')) if state_path.exists() else {}
@@ -291,7 +306,9 @@ class DiagnosticSession(logging.Handler):
         else:
             self.evidence.unavailable('frame_unavailable')
         self.evidence.tick()
-        atomic_json(self.run / 'evidence-status.json', self.evidence.status())
+        if now - self.status_saved_at >= 30:
+            atomic_json(self.run / 'evidence-status.json', self.evidence.status())
+            self.status_saved_at = now
 
     def add_screenshot(self, path):
         self.record_event('screenshot_saved', {'status': 'automatic_upload', 'suffix': Path(path).suffix})
@@ -329,11 +346,18 @@ class DiagnosticSession(logging.Handler):
                 if now >= next_sample or self.evidence.want_at or due_end:
                     next_sample = (now + 1 if self.evidence.want_at or due_end else
                                    max(next_sample + 1, now + .5))
+                    sample_started = time.monotonic()
                     try:
                         self._sample_evidence()
                     except Exception as error:
                         self.evidence.unavailable('capture_failed:' + type(error).__name__)
                         self.evidence.tick()
+                    self.performance.observe('diagnostic_sample', time.monotonic() - sample_started)
+                with self.guard:
+                    performance = self.performance.sample()
+                if performance is not None:
+                    performance.update(queue_length=self.pending.qsize(), ring_bytes=self.evidence.ring_bytes)
+                    self.record_event('performance', performance, allow_closed=True)
                 if kind == 'final':
                     self.evidence.finish()
                 if isinstance(kind, tuple):
@@ -364,7 +388,8 @@ class DiagnosticSession(logging.Handler):
                     with self.guard:
                         self._save_metadata()
                         sizes = log_sources(self.run)
-                    if self.collector:
+                    if self.collector and (kind == 'final' or time.monotonic() >= self.collect_after):
+                        self.collect_after = time.monotonic() + LOG_INTERVAL
                         self.collector.collect(self.run)
                     seal_pending(self.run, kind if kind != 'tick' else 'periodic', sizes=sizes)
                 # Also wake for incident-only batches; the process launcher applies its throttle.
@@ -395,6 +420,10 @@ class DiagnosticSession(logging.Handler):
         if not self.pending.unfinished_tasks:
             self.pending.put(None)
             self.worker.join(timeout=0.2)
+            with self.guard:
+                for stream in self.streams.values():
+                    stream.close()
+                self.streams.clear()
             self.lease.close()
             if self.collector_lease:
                 self.collector_lease.close()
