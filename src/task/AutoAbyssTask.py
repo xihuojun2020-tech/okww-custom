@@ -483,6 +483,15 @@ def scroll_thumb_center(frame):
     return geometry[0] if geometry is not None else None
 
 
+def scroll_thumb_x(frame, center):
+    """Measure the actual narrow thumb rather than assuming a fixed X coordinate."""
+    height, width = frame.shape[:2]
+    left, right = int(.915 * width), int(.935 * width)
+    row = frame[min(height - 1, max(0, int(center * height))), left:right]
+    bright = np.flatnonzero(cv2.cvtColor(row.reshape(1, -1, 3), cv2.COLOR_BGR2GRAY)[0] >= 155)
+    return (left + float(np.median(bright))) / width if len(bright) else None
+
+
 def is_single_page_character_list(frame):
     """Return whether the scrollbar thumb fills enough of its track to prove there is one page."""
     geometry = _scroll_thumb_geometry(frame)
@@ -1457,7 +1466,11 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         state = {"signature": None, "stable": 0, "frame": None}
 
         def stable():
-            frame = self.frame
+            frame = self.next_frame()
+            if frame is None:
+                state['stable'] = 0
+                state['signature'] = None
+                return False
             crop = _relative_crop(frame, CHARACTER_GRID)
             if crop is None or crop.size == 0:
                 return False
@@ -1496,12 +1509,13 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             return False
         # Verify identities as well as scrollbar position (sorting may have changed).
         anchors = sorted(anchors, key=lambda r: -r.confidence)[:3]
-        return sum(self._verify_record_identity(frame, r) for r in anchors) >= min(2, len(anchors))
+        return bool(anchors) and sum(self._verify_record_identity(frame, r) for r in anchors) >= min(2, len(anchors))
 
     def _show_character_page(self, page_index):
         if page_index not in self._character_pages:
             raise ValueError(f"角色列表没有扫描位置：{page_index}")
         frame = self._wait_stable_character_frame()
+        deadline = time.monotonic() + 20
         for attempt in range(3):
             if self._page_matches(frame, page_index):
                 self._character_page_index = page_index
@@ -1512,9 +1526,58 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             target, _anchors = self._character_pages[page_index]
             if current is None or target is None:
                 break
+            x = scroll_thumb_x(frame, current)
+            if x is None:
+                break
             self.ensure_in_front()
-            self.swipe_relative(.924, current, .924, target, duration=.5, settle_time=.3)
+            self.swipe_relative(x, current, x, target, duration=.5, settle_time=.3)
             frame = self._wait_stable_character_frame()
+            self.log_info(f'角色回位：目标页={page_index}，尝试={attempt + 1}，x={x:.4f}，'
+                          f'起点={current:.4f}，目标={target:.4f}，动作后={scroll_thumb_center(frame)}')
+        # A failed drag must not authorize clicks. Recover using the proven wheel path.
+        if self._character_pages.get(1, (None, ()))[1]:
+            for step in range(12):
+                if time.monotonic() >= deadline:
+                    break
+                if self._page_matches(frame, 1):
+                    break
+                before = scroll_thumb_center(frame)
+                self.ensure_in_front()
+                self.scroll_relative(.50, .50, 3)
+                self.sleep(.3)
+                frame = self._wait_stable_character_frame()
+                self.log_info(f'角色回顶部：步骤={step + 1}，动作前={before}，动作后={scroll_thumb_center(frame)}')
+            if self._page_matches(frame, 1):
+                # Advance through the same overlapping viewports used during scanning.
+                for step in range(12):
+                    if self._page_matches(frame, page_index):
+                        self._character_page_index = page_index
+                        return frame
+                    if time.monotonic() >= deadline:
+                        break
+                    target, _ = self._character_pages[page_index]
+                    current = scroll_thumb_center(frame)
+                    if current is None or target is None:
+                        break
+                    self.ensure_in_front()
+                    if current > target + .006:
+                        x = scroll_thumb_x(frame, current)
+                        if x is None:
+                            break
+                        self.swipe_relative(x, current, x, target, duration=.5, settle_time=.3)
+                    else:
+                        self.scroll_relative(.50, .50, -3)
+                    self.sleep(.3)
+                    frame = self._wait_stable_character_frame()
+        if self._page_matches(frame, page_index):
+            self._character_page_index = page_index
+            return frame
+        target, anchors = self._character_pages[page_index]
+        current = scroll_thumb_center(frame)
+        reason = ('滚动条定位失败' if current is None else
+                  '位置恢复但角色身份不符' if target is not None and abs(current - target) <= .006 else
+                  '回位后位置仍不符')
+        self.log_info(f'角色回位停止：{reason}，目标={target}，实际={current}，锚点数={len(anchors)}')
         self.screenshot(f"abyss_character_page_{page_index}_failed", frame=frame)
         raise Exception(f"角色列表返回第{page_index}屏位置或身份不匹配，禁止点击")
 

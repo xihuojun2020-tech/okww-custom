@@ -1178,11 +1178,61 @@ class TestAutoAbyssTask(unittest.TestCase):
         task.ensure_in_front = lambda: None
         calls = []
         task.swipe_relative = lambda *args, **kw: calls.append(args)
+        task.log_info = lambda *_: None
         task.screenshot = lambda *_args, **_kw: None
-        with patch("src.task.AutoAbyssTask.scroll_thumb_center", return_value=.4):
+        with patch("src.task.AutoAbyssTask.scroll_thumb_center", return_value=.4), patch(
+                "src.task.AutoAbyssTask.scroll_thumb_x", return_value=.924):
             with self.assertRaisesRegex(Exception, "位置或身份不匹配"):
                 task._show_character_page(1)
         self.assertEqual(len(calls), 2)
+
+    def test_failed_drag_recovers_by_wheel_without_blind_click(self):
+        frame = np.zeros((100, 100, 3), np.uint8)
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task._character_pages = {1: (.3, ('anchor',))}
+        task._wait_stable_character_frame = lambda: frame
+        wheels = []
+        task._page_matches = lambda _frame, page: len(wheels) >= 2
+        task.ensure_in_front = lambda: None
+        task.swipe_relative = lambda *_args, **_kw: None
+        task.scroll_relative = lambda *_args: wheels.append(_args)
+        task.sleep = lambda *_: None
+        task.log_info = lambda *_: None
+        task.screenshot = lambda *_args, **_kw: self.fail('should recover')
+        with patch('src.task.AutoAbyssTask.scroll_thumb_center', return_value=.6), patch(
+                'src.task.AutoAbyssTask.scroll_thumb_x', return_value=.925):
+            self.assertIs(task._show_character_page(1), frame)
+        self.assertEqual(len(wheels), 2)
+        self.assertEqual(task._character_page_index, 1)
+
+    def test_empty_page_anchors_never_authorize_clicks(self):
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task._character_pages = {1: (.3, ())}
+        with patch('src.task.AutoAbyssTask.scroll_thumb_center', return_value=.3):
+            self.assertFalse(task._page_matches(np.zeros((100, 100, 3), np.uint8), 1))
+
+    def test_stable_character_frame_requests_capture_after_missing_frame(self):
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        frame = np.zeros((1080, 1920, 3), np.uint8)
+        frames = iter([None, frame, frame.copy()])
+        requests = []
+        def next_frame():
+            requests.append(1)
+            return next(frames)
+        task.next_frame = next_frame
+        task.wait_until = lambda condition, **_kwargs: any(condition() for _ in range(3))
+        self.assertEqual(task._wait_stable_character_frame().shape, frame.shape)
+        self.assertEqual(len(requests), 3)
+
+    def test_detect_actual_thumb_x_at_multiple_resolutions(self):
+        from src.task.AutoAbyssTask import scroll_thumb_center, scroll_thumb_x
+        for height, width in ((720, 1280), (1080, 1920), (1440, 2560)):
+            frame = np.zeros((height, width, 3), np.uint8)
+            x = int(.927 * width)
+            frame[int(.4 * height):int(.7 * height), x-3:x+4] = 220
+            center = scroll_thumb_center(frame)
+            self.assertAlmostEqual(center, .55, delta=.002)
+            self.assertAlmostEqual(scroll_thumb_x(frame, center), .927, delta=.002)
 
     def test_matching_scrollbar_without_matching_identities_is_not_a_page(self):
         task = AutoAbyssTask.__new__(AutoAbyssTask)
