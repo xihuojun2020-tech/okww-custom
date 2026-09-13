@@ -1767,7 +1767,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         row_y = row_slots[0][3]
         left = CHARACTER_CARD_X
         right = CHARACTER_CARD_X + (CHARACTER_COLUMNS - 1) * CHARACTER_CARD_X_STEP + CHARACTER_CARD_WIDTH
-        top = row_y + CHARACTER_CARD_HEIGHT * 0.58
+        top = row_y + CHARACTER_CARD_HEIGHT * 0.79
         bottom = row_y + CHARACTER_CARD_HEIGHT * 0.99
         crop = _relative_crop(frame, (left, top, right, bottom))
         if crop is None or crop.size == 0:
@@ -1874,20 +1874,26 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         )
 
     def _save_card_evidence(self, frame, slot, reason):
-        key = (slot[0], slot[1])
+        import hashlib
+        pixels = memoryview(frame) if frame.flags.c_contiguous else frame.tobytes()
+        frame_key = (id(frame), hashlib.sha256(pixels).digest())
+        key = (frame_key, slot[0], slot[1])
         saved = getattr(self, "_card_evidence_saved", set())
         if key in saved:
             return
         saved.add(key)
         self._card_evidence_saved = saved
         label = f"{reason}_p{getattr(self, '_scanning_page', 0)}_r{slot[0] + 1}_c{slot[1] + 1}"
-        self.screenshot(label + "_frame", frame=frame)
-        annotated = frame.copy()
+        # Each independent frame keeps an original; multiple bad cards on that
+        # exact frame share it. Never merge the two fresh energy observations.
+        if getattr(self, '_card_original_key', None) != frame_key:
+            self.screenshot(label + "_frame", frame=frame)
+            self._card_original_key = frame_key
+            self._card_original_label = label + '_frame'
         _, _, x, y, w, h, _ = slot
         height, width = frame.shape[:2]
-        cv2.rectangle(annotated, (int((x + w * .50) * width), int((y + h * .52) * height)),
-                      (int((x + w) * width), int((y + h * .84) * height)), (0, 0, 255), 2)
-        self.screenshot(label + "_region", frame=annotated)
+        self.log_info(f"卡片证据 {label}: 原图={self._card_original_label}; "
+                      f"区域=({x + w * .50:.4f},{y + h * .52:.4f},{x + w:.4f},{y + h * .84:.4f})")
         self.screenshot(label + "_crop", frame=self._slot_crop(frame, slot, (.50, .52, 1, .84)))
 
     def _recognize_character_screen(self, frame, screen_index, include_incomplete=False, _retry=True):

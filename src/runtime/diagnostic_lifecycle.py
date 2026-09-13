@@ -129,7 +129,14 @@ def attach_framework_hooks():
             executor = getattr(og, 'executor', None)
             if executor is None:
                 return None
-            executor._diagnostic_capture_enabled = True
+            task = getattr(executor, 'current_task', None)
+            no_vision = bool(task is not None and getattr(task, 'diagnostic_visual_idle', False))
+            active_incident = _session.evidence.active is not None
+            executor._diagnostic_capture_enabled = not no_vision or active_incident
+            if no_vision and not active_incident:
+                _session.metadata['diagnostic_sampling'] = 'task_has_no_visual_steps'
+                return None
+            _session.metadata['diagnostic_sampling'] = 'normal'
             _session.metadata['capture_last_ms'] = getattr(executor, '_capture_last_ms', None)
             return getattr(executor, '_diagnostic_frame', None)
         _session.sample_provider = sample

@@ -292,10 +292,19 @@ def _report_startup_error(error, traceback_text=None):
 
 
 if __name__ == '__main__':
-    _sync_custom_ok()
     if not _ensure_single_instance():
         print('[okww] 检测到已有实例在运行，本实例退出（单实例保护）')
         sys.exit(0)
+    try:
+        os.chdir(Path(__file__).resolve().parent)
+        from src.runtime.storage_startup_ui import prepare_storage
+        prepare_storage(Path(__file__).resolve().parent)
+    except InterruptedError:
+        sys.exit(0)
+    except Exception as error:
+        _report_startup_error(error)
+        sys.exit(1)
+    _sync_custom_ok()
     # 联网代理自愈：探测代理并写入 repo git 配置（下次 fetch 走代理）
     _setup_proxy()
     atexit.register(_exit_cleanup, _find_owned_launcher())

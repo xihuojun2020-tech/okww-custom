@@ -446,6 +446,11 @@ class KRLauncherSwitchTask(WWOneTimeTask, BaseWWTask):
 
     def _backup_root(self):
         """备份根目录（配置 > 默认 %APPDATA%\\KRLauncher_backup）。"""
+        from src.runtime.diagnostic_storage import storage_path
+        from pathlib import Path
+        repo = Path(__file__).resolve().parents[2]
+        if (repo / 'configs/runtime_storage.json').is_file():
+            return str(storage_path('SequenceBackups', repo / 'SequenceBackups'))
         configured = (self.config.get(BACKUP_DIR) or '').strip()
         if configured:
             return configured

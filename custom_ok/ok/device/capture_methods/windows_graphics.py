@@ -105,12 +105,15 @@ class WindowsGraphicsCaptureMethod(BaseWindowsCaptureMethod):
                 desc.MiscFlags = 0
                 self.cputex = dxdevice.CreateTexture2D(ctypes.byref(desc), None)
 
-            immediate_dc.CopyResource(self.cputex, tex)
-            mapinfo = immediate_dc.Map(self.cputex, 0, self.d3d11.D3D11_MAP_READ, 0)
+            from src.runtime.vision_metrics import measure
+            with measure('capture_gpu_readback'):
+                immediate_dc.CopyResource(self.cputex, tex)
+                mapinfo = immediate_dc.Map(self.cputex, 0, self.d3d11.D3D11_MAP_READ, 0)
             mapped = True
-            img = np.ctypeslib.as_array(ctypes.cast(mapinfo.pData, PBYTE),
-                                        (self.last_size.Height, mapinfo.RowPitch // 4, 4))[
-                :, :self.last_size.Width].copy()
+            with measure('capture_pixel_copy'):
+                img = np.ctypeslib.as_array(ctypes.cast(mapinfo.pData, PBYTE),
+                                            (self.last_size.Height, mapinfo.RowPitch // 4, 4))[
+                    :, :self.last_size.Width].copy()
             return img
         except OSError as e:
             if e.winerror == self.d3d11.DXGI_ERROR_DEVICE_REMOVED or e.winerror == self.d3d11.DXGI_ERROR_DEVICE_RESET:

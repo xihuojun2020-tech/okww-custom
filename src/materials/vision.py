@@ -12,6 +12,8 @@ SIZE = (2048,1152)
 def normalize(frame):
     if frame is None or frame.size == 0:
         raise ValueError('Missing game frame')
+    if frame.shape[:2] == (SIZE[1], SIZE[0]):
+        return frame
     return cv2.resize(frame, SIZE, interpolation=cv2.INTER_AREA)
 
 

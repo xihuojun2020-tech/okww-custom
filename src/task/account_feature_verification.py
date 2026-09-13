@@ -84,7 +84,7 @@ def observe(capture, decode, check, pause, *, timeout=5, clock=time.monotonic):
             pause(.1)
             continue
         last = frame.copy()
-        digest = hashlib.sha256(last.tobytes()).hexdigest()
+        digest = hashlib.sha256(memoryview(last)).hexdigest()
         if digest in seen:
             previous, count = None, 0
             pause(.1)

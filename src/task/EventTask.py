@@ -986,6 +986,8 @@ class EventTask(WWOneTimeTask, BaseWWTask):
         便于核对点击目标是否命中风云 UI 按钮。"""
         try:
             import os
+            if getattr(self, '_last_debug_tag', None) == tag and time.monotonic() - getattr(self, '_last_debug_at', 0) < 30:
+                return
             frame = self._frame()
             if frame is None:
                 return
@@ -995,12 +997,9 @@ class EventTask(WWOneTimeTask, BaseWWTask):
                 for (xn, yn) in points:
                     cx, cy = int(xn * w), int(yn * h)
                     cv2.circle(img, (cx, cy), max(14, int(w * 0.012)), (0, 0, 255), 3)
-            d = os.path.join('screenshots', 'event_debug')
-            os.makedirs(d, exist_ok=True)
-            ts = time.strftime('%H%M%S')
-            path = os.path.join(d, f'{tag}_{ts}.png')
-            cv2.imwrite(path, img)
-            self.log_info(f'调试截图(红圈=点击目标)已保存: {path}', notify=True)
+            self.screenshot('event_debug/' + tag, frame=img)
+            self._last_debug_tag, self._last_debug_at = tag, time.monotonic()
+            self.log_info('调试截图已提交后台保存：' + tag)
         except Exception as e:
             logger.debug(f'save debug failed: {e}')
 

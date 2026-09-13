@@ -164,10 +164,11 @@ class EvidenceRepository:
         frozen = json.loads((folder / 'record.json').read_text(encoding='utf-8'))
         if frozen != json.loads(json.dumps(metadata)):
             raise ValueError('同一次运行不能更换证据归属或结论')
-        frozen_frame = cv2.imdecode(np.frombuffer((folder / 'frame.png').read_bytes(), dtype='uint8'), cv2.IMREAD_COLOR)
+        frozen_png = (folder / 'frame.png').read_bytes()
+        frozen_frame = cv2.imdecode(np.frombuffer(frozen_png, dtype='uint8'), cv2.IMREAD_COLOR)
         if frozen_frame is None:
             raise ValueError('待保存图片损坏')
-        saved = self._save_record(frozen, frozen_frame)
+        saved = self._save_record(frozen, frozen_frame, encoded_png=frozen_png)
         atomic_json(folder / 'done.json', {'evidence_id': saved['evidence_id']})
         self._queue_required_upload(folder, saved)
         return saved
@@ -217,7 +218,7 @@ class EvidenceRepository:
         except (OSError, ValueError, KeyError):
             return '本机已保存，NAS 待上传'
 
-    def _save_record(self, metadata, frame):
+    def _save_record(self, metadata, frame, *, encoded_png=None):
         record = json.loads(json.dumps(metadata, ensure_ascii=False))
         if record.get('require_image') and frame is None:
             raise ValueError('该完成证据必须包含图片')
@@ -258,10 +259,12 @@ class EvidenceRepository:
             base = folder / record['evidence_id']
             image = base.with_suffix('.png').as_posix()
             thumb = base.with_suffix('.thumb.png').as_posix()
-            ok, encoded = cv2.imencode('.png', frame)
-            if not ok:
-                raise OSError('原图编码失败')
-            data = encoded.tobytes()
+            if encoded_png is None:
+                ok, encoded = cv2.imencode('.png', frame)
+                if not ok:
+                    raise OSError('原图编码失败')
+                encoded_png = encoded.tobytes()
+            data = encoded_png
             self._write_new(self.asset_path(image), data)
             # Keep the original even if thumbnail/index writing fails.
             scale = min(1, 480 / max(frame.shape[:2]))

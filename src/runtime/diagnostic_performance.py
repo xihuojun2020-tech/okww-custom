@@ -1,5 +1,6 @@
 """Low-rate process measurements; no system-wide scans or extra writer thread."""
 import time
+from collections import defaultdict, deque
 
 
 class PerformanceSampler:
@@ -8,6 +9,7 @@ class PerformanceSampler:
         self.next_sample = clock() + 30
         self.previous = None
         self.timings = {}
+        self.recent = defaultdict(lambda: deque(maxlen=128))
         try:
             if process is None:
                 import psutil
@@ -20,6 +22,7 @@ class PerformanceSampler:
     def observe(self, name, seconds):
         count, total, peak = self.timings.get(name, (0, 0., 0.))
         self.timings[name] = (count + 1, total + seconds, max(peak, seconds))
+        self.recent[name].append(seconds)
 
     def sample(self):
         now = self.clock()
@@ -35,7 +38,8 @@ class PerformanceSampler:
             result = dict(available=True, pid=process.pid,
                           cpu_percent=process.cpu_percent(None), rss_bytes=process.memory_info().rss,
                           threads=process.num_threads(),
-                          timing={key: dict(count=n, mean_ms=total / n * 1000, max_ms=peak * 1000)
+                          timing={key: dict(count=n, mean_ms=total / n * 1000, max_ms=peak * 1000,
+                                           p95_ms=sorted(self.recent[key])[int((len(self.recent[key])-1)*.95)]*1000)
                                   for key, (n, total, peak) in self.timings.items()})
             if self.previous:
                 at, read, written = self.previous
@@ -44,6 +48,7 @@ class PerformanceSampler:
                               write_bytes_delta=max(0, current[2] - written))
             self.previous = current
             self.timings.clear()
+            self.recent.clear()
             return result
         except Exception as error:
             return {'available': False, 'reason': type(error).__name__}

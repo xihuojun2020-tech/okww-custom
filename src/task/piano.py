@@ -1,5 +1,6 @@
 """Pure image detection and per-key debouncing for the piano teaching UI."""
 from dataclasses import dataclass
+from functools import lru_cache
 
 import cv2
 import numpy as np
@@ -55,6 +56,7 @@ class PianoDetector:
         self.dominance_margin = self.on_threshold - self.off_threshold
 
     @staticmethod
+    @lru_cache(maxsize=4)
     def _circle_masks(radius_scale):
         outer = max(4, round(70 * radius_scale))
         axis = np.arange(-outer, outer + 1)
@@ -72,14 +74,18 @@ class PianoDetector:
         if height <= 0 or abs((width / height) / (16 / 9) - 1) > 0.03:
             return DetectionResult("invalid_roi", (), (), (), "piano requires a 16:9 frame")
 
-        gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
         scale = height / 1440
         outer, dot_mask, ring_mask, background_mask = self._circle_masks(scale)
+        left, top = round(X_CENTERS[0] * width) - outer, round(Y_CENTERS[0] * height) - outer
+        right, bottom = round(X_CENTERS[-1] * width) + outer + 1, round(Y_CENTERS[-1] * height) + outer + 1
+        if left < 0 or top < 0 or right > width or bottom > height:
+            return DetectionResult('invalid_roi', (), (), (), 'piano grid is outside frame')
+        gray = cv2.cvtColor(frame_bgr[top:bottom, left:right], cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
         readings = []
         valid_dots = 0
         for row, y_ratio in enumerate(Y_CENTERS):
             for column, x_ratio in enumerate(X_CENTERS):
-                x, y = round(x_ratio * width), round(y_ratio * height)
+                x, y = round(x_ratio * width) - left, round(y_ratio * height) - top
                 crop = gray[y - outer:y + outer + 1, x - outer:x + outer + 1]
                 if crop.shape != dot_mask.shape:
                     return DetectionResult("invalid_roi", (), (), tuple(readings), "piano grid is outside frame")

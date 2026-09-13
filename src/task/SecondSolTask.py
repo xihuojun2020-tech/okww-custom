@@ -8,6 +8,7 @@ from src.activity_catalog import ACTIVITIES
 
 
 class SecondSolTask(BaseTask):
+    diagnostic_visual_idle = True
     navigation_section = "activities"
 
     def __init__(self, *args, **kwargs):

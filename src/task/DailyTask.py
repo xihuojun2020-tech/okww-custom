@@ -1900,12 +1900,14 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                                         writer = cv2.VideoWriter(fname, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
                                         if not writer.isOpened():
                                             raise OSError('录像文件无法打开')
-                                    for _ in range(max(1, round(duration * fps))):
+                                    frame_count = max(1, round(duration * fps))
+                                    for frame_index in range(frame_count):
                                         writer.write(frame)
                                         self.sleep(1 / fps)
-                                        frame = self.next_frame()
-                                        if frame is None or not frame.size:
-                                            raise FrameUnavailable('录像画面不可用')
+                                        if frame_index + 1 < frame_count:
+                                            frame = self.next_frame()
+                                            if frame is None or not frame.size:
+                                                raise FrameUnavailable('录像画面不可用')
                                     recorded_pages.append(page)
                                 except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked, GameProcessLost):
                                     raise

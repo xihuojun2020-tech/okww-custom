@@ -1,6 +1,7 @@
 """Explicit material identities. Unknown icons are never assumed farmable."""
 import json
 import re
+from collections import OrderedDict
 from pathlib import Path
 import cv2
 import numpy as np
@@ -15,6 +16,7 @@ class Catalog:
         entries = json.loads(self.path.read_text(encoding='utf-8'))
         self.items = {}
         self.templates = []
+        self._matches = OrderedDict()
         for item in entries:
             identity = item['item_id']
             if identity in self.items or item['rarity'] not in RARITIES:
@@ -54,11 +56,20 @@ class Catalog:
 
     def match(self, tile, threshold=.70, margin=.055):
         icon = cv2.resize(tile, (96,96), interpolation=cv2.INTER_AREA)[15:80, 8:88]
+        # Exact matching input, scoped to this immutable catalog instance.
+        key = (icon.tobytes(), threshold, margin)
+        if key in self._matches:
+            identity, scores = self._matches[key]
+            self._matches.move_to_end(key)
+            return self.get(identity) if identity else None, list(scores)
         scores = []
         for identity, template in self.templates:
             score = float(cv2.matchTemplate(icon, template[5:45, 8:56], cv2.TM_CCOEFF_NORMED).max())
             scores.append((score, identity))
         scores.sort(reverse=True)
-        if not scores or scores[0][0] < threshold or (len(scores)>1 and scores[0][0]-scores[1][0]<margin):
-            return None, scores[:2]
-        return self.get(scores[0][1]), scores[:2]
+        identity = (scores[0][1] if scores and scores[0][0] >= threshold
+                    and (len(scores) < 2 or scores[0][0]-scores[1][0] >= margin) else None)
+        self._matches[key] = (identity, tuple(scores[:2]))
+        if len(self._matches) > 256:
+            self._matches.popitem(last=False)
+        return self.get(identity) if identity else None, scores[:2]

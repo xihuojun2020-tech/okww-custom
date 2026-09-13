@@ -132,42 +132,16 @@ class TestRuntimePerformance(unittest.TestCase):
         self.assertEqual(method.get_frame.call_count, 1)
         method.hwnd_window.do_update_window_size.assert_called_once()
 
-    def test_migration_copies_verifies_and_preserves_originals(self):
-        from scripts.migrate_runtime_storage import migrate
-        from src.runtime.diagnostic_storage import storage_path
-        with tempfile.TemporaryDirectory() as directory:
-            base = Path(directory).resolve()
-            repo = base / 'repo'
-            repo.mkdir()
-            old = {kind: base / 'old' / kind for kind in ('diagnostics', 'CompletionEvidence', 'MaterialPlanner', 'screenshots')}
-            for root in old.values():
-                root.mkdir(parents=True)
-                (root / 'keep.txt').write_text('permanent statistics')
-            target = base / 'new'
-            with patch('scripts.migrate_runtime_storage.sources', return_value=old), patch('scripts.migrate_runtime_storage.require_offline'):
-                migrate(target, repo=repo, apply=False)
-                self.assertFalse(target.exists())
-                migrate(target, repo=repo, apply=True)
-            for kind, root in old.items():
-                self.assertEqual((root / 'keep.txt').read_bytes(), (target / kind / 'keep.txt').read_bytes())
-                self.assertEqual(storage_path(kind, root, repo=repo), target / kind)
-
-    def test_migration_failure_never_switches_config(self):
+    def test_manual_migration_uses_startup_engine(self):
         from scripts.migrate_runtime_storage import migrate
         with tempfile.TemporaryDirectory() as directory:
-            base = Path(directory).resolve()
-            repo = base / 'repo'
-            repo.mkdir()
-            old = base / 'old'
-            old.mkdir()
-            (old / 'keep.txt').write_text('keep')
-            with patch('scripts.migrate_runtime_storage.sources', return_value={'diagnostics': old}), \
-                    patch('scripts.migrate_runtime_storage.require_offline'), \
-                    patch('scripts.migrate_runtime_storage.digest', side_effect=['a', 'b']):
-                with self.assertRaises(OSError):
-                    migrate(base / 'new', repo=repo, apply=True)
-            self.assertFalse((repo / 'configs/runtime_storage.json').exists())
-            self.assertEqual((old / 'keep.txt').read_text(), 'keep')
+            repo = Path(directory).resolve()
+            with patch('scripts.migrate_runtime_storage.require_offline') as offline, \
+                    patch('src.runtime.storage_bootstrap.migrate', return_value={'schema': 2}) as core:
+                result = migrate(repo.parent / 'new-data', repo=repo, apply=True)
+            offline.assert_called_once_with(repo)
+            core.assert_called_once()
+            self.assertEqual(result, {'schema': 2})
 
 
 if __name__ == '__main__':

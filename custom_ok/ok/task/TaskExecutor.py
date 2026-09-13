@@ -196,6 +196,8 @@ class TaskExecutor:
                                     logger=logger,
                                     use_npu=config_params.get('use_npu', True),
                                     use_openvino=config_params.get('use_openvino', False))
+            from src.runtime.ocr_backend import configure_backend
+            configure_backend(ocr_lib, logger, cpu_threads=config_params.get('cpu_threads'))
         elif lib == 'rapidocr':
             from rapidocr import RapidOCR
             params = {"Global.use_cls": False, "Global.max_side_len": 100000, "Global.min_side_len": 0,
@@ -289,7 +291,9 @@ class TaskExecutor:
                 and now < getattr(self, '_capture_retry_at', 0)):
             return None
         started = time.monotonic()
-        frame = method.get_frame()
+        from src.runtime.vision_metrics import measure
+        with measure('capture_total'):
+            frame = method.get_frame()
         self._capture_last_ms = (time.monotonic() - started) * 1000
         if frame is None:
             self._failed_capture_method = method

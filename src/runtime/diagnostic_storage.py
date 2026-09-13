@@ -8,6 +8,12 @@ def storage_path(kind, fallback, *, repo=None):
         from src.runtime.diagnostic_policy import REPO
         repo = REPO
     config = Path(repo) / 'configs/runtime_storage.json'
+    gate = Path(repo) / 'configs/storage_migration.json'
+    if gate.exists():
+        pending = json.loads(gate.read_text(encoding='utf-8'))
+        current = json.loads(config.read_text(encoding='utf-8')) if config.exists() else {}
+        if current.get('generation') != pending.get('generation'):
+            raise OSError('运行数据正在迁移，请等待启动迁移完成')
     if not config.exists():
         return Path(fallback)
     value = json.loads(config.read_text(encoding='utf-8'))
@@ -16,7 +22,10 @@ def storage_path(kind, fallback, *, repo=None):
         raise ValueError('运行数据目录必须是本机绝对路径')
     if not root.is_dir():
         raise OSError('运行数据盘不可用，请恢复磁盘连接；不会切换到空目录')
-    return root / kind
+    selected = Path(value.get('paths', {}).get(kind, str(root / kind)))
+    if not selected.is_absolute() or selected.anchor.casefold() != root.anchor.casefold():
+        raise ValueError('运行资料路径不在安装数据盘')
+    return selected
 
 
 def redirected_diagnostics(root):

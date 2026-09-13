@@ -1,6 +1,6 @@
 """Global settings only: connection, keys, preferences and updates."""
 from pathlib import Path
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget, QPushButton
 from src.gui.ChoiceControls import QtComboBox as QComboBox
 from qfluentwidgets import FluentIcon
 from ok.gui.widget.CustomTab import CustomTab
@@ -23,6 +23,17 @@ class GeneralSettingsTab(CustomTab):
         self.preferences = SettingTab()
         self.preferences.basic_group.title_label.hide()
         self.preferences.add_widget(self.start_panel.open_install_folder_button)
+        from src.runtime.diagnostic_storage import storage_path
+        repo = Path(__file__).resolve().parents[2]
+        root = storage_path('MaterialPlanner', repo / 'MaterialPlanner').parent
+        storage_label = QLabel(f'程序位置：{repo}\n运行资料：{root}\n旧版资料迁移后保留原副本；统计与完成原图不自动删除。')
+        storage_label.setWordWrap(True)
+        self.preferences.add_widget(storage_label)
+        open_data = QPushButton('打开运行资料目录')
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        open_data.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(root))))
+        self.preferences.add_widget(open_data)
         self.lan_update_card = LanUpdateCard(
             Path(__file__).resolve().parents[2] / 'configs' / 'lan_update.json', version, executor, self.view)
         self.hotkey_config = None
@@ -42,7 +53,7 @@ class GeneralSettingsTab(CustomTab):
                 self.hotkey_section.add_embedded_widget(self.hotkey_panel)
             elif name == 'Basic Options':
                 self.basic_config = config_obj
-            elif name != 'Config Backup':
+            elif name not in ('Config Backup', '数据仓库文件夹'):
                 card = GlobalConfigCard(config_obj, option)
                 self.config_cards[name] = card
                 if name in ('数据仓库文件夹', 'Notification', 'App Launcher'):

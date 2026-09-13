@@ -15,6 +15,10 @@ from pathlib import Path
 def resolve_config_backup_dir(root, *, warehouse_root='', legacy_backup_dir='') -> Path:
     """Resolve backup settings without reading configuration or creating files."""
     root = Path(root).resolve()
+    from src.runtime.diagnostic_storage import storage_path
+    selected = storage_path('backups', root / 'configs_backup', repo=root)
+    if (root / 'configs/runtime_storage.json').is_file():
+        return selected
     warehouse_root = str(warehouse_root or '').strip()
     legacy_backup_dir = str(legacy_backup_dir or '').strip()
     candidate = (Path(warehouse_root) / 'ok仓库' / '配置备份' if warehouse_root else
@@ -68,6 +72,13 @@ def get_ok_warehouse():
 
 def get_warehouse_sub(sub):
     """返回 ok仓库 下的子目录路径（如 okww监控室）；未设置数据仓库返回 None。"""
+    from src.runtime.diagnostic_storage import storage_path
+    repo = Path(__file__).resolve().parents[1]
+    kinds = {'okww监控室': 'recordings', '配置备份': 'backups', '账号数据': 'exports'}
+    if sub in kinds and (repo / 'configs/runtime_storage.json').is_file():
+        path = storage_path(kinds[sub], repo / sub)
+        path.mkdir(parents=True, exist_ok=True)
+        return str(path)
     wh = get_ok_warehouse()
     if wh is None:
         return None

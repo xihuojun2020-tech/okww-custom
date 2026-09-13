@@ -52,12 +52,14 @@ $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -Execution
 if ($existing) {
     if ($existing.Actions.Execute -eq $pythonExe -and $existing.Actions.Arguments -eq $arguments -and $existing.Actions.WorkingDirectory -eq $repo) {
         Write-Output 'Task already matches this installation.'
+        Enable-ScheduledTask -TaskName $TaskName | Out-Null
         return
     }
     # Ownership was checked above. Stop the old action before replacing it so
     # an already-running snapshot cannot keep uploading to a retired NAS.
     Stop-ScheduledTask -TaskName $TaskName
     Set-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings | Out-Null
+    Enable-ScheduledTask -TaskName $TaskName | Out-Null
 } else {
     Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description $description | Out-Null
 }

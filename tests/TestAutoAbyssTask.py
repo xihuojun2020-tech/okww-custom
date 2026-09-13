@@ -1044,13 +1044,14 @@ class TestAutoAbyssTask(unittest.TestCase):
         task = AutoAbyssTask.__new__(AutoAbyssTask)
         task.ocr = lambda *_args, **_kwargs: self.fail("ambiguous shape must not reach OCR")
         task.log_warning = lambda *_args: None
+        task.log_info = lambda *_args: None
         task.screenshot = lambda name, **kwargs: saved.append((name, kwargs.get("frame")))
 
         self.assertIsNone(
             task._read_slot_energy(np.zeros((1440, 2560, 3), dtype=np.uint8), character_card_slots()[0])
         )
         self.assertEqual(saved[0][0], "abyss_energy_ambiguous_p0_r1_c1_frame")
-        self.assertEqual(len(saved), 3)
+        self.assertEqual(len(saved), 2)
 
     def test_merge_character_records_deduplicates_and_filters_strictly(self):
         records = [
@@ -1251,19 +1252,20 @@ class TestAutoAbyssTask(unittest.TestCase):
                 task._scan_character_pages(frame)
         self.assertEqual(len(steps), 11)
 
-    def test_card_evidence_contains_frame_overlay_and_crop_once(self):
+    def test_card_evidence_shares_original_without_mutating_frame(self):
         frame = cv2.imread("tests/fixtures/abyss_scroll/scrolled.png")
         original = frame.copy()
         task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task.log_info = lambda *_args: None
         saved = []
         task.screenshot = lambda name, frame: saved.append((name, frame.copy()))
         slot = detect_character_slots(frame)[0]
         task._save_card_evidence(frame, slot, "energy")
         task._save_card_evidence(frame, slot, "numbers")
-        self.assertEqual(len(saved), 3)
+        self.assertEqual(len(saved), 2)
         self.assertTrue(np.array_equal(frame, original))
         self.assertFalse(np.array_equal(saved[0][1], saved[1][1]))
-        self.assertEqual(energy_digit_count(saved[2][1]), 1)
+        self.assertEqual(energy_digit_count(saved[1][1]), 1)
 
     def test_clear_all_selection_reuses_scan_and_checks_only_marker_regions(self):
         selected = [

@@ -2,6 +2,7 @@
 import hashlib
 import json
 import re
+import time
 from dataclasses import asdict
 from datetime import datetime
 from uuid import UUID, uuid4
@@ -47,11 +48,17 @@ class MaterialPlannerTask(BaseWWTask):
     def _capture(self, record, sequence):
         self.next_frame()
         frame = self.require_game_frame().copy()
-        ok, data = cv2.imencode('.png', frame)
+        self._save_frame(record, sequence, frame)
+        return frame
+
+    def _save_frame(self, record, sequence, frame):
+        from src.runtime.vision_metrics import measure
+        with measure('material_png'):
+            ok, data = cv2.imencode('.png', frame)
         if not ok:
             raise RuntimeError('材料证据截图编码失败')
-        self.repository.save_frame(record, sequence, data.tobytes())
-        return frame
+        with measure('material_save'):
+            self.repository.save_frame(record, sequence, data.tobytes())
 
     @staticmethod
     def _same_view(a, b, region):
@@ -61,27 +68,49 @@ class MaterialPlannerTask(BaseWWTask):
         return float(np.mean(cv2.absdiff(left, right))) < 1.5
 
     def _pages(self, parser, record, region, scroll_at, *, stop_at_echo=False):
-        """Bounded upward calibration and overlapping downward scans, saving every frame."""
+        """Save useful full pages; keep calibration observations without repeated PNGs."""
         seq = 0
-        previous = self._capture(record, seq)
+        saved_hashes = {}
+        observations = []
+        def capture():
+            self.next_frame()
+            return self.require_game_frame().copy()
+        def save(frame, sequence, stage):
+            sha = hashlib.sha256(memoryview(frame)).hexdigest()
+            # Exact full pixels, scoped to this scan/claim only. ROI equality
+            # must never stand in for full evidence equality.
+            if sha not in saved_hashes:
+                self._save_frame(record, sequence, frame)
+                saved_hashes[sha] = sequence
+            observations.append(dict(sequence=sequence, frame_seq=saved_hashes[sha],
+                                     stage=stage, observed_at=time.time()))
+            return saved_hashes[sha]
+        previous = capture()
+        previous_view = normalize(previous)
         stable = 0
         for _ in range(16):
             self.scroll_relative(*scroll_at, 8)
             self.sleep(.5)
             seq += 1
-            current = self._capture(record, seq)
-            stable = stable + 1 if self._same_view(previous,current,region) else 0
+            current = capture()
+            current_view = normalize(current)
+            stable = stable + 1 if self._same_view(previous_view,current_view,region) else 0
             previous = current
+            previous_view = current_view
             if stable >= 2: break
         else:
+            save(previous, seq, 'top_unconfirmed')
             raise RuntimeError('材料列表未确认顶部，停止扫描')
         pages = []
         stable = 0
         for _ in range(60):
-            page = parser(previous, self._ocr_image, self.catalog)
+            frame_seq = save(previous, seq, 'page')
+            page = parser(previous_view, self._ocr_image, self.catalog)
             if page['scene'] == 'unknown':
                 raise RuntimeError('材料页面身份未确认')
-            page['frame_seq'] = seq
+            page['frame_seq'] = frame_seq
+            page['observations'] = observations
+            observations = []
             page['at_top'] = not pages
             pages.append(page)
             if stop_at_echo and page.get('has_echo_boundary'):
@@ -91,15 +120,19 @@ class MaterialPlannerTask(BaseWWTask):
                 self.scroll_relative(*scroll_at, -2)
                 self.sleep(.5)
                 seq += 1
-                current = self._capture(record, seq)
-                if not self._same_view(previous,current,region):
+                current = capture()
+                current_view = normalize(current)
+                if not self._same_view(previous_view,current_view,region):
                     stable = 0
                     break
+                save(current, seq, 'bottom_probe')
                 stable += 1
             if stable >= 2:
+                page['observations'].extend(observations)
                 page['at_bottom'] = True
                 return pages
             previous = current
+            previous_view = current_view
         raise RuntimeError('材料列表超过扫描上限，原图已保留')
 
     @staticmethod

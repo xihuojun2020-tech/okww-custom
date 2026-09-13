@@ -28,12 +28,8 @@ SAMPLE_INTERVAL_SECONDS = 2.0
 
 
 def _default_root():
-    try:
-        from ok.util.file import get_relative_path
-
-        return Path(get_relative_path(*DEFAULT_ROOT.parts))
-    except Exception:
-        return Path.cwd() / DEFAULT_ROOT
+    from src.runtime.diagnostic_storage import storage_path
+    return storage_path('screenshots', Path.cwd() / 'screenshots') / 'account_switch_failures'
 
 
 def _json_point(point):
