@@ -7,6 +7,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QFont, QFontDatabase
 from src.gui.DiagnosticDetails import DiagnosticDetails
+from src.gui.CodexTheme import apply_codex_light_theme
 
 
 class TestDiagnosticDetailsUI(unittest.TestCase):
@@ -16,6 +17,7 @@ class TestDiagnosticDetailsUI(unittest.TestCase):
         if font_file.exists():
             QFontDatabase.addApplicationFont(str(font_file))
         app.setFont(QFont('Microsoft YaHei', 10))
+        apply_codex_light_theme(app)
         with tempfile.TemporaryDirectory() as temp:
             dialog = DiagnosticDetails(Path(temp))
             dialog.timer.stop()
@@ -44,6 +46,11 @@ class TestDiagnosticDetailsUI(unittest.TestCase):
             output=Path('test_out/diagnostic-details-ui.png')
             output.parent.mkdir(exist_ok=True)
             self.assertTrue(dialog.grab().save(str(output)))
+            dialog.resize(1000,640)
+            app.processEvents()
+            self.assertLessEqual(dialog.height(),640)
+            self.assertLessEqual(dialog.message.geometry().bottom(),dialog.height())
+            self.assertTrue(dialog.grab().save('test_out/diagnostic-details-compact.png'))
             dialog.close()
             dialog.deleteLater()
             app.processEvents()

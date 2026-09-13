@@ -1,5 +1,5 @@
 <div align="center">
-  <p>当前版本：<a href="docs/reviews/2026-09-13-reserve-diagnostics-1.64.00.md">1.64.00 备用体力保护与诊断上传明细</a> · <a href="docs/references/completion-evidence.md">完成检查分组与图片复制</a> · <a href="docs/references/material-planner-1.59.md">养成材料规划</a></p>
+  <p>当前版本：<a href="更新日志.md">1.64.01 诊断明细界面风格统一</a> · <a href="docs/references/completion-evidence.md">完成检查分组与图片复制</a> · <a href="docs/references/material-planner-1.59.md">养成材料规划</a></p>
   <h1 align="center">
     <img src="icons/icon.png" width="200" alt="ok-ww logo"/>
     <br/>

@@ -7,7 +7,9 @@ from PySide6.QtCore import Qt, QUrl, QTimer
 from PySide6.QtGui import QDesktopServices, QImage, QPixmap
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTabWidget, QTableWidget, QTableWidgetItem, QPlainTextEdit, QLineEdit,
-    QComboBox, QMessageBox, QFileDialog)
+    QComboBox, QMessageBox, QFileDialog, QGridLayout, QHeaderView)
+from src.gui.CodexTheme import SPACING, size_dialog
+from src.gui.SectionPanel import SectionPanel
 from src.gui.BackgroundOperation import BackgroundOperation
 from src.runtime.diagnostic_status import (DiagnosticIndex, STATUS, retry_batches,
     bounded_verify, backfill_preview, enqueue_backfill)
@@ -27,36 +29,51 @@ class DiagnosticDetails(QDialog):
     PAGE_SIZE=50
     def __init__(self,root,parent=None):
         super().__init__(parent)
-        self.setWindowTitle('日志与截图上传明细');self.resize(1120,800)
+        self.setWindowTitle('日志与截图上传明细')
+        self.setObjectName('diagnosticDetails')
+        size_dialog(self,1120,800)
         from src.runtime.diagnostic_policy import REPO
         self.root=Path(root);self.index=DiagnosticIndex(root, REPO);self.snapshot={};self.page=0;self.rows=[]
         layout=QVBoxLayout(self)
-        self.summary=QLabel('读取本地状态…');self.summary.setWordWrap(True);layout.addWidget(self.summary)
+        layout.setContentsMargins(16,16,16,16)
+        layout.setSpacing(SPACING['section'])
+        title=QLabel('日志与截图上传明细',self);title.setProperty('role','pageTitle');layout.addWidget(title)
+        self.overview=SectionPanel('传输概览',parent=self,collapsible=True)
+        layout.addWidget(self.overview)
+        self.summary=QLabel('读取本地状态…');self.summary.setWordWrap(True)
+        self.summary.setProperty('role','description');self.overview.add_widget(self.summary)
         bar=QHBoxLayout();layout.addLayout(bar)
         self.filter=QComboBox();self.filter.addItems(['全部','待传/失败','已上传'])
         refresh=QPushButton('刷新');retry=QPushButton('重试选中批次');verify=QPushButton('核验选中远端')
+        refresh.setProperty('role','primary')
         for w in (self.filter,refresh,retry,verify):bar.addWidget(w)
-        self.tabs=QTabWidget();layout.addWidget(self.tabs)
+        self.tabs=QTabWidget();layout.addWidget(self.tabs,1)
         self.tables=[]
         for name in ('日志来源','错误事件','文件','批次'):
             table=QTableWidget();table.setSelectionBehavior(QTableWidget.SelectRows)
             table.setSelectionMode(QTableWidget.SingleSelection);table.setEditTriggers(QTableWidget.NoEditTriggers)
+            self.style_table(table)
             self.tables.append(table);self.tabs.addTab(table,name)
             table.itemSelectionChanged.connect(self.select)
         pager=QHBoxLayout();layout.addLayout(pager)
         prev=QPushButton('上一页');nxt=QPushButton('下一页');self.page_label=QLabel()
-        for w in (prev,self.page_label,nxt):pager.addWidget(w)
-        self.detail=QPlainTextEdit();self.detail.setReadOnly(True);self.detail.setMaximumHeight(180);layout.addWidget(self.detail)
+        pager.addWidget(prev);pager.addStretch();pager.addWidget(self.page_label);pager.addStretch();pager.addWidget(nxt)
+        self.page_label.setProperty('role','description')
+        self.detail=QPlainTextEdit();self.detail.setReadOnly(True);self.detail.setMaximumHeight(120)
+        self.detail.setPlaceholderText('选择一项，查看上传结果、时间和缺失原因')
+        layout.addWidget(self.detail)
         self.timeline=QTableWidget(0,6);self.timeline.setHorizontalHeaderLabels(['阶段','距错误秒数','实际采集时间','画面质量','上传状态','文件'])
-        self.timeline.setMaximumHeight(150);self.timeline.setSelectionBehavior(QTableWidget.SelectRows)
+        self.timeline.setMaximumHeight(120);self.timeline.setSelectionBehavior(QTableWidget.SelectRows)
+        self.style_table(self.timeline)
         self.timeline.setSelectionMode(QTableWidget.SingleSelection);self.timeline.setEditTriggers(QTableWidget.NoEditTriggers)
         self.timeline.itemSelectionChanged.connect(self.select_frame);layout.addWidget(self.timeline)
         self.frame_file=None
-        actions=QHBoxLayout();layout.addLayout(actions)
+        actions=QGridLayout();actions.setSpacing(SPACING['small']);layout.addLayout(actions)
         local=QPushButton('打开本地');remote=QPushButton('打开NAS目录');copy=QPushButton('复制路径')
         preview=QPushButton('预览选中图片');export=QPushButton('导出诊断索引');backfill=QPushButton('补传指定时间日志')
-        for w in (local,remote,copy,preview,export,backfill):actions.addWidget(w)
+        for n,w in enumerate((local,remote,copy,preview,export,backfill)):actions.addWidget(w,n//3,n%3)
         self.message=QLabel('连接未检测；历史上传成功不代表当前在线。');self.message.setWordWrap(True);layout.addWidget(self.message)
+        self.message.setProperty('role','description')
         self.operation=BackgroundOperation(self,(refresh,retry,verify,preview,export,backfill))
         self.tabs.currentChanged.connect(self.reset_page);self.filter.currentIndexChanged.connect(self.reset_page)
         refresh.clicked.connect(self.refresh);retry.clicked.connect(self.retry);verify.clicked.connect(self.verify)
@@ -65,11 +82,23 @@ class DiagnosticDetails(QDialog):
         preview.clicked.connect(self.preview);export.clicked.connect(self.export);backfill.clicked.connect(self.backfill)
         self.timer=QTimer(self);self.timer.timeout.connect(self.refresh);self.timer.start(5000);self.refresh()
 
+    @staticmethod
+    def style_table(table):
+        table.setShowGrid(False)
+        table.setAlternatingRowColors(True)
+        table.verticalHeader().hide()
+        table.verticalHeader().setDefaultSectionSize(32)
+        table.horizontalHeader().setHighlightSections(False)
+        table.horizontalHeader().setStretchLastSection(True)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        table.setWordWrap(False)
+
     def error(self,error):self.message.setText(str(error))
     def refresh(self):
         if self.isVisible() or not self.snapshot:self.operation.start(self.index.snapshot,self.loaded,self.error)
     def loaded(self,snapshot):
         self.snapshot=snapshot
+        self.overview.set_summary(f'待传 {snapshot["pending_bytes"]:,} 字节 · {len(snapshot.get("batches",[]))} 批次 · {stamp(snapshot["updated_at"])}')
         self.summary.setText(f'NAS：{DEFAULT_TARGET}\n状态刷新：{stamp(snapshot["updated_at"])} | '
             f'待传 {snapshot["pending_bytes"]:,} 字节 | 批次：'+
             '，'.join(f'{STATUS.get(k,k)} {v}' for k,v in snapshot['counts'].items())+
@@ -114,7 +143,10 @@ class DiagnosticDetails(QDialog):
             identity=r.get('source') or r.get('incident_id') or (r.get('key','')+':'+r.get('path',''))
             table.item(n,0).setData(Qt.UserRole,identity)
             if identity==selected_key:table.selectRow(n)
-        table.resizeColumnsToContents();table.blockSignals(False)
+        table.resizeColumnsToContents()
+        for column in range(table.columnCount()):
+            table.setColumnWidth(column,min(table.columnWidth(column),380))
+        table.blockSignals(False)
         self.select()
         self.page_label.setText(f'第 {self.page+1} 页 / {max(1,(len(rows)+49)//50)} 页，共 {len(rows)} 项')
     def selected(self):

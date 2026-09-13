@@ -93,6 +93,27 @@ def codex_style_sheet() -> str:
     QToolButton[role="disclosure"]:focus {{ border-color: {COLORS['accent']}; }}
     QToolButton[role="disclosure"]:pressed {{ background: {COLORS['pressed']}; }}
     QDialog {{ background: {COLORS['window']}; }}
+    QDialog#diagnosticDetails QTabWidget::pane {{
+        border: 1px solid {COLORS['border']}; background: {COLORS['panel']};
+    }}
+    QDialog#diagnosticDetails QTabBar::tab {{
+        background: transparent; color: {COLORS['muted']}; padding: 8px 16px;
+        border-bottom: 2px solid transparent;
+    }}
+    QDialog#diagnosticDetails QTabBar::tab:selected {{
+        color: {COLORS['accent']}; border-bottom-color: {COLORS['accent']};
+    }}
+    QDialog#diagnosticDetails QTabBar::tab:hover {{ background: {COLORS['hover']}; }}
+    QDialog#diagnosticDetails QTabBar::tab:focus {{ border: 1px solid {COLORS['accent']}; }}
+    QDialog#diagnosticDetails QTableWidget {{
+        background: {COLORS['panel']}; alternate-background-color: {COLORS['window']};
+        border: 0; selection-background-color: {COLORS['accent']}; selection-color: {COLORS['panel']};
+    }}
+    QDialog#diagnosticDetails QTableWidget::item {{ padding: 4px 8px; }}
+    QDialog#diagnosticDetails QHeaderView::section {{
+        background: {COLORS['window']}; color: {COLORS['muted']};
+        border: 0; border-bottom: 1px solid {COLORS['border']}; padding: 8px;
+    }}
     QRadioButton, QCheckBox {{ spacing: 8px; min-height: 28px; }}
     QToolTip {{ background: {COLORS['text']}; color: {COLORS['panel']}; border: 0; }}
     """
