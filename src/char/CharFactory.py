@@ -23,6 +23,7 @@ from src.char.Hiyuki import Hiyuki
 from src.char.Iuno import Iuno
 from src.char.Jianxin import Jianxin
 from src.char.Jinhsi import Jinhsi
+from src.char.JingRan import JingRan
 from src.char.Jiyan import Jiyan
 from src.char.Linnai import Linnai
 from src.char.Lucilla import Lucilla
@@ -53,6 +54,7 @@ from src.char.Zhezhi import Zhezhi
 from src.char.CustomCharLoader import load_custom_char_class
 
 _char_dict_raw = {
+    Labels.char_jingran: {'cls': JingRan, 'char_type': CharType.MAIN_DPS, 'ring_index': Elements.FIRE},
     # Upstream supplies portraits only; retain generic combat until a rotation exists.
     Labels.char_aalto: {'cls': BaseChar, 'char_type': CharType.SUB_DPS, 'ring_index': Elements.WIND},
     Labels.char_lingyang: {'cls': BaseChar, 'char_type': CharType.MAIN_DPS, 'ring_index': Elements.ICE},

@@ -486,8 +486,10 @@ class BaseChar:
             check_fun = self.is_forte_full
         if check_fun():
             self.task.mouse_down()
-            success = self.task.wait_until(lambda: not check_fun(), time_out=2)
-            self.task.mouse_up()
+            try:
+                success = self.task.wait_until(lambda: not check_fun(), time_out=2)
+            finally:
+                self.task.mouse_up()
             self.sleep(0.05)
             return success
 

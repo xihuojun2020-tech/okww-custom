@@ -72,5 +72,17 @@
     "local_customizations": [
       "bounded_concerto_fill_preserve_local_rotation"
     ]
+  },
+  "JingRan": {
+    "upstream_repository": "ok-oldking/ok-wuthering-waves",
+    "upstream_commit": "530c69c910f28342ebc79642a56b96f1bef5d8bc",
+    "source_path": "src/char/JingRan.py",
+    "labels": [
+      "char_jingran"
+    ],
+    "local_release": "1.68.00",
+    "local_customizations": [
+      "shared_heavy_click_forte_finally_release"
+    ]
   }
 }

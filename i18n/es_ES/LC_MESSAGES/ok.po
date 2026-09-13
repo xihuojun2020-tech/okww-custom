@@ -1638,3 +1638,6 @@ msgid "读取培养目标、校准仓库并永久保存凝素收益；由账号�
 msgstr ""
 "Lee los objetivos, comprueba el inventario y conserva las recompensas. Se "
 "ejecuta desde la tarea diaria de la cuenta."
+
+msgid "JingRan"
+msgstr "Jingran"

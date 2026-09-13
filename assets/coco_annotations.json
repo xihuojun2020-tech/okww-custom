@@ -1429,6 +1429,11 @@
             "id": 283,
             "name": "trial_intro_close",
             "supercategory": ""
+        },
+        {
+            "id": 284,
+            "name": "char_jingran",
+            "supercategory": ""
         }
     ],
     "images": [
@@ -2679,6 +2684,12 @@
             "file_name": "images/character_trial_intro.png",
             "width": 1280,
             "height": 720
+        },
+        {
+            "file_name": "images/characters/jingran_source_34.png",
+            "height": 2160,
+            "id": 290,
+            "width": 3840
         }
     ],
     "annotations": [
@@ -6724,6 +6735,19 @@
             "iscrowd": 0,
             "ignore": 0,
             "segmentation": []
+        },
+        {
+            "area": 5185,
+            "bbox": [
+                3542,
+                464,
+                85,
+                61
+            ],
+            "category_id": 284,
+            "id": 450,
+            "image_id": 290,
+            "iscrowd": 0
         }
     ]
 }
