@@ -8,12 +8,12 @@ DEFAULT_TARGET = rf'\\{HOSTS[0]}\{SHARE}\AI诊断'
 
 def candidates(target):
     target = str(target)
-    parts = target.split('\\')
+    parts = target.replace('/', '\\').split('\\')
     if (len(parts) < 4 or parts[:2] != ['', ''] or
-            parts[2] not in HOSTS + LEGACY_HOSTS or parts[3] not in (SHARE, LEGACY_SHARE)):
+            parts[2] not in HOSTS + LEGACY_HOSTS or parts[3] not in (SHARE, LEGACY_SHARE, 'AI诊断')):
         return (target,)
     hosts = (parts[2], *(h for h in HOSTS if h != parts[2])) if parts[2] in HOSTS else HOSTS
-    suffix = '\\'.join([SHARE, *parts[4:]])
+    suffix = '\\'.join([SHARE, *parts[3:]]) if parts[3] == 'AI诊断' else '\\'.join([SHARE, *parts[4:]])
     return tuple('\\\\' + host + '\\' + suffix for host in hosts)
 
 

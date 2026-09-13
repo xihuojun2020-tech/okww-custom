@@ -7,7 +7,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from src.runtime.diagnostic_policy import installation_id, POLICY
+from src.runtime.diagnostic_policy import installation_id, POLICY, settings
 from src.runtime.diagnostic_runtime import prepare_runtime, check_runtime
 
 
@@ -26,6 +26,7 @@ def main():
     check_runtime(bundle)
     print(json.dumps({'source': str(source), 'runtime': str(bundle), 'spool': str(root), 'apply': args.apply}, ensure_ascii=False))
     if args.apply:
+        settings(root)
         script = Path(__file__).with_name('migrate_diagnostic_task.ps1')
         subprocess.run(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(script),
                         '-SourceRepo', str(source), '-Bundle', str(bundle), '-Root', str(root),

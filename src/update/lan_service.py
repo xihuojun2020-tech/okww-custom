@@ -51,7 +51,11 @@ class LanUpdateConfig:
             raise LanUpdateError("更新源必须是 HTTPS 地址或 UNC 共享路径")
         if value["enabled"] and is_https and not re.fullmatch(r"[0-9a-f]{64}", value["certificate_sha256"]):
             raise LanUpdateError("HTTPS 更新需要 NAS 证书指纹")
-        value["manifest_url"] = candidates(value["manifest_url"])[0]
+        migrated = candidates(value["manifest_url"])[0]
+        if migrated != value["manifest_url"]:
+            from src.runtime.diagnostic_export import atomic_json
+            value["manifest_url"] = migrated
+            atomic_json(path, value)
         return cls(**value)
 
 

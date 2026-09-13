@@ -54,6 +54,7 @@ class TestNasLocation(unittest.TestCase):
                 certificate_sha256='', ca_file='', channel='stable')), encoding='utf-8')
             service=LanUpdateService(config_path,transport)
             self.assertIn('192.168.3.173', service.config.manifest_url)
+            self.assertEqual(json.loads(config_path.read_text(encoding='utf-8'))['manifest_url'], service.config.manifest_url)
             release=service.check('1.00.00').release
             self.assertEqual(transport.get_bytes.call_count, 1)
             self.assertIn('192.168.3.173',service.manifest_source)
@@ -61,6 +62,14 @@ class TestNasLocation(unittest.TestCase):
             with patch('src.update.lan_service.validate_package'), patch.object(type(release),'package_path',return_value=package):
                 service.download(release,Path(directory))
             self.assertIn('192.168.3.173',transport.download.call_args.args[0])
+
+    def test_direct_share_and_forward_slash_paths_migrate(self):
+        for host in ('172', '161', '170', '173'):
+            for share in ('AI诊断', '羲火君 共享给我\\AI诊断', 'xihuojun 共享给我\\AI诊断'):
+                old = '\\\\192.168.3.' + host + '\\' + share
+                for path in (old, old.replace('\\', '/')):
+                    with self.subTest(path=path):
+                        self.assertEqual(candidates(path), (DEFAULT_TARGET,))
 
     def test_bad_manifest_does_not_fall_back(self):
         transport=Mock()

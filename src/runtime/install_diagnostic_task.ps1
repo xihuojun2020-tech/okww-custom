@@ -54,6 +54,9 @@ if ($existing) {
         Write-Output 'Task already matches this installation.'
         return
     }
+    # Ownership was checked above. Stop the old action before replacing it so
+    # an already-running snapshot cannot keep uploading to a retired NAS.
+    Stop-ScheduledTask -TaskName $TaskName
     Set-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings | Out-Null
 } else {
     Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description $description | Out-Null

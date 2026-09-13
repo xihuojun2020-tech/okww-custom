@@ -12,7 +12,7 @@ from src.runtime.diagnostic_export import atomic_json
 from src.runtime.nas_location import DEFAULT_TARGET, candidates, credential_shares
 
 POLICY = 'automatic-v1'
-SCHEDULER_REVISION = 5
+SCHEDULER_REVISION = 6
 LEGACY_TARGETS = {
     r'\\192.168.3.161\xihuojun 共享给我\AI诊断',
     r'\\192.168.3.170\xihuojun 共享给我\AI诊断',
