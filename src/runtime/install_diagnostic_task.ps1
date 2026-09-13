@@ -39,7 +39,8 @@ if ($Verify) {
     if ($existing -and $existing.Description -eq $description -and
         $existing.Actions.Execute -eq $pythonExe -and
         $existing.Actions.Arguments -eq $arguments -and
-        $existing.Actions.WorkingDirectory -eq $repo) { exit 0 }
+        $existing.Actions.WorkingDirectory -eq $repo -and
+        $existing.Settings.ExecutionTimeLimit -eq 'PT6M') { exit 0 }
     exit 1
 }
 if ($Preview) {
@@ -48,9 +49,9 @@ if ($Preview) {
 }
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
 $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
-$settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 3) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+$settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 6) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 if ($existing) {
-    if ($existing.Actions.Execute -eq $pythonExe -and $existing.Actions.Arguments -eq $arguments -and $existing.Actions.WorkingDirectory -eq $repo) {
+    if ($existing.Actions.Execute -eq $pythonExe -and $existing.Actions.Arguments -eq $arguments -and $existing.Actions.WorkingDirectory -eq $repo -and $existing.Settings.ExecutionTimeLimit -eq 'PT6M') {
         Write-Output 'Task already matches this installation.'
         Enable-ScheduledTask -TaskName $TaskName | Out-Null
         return

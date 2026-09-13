@@ -67,8 +67,11 @@ def upload_one(batch, target):
         validate_remote(control)
         return
 
+    directories = {}
     def publish(destination, data):
-        destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.parent not in directories:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            directories[destination.parent] = list(destination.parent.glob('*.uploading.*'))
         if destination.is_symlink() or destination.is_junction():
             raise ValueError('linked destination')
         if destination.exists():
@@ -78,7 +81,7 @@ def upload_one(batch, target):
                 raise ValueError('existing diagnostic content conflict')
             return
         stale = [destination.with_name(destination.name + '.uploading')]
-        stale.extend(destination.parent.glob(destination.name + '.uploading.*'))
+        stale.extend(p for p in directories[destination.parent] if p.name.startswith(destination.name + '.uploading.'))
         for pending in stale:
             if pending.is_symlink() or pending.is_junction():
                 raise ValueError('linked upload temporary file')
@@ -116,8 +119,8 @@ def upload_one(batch, target):
     publish(control / 'manifest.json', raw)
     publish(control / 'manifest.json.sha256', digest(raw).encode('ascii'))
     # Final marker is always last, after both log and screenshot trees are complete.
+    validate_remote(control, require_complete=False)
     publish(marker, digest(raw).encode('ascii'))
-    validate_remote(control)
     atomic_json(batch / 'transfer-progress.json', {
         'updated_at': time.time(), 'completed_files': completed_files,
         'completed_bytes': completed_bytes, 'total_files': len(manifest['files']),
@@ -125,7 +128,7 @@ def upload_one(batch, target):
     })
 
 
-def validate_remote(control):
+def validate_remote(control, *, require_complete=True):
     control = Path(control).absolute()
     # control = root/待分析/日志/program/date/run/batch
     if len(control.parents) < 5 or control.parents[3].name != '日志':
@@ -153,7 +156,7 @@ def validate_remote(control):
             if bounded_read(root, item['path'] + '.sha256', 64).decode('ascii') != item['sha256']:
                 raise ValueError('retained image checksum mismatch')
         return dict(manifest, files=images, logs_purged=True)
-    if (bounded_read(control, '_UPLOAD_COMPLETE', 64).decode('ascii') != expected
+    if ((require_complete and bounded_read(control, '_UPLOAD_COMPLETE', 64).decode('ascii') != expected)
             or bounded_read(control, 'manifest.json.sha256', 64).decode('ascii') != expected):
         raise ValueError('manifest completion mismatch')
     manifest = validate_manifest(root, json.loads(raw))
@@ -167,7 +170,23 @@ def validate_remote(control):
     return manifest
 
 
-def retry_pending(root, target, *, timeout=30, now=None, transfer=None):
+def batch_timeout(manifest):
+    size = sum(item['size'] for item in manifest['files'])
+    return min(180, max(45, 15 + 5 * len(manifest['files']) + size / (0.5 * 1024**2)))
+
+
+def fair_batches(pending, slot=0):
+    """Persist the slot after each attempt, including attempts that exhaust a round."""
+    remaining = sorted(pending, key=lambda row: (row[1], str(row[2])))
+    groups = (0, 0, 1, 1, None)
+    while remaining:
+        group = groups[slot % len(groups)]
+        index = next((i for i, row in enumerate(remaining) if group is None or row[0] == group), 0)
+        slot = (slot + 1) % len(groups)
+        yield remaining.pop(index), slot
+
+
+def retry_pending(root, target, *, timeout=None, now=None, transfer=None):
     root = Path(root)
     now = time.time() if now is None else now
     transfer = transfer or bounded_upload
@@ -180,11 +199,9 @@ def retry_pending(root, target, *, timeout=30, now=None, transfer=None):
     with lease:
         recover_sessions(root)
         pending = []
-        deadline = time.monotonic() + 30
+        scan_started = time.monotonic()
         from src.runtime.diagnostic_queue import pending_batches, acknowledge
-        for batch in pending_batches(root):
-            if time.monotonic() >= deadline:
-                break
+        for batch in pending_batches(root, limit=512):
             try:
                 safe_path(root, batch.relative_to(root).as_posix())
                 state_file = root / 'states' / (batch.parents[1].name + '--' + batch.name + '.json')
@@ -196,10 +213,19 @@ def retry_pending(root, target, *, timeout=30, now=None, transfer=None):
                 manifest = json.loads((batch / 'manifest.json').read_text(encoding='utf-8'))
                 if manifest.get('policy') != POLICY:
                     continue
-                pending.append((0 if manifest['kind'] == 'error' else 1, manifest['created_at'], batch))
+                small = len(manifest['files']) <= 4 and sum(x['size'] for x in manifest['files']) <= 1024**2
+                group = 0 if manifest['kind'] in ('error', 'incident') else (1 if small else 2)
+                pending.append((group, manifest['created_at'], batch, batch_timeout(manifest)))
             except (ValueError, OSError, KeyError):
                 continue
-        for _, created, batch in sorted(pending)[:16]:
+        schedule_path = root / 'upload-schedule.json'
+        try:
+            slot = int(json.loads(schedule_path.read_text(encoding='utf-8')).get('slot', 0))
+        except (OSError, ValueError, TypeError):
+            slot = 0
+        scan_seconds = time.monotonic() - scan_started
+        deadline = time.monotonic() + 120
+        for (_, created, batch, allowance), slot in fair_batches(pending, slot):
             if time.monotonic() >= deadline:
                 break
             state_file = root / 'states' / (batch.parents[1].name + '--' + batch.name + '.json')
@@ -208,10 +234,12 @@ def retry_pending(root, target, *, timeout=30, now=None, transfer=None):
                 if state.get('status') in ('uploaded', 'blocked', 'logs_purged') or state.get('next_retry', 0) > now:
                     continue
                 attempts = state.get('attempts', 0) + 1
+                atomic_json(schedule_path, {'slot': slot, 'scan_seconds': scan_seconds,
+                                           'eligible_batches': len(pending), 'updated_at': time.time()})
                 state.update(status='uploading', attempts=attempts, last_attempt_at=time.time())
                 atomic_json(state_file, state)
                 try:
-                    transfer(batch, target, min(timeout, max(1, deadline - time.monotonic())))
+                    transfer(batch, target, allowance if timeout is None else timeout)
                     state.update(status='uploaded', uploaded_at=time.time(), last_error=None)
                 except ValueError as error:
                     state.update(status='blocked', last_error=sanitize_text(error), last_error_at=time.time())

@@ -148,6 +148,41 @@ class TestDiagnosticPipeline(unittest.TestCase):
             with self.assertRaisesRegex(OSError, 'timed out'):
                 bounded_upload(self.root, self.remote, 1)
 
+    def test_completion_marker_waits_for_remote_validation(self):
+        batch = self.batch()
+        with patch('src.runtime.diagnostic_uploader.validate_remote', side_effect=OSError('interrupted validation')):
+            with self.assertRaisesRegex(OSError, 'interrupted'):
+                upload_one(batch, self.remote)
+        self.assertFalse(list(self.remote.rglob('_UPLOAD_COMPLETE')))
+        upload_one(batch, self.remote)
+        marker = next(self.remote.rglob('_UPLOAD_COMPLETE'))
+        validate_remote(marker.parent)
+
+    def test_empty_periodic_does_not_create_batches(self):
+        from src.runtime.diagnostic_session import seal_pending
+        self.session.finish(timeout=5)
+        before = set(self.session.run.glob('batches/*'))
+        seal_pending(self.session.run, 'periodic', sizes={})
+        self.assertEqual(set(self.session.run.glob('batches/*')), before)
+
+    def test_scan_time_does_not_consume_transfer_allowance(self):
+        self.batch()
+        clock = [0.0]
+        received = []
+        from src.runtime.diagnostic_queue import pending_batches
+        batches = list(pending_batches(self.root))
+        def slow_scan(*args, **kwargs):
+            clock[0] += 90
+            yield from batches
+        def transfer(batch, target, timeout):
+            received.append(timeout)
+            clock[0] += 35
+        with patch('src.runtime.diagnostic_queue.pending_batches', slow_scan), patch(
+                'src.runtime.diagnostic_uploader.time.monotonic', side_effect=lambda: clock[0]):
+            retry_pending(self.root, self.remote, transfer=transfer)
+        self.assertTrue(received)
+        self.assertTrue(all(value >= 45 for value in received))
+
     def test_offline_evidence_keeps_retrying_after_24_hours(self):
         batch = self.batch()
         def offline(*args):
