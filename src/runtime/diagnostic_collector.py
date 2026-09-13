@@ -77,7 +77,7 @@ class FileCollector:
             if not failed:
                 (self.root / 'collector-error.json').unlink(missing_ok=True)
 
-    def acknowledge(self, path):
+    def acknowledge(self, path, run_id=None):
         """Record a source file already captured directly by the session worker."""
         path = Path(path).resolve()
         try:
@@ -92,6 +92,8 @@ class FileCollector:
         if not relative.startswith(('logs/', 'screenshots/')) or path.suffix.lower() not in LOG_TYPES | IMAGE_TYPES:
             return False
         self.cursors[relative] = self.stamp(path)
+        if run_id:
+            self.cursors[relative].update(run_id=run_id, collected_at=time.time(), pre_policy=False)
         atomic_json(self.path, self.cursors)
         return True
 

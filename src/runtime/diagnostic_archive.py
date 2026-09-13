@@ -120,7 +120,10 @@ def upload_archive(archive, target=DEFAULT_TARGET):
     destination.mkdir(parents=True, exist_ok=True)
     remote = safe_path(destination, archive.name)
     partial = safe_path(destination, archive.name + '.partial')
-    with FileLease(root / '.archive.lock'), FileLease(root / '.uploader.lock'):
+    with FileLease(root / '.archive.lock'), FileLease(root / '.uploader.lock'), FileLease(safe_path(target, '.archive-retention.lock')):
+        reviewed = safe_path(target, '已检查/压缩包/' + archive.name)
+        if not remote.exists() and reviewed.exists():
+            remote = reviewed
         if not remote.exists():
             complete_partial = partial.exists() and partial.stat().st_size == receipt['size'] and hash_file(partial) == receipt['sha256']
             if not complete_partial:
@@ -140,8 +143,12 @@ def upload_archive(archive, target=DEFAULT_TARGET):
             partial.replace(remote)
         if hash_file(remote) != receipt['sha256']:
             raise ValueError('NAS 已有同名压缩包内容冲突')
-        atomic_json(remote.with_suffix('.json'), {'sha256': receipt['sha256'], 'size': receipt['size'],
-                                                'uploaded_at': time.time()})
+        remote_receipt = remote.with_suffix('.json')
+        uploaded_at = time.time()
+        if remote_receipt.exists():
+            uploaded_at = json.loads(remote_receipt.read_text(encoding='utf-8')).get('uploaded_at', uploaded_at)
+        atomic_json(remote_receipt, {'sha256': receipt['sha256'], 'size': receipt['size'],
+                                    'uploaded_at': uploaded_at})
         for item in receipt['batches']:
             run, batch_id = item['key'].split('--', 1)
             batch = safe_path(root, f'{run}/batches/{batch_id}')
@@ -154,7 +161,7 @@ def upload_archive(archive, target=DEFAULT_TARGET):
             atomic_json(state_path, state)
             from src.runtime.diagnostic_queue import acknowledge
             acknowledge(batch)
-        receipt.update(status='uploaded', remote=str(remote))
+        receipt.update(status='uploaded', remote=str(remote), uploaded_at=time.time())
         atomic_json(receipt_path, receipt)
         atomic_json(archive.parent / 'progress.json', {'status': 'uploaded', 'archive': str(remote)})
     return str(remote)
@@ -213,7 +220,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if args.verify:
         connect(DEFAULT_TARGET)
-        if hash_file(args.verify) != args.sha256:
+        remote = args.verify
+        if not remote.exists():
+            remote = safe_path(DEFAULT_TARGET, '已检查/压缩包/' + remote.name)
+        if hash_file(remote) != args.sha256:
             raise ValueError('checksum mismatch')
     else:
         upload_archive(args.upload)

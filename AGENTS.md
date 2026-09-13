@@ -13,6 +13,7 @@
 - Use only `\\192.168.3.173\羲火君 共享给我\AI诊断` for this project's NAS diagnostics, reading, handoffs and update publishing.
 - `.172`, `.161` and `.170` are legacy addresses, not fallback destinations. Retain them only for migrating old configuration and reading saved credential aliases.
 - Historical reports may contain old addresses; they are not current operating instructions.
+- After actually reviewing a diagnostic ZIP, write a substantive Markdown report (scope, findings, evidence, fixes and verification limits), then run `.\.venv\Scripts\python.exe -m src.runtime.diagnostic_archive_retention --review <ZIP filename> --report <report path> --sha256 <verified ZIP SHA256>`. This stores the report and marks/moves only that reviewed package. Merely opening or listing evidence is not review completion. Reports remain; reviewed evidence expires after 3 days, unreviewed packages after 30 days from verified upload.
 
 ## Versioning and GitHub publishing
 

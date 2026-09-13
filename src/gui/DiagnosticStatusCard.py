@@ -40,7 +40,7 @@ def diagnostic_status_text(root):
         return ('上传模式：手动压缩包（不自动上传）\n'+
                 f'后台任务：{scheduler.get("status","等待停用")}\n'+
                 f'最近操作：{labels.get(progress.get("status"),"尚无手动上传")}\n'+
-                str(progress.get('archive',''))+'\n原始日志和截图保留；查看明细可按启动会话选择。')
+                str(progress.get('archive',''))+'\n上传成功满一天清理本地资料；NAS 未检查保留三十天，检查后保留三天。')
     counts, upload_error, last_success, last_error_at = Counter(), '', 0, -1
     for ready in root.glob('*/batches/*/_READY'):
         state_path = root / 'states' / (ready.parents[2].name + '--' + ready.parent.name + '.json')
@@ -96,7 +96,7 @@ class DiagnosticStatusCard(SectionPanel):
         self.root = default_root()
         self.set_summary('正在读取本地状态…')
         layout = self.content_layout
-        description = QLabel('日志和截图保存在本机。点击“打包上传”将全部尚未上传的资料整理为 ZIP，并校验上传至 NAS；按每次启动会话提供日志汇总。原始资料保留，错误截图缺帧会如实标记。')
+        description = QLabel('手动打包上传日志和截图，按启动会话汇总。上传成功满一天清理本地资料；NAS 未检查保留三十天，生成检查报告并归档后三天清理原包，报告保留。活动会话和未上传成功的资料不删除。')
         description.setWordWrap(True)
         description.setProperty('role', 'description')
         layout.addWidget(description)
@@ -190,7 +190,7 @@ class DiagnosticStatusCard(SectionPanel):
     def retry(self):
         root = self.root
         from src.runtime.diagnostic_archive import manual_upload
-        self._show_status('正在打包全部待传资料并上传，请等待；不会删除原始资料。')
+        self._show_status('正在打包全部待传资料并上传；校验成功满一天后清理本地资料。')
         self.operation.start(lambda:manual_upload(root), lambda path:self._show_status('压缩包已上传并校验：'+path),
                              lambda e:self._show_status(sanitize_text(e)))
 

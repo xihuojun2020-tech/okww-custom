@@ -79,6 +79,8 @@ def start_diagnostics(version, root=None):
                                     current_run_started_at=process_started_at)
         session.on_batch_ready = lambda: wake_uploader(session.root)
         _session = session
+        from src.runtime.diagnostic_archive_retention import maintenance_loop
+        threading.Thread(target=maintenance_loop, args=(root,), name='DiagnosticRetention', daemon=True).start()
         logging.getLogger().addHandler(session)
         previous, previous_thread = sys.excepthook, threading.excepthook
 

@@ -386,7 +386,7 @@ class DiagnosticSession(logging.Handler):
                             saved = folder / (image_id + source.suffix.lower())
                             shutil.copyfile(source, saved)
                             if self.collector:
-                                self.collector.acknowledge(source)
+                                self.collector.acknowledge(source, self.run.name)
                     self.record_event('screenshot_copy', {'image_id': image_id,
                                       'local_file': saved.name if saved else None,
                                       'status': 'automatic_upload' if saved else 'unavailable'}, allow_closed=True)

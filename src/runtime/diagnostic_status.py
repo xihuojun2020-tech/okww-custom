@@ -64,6 +64,8 @@ class DiagnosticIndex:
                        count=len(manifest.get('files',[])), local=str(batch),
                        progress=read_json(batch/'transfer-progress.json', {}))
             batches.append(row)
+            if state.get('local_deleted_at'):
+                row['error'] = '本地日志和截图已按上传后一天策略清理'
             row['transport'] = state.get('transport', 'files')
             row['archive'] = state.get('archive')
             row['archive_sha256'] = state.get('archive_sha256')
