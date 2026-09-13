@@ -68,7 +68,8 @@ def log_sources(run):
             or p.name == 'crash.json' or (p.name.startswith('collected-') and p.suffix == '.json')}
 
 
-def seal_run(run, kind, *, sizes=None, reviewed_images=(), offsets=None, incident=None, prepared_images=False):
+def seal_run(run, kind, *, sizes=None, reviewed_images=(), offsets=None, incident=None, prepared_images=False,
+             source_ranges=()):
     """Publish a local batch only after every exported file is valid."""
     run = Path(run).absolute()
     root = run.parent
@@ -114,7 +115,7 @@ def seal_run(run, kind, *, sizes=None, reviewed_images=(), offsets=None, inciden
         add(f'日志/{prefix}/incident.json', json.dumps(sanitize_incident(incident), ensure_ascii=False).encode())
     manifest = {'schema_version': 1, 'run_id': run.name, 'batch_id': batch_id,
                 'created_at': time.time(), 'kind': kind, 'files': entries,
-                'policy': metadata.get('policy'),
+                'policy': metadata.get('policy'), 'source_ranges': list(source_ranges),
                 'log_ranges': {p.name: [int((offsets or {}).get(p.name, 0)), n] for p, n in sources.items()}}
     atomic_json(batch / 'manifest.json', manifest)
     (batch / '_READY').write_text(digest((batch / 'manifest.json').read_bytes()), encoding='ascii')

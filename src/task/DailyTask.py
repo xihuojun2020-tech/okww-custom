@@ -362,6 +362,10 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             self.clear_profile_binding()
         self._snapshot_bound_externally = False
         self._profile_run_active = True
+        from src.task.daily_reserve_policy import DailyReservePolicy
+        previous_policy = getattr(self.executor, '_daily_reserve_policy', None)
+        self.executor._daily_reserve_policy = DailyReservePolicy(str(getattr(self, '_verified_profile_id', '') or ''))
+        self.executor._daily_reserve_policy.refresh = self._refresh_reserve_activity
         try:
             with self.account_input_guard(self._guard_bound_profile_identity):
                 result = self._run_daily_inner()
@@ -374,6 +378,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             finish_daily_run(self, 'returned')
             return result
         finally:
+            self.executor._daily_reserve_policy = previous_policy
             self._profile_run_active = False
             self._daily_from_verified_snapshot = False
             self.clear_profile_binding()
@@ -501,6 +506,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 self.screenshot('NightmareNestTask')
                 self.ensure_main(time_out=180)
         if need_stamina:
+            # Nightmare rewards may have completed activity since the earlier observation.
+            used_stamina, daily_reward_ready = self.open_daily()
+            stamina_activity_ready = self._stamina_policy_activity_ready(daily_reward_ready)
             target = self._profile_get('Which to Farm', self.support_tasks[0])
             stamina_labels = {
                 self.support_tasks[0]: '无音区',
@@ -2016,6 +2024,13 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                           raise_if_not_found=False)
         self.ensure_main()
 
+    def _refresh_reserve_activity(self):
+        # Called only after the farming task has positively returned to the world.
+        self._guard_bound_profile_identity()
+        self.ensure_main()
+        self.open_daily()
+        self.ensure_main()
+
     def open_daily(self):
         self.log_info('open_daily')
         self.openF2Book("gray_book_quest")
@@ -2030,6 +2045,17 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             current = 0
         self.info_set('current daily progress', current)
         points = self.get_total_daily_points()
+        policy = getattr(self.executor, '_daily_reserve_policy', None)
+        if policy is not None:
+            identity = str(getattr(self, '_verified_profile_id', '') or '')
+            if policy.profile_id and policy.profile_id != identity:
+                raise RuntimeError('体力策略账号发生变化，停止消费')
+            policy.profile_id = identity
+            policy.observe(None if points is None else points >= 100)
+            text = ('活跃度满：禁止备用' if policy.full_seen else
+                    '未知：禁止备用' if points is None else '活跃度未满：转换前须复核数量与剩余额度')
+            self.info_set('备用体力政策', text)
+            self.log_info(f'{text}；account={identity}, points={points}, remaining={policy.remaining}')
         return current, None if points is None else points >= 100
         # 请注意：如果任务【累计消耗180点结晶波片】已完成，current 也可能为 0，因为翻页后也有可能识别不到已用体力。
 

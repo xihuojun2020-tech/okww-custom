@@ -4,6 +4,7 @@ import os
 import shutil
 import time
 import uuid
+import re
 from pathlib import Path
 
 from src.runtime.diagnostic_export import atomic_json, safe_path, digest, sanitize_file
@@ -147,7 +148,13 @@ class FileCollector:
             staged.write_bytes(data)
             sanitize_file(staged)
             staged.replace(stage)
-            seal_run(run, 'collected', sizes={stage: len(data)})
+            timestamps = re.findall(rb'^\d{4}-\d\d-\d\d[ T]\d\d:\d\d:\d\d', data, re.M)
+            seal_run(run, 'collected', sizes={stage: len(data)}, source_ranges=[{
+                'source': name, 'start': offset, 'end': offset + len(data),
+                'inode': current['inode'], 'collected_at': current['collected_at'],
+                'start_time': timestamps[0].decode() if timestamps else None,
+                'end_time': timestamps[-1].decode() if timestamps else None,
+            }])
             self._mark_sealed(run, stage.name, len(data))
             current['offset'] = offset + len(data)
             if current['offset'] != current['size']:

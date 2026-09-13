@@ -136,7 +136,7 @@ class TestWeeklyDailyIntegration(unittest.TestCase):
         task._readonly_profile_config = Mock(return_value={})
         task._profile_get = lambda key, default=None: ('Tacet Suppression' if key == 'Which to Farm'
                                                       else False if 'Nightmare' in key else default)
-        reads = iter([(0, False), (180, True)])
+        reads = iter([(0, False), (180, True), (180, True)])
         task.open_daily = lambda: (events.append('read'), next(reads))[1]
         task.check_weekly_boss = lambda: events.append('weekly') or True
         def farm(**kwargs):
@@ -149,7 +149,7 @@ class TestWeeklyDailyIntegration(unittest.TestCase):
                 patch('src.task.DailyTask.WWOneTimeTask.run'), patch.object(DailyTask, 'logged_in', False):
             with self.assertRaisesRegex(RuntimeError, 'test reached refreshed farming'):
                 task._run_daily_inner()
-        self.assertEqual(events, ['read', 'weekly', 'read', 'farm'])
+        self.assertEqual(events, ['read', 'weekly', 'read', 'read', 'farm'])
 
     def test_target_wrapper_preserves_standalone_config_and_restores_state(self):
         from src.task.WeeklyBossTask import WeeklyBossTask

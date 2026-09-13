@@ -1,5 +1,5 @@
 <div align="center">
-  <p>当前版本：<a href="docs/references/character-trial-scroll.md">1.60.10 初露峥嵘离开确认修复</a> · <a href="docs/references/completion-evidence.md">完成检查分组与图片复制</a> · <a href="docs/references/material-planner-1.59.md">养成材料规划</a></p>
+  <p>当前版本：<a href="docs/reviews/2026-09-13-reserve-diagnostics-1.64.00.md">1.64.00 备用体力保护与诊断上传明细</a> · <a href="docs/references/completion-evidence.md">完成检查分组与图片复制</a> · <a href="docs/references/material-planner-1.59.md">养成材料规划</a></p>
   <h1 align="center">
     <img src="icons/icon.png" width="200" alt="ok-ww logo"/>
     <br/>

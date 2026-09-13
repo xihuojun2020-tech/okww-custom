@@ -114,16 +114,34 @@ class TestStaminaAccounting(unittest.TestCase):
         task.ocr.side_effect = [[]]
         self.assertEqual(-1, BaseWWTask.get_settlement_stamina(task))
 
-    def test_reserve_conversion_requires_observed_conserved_balances(self):
+    def test_reserve_conversion_requires_exact_amount_and_balance(self):
         from unittest.mock import Mock
+        from types import SimpleNamespace
         for converted, accepted in [((60, 57, 117), True), ((61, 57, 118), True),
-                                     ((60, 0, 60), False), ((-1, -1, -1), False)]:
+                                     ((117, 0, 117), False), ((-1,-1,-1),False)]:
             task = self._stamina_task(20, 97, backup_prompt=True)
             task.get_stamina = Mock(side_effect=[(20, 97, 117), converted])
             task._confirm_stamina_used = Mock(return_value=(0, 57, 57))
-            BaseWWTask.use_stamina(task, once=60, must_use=60)
-            task._confirm_stamina_used.assert_called_once_with(
-                117, 60, before_balance=converted if accepted else None)
+            task.next_frame=Mock(); task.screenshot=Mock(); task.click=Mock()
+            task.ocr=Mock(side_effect=[[SimpleNamespace(name='备用结晶波片'),SimpleNamespace(name='转化数量：40')],[SimpleNamespace(name='确认')]])
+            if accepted:
+                BaseWWTask.use_stamina(task,once=60,must_use=60,allow_backup=True)
+                task._confirm_stamina_used.assert_called_once_with(117,60,before_balance=converted)
+            else:
+                with self.assertRaisesRegex(RuntimeError,'余额不符合'):
+                    BaseWWTask.use_stamina(task,once=60,must_use=60,allow_backup=True)
+                task._confirm_stamina_used.assert_not_called()
+            task.click.assert_called_once()
+
+    def test_large_or_unknown_conversion_never_confirms(self):
+        from unittest.mock import Mock
+        from types import SimpleNamespace
+        for names in (['转化数量：97'], ['97'], []):
+            task=self._stamina_task(20,97,backup_prompt=True)
+            task.next_frame=Mock();task.screenshot=Mock();task.click=Mock()
+            task.ocr=Mock(return_value=[SimpleNamespace(name=n) for n in names])
+            self.assertEqual((False,0),BaseWWTask.use_stamina(task,once=60,must_use=60,allow_backup=True))
+            task.click.assert_not_called()
 
     def test_backup_policy_is_preserved_at_two_current_stamina(self):
         for allowed in (True, False):

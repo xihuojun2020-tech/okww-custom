@@ -59,7 +59,7 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
         """包装副本刷取循环：死亡恢复后自动从 F2 重新进入，并限制重试次数。"""
         recovery_retries = 0
         entry_retries = 0
-        allow_backup = activity_ready is None
+        allow_backup = False
         backup_policy_decided = activity_ready is None
         while True:
             current, back_up, total = self.open_F2_book_and_get_stamina()
@@ -130,6 +130,11 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
                 self.make_sure_in_world()
                 return False, must_use
             planner = getattr(self, 'material_planner', None)
+            policy = getattr(self.executor, '_daily_reserve_policy', None)
+            if policy is not None:
+                # Combat can itself complete an activity objective. A pre-combat
+                # reading cannot authorize reserve even if less than 30s old.
+                policy.observe(None)
             if planner:
                 planner.begin_claim()
             try:
@@ -172,6 +177,7 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
         #
         self.click(0.42, 0.84, after_sleep=2)  # back to world
         self.make_sure_in_world()
+        self.refresh_daily_reserve_after_exit()
         return True, must_use
 
     def _domain_reward_state(self):

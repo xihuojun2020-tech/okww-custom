@@ -543,11 +543,11 @@ class BaseWWTask(BaseTask):
 
     @staticmethod
     def should_use_backup_stamina(activity_ready, current, back_up, budget):
-        if activity_ready or int(current) >= int(budget):
+        if activity_ready is not False or int(current) >= int(budget):
             return False
         return int(current) + int(back_up) >= int(budget)
 
-    def use_stamina(self, once=60, must_use=0, allow_backup=True, max_claims=2):
+    def use_stamina(self, once=60, must_use=0, allow_backup=False, max_claims=2):
         if max_claims not in (1, 2):
             raise ValueError('max_claims must be 1 or 2')
         self.sleep(1)
@@ -556,9 +556,23 @@ class BaseWWTask(BaseTask):
         current, back_up, total = self.get_stamina()
         if min(current, back_up, total) < 0:
             raise RuntimeError('体力读数无效，停止消费')
-        if (total if allow_backup else current) < once:
-            return False, 0
         requested_before = must_use
+        policy = getattr(getattr(self, 'executor', None), '_daily_reserve_policy', None)
+        if policy is not None:
+            if policy.pending_conversion:
+                raise RuntimeError('上次备用转换结果尚未确认，停止所有后续消费')
+            if not policy.profile_id:
+                allow_backup = False
+            if not policy.budget_initialized:
+                policy.remaining = max(0, must_use)
+                policy.budget_initialized = True
+            allow_backup = allow_backup and policy.allowance(current, once) > 0
+        if (total if allow_backup else current) < once:
+            if policy is not None and current < once and not policy.full_seen:
+                policy.refresh_required = True
+            self.log_info(f'体力消费停止：current={current}, reserve={back_up}, allow_backup={allow_backup}, remaining={must_use}')
+            self.back(after_sleep=1)  # Close the claim prompt before the caller exits.
+            return False, 0
         if max_claims == 2 and current >= once * 2 and (must_use <= 0 or must_use >= once * 2):
             used = once * 2
             use_double = True
@@ -581,22 +595,64 @@ class BaseWWTask(BaseTask):
             if not allow_backup:
                 self.log_info('本轮策略禁止使用备用体力，停止刷取')
                 self.back(after_sleep=1)
+                if self.has_claim_stamina():
+                    self.back(after_sleep=1)
                 return False, 0
-            self.click_relative(0.70, 0.71, hcenter=True, after_sleep=1)  # 点击确认
-            self.click_relative(0.70, 0.71, hcenter=True, after_sleep=1)
+            from src.task.daily_reserve_policy import conversion_amount, conversion_matches
+            limit = max(0, min(used, must_use if must_use > 0 else used) - current)
+            if policy is not None:
+                limit = min(limit, policy.allowance(current, used))
+            self.next_frame()
+            amount = conversion_amount(self.ocr(0.20, 0.20, 0.80, 0.80))
+            if amount is None or amount > limit or amount > back_up:
+                self.log_info(f'备用体力转换已拦截：数量={amount}，本次上限={limit}；不接受默认批量转换')
+                self.screenshot('reserve_conversion_blocked')
+                self.back(after_sleep=1)
+                if self.has_claim_stamina():
+                    self.back(after_sleep=1)
+                return False, 0
+            confirm = self.ocr(0.55, 0.60, 0.80, 0.80, match=re.compile(r'^确认$'))
+            if len(confirm) != 1:
+                self.back(after_sleep=1)
+                raise RuntimeError('备用体力确认按钮不唯一，未执行转换')
+            if policy is not None and amount > policy.allowance(current, used):
+                policy.refresh_required = True
+                self.back(after_sleep=1)
+                if self.has_claim_stamina():
+                    self.back(after_sleep=1)
+                self.log_info('备用体力授权在确认前失效，已取消转换')
+                return False, 0
+            self.log_info(f'备用体力转换请求：current={current}, reserve={back_up}, amount={amount}, limit={limit}')
+            # Keep the latch set on an uncertain result, including user interruption.
+            if policy is not None:
+                policy.pending_conversion = True
+            self.screenshot('reserve_conversion_pending')
+            self.click(confirm[0], after_sleep=1)
             self.back(after_sleep=1)
             # Observe both balances after conversion, before the final claim click.
             # Conversion must conserve total stamina (allow one regenerated point).
-            before_balance = None
+            converted = (-1, -1, -1)
             if self.has_claim_stamina():
                 converted = self.get_stamina()
-                if min(converted) >= 0 and 0 <= converted[2] - total <= 1:
-                    before_balance = converted
-            self.click(btn, after_sleep=1)
+            if not conversion_matches((current, back_up, total), converted, amount):
+                self.screenshot('reserve_conversion_unconfirmed')
+                raise RuntimeError('备用体力转换余额不符合授权数量，停止消费，不重复确认')
+            before_balance = converted
+            if policy is not None:
+                policy.pending_conversion = False
+            self.screenshot('reserve_conversion_confirmed')
+            self.log_info(f'备用体力转换已核验：before={(current, back_up, total)}, after={converted}, amount={amount}')
+            # Re-find the claim button after the modal closes; do not reuse stale coordinates.
+            if use_double:
+                self.click_dialog_right_button()
+            else:
+                self.click_dialog_left_button()
 
         projected = self.project_stamina_after_use(current, back_up, used)
         current, back_up, total = self._confirm_stamina_used(total, used, before_balance=before_balance)
         must_use -= used
+        if policy is not None:
+            policy.spend(used)
         logger.info(f'confirmed stamina: current={current} back_up={back_up} total={total}; projected={projected}')
         if requested_before > 0 and must_use <= 0:
             can_continue = False
@@ -604,9 +660,19 @@ class BaseWWTask(BaseTask):
         elif (current if not allow_backup else total) < once:
             logger.info(f"current stamina: {current} not enough to continue")
             can_continue = False
+            if policy is not None and not policy.full_seen and policy.remaining >= once:
+                policy.refresh_required = True
         else:
             can_continue = True
         return can_continue, used
+
+    def refresh_daily_reserve_after_exit(self):
+        policy = getattr(getattr(self, 'executor', None), '_daily_reserve_policy', None)
+        if policy is not None and policy.refresh_required:
+            policy.refresh_required = False
+            if callable(policy.refresh):
+                policy.refresh()
+            self.log_info('已返回大世界复核每日活跃度；本次未确认的备用领取已取消，不自动重复战斗或转换')
 
     def get_settlement_stamina(self):
         # The result page hides the top resource bar. Anchor on its retry button,

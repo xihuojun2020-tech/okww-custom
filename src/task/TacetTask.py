@@ -55,7 +55,7 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
             if stamina_budget < self.stamina_once:
                 return
             must_use = stamina_budget - stamina_budget % self.stamina_once
-        allow_backup = not daily
+        allow_backup = False
         backup_policy_decided = not daily
         self.info_incr('used stamina', 0)
         while True:
@@ -90,6 +90,9 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
                     self.esc_cancel()
                     self.log_info('is not claim treasure, restart challenge')
                     continue
+                policy = getattr(self.executor, '_daily_reserve_policy', None)
+                if policy is not None:
+                    policy.observe(None)
                 can_continue, used = self.use_stamina(
                     once=self.stamina_once, must_use=must_use, allow_backup=allow_backup)
                 self.info_incr('used stamina', used)
@@ -97,6 +100,7 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
                 if not can_continue:
                     self.click_relative(0.365, 0.853, hcenter=True)
                     self.wait_in_team_and_world(time_out=120)
+                    self.refresh_daily_reserve_after_exit()
                     return None
                 else:
                     self.click_relative(0.640, 0.851, hcenter=True, after_sleep=0.2)

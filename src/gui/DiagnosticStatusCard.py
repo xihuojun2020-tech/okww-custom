@@ -32,20 +32,25 @@ def diagnostic_error_message(error):
 
 
 def diagnostic_status_text(root):
-    counts, upload_error, last_success = Counter(), '', 0
+    from src.runtime.diagnostic_status import read_json
+    counts, upload_error, last_success, last_error_at = Counter(), '', 0, -1
     for ready in root.glob('*/batches/*/_READY'):
         state_path = root / 'states' / (ready.parents[2].name + '--' + ready.parent.name + '.json')
         try:
             state = json.loads(state_path.read_text(encoding='utf-8'))
         except (OSError, ValueError):
-            state = {'status': 'pending'}
+            state = {'status': 'unknown' if state_path.exists() else 'pending'}
+        if not isinstance(state, dict):
+            state = {'status': 'unknown'}
         counts[state.get('status', 'pending')] += 1
-        upload_error = state.get('last_error') or upload_error
+        error_at = state.get('last_error_at', state.get('updated_at', 0))
+        if state.get('status') not in ('uploaded', 'logs_purged') and state.get('last_error') and error_at > last_error_at:
+            upload_error, last_error_at = state['last_error'], error_at
         last_success = max(last_success, state.get('uploaded_at', 0))
     from datetime import datetime
     success = datetime.fromtimestamp(last_success).isoformat(timespec='seconds') if last_success else '无'
     scheduler_path = root / 'scheduler.json'
-    scheduler = json.loads(scheduler_path.read_text(encoding='utf-8')) if scheduler_path.exists() else {}
+    scheduler = read_json(scheduler_path, {'status':'状态不可读' if scheduler_path.exists() else '待安装'})
     if scheduler.get('status') == 'installed':
         scheduler_text = '已由系统验证' if scheduler.get('system_verified') else '已缓存（未验证系统任务）'
     else:
@@ -89,6 +94,7 @@ class DiagnosticStatusCard(SectionPanel):
         layout.addWidget(description)
         self.settings_section = self
         self.target = QLineEdit(DEFAULT_TARGET)
+        self.target.setReadOnly(True)
         self.target.setPlaceholderText(r'\\接收电脑\共享目录，不填写密码')
         self.settings_section.add_row('上传目录', self.target)
         self.username = QLineEdit('ai-upload')
@@ -100,6 +106,9 @@ class DiagnosticStatusCard(SectionPanel):
         self.status = QLabel('正在读取本地状态')
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
+        details = QPushButton('查看日志、截图及上传明细')
+        layout.addWidget(details)
+        details.clicked.connect(self.open_details)
         row = QHBoxLayout()
         save, retry, folder = (QPushButton(text) for text in ('保存设置', '重试上传', '打开目录'))
         probe, capture = QPushButton('测试共享连接'), QPushButton('测试错误截图')
@@ -119,13 +128,20 @@ class DiagnosticStatusCard(SectionPanel):
         capture.clicked.connect(self.test_capture)
         folder.clicked.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.root))))
         try:
-            self.target.setText(settings(self.root).get('target', DEFAULT_TARGET))
+            self.target.setText(DEFAULT_TARGET)
         except (OSError, ValueError):
             pass
         self.timer = QTimer(self)
         self.timer.timeout.connect(lambda: self.refresh() if self.isVisible() else None)
         self.timer.start(30000)
         self.refresh()
+
+    def open_details(self):
+        from src.gui.DiagnosticDetails import DiagnosticDetails
+        if not getattr(self, '_details', None):
+            self._details = DiagnosticDetails(self.root, self)
+        self._details.show()
+        self._details.raise_()
 
     def refresh(self):
         root = self.root
@@ -140,7 +156,7 @@ class DiagnosticStatusCard(SectionPanel):
         self.set_summary('存在诊断异常，展开查看' if errors else next((line for line in lines if line.startswith('最后成功：')), text))
 
     def save(self):
-        root, target = self.root, self.target.text().strip()
+        root, target = self.root, DEFAULT_TARGET
         username, secret = self.username.text().strip(), self.password.text()
         if not target:
             self._show_status('请填写 NAS 目录')
@@ -176,7 +192,7 @@ class DiagnosticStatusCard(SectionPanel):
         self.operation.start(reset, lambda _: self.refresh(), lambda e: self._show_status(sanitize_text(e)))
 
     def test_connection(self):
-        target = self.target.text().strip()
+        target = DEFAULT_TARGET
         self._show_status('正在检查共享目录；最长等待 30 秒，请先保存设置和凭据。')
         self.operation.start(lambda: bounded_probe(target),
                              lambda _: self._show_status('共享连接通过：写入、读取、重命名、删除均成功。'),

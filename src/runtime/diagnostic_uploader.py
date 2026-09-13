@@ -98,6 +98,7 @@ def upload_one(batch, target):
             os.fsync(stream.fileno())
         pending.replace(destination)
 
+    completed_files, completed_bytes = 0, 0
     for item in manifest['files']:
         destination = safe_path(remote, item['path'])
         data = safe_path(batch, item['path']).read_bytes()
@@ -105,10 +106,23 @@ def upload_one(batch, target):
             raise ValueError('local file changed after validation')
         publish(destination, data)
         publish(destination.with_name(destination.name + '.sha256'), item['sha256'].encode('ascii'))
+        completed_files += 1
+        completed_bytes += item['size']
+        atomic_json(batch / 'transfer-progress.json', {
+            'updated_at': time.time(), 'completed_files': completed_files,
+            'completed_bytes': completed_bytes, 'total_files': len(manifest['files']),
+            'last_file': item['path'], 'status': 'copying',
+        })
     publish(control / 'manifest.json', raw)
     publish(control / 'manifest.json.sha256', digest(raw).encode('ascii'))
     # Final marker is always last, after both log and screenshot trees are complete.
     publish(marker, digest(raw).encode('ascii'))
+    validate_remote(control)
+    atomic_json(batch / 'transfer-progress.json', {
+        'updated_at': time.time(), 'completed_files': completed_files,
+        'completed_bytes': completed_bytes, 'total_files': len(manifest['files']),
+        'status': 'uploaded',
+    })
 
 
 def validate_remote(control):
@@ -194,16 +208,16 @@ def retry_pending(root, target, *, timeout=30, now=None, transfer=None):
                 if state.get('status') in ('uploaded', 'blocked', 'logs_purged') or state.get('next_retry', 0) > now:
                     continue
                 attempts = state.get('attempts', 0) + 1
-                state.update(status='uploading', attempts=attempts)
+                state.update(status='uploading', attempts=attempts, last_attempt_at=time.time())
                 atomic_json(state_file, state)
                 try:
                     transfer(batch, target, min(timeout, max(1, deadline - time.monotonic())))
                     state.update(status='uploaded', uploaded_at=time.time(), last_error=None)
                 except ValueError as error:
-                    state.update(status='blocked', last_error=sanitize_text(error))
+                    state.update(status='blocked', last_error=sanitize_text(error), last_error_at=time.time())
                 except Exception as error:
                     state.update(status='retrying', next_retry=now + RETRY[min(attempts - 1, len(RETRY) - 1)],
-                                 last_error=sanitize_text(error))
+                                 last_error=sanitize_text(error), last_error_at=time.time())
                 atomic_json(state_file, state)
                 if state.get('status') == 'uploaded':
                     acknowledge(batch)

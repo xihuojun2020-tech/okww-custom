@@ -145,13 +145,13 @@ catch { $failed=$true }
                 self.assertEqual(migrated['started_at'], 123.0)
                 self.assertEqual(migrated['device_id'], 'device')
 
-    def test_custom_nas_target_is_not_migrated(self):
+    def test_project_diagnostics_always_use_owner_target(self):
         target = r'\\nas.lan\custom\diagnostics'
         value = {'policy': POLICY, 'started_at': 123.0, 'device_id': 'device',
                  'target': target, 'enabled': True}
         (self.root / 'settings.json').parent.mkdir(parents=True, exist_ok=True)
         (self.root / 'settings.json').write_text(json.dumps(value), encoding='utf-8')
-        self.assertEqual(settings(self.root)['target'], target)
+        self.assertEqual(settings(self.root)['target'], DEFAULT_TARGET)
 
     @unittest.skipUnless(os.name == 'nt', 'Windows scheduled task')
     def test_scheduler_revision_migrates_cached_console_task(self):

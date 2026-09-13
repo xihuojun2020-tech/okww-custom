@@ -35,8 +35,8 @@ def settings(root):
     if changed:
         value = {'policy': POLICY, 'started_at': time.time(), 'device_id': uuid.uuid4().hex,
                  'target': DEFAULT_TARGET}
-    elif value.get('target') in LEGACY_TARGETS or candidates(value.get('target', ''))[0] != value.get('target'):
-        value['target'] = candidates(value.get('target', ''))[0] if value.get('target') not in LEGACY_TARGETS else DEFAULT_TARGET
+    elif value.get('target') != DEFAULT_TARGET:
+        value['target'] = DEFAULT_TARGET
         changed = True
     # The owner's mandatory upload policy supersedes the former opt-in flag.
     if changed or value.get('enabled') is not True:
