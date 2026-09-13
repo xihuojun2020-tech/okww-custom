@@ -38,10 +38,12 @@ class TestDiagnosticStatusCard(unittest.TestCase):
                 states.mkdir()
                 for state in ('blocked', 'retrying'):
                     (states / (state + '.json')).write_text(json.dumps({'status': state, 'next_retry': 123}))
-                card.retry()
-                self.wait(card)
+                with patch('src.runtime.diagnostic_archive.manual_upload', return_value='synthetic.zip') as upload:
+                    card.retry()
+                    self.wait(card)
+                    upload.assert_called_once_with(Path(temp))
                 self.assertEqual(json.loads((states / 'blocked.json').read_text())['next_retry'], 123)
-                self.assertEqual(json.loads((states / 'retrying.json').read_text())['next_retry'], 0)
+                self.assertEqual(json.loads((states / 'retrying.json').read_text())['next_retry'], 123)
                 self.assertTrue(wake.called)
                 (states / 'retrying.json').write_text(json.dumps({'status': 'retrying', 'next_retry': 123}))
                 card.password.setText('not-a-real-password')

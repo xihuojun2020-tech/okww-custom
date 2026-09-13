@@ -38,6 +38,8 @@ def reset_incomplete_runtime_retries(root):
 def wake_uploader(root=None):
     global _uploader, _last_wake, _runtime_bundle
     root = Path(root or default_root())
+    if settings(root).get('upload_mode') == 'manual_archive':
+        return
     with _wake_lock:
         if _uploader is not None and _uploader.poll() is None:
             return
@@ -66,6 +68,8 @@ def start_diagnostics(version, root=None):
     try:
         root = Path(root or default_root())
         settings(root)
+        from src.runtime.diagnostic_policy import ensure_task
+        threading.Thread(target=ensure_task, args=(root,), name='DisableAutomaticUpload', daemon=True).start()
         try:
             import psutil
             process_started_at = psutil.Process(os.getpid()).create_time()

@@ -43,8 +43,9 @@ class DiagnosticDetails(QDialog):
         self.summary=QLabel('读取本地状态…');self.summary.setWordWrap(True)
         self.summary.setProperty('role','description');self.overview.add_widget(self.summary)
         bar=QHBoxLayout();layout.addLayout(bar)
+        self.session_filter=QComboBox();self.session_filter.addItem('本次启动（先加载）', '__latest__');bar.addWidget(self.session_filter)
         self.filter=QComboBox();self.filter.addItems(['全部','待传/失败','已上传'])
-        refresh=QPushButton('刷新');retry=QPushButton('重试选中批次');verify=QPushButton('核验选中远端')
+        refresh=QPushButton('刷新');retry=QPushButton('打包上传全部待传');verify=QPushButton('核验选中远端')
         refresh.setProperty('role','primary')
         for w in (self.filter,refresh,retry,verify):bar.addWidget(w)
         self.tabs=QTabWidget();layout.addWidget(self.tabs,1)
@@ -70,17 +71,20 @@ class DiagnosticDetails(QDialog):
         self.frame_file=None
         actions=QGridLayout();actions.setSpacing(SPACING['small']);layout.addLayout(actions)
         local=QPushButton('打开本地');remote=QPushButton('打开NAS目录');copy=QPushButton('复制路径')
-        preview=QPushButton('预览选中图片');export=QPushButton('导出诊断索引');backfill=QPushButton('补传指定时间日志')
-        for n,w in enumerate((local,remote,copy,preview,export,backfill)):actions.addWidget(w,n//3,n%3)
+        preview=QPushButton('预览选中图片');export=QPushButton('导出诊断索引');backfill=QPushButton('收集指定时间日志')
+        pack=QPushButton('仅生成本地诊断包')
+        for n,w in enumerate((local,remote,copy,preview,export,backfill,pack)):actions.addWidget(w,n//4,n%4)
         self.message=QLabel('连接未检测；历史上传成功不代表当前在线。');self.message.setWordWrap(True);layout.addWidget(self.message)
         self.message.setProperty('role','description')
-        self.operation=BackgroundOperation(self,(refresh,retry,verify,preview,export,backfill))
+        self.operation=BackgroundOperation(self,(refresh,retry,verify,preview,export,backfill,pack))
+        pack.clicked.connect(self.pack)
         self.tabs.currentChanged.connect(self.reset_page);self.filter.currentIndexChanged.connect(self.reset_page)
+        self.session_filter.currentIndexChanged.connect(self.refresh)
         refresh.clicked.connect(self.refresh);retry.clicked.connect(self.retry);verify.clicked.connect(self.verify)
         prev.clicked.connect(lambda:self.change_page(-1));nxt.clicked.connect(lambda:self.change_page(1))
         local.clicked.connect(self.open_local);remote.clicked.connect(self.open_remote);copy.clicked.connect(self.copy_path)
         preview.clicked.connect(self.preview);export.clicked.connect(self.export);backfill.clicked.connect(self.backfill)
-        self.timer=QTimer(self);self.timer.timeout.connect(self.refresh);self.timer.start(5000);self.refresh()
+        self.timer=QTimer(self);self.timer.timeout.connect(self.refresh);self.timer.start(30000);QTimer.singleShot(0,self.refresh)
 
     @staticmethod
     def style_table(table):
@@ -95,9 +99,22 @@ class DiagnosticDetails(QDialog):
 
     def error(self,error):self.message.setText(str(error))
     def refresh(self):
-        if self.isVisible() or not self.snapshot:self.operation.start(self.index.snapshot,self.loaded,self.error)
+        if self.operation.busy:return
+        selected=self.session_filter.currentData()
+        self.message.setText('正在读取所选会话；保留已显示内容。全部历史需更长时间。')
+        def read():
+            sessions=self.index.sessions()
+            run=(sessions[0] if sessions else None) if selected=='__latest__' else selected
+            return dict(self.index.snapshot(run_id=run),sessions=sessions)
+        if self.isVisible() or not self.snapshot:self.operation.start(read,self.loaded,self.error)
     def loaded(self,snapshot):
         self.snapshot=snapshot
+        selected=self.session_filter.currentData()
+        self.session_filter.blockSignals(True);self.session_filter.clear()
+        self.session_filter.addItem('本次启动（先加载）','__latest__');self.session_filter.addItem('全部历史会话',None)
+        for run in snapshot.get('sessions',[]):self.session_filter.addItem(run,run)
+        self.session_filter.setCurrentIndex(max(0,self.session_filter.findData(selected)));self.session_filter.blockSignals(False)
+        self.message.setText('已显示所选会话；手动上传会打包全部尚未上传资料。')
         self.overview.set_summary(f'待传 {snapshot["pending_bytes"]:,} 字节 · {len(snapshot.get("batches",[]))} 批次 · {stamp(snapshot["updated_at"])}')
         self.summary.setText(f'NAS：{DEFAULT_TARGET}\n状态刷新：{stamp(snapshot["updated_at"])} | '
             f'待传 {snapshot["pending_bytes"]:,} 字节 | 批次：'+
@@ -105,7 +122,7 @@ class DiagnosticDetails(QDialog):
             '\n采集与上传分别统计；上传器已校验表示当时成功，远端核验需点击按钮。'+
             ('\n'+'；'.join(snapshot['warnings'][:3]) if snapshot['warnings'] else ''))
         scheduler=snapshot.get('scheduler',{})
-        self.summary.setText(self.summary.text()+f'\n退出后补传任务：{scheduler.get("status", "未记录")}；'
+        self.summary.setText(self.summary.text()+f'\n上传模式：手动压缩包；旧后台任务：{scheduler.get("status", "未记录")}；'
             f'系统验证：{"已验证" if scheduler.get("system_verified") else "未验证"}；'
             f'采集警告：{snapshot.get("collector",{}).get("error", "无")}')
         self.render()
@@ -187,13 +204,21 @@ class DiagnosticDetails(QDialog):
         r=self.selected() or {};key=r.get('batch_key',r.get('key'))
         return next((b for b in self.snapshot.get('batches',[]) if b['key']==key),None)
     def retry(self):
-        b=self.batch()
-        if not b:return self.error('请选择事件、文件或批次')
-        def work():
-            count=retry_batches(self.root,[b['key']]);wake_uploader(self.root);return count
-        self.operation.start(work,lambda n:self.message.setText(f'已重排 {n} 批次；上传中或被阻塞的项目不会强制重置'),self.error)
+        from src.runtime.diagnostic_archive import manual_upload
+        root=self.root
+        self.message.setText('正在打包全部待传资料并上传，原始资料会保留。')
+        self.operation.start(lambda:manual_upload(root),lambda p:self.message.setText('压缩包已校验上传：'+str(p)),self.error)
+    def pack(self):
+        from src.runtime.diagnostic_archive import build_archive
+        root=self.root
+        self.message.setText('正在生成全部待传资料的诊断包…')
+        self.operation.start(lambda:build_archive(root),lambda p:self.message.setText('本地诊断包：'+str(p)),self.error)
     def verify(self):
         b=self.batch()
+        if b and b.get('transport')=='archive':
+            from src.runtime.diagnostic_archive import verify_archive
+            return self.operation.start(lambda:verify_archive(b['archive'],b['archive_sha256']),
+                lambda _:self.message.setText('远端压缩包 SHA256 核验通过'),self.error)
         if b:self.operation.start(lambda:bounded_verify(b['local'],DEFAULT_TARGET),
             lambda r:self.message.setText(f'远端校验通过：{r["files"]} 文件，{stamp(r["verified_at"])}'+
                 ('；旧日志已按保留策略清理，仅核验保留文件' if r.get('logs_purged') else '')),self.error)

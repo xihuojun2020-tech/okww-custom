@@ -24,6 +24,21 @@ CONFIG_FIELDS = {
          ("Resisted 1", "逆属性1（禁止主C和副C）"), ("Resisted 2", "逆属性2（主C尽量避开）")))
 }
 
+# Version-owned season rules, captured from the installed client on 2026-09-13.
+# Saved per-device element settings are intentionally not consulted by production.
+SEASON_CONFIG = {
+    'Left Favored': '导电', 'Left Resisted': '热熔',
+    'Right Favored': '冷凝', 'Right Resisted': '湮灭',
+    'Center Lower Favored 1': '热熔', 'Center Lower Favored 2': '气动',
+    'Center Lower Resisted 1': '冷凝', 'Center Lower Resisted 2': '导电',
+    'Center Upper Favored 1': '无', 'Center Upper Favored 2': '无',
+    'Center Upper Resisted 1': '衍射', 'Center Upper Resisted 2': '衍射',
+}
+
+
+def current_season_rules():
+    return rules_from_config(SEASON_CONFIG)
+
 
 def element_for_character(identity):
     overrides = {ROVER_AERO: "气动", ROVER_HAVOC: "湮灭", ROVER_SPECTRO: "衍射",

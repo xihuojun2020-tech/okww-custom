@@ -1,4 +1,5 @@
 param(
+    [switch]$Disable,
     [switch]$Remove,
     [switch]$Preview,
     [switch]$Verify,
@@ -19,6 +20,13 @@ $SourceRepo = [IO.Path]::GetFullPath($SourceRepo)
 $description = "okww diagnostics uploader owned by $SourceRepo"
 if ($existing -and $existing.Description -ne $description) {
     throw 'Task name belongs to another installation. Export and inspect it before migration.'
+}
+if ($Disable) {
+    if ($existing) {
+        Disable-ScheduledTask -TaskName $TaskName | Out-Null
+        Stop-ScheduledTask -TaskName $TaskName
+    }
+    return
 }
 if ($Remove) {
     if ($existing) { Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false }

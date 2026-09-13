@@ -61,6 +61,24 @@ from src.task.abyss_team_planner import ROVER_AERO, ROVER_HAVOC, ROVER_SPECTRO, 
 
 
 class TestAutoAbyssTask(unittest.TestCase):
+    def test_production_season_rules_ignore_saved_element_settings(self):
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task.config = {'Tower Priority': '两侧塔优先', 'Left Favored': '热熔'}
+        task._set_status = lambda *_: None
+        task._run_towers({name: () for name in ('残响之塔','深境之塔','回音之塔')})
+        self.assertEqual(task._abyss_rules['Left'].favored, ('导电',))
+        self.assertEqual(task._abyss_rules['Center Lower'].hard, '冷凝')
+        self.assertEqual(task._abyss_rules['Center Upper'].hard, '衍射')
+
+    def test_legacy_season_settings_remain_hidden(self):
+        from src.task.abyss_allocation import CONFIG_FIELDS
+        from src.task.BaseCombatTask import BaseCombatTask
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        with patch.object(BaseCombatTask, '__init__', return_value=None):
+            task.__init__()
+        self.assertFalse(set(CONFIG_FIELDS) & set(task.default_config))
+        self.assertTrue(all(task.config_type[key].get('hidden') for key in CONFIG_FIELDS))
+
     def allocation_task(self, records, states, priority=CENTER_TOWER_FIRST, config=None):
         from src.task.abyss_allocation import rules_from_config
         task = AutoAbyssTask.__new__(AutoAbyssTask)

@@ -24,7 +24,7 @@ from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task_status import publish_task_status
 from src.task.abyss_energy import energy_digits, confirmed_energy
 from src.task.abyss_allocation import (
-    CONFIG_FIELDS, OPTIONS, FloorRequest, allocate, rules_from_config,
+    CONFIG_FIELDS, FloorRequest, allocate, current_season_rules,
     candidate_teams, team_preference,
 )
 
@@ -629,10 +629,8 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             TOWER_PRIORITY: "两侧塔优先：残响→回音→深境；中间塔优先：深境→残响→回音",
             "清空当前账号识别结果": "只清空本次运行内存中的角色结果，关闭程序后也会自动清除",
         }
-        for key, label in CONFIG_FIELDS.items():
-            self.default_config[key] = "无"
-            self.config_type[key] = {"type": "drop_down", "options": list(OPTIONS)}
-            self.config_description[key] = label + "；长期保存，本次运行中修改将在下次生效"
+        for key in CONFIG_FIELDS:
+            self.config_type[key] = {"hidden": True}
         self._character_scan_results = {}
         self._avatar_orb = cv2.ORB_create(nfeatures=300, edgeThreshold=5, fastThreshold=5)
         self._avatar_matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
@@ -689,7 +687,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         outcomes = {}
         settings = getattr(self, "_abyss_run_config", dict(self.config))
         priority = settings.get(TOWER_PRIORITY, SIDE_TOWERS_FIRST)
-        self._abyss_rules = rules_from_config(settings)
+        self._abyss_rules = current_season_rules()
         remaining = dict(scan_results)
         self._allocation_context = None
         self._scheduled_teams = {}

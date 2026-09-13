@@ -27,10 +27,14 @@ class DiagnosticIndex:
         self.cache = {}
         self.source = Path(source) if source is not None else None
 
-    def snapshot(self):
+    def sessions(self):
+        return sorted((p.name for p in self.root.iterdir() if p.is_dir() and (p/'metadata.json').is_file()), reverse=True)
+
+    def snapshot(self, run_id=None):
         batches, files, incidents, warnings = [], [], {}, []
         present = set()
-        for ready in self.root.glob('*/batches/*/_READY'):
+        ready_files = (safe_path(self.root, run_id) / 'batches').glob('*/_READY') if run_id else self.root.glob('*/batches/*/_READY')
+        for ready in ready_files:
             batch = ready.parent
             key = batch.parents[1].name + '--' + batch.name
             present.add(key)
@@ -60,10 +64,13 @@ class DiagnosticIndex:
                        count=len(manifest.get('files',[])), local=str(batch),
                        progress=read_json(batch/'transfer-progress.json', {}))
             batches.append(row)
+            row['transport'] = state.get('transport', 'files')
+            row['archive'] = state.get('archive')
+            row['archive_sha256'] = state.get('archive_sha256')
             from src.runtime.diagnostic_uploader import control_directory
             from src.runtime.nas_location import DEFAULT_TARGET
             try:
-                row['remote'] = str(Path(DEFAULT_TARGET) / '待分析' / control_directory(manifest))
+                row['remote'] = state.get('archive') or str(Path(DEFAULT_TARGET) / '待分析' / control_directory(manifest))
             except (ValueError, KeyError, IndexError):
                 row['remote'] = ''
             row['source_ranges'] = [r for r in manifest.get('source_ranges', []) if isinstance(r,dict)]

@@ -4,6 +4,17 @@ from datetime import datetime
 from src.runtime.diagnostic_status import DiagnosticIndex,backfill_preview,retry_batches
 
 class TestDiagnosticDetails(unittest.TestCase):
+    def test_session_filter_skips_other_run(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            self.batch(root,'one','pending')
+            second=root/'other'/'batches'/'bad'
+            second.mkdir(parents=True);(second/'_READY').touch()
+            (second/'manifest.json').write_text('{broken')
+            result=DiagnosticIndex(root).snapshot(run_id='run')
+            self.assertEqual(len(result['batches']),1)
+            self.assertFalse(any('bad' in warning for warning in result['warnings']))
+
     def batch(self,root,name,status,revision=1):
         batch=root/'run'/'batches'/name;batch.mkdir(parents=True)
         relative=f'日志/okww-custom/2026-09-13/run/{name}/incident.json'

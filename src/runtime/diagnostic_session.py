@@ -256,6 +256,12 @@ class DiagnosticSession(logging.Handler):
             if kind in ('error_log', 'uncaught_exception'):
                 self.metadata['error_events'] += 1
 
+    def flush_for_archive(self):
+        """Freeze current log extents without ending a live game/session."""
+        with self.guard:
+            self._save_metadata()
+            seal_pending(self.run, 'manual', sizes=log_sources(self.run))
+
     def request_batch(self, kind):
         try:
             self.pending.put_nowait(kind)
@@ -280,7 +286,8 @@ class DiagnosticSession(logging.Handler):
             # Stop walking as soon as the quota is reached. Never delete pending evidence.
             pending_bytes = 0
             from src.runtime.diagnostic_queue import pending_batches
-            for batch in pending_batches(self.root):
+            manual = settings(self.root).get('upload_mode') == 'manual_archive'
+            for batch in (() if manual else pending_batches(self.root)):
                 state_path = self.root / 'states' / (batch.parents[1].name + '--' + batch.name + '.json')
                 try:
                     state = json.loads(state_path.read_text(encoding='utf-8')) if state_path.exists() else {}
@@ -392,7 +399,8 @@ class DiagnosticSession(logging.Handler):
                     if self.collector and (kind == 'final' or time.monotonic() >= self.collect_after):
                         self.collect_after = time.monotonic() + LOG_INTERVAL
                         self.collector.collect(self.run)
-                    seal_pending(self.run, kind if kind != 'tick' else 'periodic', sizes=sizes)
+                    with self.guard:
+                        seal_pending(self.run, kind if kind != 'tick' else 'periodic', sizes=sizes)
                 # Also wake for incident-only batches; the process launcher applies its throttle.
                 if self.on_batch_ready:
                     self.on_batch_ready()

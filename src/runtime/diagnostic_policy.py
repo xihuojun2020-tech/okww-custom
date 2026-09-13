@@ -38,9 +38,10 @@ def settings(root):
     elif value.get('target') != DEFAULT_TARGET:
         value['target'] = DEFAULT_TARGET
         changed = True
-    # The owner's mandatory upload policy supersedes the former opt-in flag.
-    if changed or value.get('enabled') is not True:
+    # Keep collection compatible with old evidence, but transport is now explicit.
+    if changed or value.get('enabled') is not True or value.get('upload_mode') != 'manual_archive':
         value['enabled'] = True
+        value['upload_mode'] = 'manual_archive'
         atomic_json(path, value)
     return value
 
@@ -104,6 +105,14 @@ def ensure_task(root):
         command = ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
                    '-File', script, '-PythonExe', sys.executable, '-Root', str(root),
                    '-SourceRepo', str(REPO), '-TaskName', task_name]
+        if settings(root).get('upload_mode') == 'manual_archive':
+            result = subprocess.run(command + ['-Disable'], capture_output=True, timeout=20,
+                                    creationflags=subprocess.CREATE_NO_WINDOW)
+            if result.returncode == 0:
+                stop_legacy_uploaders(root)
+            atomic_json(path, {'status': 'manual' if result.returncode == 0 else 'failed',
+                              'checked_at': time.time(), 'exit_code': result.returncode})
+            return
         cached = (state.get('status') == 'installed' and state.get('root') == str(root)
                 and state.get('revision') == SCHEDULER_REVISION
                 and state.get('runtime') == runtime
@@ -127,3 +136,34 @@ def ensure_task(root):
                            'system_verified': result.returncode == 0})
     except (OSError, subprocess.TimeoutExpired):
         atomic_json(path, {'status': 'failed', 'checked_at': time.time()})
+
+
+def stop_legacy_uploaders(root):
+    """Stop detached workers only when both root and runtime ownership agree."""
+    import psutil
+    root = Path(root).resolve()
+    for process in psutil.process_iter(['pid', 'cmdline', 'exe']):
+        try:
+            args = process.info['cmdline'] or []
+            if process.pid == os.getpid() or 'src.runtime.diagnostic_uploader' not in args or '--root' not in args:
+                continue
+            index = args.index('--root')
+            if index + 1 >= len(args) or Path(args[index + 1]).resolve() != root:
+                continue
+            if not process.info.get('exe'):
+                continue
+            executable = Path(process.info['exe']).resolve()
+            binding = executable.parent.parent / 'ready.json'
+            owned = executable.is_relative_to(REPO) and Path(process.cwd()).resolve() == REPO
+            if binding.is_file():
+                owned |= Path(json.loads(binding.read_text(encoding='utf-8'))['source_repo']).resolve() == REPO
+            if owned:
+                children = process.children(recursive=True)
+                for child in reversed(children):child.terminate()
+                process.terminate()
+                _, alive = psutil.wait_procs([process, *children], timeout=5)
+                if alive:raise OSError('旧上传器仍未退出，请关闭后重启程序')
+        except (psutil.NoSuchProcess, psutil.ZombieProcess):
+            continue
+        except psutil.AccessDenied as error:
+            raise OSError('无法停止本程序的旧上传器，请退出旧程序后重试') from error

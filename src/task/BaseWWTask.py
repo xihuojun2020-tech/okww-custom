@@ -54,6 +54,21 @@ def normalize_monthly_hour(value):
 class BaseWWTask(BaseTask):
     map_zoomed = False
 
+    def swipe(self, from_x, from_y, to_x, to_y, duration=.5, after_sleep=.1, settle_time=0):
+        from ok import PostMessageInteraction
+        interaction = self.executor.interaction
+        if not isinstance(interaction, PostMessageInteraction):
+            return super().swipe(from_x, from_y, to_x, to_y, duration,
+                                 after_sleep=after_sleep, settle_time=settle_time)
+        from src.runtime.post_message_drag import drag
+        self.executor.reset_scene()
+        try:
+            drag(interaction, from_x, from_y, to_x, to_y, duration, settle_time, self.sleep)
+        finally:
+            self.executor.reset_scene()
+        if after_sleep:
+            self.sleep(after_sleep)
+
     def ocr(self, *args, **kwargs):
         from src.runtime.ocr_reuse import cached_ocr
         return cached_ocr(self, super().ocr, args, kwargs)

@@ -33,6 +33,14 @@ def diagnostic_error_message(error):
 
 def diagnostic_status_text(root):
     from src.runtime.diagnostic_status import read_json
+    if read_json(root/'settings.json',{}).get('upload_mode') == 'manual_archive':
+        progress=read_json(root/'archives/progress.json',{})
+        scheduler=read_json(root/'scheduler.json',{})
+        labels={'packing':'正在打包','packed':'压缩包已生成','uploading':'正在上传','uploaded':'压缩包已上传'}
+        return ('上传模式：手动压缩包（不自动上传）\n'+
+                f'后台任务：{scheduler.get("status","等待停用")}\n'+
+                f'最近操作：{labels.get(progress.get("status"),"尚无手动上传")}\n'+
+                str(progress.get('archive',''))+'\n原始日志和截图保留；查看明细可按启动会话选择。')
     counts, upload_error, last_success, last_error_at = Counter(), '', 0, -1
     for ready in root.glob('*/batches/*/_READY'):
         state_path = root / 'states' / (ready.parents[2].name + '--' + ready.parent.name + '.json')
@@ -88,7 +96,7 @@ class DiagnosticStatusCard(SectionPanel):
         self.root = default_root()
         self.set_summary('正在读取本地状态…')
         layout = self.content_layout
-        description = QLabel('日志和截图自动上传到局域网共享目录。错误前 10 秒、后 5 秒每秒采集一张游戏画面；无画面时标记缺失。每周清理超过 7 天且已上传的日志，截图和待补传资料保留。')
+        description = QLabel('日志和截图保存在本机。点击“打包上传”将全部尚未上传的资料整理为 ZIP，并校验上传至 NAS；按每次启动会话提供日志汇总。原始资料保留，错误截图缺帧会如实标记。')
         description.setWordWrap(True)
         description.setProperty('role', 'description')
         layout.addWidget(description)
@@ -110,7 +118,7 @@ class DiagnosticStatusCard(SectionPanel):
         layout.addWidget(details)
         details.clicked.connect(self.open_details)
         row = QHBoxLayout()
-        save, retry, folder = (QPushButton(text) for text in ('保存设置', '重试上传', '打开目录'))
+        save, retry, folder = (QPushButton(text) for text in ('保存设置', '打包上传', '打开目录'))
         probe, capture = QPushButton('测试共享连接'), QPushButton('测试错误截图')
         row.addWidget(save)
         for button in (retry, folder):
@@ -181,15 +189,10 @@ class DiagnosticStatusCard(SectionPanel):
 
     def retry(self):
         root = self.root
-        def reset():
-            with FileLease(root / '.uploader.lock'):
-                for path in (root / 'states').glob('*.json'):
-                    state = json.loads(path.read_text(encoding='utf-8'))
-                    if state.get('status') == 'retrying':
-                        state['next_retry'] = 0
-                        atomic_json(path, state)
-            wake_uploader(root)
-        self.operation.start(reset, lambda _: self.refresh(), lambda e: self._show_status(sanitize_text(e)))
+        from src.runtime.diagnostic_archive import manual_upload
+        self._show_status('正在打包全部待传资料并上传，请等待；不会删除原始资料。')
+        self.operation.start(lambda:manual_upload(root), lambda path:self._show_status('压缩包已上传并校验：'+path),
+                             lambda e:self._show_status(sanitize_text(e)))
 
     def test_connection(self):
         target = DEFAULT_TARGET

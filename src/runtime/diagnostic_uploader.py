@@ -408,6 +408,9 @@ def main():
             print(path.name, path.read_text(encoding='utf-8'))
         return 0
     value = settings(args.root)
+    if value.get('upload_mode') == 'manual_archive':
+        ensure_task(args.root)
+        return 0
     if args.ensure_task:
         ensure_task(args.root)
     try:

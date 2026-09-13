@@ -165,7 +165,8 @@ catch { $failed=$true }
             self.assertEqual(run.call_args.kwargs['creationflags'], subprocess.CREATE_NO_WINDOW)
             ensure_task(self.root)
             self.assertEqual(run.call_count, 2)
-        self.assertEqual(json.loads(state.read_text())['revision'], SCHEDULER_REVISION)
+        self.assertEqual(json.loads(state.read_text())['status'], 'manual')
+        self.assertIn('-Disable', run.call_args.args[0])
 
     @unittest.skipUnless(os.name == 'nt', 'Windows scheduled task')
     def test_scheduler_cache_must_match_current_runtime_bundle(self):
@@ -183,8 +184,8 @@ catch { $failed=$true }
             ensure_task(self.root)
             self.assertEqual(run.call_count, 2)
         saved = json.loads(state.read_text())
-        self.assertEqual(saved['runtime'], str(Path(sys.executable).resolve()))
-        self.assertEqual(saved['working_directory'], str(Path(__file__).resolve().parents[1]))
+        self.assertEqual(saved['status'], 'manual')
+        self.assertIn('-Disable', run.call_args.args[0])
 
     @unittest.skipUnless(os.name == 'nt', 'Windows scheduled task')
     def test_scheduler_cache_does_not_hide_missing_system_task(self):
@@ -199,8 +200,9 @@ catch { $failed=$true }
         installed = SimpleNamespace(returncode=0)
         with patch('src.runtime.diagnostic_policy.subprocess.run', side_effect=(missing, installed)) as run:
             ensure_task(self.root)
-        self.assertEqual(run.call_count, 2)
-        self.assertTrue(json.loads(state.read_text())['system_verified'])
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(json.loads(state.read_text())['status'], 'failed')
+        self.assertIn('-Disable', run.call_args.args[0])
 
     @unittest.skipUnless(os.name == 'nt', 'Windows scheduled task')
     def test_installer_selects_pythonw_without_registering_real_task(self):
