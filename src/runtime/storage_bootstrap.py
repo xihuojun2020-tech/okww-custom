@@ -5,7 +5,7 @@ No Qt, config, OCR or repository imports are allowed here. Originals survive.
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import shutil
 import sqlite3
 import time
@@ -72,6 +72,21 @@ def local_path(path):
     if not Path(path.anchor).is_dir():
         raise OSError(f'数据盘不可用：{path.anchor}')
     return path.resolve()
+
+
+def retire_abandoned_backup(repo):
+    """Remove only the obsolete backup setting explicitly retired on both devices."""
+    path = Path(repo) / 'configs/Config Backup.json'
+    config = read_json(path, {}) or {}
+    value = config.get('Config Backup Directory')
+    if not isinstance(value, str) or PureWindowsPath(value) != PureWindowsPath('D:/游戏数据备份'):
+        return False
+    archive = path.parent / 'retired-storage/Config Backup.before-1.64.02.json'
+    if not archive.exists():
+        atomic_json(archive, config)
+    del config['Config Backup Directory']
+    atomic_json(path, config)
+    return True
 
 
 def discover(repo):
@@ -274,6 +289,7 @@ def migrate(repo, destination, *, progress=lambda message: None, quiesce=None):
         raise ValueError('数据根必须位于程序更新目录之外')
     config = repo / 'configs/runtime_storage.json'
     with Lease(repo / 'configs/.storage-migration.lock'):
+        retire_abandoned_backup(repo)
         current = read_json(config, {})
         if current.get('schema') == SCHEMA and Path(current['root']) == destination:
             return validate_current(repo, current)

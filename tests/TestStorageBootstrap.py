@@ -30,6 +30,30 @@ class TestStorageBootstrap(unittest.TestCase):
     def source(self, kind, name):
         return Path(self.sources[kind]['source']) / name
 
+    def test_retired_backup_cleared_before_discovery_and_archived_once(self):
+        path = self.repo / 'configs/Config Backup.json'
+        original = {'Config Backup Directory': 'd:/游戏数据备份/', 'other': True}
+        storage.atomic_json(path, original)
+        def discover(repo):
+            self.assertEqual(storage.read_json(path), {'other': True})
+            return self.sources
+        with patch.object(storage, 'discover', side_effect=discover):
+            storage.migrate(self.repo, self.target)
+        archive = path.parent / 'retired-storage/Config Backup.before-1.64.02.json'
+        self.assertEqual(storage.read_json(archive), original)
+        self.assertFalse(storage.retire_abandoned_backup(self.repo))
+        storage.atomic_json(path, {'Config Backup Directory': 'D:\\游戏数据备份'})
+        storage.retire_abandoned_backup(self.repo)
+        self.assertEqual(storage.read_json(archive), original)
+
+    def test_other_backup_paths_are_not_retired(self):
+        path = self.repo / 'configs/Config Backup.json'
+        for value in ('D:/其他备份', 'E:/游戏数据备份', 'D:/游戏数据备份/child'):
+            original = {'Config Backup Directory': value}
+            storage.atomic_json(path, original)
+            self.assertFalse(storage.retire_abandoned_backup(self.repo))
+            self.assertEqual(storage.read_json(path), original)
+
     def test_copy_originals_and_fast_second_start(self):
         source = self.source('MaterialPlanner', 'frame.png')
         source.write_bytes(b'permanent')
