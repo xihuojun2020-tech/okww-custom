@@ -137,7 +137,7 @@ class TestPianoTeaching(unittest.TestCase):
         self.assertIn("on=S", summary)
         self.assertIn("top=S:", summary)
 
-    def test_story_frame_waits_until_user_stops_instead_of_reporting_not_found(self):
+    def test_story_frame_taps_f_without_prompt_until_user_stops(self):
         task = PianoTeachingTask.__new__(PianoTeachingTask)
         task.config = {"Sample Interval": 0.03, "Key Hold Time": 0.03, "Post Key Delay": 0.15}
         task._pressed_keys = []
@@ -154,9 +154,10 @@ class TestPianoTeaching(unittest.TestCase):
                 patch("src.task.PianoTeachingTask.WWOneTimeTask.run"), \
                 self.assertRaises(TaskDisabledException):
             task.run()
-        task.info_set.assert_any_call("弹琴状态", "剧情或转场中，等待弹琴界面")
+        task.info_set.assert_any_call("弹琴状态", "非弹琴界面，每秒按 F 推进")
         task.screenshot.assert_not_called()
-        task.send_key.assert_not_called()
+        task.send_key.assert_called_once_with('f')
+        task.find_f_with_text.assert_not_called()
 
     def test_dialog_f_is_throttled_and_piano_frames_keep_playing(self):
         task = PianoTeachingTask.__new__(PianoTeachingTask)
@@ -167,12 +168,13 @@ class TestPianoTeaching(unittest.TestCase):
         task.sleep = Mock()
         task.screenshot = Mock()
         task.send_key = Mock()
-        task.find_f_with_text = Mock(return_value=True)
+        task.find_f_with_text = Mock(side_effect=AssertionError("F prompt detection must not be used"))
         task._press_event = Mock()
         now = [0.0]
         story = np.zeros((720, 1280, 3), np.uint8)
-        frames = iter([(1.0, story), (1.1, story), (1.51, story),
-                       (2.1, piano_frame({"S"})), (2.15, piano_frame({"S"}))])
+        frames = iter([(1.0, story), (1.1, story), (2.01, story),
+                       (3.1, piano_frame({"S"})), (3.15, piano_frame({"S"})),
+                       (3.3, story)])
 
         def next_frame():
             try:
@@ -188,8 +190,8 @@ class TestPianoTeaching(unittest.TestCase):
                 patch("src.task.PianoTeachingTask.time.monotonic", side_effect=lambda: now[0]), \
                 self.assertRaises(TaskDisabledException):
             task.run()
-        self.assertEqual([call.args for call in task.send_key.call_args_list], [('f',), ('f',)])
-        self.assertEqual(task.find_f_with_text.call_count, 2)
+        self.assertEqual([call.args for call in task.send_key.call_args_list], [('f',), ('f',), ('f',)])
+        task.find_f_with_text.assert_not_called()
         task._press_event.assert_called_once()
         self.assertEqual(task._press_event.call_args.args[0].keys, ("S",))
         task.screenshot.assert_not_called()
