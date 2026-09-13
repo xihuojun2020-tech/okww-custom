@@ -51,6 +51,7 @@ class GeneralSettingsTab(CustomTab):
                     runtime_layout.addWidget(card)
         start_stop_row = QWidget(runtime)
         row = QHBoxLayout(start_stop_row)
+        row.setContentsMargins(8, 4, 8, 4)
         self.start_stop_status = QLabel(start_stop_row)
         self.start_stop_status.setWordWrap(True)
         self.start_stop_combo = QComboBox(start_stop_row)
@@ -68,6 +69,8 @@ class GeneralSettingsTab(CustomTab):
         for title, panel in zip(self.section_titles, (
                 self.start_panel, runtime, self.preferences, self.lan_update_card)):
             self.add_card(title, panel)
+        from src.gui.compact_settings import compact_settings
+        compact_settings(self)
 
     def _update_start_stop_hotkey(self, value):
         if self.basic_config is not None:

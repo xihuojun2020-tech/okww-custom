@@ -173,8 +173,7 @@ class TaskCard(ConfigCard):
                 background: transparent; border: 0; border-radius: 8px; }}
             QWidget#fluentTaskSample QWidget#disclosureHeader:hover {{
                 background: {COLORS['hover']}; }}
-            QWidget#fluentTaskDetails {{ border: 0;
-                border-top: 1px solid {COLORS['border']}; }}
+            QWidget#fluentTaskDetails {{ border: 0; }}
         ''')
 
     def open_account_editor(self):

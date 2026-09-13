@@ -28,7 +28,7 @@ class AccountSettingsTab(CustomTab):
             self.section_panels.append(section)
             self.add_widget(section)
         from src.gui.compact_settings import compact_settings
-        compact_settings(self)
+        compact_settings(self, account=True)
 
     def _on_account_changed(self, event: AccountChangeEvent):
         """Refresh sibling panels without destroying an unsaved account draft."""

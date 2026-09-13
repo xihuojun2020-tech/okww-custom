@@ -30,7 +30,7 @@ class SectionPanel(QWidget):
         self.content_layout.setContentsMargins(0, 0, 0, 0)
         self.content_layout.setSpacing(2)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, SPACING['row'], 0, SPACING['section'])
+        layout.setContentsMargins(0, 0, 0, SPACING['row'])
         layout.setSpacing(SPACING['row'])
         self.header = DisclosureHeader(title, self)
         self.toggle_button = self.header.expandButton
@@ -78,6 +78,7 @@ class SectionPanel(QWidget):
             content.setParent(self)
             if content.layout():
                 content.layout().setContentsMargins(0, 0, 0, 0)
+                content.layout().setSpacing(SPACING['row'])
         return self.add_widget(content, stretch)
 
     def add_row(self, label: str, control: QWidget, description: str = "", error: str | None = None):

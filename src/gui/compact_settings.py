@@ -1,4 +1,4 @@
-"""Scoped density changes for account/tools pages, without touching task UI."""
+"""Apply the shared compact rhythm to embedded framework settings."""
 from PySide6.QtWidgets import QGroupBox
 from src.gui.FlatSettingRow import FlatSettingRow
 from src.gui.SectionPanel import SectionPanel
@@ -13,7 +13,7 @@ def compact_settings(root, *, account=False):
         card.viewLayout.setContentsMargins(8, 4, 8, 8)
     for section in root.findChildren(SectionPanel):
         section.setStyleSheet('QWidget#codexSection { border: 0; }')
-        section.layout().setContentsMargins(0, 4, 0, 8)
+        section.layout().setContentsMargins(0, 0, 0, 4)
         section.layout().setSpacing(4)
         section.content_layout.setSpacing(4)
         if account:
@@ -21,7 +21,7 @@ def compact_settings(root, *, account=False):
             section.layout().setSpacing(2)
             section.content_layout.setSpacing(2)
             section.header.setMinimumHeight(40)
-            section.header.layout_row.setContentsMargins(8, 4, 8, 4)
+            section.header.layout_row.setContentsMargins(8, 2, 8, 2)
     for row in root.findChildren(FlatSettingRow):
         row.layout().setContentsMargins(8, 4, 8, 4)
         if account:

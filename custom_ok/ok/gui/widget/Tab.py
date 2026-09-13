@@ -30,7 +30,6 @@ class Tab(ScrollArea):
         self.view.setObjectName('view')
 
         self.setObjectName(f"{self.__class__.__name__}_{id(self)}")
-        self.vBoxLayout.setSpacing(24)
         self.vBoxLayout.setSizeConstraint(QVBoxLayout.SetMinimumSize)
 
     @property

@@ -23,7 +23,7 @@ COLORS = {
     "accent_pressed": "#064FA3",
 }
 
-SPACING = {"small": 8, "row": 12, "section": 24}
+SPACING = {"small": 8, "row": 4, "section": 8}
 TYPE_SIZE = {"body": 13, "description": 12, "section": 15, "page": 23}
 
 
@@ -60,12 +60,10 @@ def codex_style_sheet() -> str:
     }}
     QWidget#codexSection, QWidget#configSection {{
         background: transparent; border: 0;
-        border-bottom: 1px solid {COLORS['border']};
     }}
     QWidget#disclosureHeader {{ background: {COLORS['panel']}; border-radius: 6px; }}
     QWidget#disclosureHeader:hover {{ background: {COLORS['hover']}; }}
-    QGroupBox {{ border: 0; border-top: 1px solid {COLORS['border']};
-        margin-top: 18px; padding-top: 18px; }}
+    QGroupBox {{ border: 0; margin-top: 12px; padding-top: 8px; }}
     QGroupBox::title {{ subcontrol-origin: margin; left: 0; }}
     QLabel[role="sectionTitle"] {{ font-size: {TYPE_SIZE['section']}px; font-weight: 600; }}
     QLabel[role="pageTitle"] {{ font-size: {TYPE_SIZE['page']}px; font-weight: 600; }}

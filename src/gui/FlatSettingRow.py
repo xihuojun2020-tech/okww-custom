@@ -36,7 +36,7 @@ class FlatSettingRow(QWidget):
             copy.addWidget(self.description_label)
         copy.addWidget(self.error_label)
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setContentsMargins(8, 4, 8, 4)
         layout.setSpacing(8)
         layout.addLayout(copy, 1)
         compact = isinstance(control, (QAbstractButton, QAbstractSpinBox)) and not isinstance(control, ComboBox)

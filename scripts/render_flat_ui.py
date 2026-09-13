@@ -18,6 +18,8 @@ from PySide6.QtCore import QPoint, QTranslator, QLocale, QCoreApplication
 from qfluentwidgets import FluentTranslator, ComboBox
 from PySide6.QtGui import QFontDatabase, QFont
 from PySide6.QtGui import QIcon
+from scripts.run_test_file import _install_framework_overrides
+_install_framework_overrides()
 from ok import og
 from tests.TestFlatUI import MemoryConfig, example_task
 from tests.fixture_support import make_account_environment
@@ -179,7 +181,10 @@ def render(output):
         window.hide()
         window.stackedWidget.currentChanged.disconnect(window._onCurrentInterfaceChanged)
         pages.append(window.completion_check_tab)
+        selected_pages = set(filter(None, os.environ.get("OKWW_UI_PAGES", "").split(",")))
         for page in pages:
+            if selected_pages and type(page).__name__ not in selected_pages:
+                continue
             window.stackedWidget.removeWidget(page)
             page.setParent(None)
             if os.environ.get('OKWW_UI_EXPAND_ALL'):
