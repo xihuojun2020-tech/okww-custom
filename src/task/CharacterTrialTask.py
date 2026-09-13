@@ -57,6 +57,7 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
         self._held_keys = set()
         self._held_mouse = set()
         self.last_result = None
+        self._feature_run = None
 
     def validate_config(self, key, value):
         if key == '试用人数' and value not in ('5人', '6人'):
@@ -66,6 +67,8 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
 
     def _guard(self):
         self.executor.check_enabled()
+        if getattr(self, '_feature_run', None) is not None:
+            self._feature_run.guard()
         if self._battle_deadline is not None and time.monotonic() >= self._battle_deadline:
             raise TrialTimeout('角色试用战斗超时')
 
@@ -493,6 +496,7 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
         return 'trial_claimed' if state == 'pending' else 'direct_claimed'
 
     def run(self):
+        self._feature_run = None
         super().run()
         self.last_result = {'direct_claimed': 0, 'trial_claimed': 0, 'already_complete': 0, 'failed': 0, 'complete': False}
         self.skip_combat_check = True
@@ -500,12 +504,22 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
             timeout = self.config.get('Trial Combat Timeout', 180)
             if self.validate_config('Trial Combat Timeout', timeout):
                 raise ValueError('Trial Combat Timeout must be between 60 and 600.')
+            from src.account_repository import get_default_repository
+            from src.task.account_feature_verification import FeatureRun, expected_profile, STATUS_LABELS
+            repository = get_default_repository()
+            if repository is None:
+                raise RuntimeError('账号配置仓库不可用，不能核验真实账号')
+            verification = FeatureRun(self, repository, expected_profile(self)).begin()
+            self._feature_run = verification
             self._open()
             targets = self._scan()
+            self.last_result['configured_count'] = len(targets)
+            self.last_result['positions'] = []
             for index, target in enumerate(targets):
                 self.info_set('试用进度', f'{index+1}/{len(targets)}')
                 outcome = self._process(target)
                 self.last_result[outcome] += 1
+                self.last_result['positions'].append(dict(position=index+1, result=outcome))
                 self.info_set('试用统计', f'直接领取 {self.last_result["direct_claimed"]}，'
                               f'试用后领取 {self.last_result["trial_claimed"]}，'
                               f'原已完成 {self.last_result["already_complete"]}')
@@ -514,11 +528,32 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
                 self._select(target)
                 if self._state() != 'complete':
                     raise RuntimeError('最终复核发现角色未完成')
-            self.last_result['complete'] = True
-            self._stage(f'配置的{len(targets)}个角色奖励状态均已确认完成')
+            self.last_result['game_complete'] = True
+            final_frame = self.require_game_frame().copy()
+            try:
+                status = verification.finish()
+            except TaskDisabledException:
+                raise
+            except Exception:
+                status = 'context_invalid'
+            self.last_result['verification'] = status
+            evidence_status = 'completed' if status == 'verified' else 'unknown'
+            try:
+                saved = verification.save(self.last_result, final_frame, evidence_status,
+                                          '配置人数奖励已复核；结束身份核验：' + STATUS_LABELS[status])
+                self.last_result['evidence_id'] = saved['evidence_id']
+                self.last_result['complete'] = status == 'verified'
+            except Exception:
+                self.last_result['evidence_pending'] = True
+            self._stage(f'配置的{len(targets)}个角色奖励已领取；' +
+                        ('完成证据已保存' if self.last_result['complete'] else '完成归属待核验或证据待保存'))
         except TaskDisabledException:
+            self._release()
+            self._save_partial_feature_evidence('用户停止')
             raise
         except Exception:
+            self._release()
+            self._save_partial_feature_evidence('任务异常或核验上下文失效')
             self.last_result['failed'] += 1
             try:
                 self.screenshot('character_trial_failed')
@@ -526,7 +561,18 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
                 self.log_warning(f'试用错误截图保存失败：{error}')
             raise
         finally:
+            self._feature_run = None
             self._battle_deadline = None
             self.skip_combat_check = True
             self._trial_map = False
             self._release()
+
+    def _save_partial_feature_evidence(self, reason):
+        verification = getattr(self, '_feature_run', None)
+        if verification is None:
+            return
+        try:
+            frame = self.executor.nullable_frame()
+            verification.save(self.last_result, frame, 'unknown', reason + '；仅保存部分进度')
+        except Exception:
+            self.last_result['evidence_pending'] = True

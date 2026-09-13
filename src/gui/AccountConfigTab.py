@@ -247,12 +247,15 @@ class AccountConfigTab(CustomTab):
             widget.setToolTip("身份字段由重新绑定流程修改，普通账号配置保存不会覆盖它")
             self.identity_widgets[key] = widget
             self.identity_layout.addRow(FlatSettingRow(label, widget, parent=self.identity_group))
-        self.feature_code_label = QLabel("未记录（当前不参与任务）", self.identity_group)
+        self.feature_code_label = QLabel("未绑定（初露峥嵘执行前需核验）", self.identity_group)
         self.reveal_phone = QCheckBox('显示完整手机号', self.identity_group)
         self.reveal_phone.toggled.connect(self._render_identity)
         self.identity_layout.addRow(self.reveal_phone)
-        self.feature_code_label.setToolTip("来自游戏防 OLED 烧屏遮罩区域；当前只记录，不参与任务")
+        self.feature_code_label.setToolTip("读取游戏右下角特征码并确认绑定；初露峥嵘执行前后核验真实账号")
         self.identity_layout.addRow(FlatSettingRow("游戏内特征码（只读）", self.feature_code_label, parent=self.identity_group))
+        self.read_feature_button = QPushButton('读取并绑定特征码', self.identity_group)
+        self.read_feature_button.clicked.connect(self.read_feature_code)
+        self.identity_layout.addRow(self.read_feature_button)
         self.identity_task_fields = QWidget(self.identity_group)
         self.identity_task_layout = QVBoxLayout(self.identity_task_fields)
         self.identity_task_layout.setContentsMargins(0, 0, 0, 0)
@@ -433,7 +436,7 @@ class AccountConfigTab(CustomTab):
         label = account_display_label(self.draft.account)
         masked_phone = self.draft.account.get("masked_phone") or "未记录"
         alternate = self.draft.account.get("alternate_login_name") or "未记录"
-        feature_code = self.draft.account.get("game_feature_code") or "未记录（当前不参与任务）"
+        feature_code = self.draft.account.get("game_feature_code") or "未绑定（初露峥嵘执行前需核验）"
         self.metadata.setText(
             f"账号：{label} · 唯一编号：{self.draft.profile_id}"
         )
@@ -500,7 +503,7 @@ class AccountConfigTab(CustomTab):
                 value = masked_phone(value)
             widget.setText(value)
         self.feature_code_label.setText(str(self.draft.account.get("game_feature_code")
-                                            or "未记录（当前不参与任务）"))
+                                            or "未绑定（初露峥嵘执行前需核验）"))
 
     def _render_sequences(self):
         while self.sequence_layout.count():
@@ -716,6 +719,42 @@ class AccountConfigTab(CustomTab):
         except Exception as exc:
             self.status.setText(f"保存失败：{exc}")
             return None
+
+    def read_feature_code(self):
+        if self.operation.busy or self.draft is None:
+            return
+        from ok import og
+        from src.evidence.service import request_capture
+        submitted = copy.deepcopy(self.draft)
+        try:
+            future = request_capture(og.executor, feature_code=True)
+        except Exception as error:
+            self.status.setText(sanitize_error(error))
+            return
+
+        def received(value):
+            if self.draft is None or self.draft.profile_id != submitted.profile_id:
+                self.status.setText('所选账号已变化，请重新读取特征码')
+                return
+            requested = {'game_feature_code': value['code']}
+            try:
+                self.rebind_service.preview(submitted.profile_id, requested)
+                label = account_display_label(submitted.account)
+                answer = QMessageBox.question(self.view, '确认特征码绑定',
+                    f'已连续读取到一致的特征码。确认当前游戏账号是 {label} 并绑定？\n'
+                    '该绑定将用于初露峥嵘首尾核验，旧身份会备份。')
+                if answer != QMessageBox.StandardButton.Yes:
+                    return
+                current = submitted.account.get('masked_phone') or submitted.account.get('phone') or submitted.account.get('game_feature_code')
+                self._submit_action(partial(self.rebind_service.rebind, submitted.profile_id,
+                    current_identity=current, new_identity=requested, confirmed=True,
+                    expected_revision=submitted.revision), '特征码已绑定',
+                    lambda result: AccountChangeEvent('identity_rebound', str(result.revision),
+                                                     (submitted.profile_id,), ()), submitted=submitted)
+            except Exception as error:
+                self.status.setText('特征码绑定失败：' + sanitize_error(error))
+        self.operation.start(lambda: future.result(timeout=12), received,
+                             lambda error: self.status.setText('读取失败：' + sanitize_error(error)))
 
     def rebind_identity(self):
         """Run the explicit identity re-bind flow for the selected account."""

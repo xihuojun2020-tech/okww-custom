@@ -287,6 +287,7 @@ def validate_master(data: Any) -> list[str]:
     # task_config.  Short-name candidates are tokenized by _identity_candidates,
     # so A1 and A10 remain distinct.
     identity_owner: dict[str, str] = {}
+    feature_owner: dict[str, str] = {}
     for profile_id, profile in profiles.items():
         path = f"profiles[{profile_id!r}]"
         _require(isinstance(profile_id, str) and bool(_UUID_RE.match(profile_id)),
@@ -300,6 +301,12 @@ def validate_master(data: Any) -> list[str]:
             if identity_field in profile:
                 _require(isinstance(profile[identity_field], str),
                          f"{path}.{identity_field} must be a string", errors)
+        feature = profile.get("game_feature_code")
+        if isinstance(feature, str) and feature.strip():
+            feature = feature.strip()
+            if feature in feature_owner and feature_owner[feature] != str(profile_id):
+                errors.append("游戏内特征码重复绑定")
+            feature_owner[feature] = str(profile_id)
         aliases = profile.get("account_aliases", [])
         _require(isinstance(aliases, list) and all(isinstance(v, str) and v.strip() for v in aliases),
                  f"{path}.account_aliases must be a list of non-empty strings", errors)

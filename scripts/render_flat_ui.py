@@ -24,7 +24,7 @@ from ok import og
 from tests.TestFlatUI import MemoryConfig, example_task
 from tests.fixture_support import make_account_environment
 from src.gui.CodexTheme import apply_codex_light_theme
-from src.evidence.model import PROJECTS
+from src.evidence.model import PROJECTS, CURRENT_PROJECTS
 
 
 class InertConfig(MemoryConfig):
@@ -206,11 +206,16 @@ def render(output):
                         QTest.qWait(20)
                         if len(page._cards) == len(PROJECTS) and not page.load_operation.busy:
                             break
-                    assert len(page._cards) == len(PROJECTS), 'Completion dashboard has not finished loading'
+                    expected_projects = set(CURRENT_PROJECTS) | {row['project_id'] for row in page._rows}
+                    assert len(page._cards) == len(expected_projects), 'Completion dashboard has not finished loading'
                     QTest.qWait(100)
                     page.grab().save(str(output / f'{type(page).__name__}-{width}.png'))
                     assert page.scroll.horizontalScrollBar().maximum() == 0
                     print('CompletionCheckTab', width, 'cards=', len(page._cards), flush=True)
+                    page.scroll.verticalScrollBar().setValue(page.scroll.verticalScrollBar().maximum())
+                    app.processEvents()
+                    page.grab().save(str(output / f'CompletionCheckTab-{width}-bottom.png'))
+                    page.scroll.verticalScrollBar().setValue(0)
                     continue
                 if page is window.task_hub_tab and os.environ.get('OKWW_UI_EXPAND_ALL'):
                     from ok.gui.tasks.LabelAndLabel import LabelAndLabel

@@ -34,6 +34,8 @@ class EvidenceService:
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix='CompletionEvidence')
         self.revision = 0
         self.last_error = ''
+        if callable(getattr(repository, 'recover_required', None)):
+            self._pool.submit(repository.recover_required)
 
     def submit(self, metadata, frame, *, run=False):
         if not self._slots.acquire(blocking=False):
@@ -64,7 +66,7 @@ class EvidenceService:
         try:
             return self.repository.save(metadata, frame)
         except Exception:
-            if frame is not None and metadata.get('source') == 'automatic':
+            if frame is not None and metadata.get('source') == 'automatic' and not metadata.get('require_image'):
                 try:
                     self.repository.save(metadata, None)
                 except Exception:
@@ -135,11 +137,12 @@ def bound_profile(executor):
     return None
 
 
-def request_capture(executor):
+def request_capture(executor, *, feature_code=False):
     requests = getattr(executor, '_completion_capture_requests', None)
     if requests is None:
         requests = executor._completion_capture_requests = queue.Queue(maxsize=1)
     future = Future()
+    future.feature_code = feature_code
     try:
         requests.put_nowait((future, time.monotonic() + 8, bound_profile(executor)))
     except queue.Full:
@@ -173,6 +176,22 @@ def process_capture(executor):
         if window is None or not window.exists:
             raise RuntimeError('游戏窗口不可用')
         hwnd = window.hwnd
+        if getattr(future, 'feature_code', False):
+            if task is not None and getattr(task, 'running', False):
+                raise RuntimeError('请先停止当前任务，再读取并绑定特征码')
+            from src.task.CharacterTrialTask import CharacterTrialTask
+            from src.task.account_feature_verification import observe, read_code
+            reader = executor.get_task_by_class(CharacterTrialTask)
+            def check():
+                if (executor.exit_event.is_set() or not window.exists or window.hwnd != hwnd
+                        or executor.current_task is not task):
+                    raise RuntimeError('特征码读取期间窗口或任务变化')
+            observed = observe(executor.method.get_frame, lambda image: read_code(reader, image),
+                               check, time.sleep)
+            if observed.status != 'verified':
+                raise RuntimeError('未稳定读取特征码，请显示游戏右下角完整特征码后重试')
+            future.set_result(dict(code=observed.code, verification=observed.metadata()))
+            return
         frame = executor.method.get_frame()
         if frame is None or not frame.size or time.monotonic() > deadline:
             raise RuntimeError('未取得及时有效的游戏画面')

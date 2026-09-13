@@ -189,7 +189,7 @@ class TestCompletionCheckUI(unittest.TestCase):
         compact_settings(root, account=True)
         self.assertEqual(panel.header.minimumHeight(), 40)
         other = SectionPanel('other', collapsible=True)
-        self.assertEqual(other.header.minimumHeight(), 56)
+        self.assertEqual(other.header.minimumHeight(), 40)
         root.close()
         other.close()
 

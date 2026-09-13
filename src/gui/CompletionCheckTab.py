@@ -141,7 +141,7 @@ class EvidenceDetailDialog(QDialog):
         progress = '，'.join(f'{labels[key]}：{value}' for key, value in record.get('progress', {}).items() if key in labels)
         text = QLabel(f"{STATUSES[record['completion_status']]} · {SOURCES[record['source']]}\n"
                       f"记录时间：{record['captured_at']}\n{period_label(record['period_id'], record['project_id'])}\n{progress}\n"
-                      f"{record.get('reason', '')}\n{record.get('note', '')}", self)
+                      f"{record.get('reason', '')}\n{record.get('note', '')}\n{record.get('nas_status', '')}", self)
         text.setWordWrap(True)
         text.setTextInteractionFlags(Qt.TextSelectableByMouse)
         layout.addWidget(text)

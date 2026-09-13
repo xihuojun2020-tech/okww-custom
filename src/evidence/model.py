@@ -13,6 +13,7 @@ PROJECTS = {
     'adversity_tower': ('深塔', None),
     'sea_ruins': ('海墟', None),
     'matrix': ('矩阵', None),
+    'character_trial': ('初露峥嵘', None),
     **{key: (title, None) for key, title in LEGACY_ACTIVITIES.items()},
 }
 CURRENT_PROJECTS = tuple(key for key in PROJECTS if key not in LEGACY_ACTIVITIES)
@@ -27,6 +28,7 @@ TASK_PROJECTS = {
     'DailyTask': 'daily_activity', 'MultiAccountDailyTask': 'daily_activity',
     'NightmareNestTask': 'nightmare_nest', 'GardenTask': 'weekly_garden',
     'WeeklyBossTask': 'weekly_boss', 'AutoAbyssTask': 'adversity_tower',
+    'CharacterTrialTask': 'character_trial',
     'PianoTeachingTask': 'piano_activity', 'SecondSolTask': 'second_sol',
 }
 STATUSES = {'completed': '已完成', 'partial': '部分完成', 'incomplete': '未完成',

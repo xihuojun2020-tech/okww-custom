@@ -175,8 +175,7 @@ def match_profile_identity(observed: Any, profiles: Mapping[Any, Any] | Iterable
         }
         if len(feature_matches) > 1:
             raise AccountIdentityError("游戏内特征码同时匹配多个账号方案")
-        if feature_matches:
-            return next(iter(feature_matches))
+        return next(iter(feature_matches), None)
 
     masked_matches = {
         str(name) for name, profile in items

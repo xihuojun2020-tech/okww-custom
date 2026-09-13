@@ -9,6 +9,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import cv2
+import numpy as np
 
 from src.evidence.model import GAME_ZONE, PROJECTS, SOURCES, STATUSES, now_iso, period_for
 
@@ -145,7 +146,81 @@ class EvidenceRepository:
         temporary.rename(path)
 
     def save(self, metadata, frame):
+        if not metadata.get('require_image'):
+            return self._save_record(metadata, frame)
+        if frame is None or not metadata.get('event_id'):
+            raise ValueError('核验证据必须包含图片及幂等事件编号')
+        from src.runtime.diagnostic_export import atomic_json
+        key = hashlib.sha256(str(metadata['event_id']).encode()).hexdigest()
+        folder = self.root / 'pending_verified' / key
+        folder.mkdir(parents=True, exist_ok=True)
+        if not (folder / 'record.json').exists():
+            ok, encoded = cv2.imencode('.png', frame)
+            if not ok:
+                raise OSError('核验证据原图编码失败')
+            if not (folder / 'frame.png').exists():
+                self._write_new(folder / 'frame.png', encoded.tobytes())
+            atomic_json(folder / 'record.json', metadata)
+        frozen = json.loads((folder / 'record.json').read_text(encoding='utf-8'))
+        if frozen != json.loads(json.dumps(metadata)):
+            raise ValueError('同一次运行不能更换证据归属或结论')
+        frozen_frame = cv2.imdecode(np.frombuffer((folder / 'frame.png').read_bytes(), dtype='uint8'), cv2.IMREAD_COLOR)
+        if frozen_frame is None:
+            raise ValueError('待保存图片损坏')
+        saved = self._save_record(frozen, frozen_frame)
+        atomic_json(folder / 'done.json', {'evidence_id': saved['evidence_id']})
+        self._queue_required_upload(folder, saved)
+        return saved
+
+    def recover_required(self):
+        """Retry durable verified observations without repeating the game task."""
+        recovered = []
+        for path in (self.root / 'pending_verified').glob('*/record.json'):
+            if (path.parent / 'done.json').exists() and (path.parent / 'nas.json').exists():
+                continue
+            try:
+                metadata = json.loads(path.read_text(encoding='utf-8'))
+                frame = cv2.imdecode(np.frombuffer(
+                    (path.parent / 'frame.png').read_bytes(), dtype='uint8'), cv2.IMREAD_COLOR)
+                if frame is not None:
+                    recovered.append(self.save(metadata, frame))
+            except (OSError, ValueError, sqlite3.Error):
+                continue
+        return recovered
+
+    def _queue_required_upload(self, folder, record):
+        if (folder / 'nas.json').exists():
+            return
+        try:
+            from src.runtime.diagnostic_lifecycle import _session
+            from src.runtime.diagnostic_session import seal_run
+            from src.runtime.diagnostic_export import atomic_json
+            if _session is None or _session.closed_session:
+                return
+            batch = seal_run(_session.run, 'verified_completion', sizes={},
+                             reviewed_images=[self.asset_path(record['image_path'])], prepared_images=True)
+            state = batch.parents[2] / 'states' / (batch.parents[1].name + '--' + batch.name + '.json')
+            atomic_json(folder / 'nas.json', {'state': str(state)})
+        except Exception:
+            # The durable journal retries on the next start; NAS cannot undo completion.
+            pass
+
+    def _nas_status(self, record):
+        if not record.get('require_image'):
+            return ''
+        key = hashlib.sha256(str(record['event_id']).encode()).hexdigest()
+        marker = self.root / 'pending_verified' / key / 'nas.json'
+        try:
+            state = Path(json.loads(marker.read_text(encoding='utf-8'))['state'])
+            value = json.loads(state.read_text(encoding='utf-8')) if state.exists() else {}
+            return 'NAS 已上传' if value.get('status') == 'uploaded' else 'NAS 待上传，诊断队列重试中'
+        except (OSError, ValueError, KeyError):
+            return '本机已保存，NAS 待上传'
+
+    def _save_record(self, metadata, frame):
         record = json.loads(json.dumps(metadata, ensure_ascii=False))
+        if record.get('require_image') and frame is None:
+            raise ValueError('该完成证据必须包含图片')
         record['profile_id'] = str(UUID(record['profile_id']))
         project = record['project_id']
         if project not in PROJECTS:
@@ -224,6 +299,7 @@ class EvidenceRepository:
             record['trashed'] = bool(deleted)
             if record['image_path'] and not self.asset_path(record['image_path']).is_file():
                 record['asset_status'] = 'missing'
+            record['nas_status'] = self._nas_status(record)
             result.append(record)
         return result
 
@@ -270,6 +346,7 @@ class EvidenceRepository:
                     record['trashed'] = False
                     if record['image_path'] and not self.asset_path(record['image_path']).is_file():
                         record['asset_status'] = 'missing'
+                    record['nas_status'] = self._nas_status(record)
                     result.append(record)
         return self._thumbnails(result)
 

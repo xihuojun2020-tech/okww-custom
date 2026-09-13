@@ -94,6 +94,10 @@ class AccountRebindService:
         # switching, then test only fields supplied by the re-bind request.
         index = build_identity_index(profiles)
         collisions: set[str] = set()
+        feature = str(new_identity.get('game_feature_code') or '').strip()
+        if feature:
+            collisions.update(owner for owner, account in profiles.items()
+                              if owner != profile_id and str(account.get('game_feature_code') or '').strip() == feature)
         for value in new_identity.values():
             for item in _values_for_field(value):
                 for candidate in identity_candidates(item):

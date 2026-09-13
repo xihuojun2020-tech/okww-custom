@@ -348,7 +348,14 @@ class TestTrialFlow(unittest.TestCase):
         t=self.task(); t._open=Mock(); t._scan=Mock(return_value=[object()])
         t._process=Mock(return_value='already_complete'); t._select=Mock()
         t._state=Mock(return_value='pending'); t._release=Mock()
-        with patch.object(WWOneTimeTask,'run'),self.assertRaises(RuntimeError):t.run()
+        verification = Mock(); verification.begin.return_value = verification
+        with patch.object(WWOneTimeTask,'run'), \
+                patch('src.account_repository.get_default_repository', return_value=Mock()), \
+                patch('src.task.account_feature_verification.expected_profile', return_value=None), \
+                patch('src.task.account_feature_verification.FeatureRun', return_value=verification), \
+                self.assertRaises(RuntimeError): t.run()
+        t._state.assert_called_once()
+        verification.finish.assert_not_called()
         self.assertFalse(t.last_result['complete'])
 
     def test_permanent_activity_navigation(self):
