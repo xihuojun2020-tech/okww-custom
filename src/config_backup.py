@@ -235,6 +235,17 @@ class ConfigBackupService:
                 if not checked.ok:
                     raise RuntimeError(checked.error or "staged restore verification failed")
                 (staging / MANIFEST_NAME).unlink()
+                # Restoring account/task settings must never rebind an active
+                # data store to a pre-migration or another device's directory.
+                # Preserve installation-local storage metadata after verifying
+                # the original snapshot, before the atomic directory swap.
+                for name in ('runtime_storage.json', 'storage_identity.json', 'storage_migration.json'):
+                    live = self.config_dir / name
+                    staged = staging / name
+                    if live.is_file():
+                        shutil.copy2(live, staged)
+                    else:
+                        staged.unlink(missing_ok=True)
                 journal['phase'] = 'verified'
                 self._write_restore_journal(journal)
                 if self.config_dir.exists():

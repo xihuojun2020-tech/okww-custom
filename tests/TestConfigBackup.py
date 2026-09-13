@@ -14,6 +14,28 @@ from src.task.DailyTask import DailyTask
 
 
 class TestConfigBackup(unittest.TestCase):
+    def test_restore_keeps_current_installation_storage_binding(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            config = root / 'configs'
+            config.mkdir()
+            (config / 'runtime_storage.json').write_text('{"root":"old-disk"}')
+            (config / 'storage_identity.json').write_text('{"instance_id":"old"}')
+            (config / 'storage_migration.json').write_text('{"generation":"stale"}')
+            (config / 'task.json').write_text('{"value":1}')
+            service = ConfigBackupService(config, root / 'backups', harden_permissions=False)
+            snapshot = service.create_transaction_snapshot()
+            (config / 'runtime_storage.json').write_text('{"root":"installation-disk","generation":"new"}')
+            (config / 'storage_identity.json').write_text('{"instance_id":"current"}')
+            (config / 'storage_migration.json').unlink()
+            (config / 'task.json').write_text('{"value":2}')
+            service.restore(snapshot.path, confirmed=True)
+            self.assertEqual(json.loads((config / 'runtime_storage.json').read_text())['generation'], 'new')
+            self.assertEqual(json.loads((config / 'storage_identity.json').read_text())['instance_id'], 'current')
+            self.assertFalse((config / 'storage_migration.json').exists())
+            self.assertEqual(json.loads((config / 'task.json').read_text())['value'], 1)
+            self.assertTrue(service.verify_snapshot(snapshot.path).ok)
+
     def test_daily_snapshot_writes_manifest_and_is_verifiable(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp).resolve()
