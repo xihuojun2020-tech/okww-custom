@@ -459,11 +459,16 @@ class TaskExecutor:
             task.disable()
             task.unpause()
 
-    def start(self):
+    def ensure_capture_worker(self):
+        """Service GUI capture requests without unpausing or enabling tasks."""
         with self.lock:
             if self.thread is None:
                 self.thread = threading.Thread(target=self.execute, name="TaskExecutor")
                 self.thread.start()
+
+    def start(self):
+        self.ensure_capture_worker()
+        with self.lock:
             if self.paused:
                 self.paused = False
                 communicate.executor_paused.emit(self.paused)

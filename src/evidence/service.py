@@ -149,6 +149,9 @@ def request_capture(executor, *, feature_code=False):
         requests.put_nowait((future, time.monotonic() + 8, bound_profile(executor)))
     except queue.Full:
         raise RuntimeError('已有截图请求等待处理')
+    ensure_worker = getattr(executor, 'ensure_capture_worker', None)
+    if callable(ensure_worker):
+        ensure_worker()
     wake = getattr(executor, '_wake_executor', None)
     if callable(wake):
         wake()

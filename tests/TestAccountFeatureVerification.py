@@ -129,6 +129,46 @@ class TestAccountFeatureVerification(unittest.TestCase):
         process_capture(executor)
         with self.assertRaisesRegex(RuntimeError,'停止当前任务'): future.result()
 
+    def test_cold_start_capture_runs_on_paused_executor_without_starting_tasks(self):
+        import threading
+        from custom_ok.ok.task.TaskExecutor import TaskExecutor
+        from src.evidence.service import request_capture
+        executor = TaskExecutor.__new__(TaskExecutor)
+        executor.lock = threading.Lock()
+        executor.thread = None
+        executor.paused = True
+        executor.debug_mode = False
+        executor.current_task = None
+        executor.exit_event = threading.Event()
+        executor.reset_scene = Mock()
+        executor.next_task = Mock(side_effect=AssertionError('must remain paused'))
+        executor._wake_executor = Mock()
+        executor._wait_for_activity = lambda *args: executor.exit_event.wait(.01)
+        executor.device_manager = SimpleNamespace(hwnd_window=SimpleNamespace(hwnd=12, exists=True))
+        frames = [np.full((720, 1280, 3), number, np.uint8) for number in range(3)]
+        executor.device_manager.capture_method = SimpleNamespace(get_frame=Mock(side_effect=frames))
+        executor.get_task_by_class = Mock(return_value=object())
+        decode_threads = []
+        def decode(*args):
+            decode_threads.append(threading.current_thread())
+            return '123456789'
+        with patch.object(TaskExecutor, '_service_diagnostic_capture'), \
+                patch('src.task.account_feature_verification.read_code', side_effect=decode):
+            try:
+                future = request_capture(executor, feature_code=True)
+                self.assertEqual(future.result(timeout=3)['code'], '123456789')
+                original_thread = executor.thread
+                executor.ensure_capture_worker()
+                self.assertIs(executor.thread, original_thread)
+                self.assertTrue(executor.paused)
+                self.assertTrue(all(t is original_thread for t in decode_threads))
+                executor.next_task.assert_not_called()
+            finally:
+                executor.exit_event.set()
+                if executor.thread:
+                    executor.thread.join(timeout=3)
+            self.assertFalse(executor.thread.is_alive())
+
     def test_resolution_statuses(self):
         a, b = record(3,'123'), record(4,'456')
         self.assertEqual(resolve(Observation('verified','123'),[a,b],a.profile_id)[0], 'verified')

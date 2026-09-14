@@ -311,7 +311,7 @@ class AccountConfigTab(CustomTab):
         self.template_button.clicked.connect(self.edit_template)
         self.new_button.clicked.connect(self.create_account)
         self.operation = BackgroundOperation(self, (
-            self.save_button, self.delete_button, self.rebind_button, self.template_button,
+            self.save_button, self.delete_button, self.rebind_button, self.read_feature_button, self.template_button,
             self.new_button, self.discard_button, self.preview_button,
             self.form_host, self.task_editor, self.sequence_group, self.json_button, self.reminder_panel))
         self.refresh()
@@ -727,9 +727,11 @@ class AccountConfigTab(CustomTab):
         from src.evidence.service import request_capture
         submitted = copy.deepcopy(self.draft)
         try:
+            self.status.setText('正在读取特征码，请保持游戏右下角完整可见…')
             future = request_capture(og.executor, feature_code=True)
         except Exception as error:
-            self.status.setText(sanitize_error(error))
+            self.status.setText('读取失败：' + sanitize_error(error))
+            logging.getLogger(__name__).warning('feature_code_capture_failed: %s', type(error).__name__)
             return
 
         def received(value):
@@ -754,8 +756,13 @@ class AccountConfigTab(CustomTab):
                                                      (submitted.profile_id,), ()), submitted=submitted)
             except Exception as error:
                 self.status.setText('特征码绑定失败：' + sanitize_error(error))
-        self.operation.start(lambda: future.result(timeout=12), received,
-                             lambda error: self.status.setText('读取失败：' + sanitize_error(error)))
+        def failed(error):
+            future.cancel()
+            message = ('读取超时，请确认游戏窗口可用后重试' if isinstance(error, TimeoutError)
+                       else sanitize_error(error))
+            self.status.setText('读取失败：' + message)
+            logging.getLogger(__name__).warning('feature_code_capture_failed: %s', type(error).__name__)
+        self.operation.start(lambda: future.result(timeout=12), received, failed)
 
     def rebind_identity(self):
         """Run the explicit identity re-bind flow for the selected account."""

@@ -23,6 +23,28 @@ from tests.fixture_support import make_account_environment
 
 
 class TestAccountManagementTabs(unittest.TestCase):
+    def test_feature_read_shows_progress_and_timeout_then_allows_retry(self):
+        from concurrent.futures import Future
+        from ok import og
+        with tempfile.TemporaryDirectory() as temp:
+            env = make_account_environment(Path(temp))
+            tab = AccountConfigTab(AccountConfigEditor(env.repository))
+            future = Future()
+            try:
+                with patch.object(og, 'executor', None, create=True), \
+                        patch('src.evidence.service.request_capture', return_value=future) as capture:
+                    tab.read_feature_code()
+                    self.assertIn('正在读取', tab.status.text())
+                    self.assertFalse(tab.read_feature_button.isEnabled())
+                    tab.read_feature_code()
+                    capture.assert_called_once()
+                    future.set_exception(TimeoutError())
+                    self._drain_until(lambda: not tab.operation.busy)
+                self.assertIn('读取超时', tab.status.text())
+                self.assertTrue(tab.read_feature_button.isEnabled())
+            finally:
+                tab.deleteLater()
+
     def test_feature_binding_legacy_profile_persists_after_confirmation(self):
         from concurrent.futures import Future
         from src.account_repository import ProfileEditScope
