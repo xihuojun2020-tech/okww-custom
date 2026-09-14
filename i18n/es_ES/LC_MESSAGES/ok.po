@@ -1641,3 +1641,11 @@ msgstr ""
 
 msgid "JingRan"
 msgstr "Jingran"
+
+msgid "若梦仍有回声"
+msgstr "Donde aún resuenan los sueños"
+
+msgid "进入当前关卡，换上三个试用角色并截图复核；完成编队后停止，不开启挑战。"
+msgstr ""
+"Entra en la fase actual, elige tres personajes de prueba y verifica la "
+"formación con una captura. Se detiene sin iniciar el desafío."
