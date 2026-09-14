@@ -17,6 +17,7 @@ from src.task.abyss_team_planner import (
     ROVER_SPECTRO,
     ROVER_UNKNOWN,
     effective_character_id,
+    role_for_character,
     plan_team,
 )
 from src.task.BaseCombatTask import BaseCombatTask, CharDeadException, CombatStateUnknown
@@ -720,11 +721,8 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                     plan = self._plan_and_form_team(records, minimum_energy=required_energy)
                     team_energy = self._planned_team_energy(plan, records)
                 except AbyssTeamUnavailable as exc:
-                    if tower_name == TOWER_NAMES[1]:
-                        self._return_from_team_to_towers()
-                        raise AbyssCenterUnavailable(f"中塔无法编队，停止任务：{exc}") from exc
                     outcomes[tower_name] = (
-                        f"完成{total_cleared}层后体力或角色不足" if total_cleared else "体力或角色不足"
+                        f"本轮已处理，已通过{total_cleared}层；无法继续：{exc}"
                     )
                     self._set_status("跳过本塔", f"{tower_name}：{exc}")
                     self._return_from_team_to_towers()
@@ -756,6 +754,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         )
         ledger = "；".join(
             f"{record.display_name}={record.energy if record.energy is not None else '未识别'}"
+            f"（{role_for_character(effective_character_id(record))}，Lv.{record.level}）"
             for record in sorted(records, key=lambda item: item.display_name)
             if record.level is not None and record.level > 60
         ) or "无可核对角色"
@@ -796,27 +795,21 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         preview = "\n".join(lines)
         self.info_set("全局配队计划", preview)
         self.log_info(f"深塔全局配队预览（{priority}）：\n{preview}")
-        # Center-first reserves BOTH halves before spending any energy.
-        missing_center = [f for f, p in allocation.assignments if f.tower == TOWER_NAMES[1] and p is None]
-        if missing_center and (priority == CENTER_TOWER_FIRST or tower == TOWER_NAMES[1]):
-            target = missing_center[0]
-            legal = [p for p in candidates if team_preference(p, target.rule) is not None]
-            if incomplete_energy:
-                reason = f"角色体力识别不完整（{'、'.join(incomplete_energy)}），无法安全判断共享体力"
-            elif not candidates:
-                reason = "识别不完整、等级不足或缺少能组成预设/同定位替补队的主C"
-            elif not legal:
-                reason = "输出属性未知或触及第一优先级逆属性禁用规则"
-            else:
-                reason = "共享角色剩余体力不足，或有界搜索未找到覆盖方案"
-            raise AbyssCenterUnavailable(f"中塔第{target.index + 1}层未能安全分配：{reason}；停止整个任务")
         plan = self._scheduled_teams.get((tower, index))
         if plan is None:
+            target = next((f for f in floors if (f.tower, f.index) == (tower, index)), None)
+            legal = [p for p in candidates if target and team_preference(p, target.rule) is not None]
             if incomplete_energy:
-                raise AbyssTeamUnavailable(
-                    f"角色体力识别不完整（{'、'.join(incomplete_energy)}），无法安全判断当前层与优先区域的共享体力"
-                )
-            raise AbyssTeamUnavailable("全局资源分配未给当前层安排队伍，保留优先区域体力")
+                reason = "角色体力识别不完整：" + "、".join(incomplete_energy)
+            elif not candidates:
+                reason = "等级、身份或定位不足以组成预设及同定位替补队"
+            elif not legal:
+                reason = "当前层无符合输出属性规则的候选队"
+            elif allocation.approximate:
+                reason = "有界搜索未覆盖当前层，不能判定绝对无解"
+            else:
+                reason = "共享体力及优先楼层分配限制，当前层未获队伍"
+            raise AbyssTeamUnavailable(f"{tower}第{index + 1}层：{reason}")
         return plan
 
     def _set_status(self, stage, detail):
@@ -946,8 +939,33 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         return title
 
     def _wait_for_tower_screen(self):
-        for tower_name in TOWER_NAMES:
-            self.wait_ocr(match=tower_name, time_out=8, raise_if_not_found=True)
+        if not self.wait_until(self._tower_screen_visible, time_out=8, raise_if_not_found=False):
+            raise RuntimeError("等待深塔三塔总览超时")
+
+    def _return_from_result(self, tower_name, floor_number):
+        """Retry only a freshly recognized result button, never an unknown/loading page."""
+        deadline = time.monotonic() + 30
+        attempts, last_page, next_click = 0, "未知或加载中", 0
+        while time.monotonic() < deadline:
+            self.next_frame()
+            frame = self.require_game_frame()
+            titles = self.ocr(.02, .03, .95, .20, frame=frame)
+            if all(exact_ocr_box(titles, name) is not None for name in TOWER_NAMES):
+                self.log_info(f"结算返回确认：{tower_name}第{floor_number}层，点击{attempts}次")
+                return
+            boxes = self.ocr(.20, .06, .82, .96, frame=frame)
+            state = abyss_result_state(boxes)
+            button = exact_ocr_box(boxes, "返回深塔")
+            last_page = "结算页" if state else "未知或加载中"
+            if state and button is not None and attempts < 3 and time.monotonic() >= next_click:
+                attempts += 1
+                self.log_info(f"结算返回点击：{tower_name}第{floor_number}层，第{attempts}次")
+                self.ensure_in_front()
+                self.click_box(button, after_sleep=.3)
+                next_click = time.monotonic() + 3
+            self.sleep(.4)
+        self.screenshot("abyss_result_return_failed")
+        raise RuntimeError(f"{tower_name}第{floor_number}层返回深塔失败：点击{attempts}次，最后页面={last_page}")
 
     def _read_tower_star_totals(self):
         """Read n/12 from the overview as conflict-detection reference data."""
@@ -1243,8 +1261,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                     if back is None:
                         self.screenshot("abyss_reform_return_not_found")
                         raise Exception("需要重新编队，但结算页未找到返回深塔")
-                    self.click_box(back, after_sleep=2)
-                    self._wait_for_tower_screen()
+                    self._return_from_result(tower_name, floor_number)
                     return "需要重新编队", cleared
                 self._set_status("挑战成功", f"{tower_name}第 {floor_number} 层完成，继续下一层")
                 self.click_box(button, after_sleep=1)
@@ -1252,13 +1269,11 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             if state == "tower_complete":
                 cleared += 1
                 self._set_status("本塔完成", f"{tower_name}已完成，返回三塔页面")
-                self.click_box(button, after_sleep=2)
-                self._wait_for_tower_screen()
+                self._return_from_result(tower_name, floor_number)
                 return "完成", cleared
             if state == "failed":
                 self._set_status("挑战失败", f"{tower_name}第 {floor_number} 层失败，跳过本塔剩余关卡")
-                self.click_box(button, after_sleep=2)
-                self._wait_for_tower_screen()
+                self._return_from_result(tower_name, floor_number)
                 return "失败", cleared
             raise Exception(f"未知深塔结算状态：{state}")
         self.screenshot("abyss_continue_past_last_floor")
@@ -1655,9 +1670,26 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                 "点击前角色身份复核失败，禁止沿用历史槽位"
             )
             return False
+        before = self._selection_marker_present(frame, record)
+        if before is True:
+            self.log_info(f"选择跳过：{record.display_name}已选中，不反向取消；预期序号={expected_number}")
+            return True
+        if before is not False:
+            raise RuntimeError("点击前选中状态不明确，停止输入")
         x, y = character_safe_click(record.slot or character_card_slots()[record.slot_index])
+        self._log_card_action("选择", record, frame, x, y, before)
         self.click_relative(x, y, after_sleep=0.35, name=record.display_name)
-        return self._wait_selection_marker(record, True)
+        confirmed = self._wait_selection_marker(record, True)
+        self.log_info(f"选择结果：{record.display_name}，目标已选中，确认={confirmed}")
+        return confirmed
+
+    def _log_card_action(self, action, record, frame, x, y, before):
+        self._card_action_id = getattr(self, "_card_action_id", 0) + 1
+        context = getattr(self, "_allocation_context", None)
+        self.log_info(f"卡片动作#{self._card_action_id}：{action}，身份={effective_character_id(record)}，"
+                      f"名称={record.display_name}，塔层={context[:2] if context else None}，"
+                      f"页={record.screen_index}，滚动条={scroll_thumb_center(frame)}，"
+                      f"坐标=({x:.4f},{y:.4f})，点击前选中={before}")
 
     def _selected_records(self, records):
         selected = {}
@@ -1701,10 +1733,12 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                 self.screenshot("abyss_character_selection_clear_failed", frame=frame)
                 raise Exception("取消前角色身份或选中状态复核失败")
             x, y = character_safe_click(record.slot)
+            self._log_card_action("取消", record, frame, x, y, True)
             self.click_relative(x, y, after_sleep=.35, name=f"取消{record.display_name}")
             if not self._wait_selection_marker(record, False):
                 self.screenshot("abyss_character_selection_clear_failed")
                 raise Exception("已有角色选择标记未能清除")
+            self.log_info(f"取消结果：{record.display_name}，未选中已确认")
             refreshed = self._selected_records(records)
             if set(refreshed) != set(selected) - {identity}:
                 self.screenshot("abyss_selection_contradiction")
@@ -1877,6 +1911,20 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             None,
         )
 
+    def _read_slot_level(self, frame, slot):
+        parser = lambda text: parse_ocr_number(text, minimum=1, maximum=100)
+        value = self._read_slot_number(frame, slot, (.22, .78, 1, 1), parser)
+        if value is not None:
+            return value
+        # Isolate the white number from the Lv. prefix; thin 1 is often read as I.
+        crop = self._slot_crop(frame, slot, (.64, .79, .99, .99))
+        mask = cv2.inRange(crop, (170, 170, 170), (255, 255, 255))
+        enlarged = cv2.resize(mask, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
+        enlarged = cv2.copyMakeBorder(enlarged, 16, 16, 16, 16, cv2.BORDER_CONSTANT)
+        boxes = self.ocr(0, 0, 1, 1, frame=cv2.cvtColor(enlarged, cv2.COLOR_GRAY2BGR))
+        values = {parser(box.name) for box in boxes if parser(box.name) is not None}
+        return values.pop() if len(values) == 1 else None
+
     def _read_slot_energy(self, frame, slot):
         crop = self._slot_crop(frame, slot, (.50, .52, 1.00, .84))
         located = energy_digits(crop)
@@ -2007,12 +2055,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             if energy is None:
                 energy = self._read_slot_energy(frame, slot)
             if level is None:
-                level = self._read_slot_number(
-                    frame,
-                    slot,
-                    (0.22, 0.78, 1.00, 1.00),
-                    lambda text: parse_ocr_number(text, minimum=1, maximum=100),
-                )
+                level = self._read_slot_level(frame, slot)
             records.append(CharacterScanRecord(
                 character_id=character_id,
                 display_name=self.tr(display_name),
@@ -2039,8 +2082,21 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                 self._save_card_evidence(frame, record.slot, "abyss_card_numbers_unknown")
             if _retry:
                 self.sleep(.2)
-                return self._recognize_character_screen(
-                    self._wait_stable_character_frame(), screen_index, _retry=False)
+                fresh = self._wait_stable_character_frame()
+                repaired = []
+                for record in records:
+                    if record not in missing:
+                        repaired.append(record)
+                        continue
+                    located = self._relocate_record(fresh, record)
+                    if located is None:
+                        repaired.append(record)
+                        continue
+                    energy = record.energy if record.energy is not None else self._read_slot_energy(fresh, located.slot)
+                    level = record.level if record.level is not None else self._read_slot_level(fresh, located.slot)
+                    repaired.append(replace(located, energy=energy, level=level))
+                    self.log_info(f"卡片局部复读：{record.display_name}，体力={energy}，等级={level}；未进行选择点击")
+                return repaired
         return records
 
     def _click_period_challenge_icon(self):

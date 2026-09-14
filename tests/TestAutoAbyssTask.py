@@ -98,20 +98,20 @@ class TestAutoAbyssTask(unittest.TestCase):
         self.assertNotIn(Labels.char_qingxiao, plan.members)
         self.assertEqual(set(task._scheduled_teams), {("深境之塔", 2), ("深境之塔", 3)})
 
-    def test_center_preflight_failure_stops_before_team_selection(self):
+    def test_center_partial_plan_can_start_available_prefix(self):
         records = [CharacterScanRecord(x, x, 10, 90, .9, 1, i) for i, x in enumerate(
             (Labels.char_qingxiao, Labels.char_denia, Labels.char_chisa))]
         task = self.allocation_task(records, (AVAILABLE, LOCKED, LOCKED, LOCKED),
                                     config={"Center Upper Resisted 1": "气动"})
-        with self.assertRaisesRegex(AbyssCenterUnavailable, "停止整个任务"):
-            task._allocate_remaining(records)
+        self.assertIsNotNone(task._allocate_remaining(records))
+        self.assertIsNone(task._scheduled_teams[("深境之塔", 2)])
 
     def test_actual_energy_refresh_replans_unfinished_floors(self):
         records = [CharacterScanRecord(x, x, 10, 90, .9, 1, i) for i, x in enumerate(
             (Labels.char_qingxiao, Labels.char_denia, Labels.char_chisa))]
         task = self.allocation_task(records, (AVAILABLE, LOCKED))
         task._allocate_remaining(records)
-        with self.assertRaisesRegex(AbyssCenterUnavailable, "体力"):
+        with self.assertRaisesRegex(AbyssTeamUnavailable, "体力"):
             task._allocate_remaining([replace(r, energy=4) for r in records])
 
     def test_incomplete_energy_is_not_reported_as_shared_energy_shortage(self):
@@ -124,7 +124,7 @@ class TestAutoAbyssTask(unittest.TestCase):
         task.info_set = info.__setitem__
         task.log_info = logs.append
 
-        with self.assertRaisesRegex(AbyssCenterUnavailable, "角色体力识别不完整.*char_denia"):
+        with self.assertRaisesRegex(AbyssTeamUnavailable, "角色体力识别不完整.*char_denia"):
             task._allocate_remaining(records)
 
         self.assertIn("char_denia=未识别", info["角色体力账本"])
@@ -143,10 +143,11 @@ class TestAutoAbyssTask(unittest.TestCase):
         clicks = []
         task.click_box = lambda box, **_: clicks.append(box)
         task._wait_for_tower_screen = lambda: None
+        task._return_from_result = lambda *_: clicks.append("return-button")
         self.assertEqual(task._fight_selected_tower("深境之塔", 1, 10), ("需要重新编队", 1))
         self.assertEqual(clicks, ["return-button"])
 
-    def test_center_shortage_is_not_caught_as_skip_tower(self):
+    def test_center_shortage_returns_and_continues_to_side_towers(self):
         task = AutoAbyssTask.__new__(AutoAbyssTask)
         task.config = {"Tower Priority": CENTER_TOWER_FIRST}
         task._set_status = lambda *_: None
@@ -154,9 +155,9 @@ class TestAutoAbyssTask(unittest.TestCase):
         task._plan_and_form_team = lambda *_args, **_kw: (_ for _ in ()).throw(AbyssTeamUnavailable("missing"))
         returns = []
         task._return_from_team_to_towers = lambda: returns.append(True)
-        with self.assertRaises(AbyssCenterUnavailable):
-            task._run_towers({"深境之塔": (AVAILABLE,), "残响之塔": (AVAILABLE,), "回音之塔": (AVAILABLE,)})
-        self.assertEqual(returns, [True])
+        outcomes = task._run_towers({"深境之塔": (AVAILABLE,), "残响之塔": (AVAILABLE,), "回音之塔": (AVAILABLE,)})
+        self.assertEqual(len(outcomes), 3)
+        self.assertEqual(returns, [True, True, True])
 
     def test_qingxiao_character_scan_from_720p_through_4k(self):
         class OfflineAbyssTask(AutoAbyssTask):
@@ -641,6 +642,7 @@ class TestAutoAbyssTask(unittest.TestCase):
         task._wait_abyss_result = lambda: results.pop(0)
         task.click_box = lambda box, **_kwargs: events.append(("click", box.name))
         task._wait_for_tower_screen = lambda: events.append("tower_screen")
+        task._return_from_result = lambda *_: events.extend([("click", "返回深塔"), "tower_screen"])
         task._set_status = lambda *_args: None
 
         self.assertEqual(task._fight_selected_tower("残响之塔", 1), ("完成", 2))
@@ -733,6 +735,7 @@ class TestAutoAbyssTask(unittest.TestCase):
         task._wait_abyss_result = lambda: ("failed", SimpleNamespace(name="返回深塔"))
         task.click_box = lambda box, **_kwargs: events.append(("click", box.name))
         task._wait_for_tower_screen = lambda: events.append("tower_screen")
+        task._return_from_result = lambda *_: events.extend([("click", "返回深塔"), "tower_screen"])
         task._set_status = lambda *_args: None
 
         self.assertEqual(task._fight_selected_tower("深境之塔", 0), ("失败", 0))
@@ -749,6 +752,7 @@ class TestAutoAbyssTask(unittest.TestCase):
         task._wait_exact_text = lambda *_args: SimpleNamespace(name="返回深塔")
         task.click_box = lambda box, **_kwargs: events.append(("click", box.name))
         task._wait_for_tower_screen = lambda: events.append("tower_screen")
+        task._return_from_result = lambda *_: events.extend([("click", "返回深塔"), "tower_screen"])
         task._set_status = lambda *args: events.append(("status",) + args)
 
         self.assertEqual(task._fight_selected_tower("深境之塔", 0, 5), ("需要重新编队", 1))
@@ -1342,6 +1346,7 @@ class TestAutoAbyssTask(unittest.TestCase):
         ]
         clicks = []
         task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task.log_info = lambda *_: None
         task._character_page_count = 2
         task._selection_records_all_pages = lambda: (_ for _ in ()).throw(
             AssertionError("the existing character scan must be reused")
@@ -1594,7 +1599,7 @@ class TestAutoAbyssTask(unittest.TestCase):
 
         outcomes = task._run_towers(scans)
 
-        self.assertEqual(outcomes["残响之塔"], "体力或角色不足")
+        self.assertIn("本轮已处理，已通过0层；无法继续：体力不足", outcomes["残响之塔"])
         self.assertEqual(outcomes["回音之塔"], "完成（1层）")
         self.assertEqual(events, [("return",), ("form", "回音之塔")])
 
