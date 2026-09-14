@@ -13,6 +13,8 @@ class Qingxiao(BaseChar):
         self.must_cast_lib_this_turn = False
 
     def do_perform(self):
+        if getattr(self.task, 'chars', None) == [self]:
+            return self.perform_solo()
         self.must_cast_lib_this_turn = self.has_all_buff() and self.has_intro
 
         if not self.must_cast_lib_this_turn:
@@ -42,6 +44,22 @@ class Qingxiao(BaseChar):
         if broke_on_h2 and self.task is not None:
             self.task.wait_until(lambda: self.task.in_team()[0], time_out=1.0)
         self.switch_next_char()
+
+    def perform_solo(self):
+        # Solo cannot obtain teammates' buffs or an intro. Check real skill
+        # availability instead of waiting for the team's burst setup forever.
+        self.must_cast_lib_this_turn = False
+        if self.handle_heavy():
+            self.f_break()
+        elif self.click_liberation(wait_if_cd_ready=0):
+            pass
+        elif self.cast_enhanced_resonance():
+            pass
+        elif self.click_resonance(send_click=False, time_out=1.5)[0]:
+            pass
+        else:
+            self.click_echo(time_out=0)
+        self.continues_normal_attack(0.2)
 
     def enhanced_resonance_available(self):
         return bool(self.task.find_one(Labels.qingxiao_e, threshold=0.7))
