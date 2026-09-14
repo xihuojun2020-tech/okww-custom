@@ -1283,13 +1283,22 @@ class BaseWWTask(BaseTask):
         if not self.find_one('solo_player_health', **kwargs):
             return False
         kwargs['mask_function'] = self._party_health_outline_mask
-        if not self.find_one('solo_party_health', **kwargs):
-            return False
+        first_health = self.find_one('solo_party_health', **kwargs)
         for top in (0.382, 0.506):
             box = self.box_of_screen(0.907, top, 0.962, top + 0.023)
             if self.find_one('solo_party_health', box=box, **kwargs):
                 return False
-        return True
+        if first_health:
+            return True
+        # The translucent party bar includes the world behind it; do not make
+        # that small template the only positive cue for a solo character.
+        # Reuse registered full-size portraits (story companion icons are smaller).
+        from src.char.CharFactory import char_names
+        names = list(char_names)
+        def portrait(index):
+            return self.find_one(names, box=self.get_box_by_name(f'box_char_{index}'),
+                                 threshold=0.8, frame=frame)
+        return bool(portrait(1) and not portrait(2) and not portrait(3))
 
     @staticmethod
     def _party_health_outline_mask(template):

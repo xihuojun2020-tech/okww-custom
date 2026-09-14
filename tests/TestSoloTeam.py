@@ -92,6 +92,36 @@ class TestSoloTeam(TaskTestCase):
         self.set_image('tests/images/big_map.png')
         self.assertFalse(self.task.in_team()[0])
 
+    def test_reported_qingxiao_combat_frame(self):
+        source = cv2.imread('tests/images/solo_qingxiao_combat_1440.png')
+        for size in ((2560,1440), (1920,1080)):
+            with self.subTest(size=size):
+                self.check_frame(cv2.resize(source,size), (True,0,1))
+                self.assertTrue(self.task.check_health_bar())
+                self.assertTrue(self.task.has_target())
+                self.task.do_reset_to_false()
+                self.task.chars = [None, None, None]
+                with patch.object(self.task, 'load_hotkey'), \
+                     patch.object(self.task, 'ensure_levitator', return_value=True):
+                    self.assertTrue(self.task.do_check_in_combat(target=False))
+                self.assertEqual(len(self.task.chars), 1)
+                self.assertEqual(type(self.task.get_current_char()).__name__, 'Qingxiao')
+
+    def test_portrait_fallback_rejects_missing_player_or_extra_member(self):
+        source = cv2.imread('tests/images/solo_qingxiao_combat_1440.png')
+        for scenario in ('no_player', 'no_portrait', 'second_member', 'third_member'):
+            frame = source.copy()
+            if scenario == 'no_player':
+                frame[1360:1399,1048:1093] = 0
+            elif scenario == 'no_portrait':
+                frame[275:397,2330:2455] = 0
+            else:
+                offset = 178 if scenario == 'second_member' else 356
+                frame[275+offset:372+offset,2330:2455] = source[275:372,2330:2455]
+            for size in ((2560,1440), (1920,1080)):
+                with self.subTest(scenario=scenario,size=size):
+                    self.check_frame(cv2.resize(frame,size), (False,-1,1))
+
 
 if __name__ == '__main__':
     import unittest
