@@ -137,3 +137,13 @@ TestMergeEchoTask 中的每日参数校验测试补齐 executor 并隔离真实�
 | TestEchoesRemainImages | 1 | passed |
 | TestWeeklyBossImages | 11 | passed |
 | TestNightmareNestTask | 19 | passed |
+
+## 发布核验结果
+
+- 代码提交：c53c6fd5；注释标签 v1.72.00 已推送 GitHub，codex/task-navigation-rollout 与原工作分支 codex/account-switch-foreground-bitblt 均已推送。
+- 原工作区已快进到该提交，原有历史文档删除、修改和未跟踪文档保留。
+- NAS stable/latest.json 实读版本为 1.72.00；更新包验证 392 个文件，用户配置保留检查通过。
+- ZIP：OKWW-Updates/stable/releases/v1.72.00/okww_update_v1.72.00.zip，37,847,479 字节。
+- SHA256：`2dfefd02eae461fefe56de4949aac1faf68413c54e71f3d023b2de10315339fe`，已读取 NAS 实际文件计算并与索引比对。
+- 发布时刻：2026-09-14 19:37:32（北京时间）。交接报告存入同一 NAS 的 `AI交接/2026-09-14-navigation-rollout-1.72.00.md`。
+- GitHub 安装器构建结果及另一台电脑实际安装/运行未核实；NAS 更新包已独立验证，不把标签推送当作安装器构建完成。
