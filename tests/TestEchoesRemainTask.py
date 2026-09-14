@@ -130,11 +130,25 @@ class TestEchoesRemainTask(unittest.TestCase):
         task._stage_name=Mock(return_value='荣城武神·浅梦')
         task._button=Mock(return_value=object());task._wait=Mock();task._open_event=Mock()
         task._open_quick=Mock()
+        task._click_transition=Mock()
         task._navigate()
-        self.assertEqual([c.args for c in task._click.call_args_list],[(.894,.912)])
+        task._click.assert_not_called()
+        self.assertEqual(task._click_transition.call_args.args[:2], ('单人挑战', 'single'))
         task._open_quick.assert_called_once()
         task._open_event.assert_not_called()
         self.assertEqual(task.last_result['stage'],'荣城武神·浅梦')
+
+    def test_navigation_from_event_uses_both_transitions(self):
+        task=self.make_task([])
+        task.next_frame=Mock(return_value=self.initial)
+        task._stage_page=Mock(side_effect=[None, '溺梦魔影·浅梦'])
+        task._open_event=Mock(); task._open_quick=Mock()
+        task._click_transition=Mock(return_value=self.initial)
+        task._navigate()
+        self.assertEqual([call.args[:2] for call in task._click_transition.call_args_list],
+                         [('前往','event_enter'), ('单人挑战','single')])
+        task._click.assert_not_called()
+        task._open_quick.assert_called_once()
 
     def test_proof_is_saved_synchronously_without_account_overlay(self):
         import tempfile,json
@@ -150,6 +164,36 @@ class TestEchoesRemainTask(unittest.TestCase):
 
 
 class TestQuickFormationRetry(unittest.TestCase):
+    def test_navigation_transitions_use_requested_target_and_retry(self):
+        for label, key in (('前往','event_enter'), ('单人挑战','single')):
+            for height in (1080,1440):
+                with self.subTest(label=label,height=height):
+                    task, clock, frames = self.make_task(height)
+                    source, target = task._formation_page, task._roster_page
+                    task._roster_page = Mock(side_effect=AssertionError('wrong target probe'))
+                    with patch('src.task.EchoesRemainTask.time.monotonic', side_effect=lambda: clock[0]):
+                        result = task._click_transition(label,key,source,target)
+                    self.assertIs(result, frames[2])
+                    self.assertEqual(task._click.call_count,2)
+                    self.assertEqual(task.last_result[f'{key}_entry_attempts'][-1]['result'],'entered')
+
+    def test_single_challenge_rejects_changed_stage_before_click(self):
+        task, clock, frames = self.make_task()
+        task._stage_page = Mock(return_value='其他关卡·浅梦')
+        with self.assertRaisesRegex(RuntimeError,'关卡已变化'):
+            task._single_button(frames[1], '溺梦魔影·浅梦')
+        task._click.assert_not_called()
+
+    def test_formation_requires_matching_stage(self):
+        task, _, frames = self.make_task()
+        for observed in ('溺梦魔影·浅梦','其他关卡·浅梦',None):
+            task.ocr = Mock(return_value=[SimpleNamespace(name=observed)] if observed else [])
+            if observed == '其他关卡·浅梦':
+                with self.assertRaisesRegex(RuntimeError,'不一致'):
+                    task._formation_for_stage(frames[1], '溺梦魔影·浅梦')
+            else:
+                self.assertEqual(task._formation_for_stage(frames[1], '溺梦魔影·浅梦'), bool(observed))
+
     def make_task(self, height=1440, enter_on=2):
         task = EchoesRemainTask.__new__(EchoesRemainTask)
         task.last_result = {}

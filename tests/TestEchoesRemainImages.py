@@ -16,7 +16,7 @@ class TestEchoesRemainImages(TaskTestCase):
     def test_pages_and_disjoint_buttons_at_four_resolutions(self):
         with tempfile.TemporaryDirectory() as folder:
             for height in (720,1080,1440,2160):
-                for name in ('event','stage1','stage2','formation','formation_failed','initial'):
+                for name in ('event','stage1','stage2','stage_failed','formation','formation_failed','initial'):
                     with self.subTest(height=height,page=name):
                         image=cv2.imread(f'tests/fixtures/echoes_remain/{name}.png')
                         frame=cv2.resize(image,(height*16//9,height))
@@ -26,6 +26,11 @@ class TestEchoesRemainImages(TaskTestCase):
                             self.assertIsNotNone(self.task._button(frame,self.task.LIST,self.task.name))
                         elif name.startswith('stage'):
                             self.assertIsNotNone(self.task._stage_name(frame))
+                            self.assertIsNotNone(self.task._stage_page(frame))
+                            button = self.task._single_button(frame, self.task._stage_name(frame))
+                            x, y = button.center()
+                            self.assertTrue(.81 < x/frame.shape[1] < .98)
+                            self.assertTrue(.87 < y/frame.shape[0] < .96)
                             self.assertIsNotNone(self.task._button(frame,self.task.SINGLE,'单人挑战'))
                             self.assertIsNone(self.task._button(frame,self.task.SINGLE,'多人匹配'))
                         elif name.startswith('formation'):
@@ -34,6 +39,8 @@ class TestEchoesRemainImages(TaskTestCase):
                             x, y = self.task._formation_page(frame).center()
                             self.assertTrue(.63 < x/frame.shape[1] < .76)
                             self.assertTrue(.89 < y/frame.shape[0] < .95)
+                            if name == 'formation_failed':
+                                self.assertTrue(self.task._formation_for_stage(frame, '溺梦魔影·浅梦'))
                         else:
                             self.assertTrue(self.task._roster_page(frame), (height,
                                 [b.name for b in self.task.ocr(.01,.02,.18,.11,frame=frame)],
