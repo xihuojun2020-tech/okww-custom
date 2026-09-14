@@ -88,3 +88,13 @@
 | TestWeeklyNavigation | 13 | 通过 |
 | TestWeeklyTransitions | 6 | 通过 |
 | TestWin32LoginInput | 13 | 通过 |
+
+## 发布校验
+
+- 代码提交 e8efa261、注释标签 v1.73.00 已推送 GitHub。
+- 并行提交 fab7e621 仅新增另一设备诊断报告，已通过合并提交8bfade16保留；与发布标签之间没有代码差异。原工作分支已快进并推送，未覆盖其余未提交文档。
+- NAS stable 索引实读版本1.73.00，更新时间2026-09-14 20:41:18（北京时间）。更新包392文件验证通过，用户配置保留检查通过。
+- 包路径：`OKWW-Updates/stable/releases/v1.73.00/okww_update_v1.73.00.zip`，37,849,895字节。
+- NAS实际ZIP SHA256：`3625ec7b9b4be50fb182c491d6f827773187922bb13afe21e316f2c917efb890`，与索引一致。
+- 本报告存放于同一NAS的 `AI交接/2026-09-14-navigation-rollout-1.73.00.md`，更新ZIP不包含文档。
+- 未核实GitHub安装器构建完成或使用端安装运行；已确认的是源码推送及NAS更新包发布。
