@@ -129,8 +129,10 @@ class TestEchoesRemainTask(unittest.TestCase):
         task.next_frame=Mock(return_value=self.initial)
         task._stage_name=Mock(return_value='荣城武神·浅梦')
         task._button=Mock(return_value=object());task._wait=Mock();task._open_event=Mock()
+        task._open_quick=Mock()
         task._navigate()
-        self.assertEqual([c.args for c in task._click.call_args_list],[(.894,.912),(.695,.919)])
+        self.assertEqual([c.args for c in task._click.call_args_list],[(.894,.912)])
+        task._open_quick.assert_called_once()
         task._open_event.assert_not_called()
         self.assertEqual(task.last_result['stage'],'荣城武神·浅梦')
 
@@ -145,6 +147,103 @@ class TestEchoesRemainTask(unittest.TestCase):
             self.assertFalse(saved[:round(len(saved)*.025)].any())
             self.assertFalse(saved[round(len(saved)*.975):].any())
             self.assertEqual(json.loads(path.with_suffix('.json').read_text())['phase'],'formation_verified')
+
+
+class TestQuickFormationRetry(unittest.TestCase):
+    def make_task(self, height=1440, enter_on=2):
+        task = EchoesRemainTask.__new__(EchoesRemainTask)
+        task.last_result = {}
+        task.info_set = Mock(); task.log_info = Mock(); task.log_warning = Mock()
+        task.screenshot = Mock(); task._click = Mock()
+        clock = [0.]
+        task.sleep = lambda seconds: clock.__setitem__(0, clock[0]+seconds)
+        width = height*16//9
+        frames = {n: np.full((height,width,3),n,np.uint8) for n in (1,2,3)}
+        task.next_frame = Mock(side_effect=lambda: frames[2 if task._click.call_count >= enter_on else 1])
+        button = Mock(); button.center.return_value = (.698*width,.92*height)
+        task._formation_page = lambda frame: button if frame[0,0,0] == 1 else None
+        task._roster_page = lambda frame: frame[0,0,0] == 2
+        return task, clock, frames
+
+    def test_ignored_first_click_retries_fresh_button_at_both_resolutions(self):
+        for height in (1080,1440):
+            with self.subTest(height=height):
+                task, clock, _ = self.make_task(height)
+                click_times = []
+                task._click.side_effect = lambda *args: click_times.append(clock[0])
+                with patch('src.task.EchoesRemainTask.time.monotonic', side_effect=lambda: clock[0]):
+                    task._open_quick()
+                self.assertGreaterEqual(click_times[0], .7)
+                self.assertEqual(task._click.call_count, 2)
+                for actual, expected in zip(task._click.call_args.args, (.698,.92)):
+                    self.assertAlmostEqual(actual, expected)
+                self.assertEqual([e['result'] for e in task.last_result['quick_entry_attempts']],
+                                 ['still_formation','entered'])
+                self.assertEqual(task.screenshot.call_count, 4)
+                for call in task.screenshot.call_args_list:
+                    saved = call.kwargs['frame']
+                    self.assertFalse(saved[:round(height*.025)].any())
+                    self.assertFalse(saved[round(height*.975):].any())
+
+    def test_three_missed_clicks_stop(self):
+        task, clock, _ = self.make_task(enter_on=99)
+        with patch('src.task.EchoesRemainTask.time.monotonic', side_effect=lambda: clock[0]):
+            with self.assertRaisesRegex(RuntimeError, '点击3次'):
+                task._open_quick()
+        self.assertEqual(task._click.call_count, 3)
+
+    def test_changed_page_is_never_clicked_again(self):
+        task, clock, frames = self.make_task()
+        task.next_frame.side_effect = lambda: frames[3 if task._click.call_count else 1]
+        with patch('src.task.EchoesRemainTask.time.monotonic', side_effect=lambda: clock[0]):
+            with self.assertRaisesRegex(RuntimeError, '页面已变化'):
+                task._open_quick()
+        self.assertEqual(task._click.call_count, 1)
+
+    def test_already_entered_does_not_click(self):
+        task, clock, _ = self.make_task(enter_on=0)
+        with patch('src.task.EchoesRemainTask.time.monotonic', side_effect=lambda: clock[0]):
+            task._open_quick()
+        task._click.assert_not_called()
+
+    def test_late_transition_before_retry_does_not_double_click(self):
+        task, clock, frames = self.make_task()
+        calls_after_click = [0]
+        def frame():
+            if task._click.call_count:
+                calls_after_click[0] += 1
+            # Nine timeout probes, one failure snapshot, then delayed transition.
+            return frames[2 if calls_after_click[0] >= 11 else 1]
+        task.next_frame.side_effect = frame
+        with patch('src.task.EchoesRemainTask.time.monotonic', side_effect=lambda: clock[0]):
+            task._open_quick()
+        self.assertEqual(task._click.call_count, 1)
+
+    def test_diagnostic_failure_does_not_break_successful_entry(self):
+        task, clock, _ = self.make_task(enter_on=1)
+        task.screenshot.side_effect = OSError('disk unavailable')
+        with patch('src.task.EchoesRemainTask.time.monotonic', side_effect=lambda: clock[0]):
+            task._open_quick()
+        self.assertEqual(task.last_result['quick_entry_attempts'][0]['result'], 'entered')
+        self.assertEqual(task.log_warning.call_count, 2)
+
+    def test_unstable_button_does_not_click(self):
+        task, clock, _ = self.make_task()
+        button = Mock()
+        button.center.side_effect = lambda: (1700 if task.next_frame.call_count % 2 else 1800, 1300)
+        task._formation_page = Mock(return_value=button)
+        with patch('src.task.EchoesRemainTask.time.monotonic', side_effect=lambda: clock[0]):
+            with self.assertRaisesRegex(RuntimeError, '未稳定'):
+                task._open_quick()
+        task._click.assert_not_called()
+
+    def test_user_stop_is_not_retried(self):
+        task, clock, _ = self.make_task()
+        task._click.side_effect = TaskDisabledException('stopped')
+        with patch('src.task.EchoesRemainTask.time.monotonic', side_effect=lambda: clock[0]):
+            with self.assertRaises(TaskDisabledException):
+                task._open_quick()
+        self.assertEqual(task._click.call_count, 1)
 
 
 if __name__=='__main__':unittest.main()

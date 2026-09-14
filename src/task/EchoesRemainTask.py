@@ -68,6 +68,75 @@ class EchoesRemainTask(WWOneTimeTask, BaseWWTask):
     def _formation_page(self, frame):
         return self._button(frame, self.QUICK, '快速编队')
 
+    def _quick_capture(self, name, frame):
+        try:
+            safe = frame.copy()
+            safe[:round(len(safe)*.025)] = 0
+            safe[round(len(safe)*.975):] = 0
+            self.screenshot(name, frame=safe)
+        except TaskDisabledException:
+            raise
+        except Exception as error:
+            self.log_warning(f'快速编队诊断截图失败：{type(error).__name__}')
+
+    def _open_quick(self):
+        self.info_set('活动阶段', '等待编队页面稳定并进入快速编队')
+        for attempt in range(1, 4):
+            previous, stable = None, 0
+
+            def ready(frame):
+                nonlocal previous, stable
+                if self._roster_page(frame):
+                    return ('roster', frame, None)
+                button = self._formation_page(frame)
+                if button is None:
+                    previous, stable = None, 0
+                    return None
+                x, y = button.center()
+                h, w = frame.shape[:2]
+                point = (x/w, y/h)
+                same = previous is not None and max(abs(a-b) for a, b in zip(previous, point)) <= .005
+                stable = stable + 1 if same else 1
+                previous = point
+                return ('formation', frame, point) if stable >= 3 else None
+
+            page, before, point = self._wait(ready, '编队页面未稳定或已变化，停止点击', timeout=4)
+            if page == 'roster':
+                if attempt > 1:
+                    self.last_result['quick_entry_attempts'][-1]['result'] = 'entered_late'
+                    self._quick_capture(f'echoes_quick_{attempt-1}_entered_late', before)
+                    self.log_info(f'快速编队延迟切页成功 attempt={attempt-1}，取消重试')
+                return
+            self._quick_capture(f'echoes_quick_{attempt}_before', before)
+            started = time.monotonic()
+            entry = {'attempt': attempt, 'at': time.time(), 'point': point}
+            self.last_result.setdefault('quick_entry_attempts', []).append(entry)
+            self.log_info(f'快速编队点击 attempt={attempt} time={entry["at"]:.3f} normalized={point}')
+            self._click(*point)
+            try:
+                after, = self._wait(lambda f: (f,) if self._roster_page(f) else None,
+                                    '快速编队点击后未切页', timeout=3)
+            except RuntimeError as error:
+                if str(error) != '快速编队点击后未切页':
+                    raise
+                after = self.next_frame()
+                if self._roster_page(after):
+                    entry['result'] = 'entered'
+                elif self._formation_page(after) is not None:
+                    entry['result'] = 'still_formation'
+                else:
+                    entry['result'] = 'page_changed'
+            else:
+                entry['result'] = 'entered'
+            entry['elapsed'] = round(time.monotonic()-started, 3)
+            self._quick_capture(f'echoes_quick_{attempt}_after_{entry["result"]}', after)
+            self.log_info(f'快速编队结果 attempt={attempt} result={entry["result"]} elapsed={entry["elapsed"]}')
+            if entry['result'] == 'entered':
+                return
+            if entry['result'] == 'page_changed':
+                raise RuntimeError('快速编队点击后页面已变化，停止重试')
+        raise RuntimeError('快速编队点击3次仍未进入，请查看点击日志和诊断截图')
+
     def _stage_name(self, frame):
         names = [compact(b.name) for b in self.ocr(*self.STAGE, frame=frame)]
         matches = [n for n in names if n.endswith(('浅梦', '深梦')) and len(n) > 2]
@@ -130,8 +199,7 @@ class EchoesRemainTask(WWOneTimeTask, BaseWWTask):
         self.last_result['stage'] = name
         self._click(.894, .912)
         self._wait(self._formation_page, '未进入活动编队页')
-        self._click(.695, .919)
-        self._wait(self._roster_page, '未进入快速编队页')
+        self._open_quick()
 
     def _observe_roster(self):
         frame = self.next_frame()
