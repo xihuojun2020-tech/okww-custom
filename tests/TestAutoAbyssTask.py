@@ -1358,6 +1358,8 @@ class TestAutoAbyssTask(unittest.TestCase):
         task._verify_record_identity = lambda _frame, _record: True
         task._relocate_record = lambda _frame, record: replace(record, slot=character_card_slots()[record.slot_index])
         task.click_relative = lambda x, y, **kwargs: clicks.append((x, y, kwargs["name"]))
+        task.next_frame = lambda: None
+        task.require_game_frame = lambda: np.zeros((720,1280,3), np.uint8)
         task._wait_selection_marker = lambda _record, expected: expected is False
         task.screenshot = lambda *_args, **_kwargs: None
 
