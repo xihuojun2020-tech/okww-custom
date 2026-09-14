@@ -92,3 +92,11 @@
 16 个测试文件共 217 项通过：UITransition 16、NavigationAdapter 11、EchoesRemainTask 24、EchoesRemainImages 1、AccountFeatureVerification 19、CharacterTrial 41、NightmareNestTask 19、CompletionEvidence 29、DailyActivityFlow 10、DailyTaskStatus 4、DailyReservePolicy 9、StaminaAccounting 13、DomainRecoveryLoop 11、ForgeryDomainLabels 2、DiagnosticStatusCard 7、DiagnosticDetailsUI 1。
 
 `validate_release --tag v1.71.00` 与 `git diff --check` 通过。图像测试进程正常退出但输出既有 Python GC ResourceWarning；没有将其写成实机验证成功。GitHub 推送和 NAS 包校验结果在实际完成后追加。
+
+## 发布完成记录
+
+- GitHub：提交 `ca3b4790`，分支 `codex/task-navigation-rollout` 与注释标签 `v1.71.00` 已推送；这里不将推送成功等同于 GitHub Actions 安装器已构建完成。
+- 更新包校验：391 个文件通过，配置保留验证通过；前版比较基线为 v1.70.07。
+- NAS：`\\192.168.3.173\羲火君 共享给我\AI诊断\OKWW-Updates\stable\latest.json` 已回读为 1.71.00，并重新读取 NAS ZIP 核对 SHA256。
+- ZIP SHA256：`49fe939a6f8dc0a7b9f64dca764b9d6de212afbd143090a611c125df5090aef2`。
+- 使用端交接文档位置：`\\192.168.3.173\羲火君 共享给我\AI诊断\AI交接\2026-09-14-navigation-rollout-1.71.00.md`。
