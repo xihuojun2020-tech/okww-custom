@@ -81,6 +81,11 @@ class Hiyuki(BaseChar):
                 self.click(interval=0.1)
             self.sleep(0.05)
 
+    def perform_solo(self):
+        if self.has_long_action() or self.has_long_action2():
+            return self.do_perform()
+        return self.perform_solo_basic()
+
     def perform_lib(self):
         start = time.time()
         timeout = self.FIELD_TIME_OUT

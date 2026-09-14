@@ -27,7 +27,7 @@ class Denia(BaseChar):
         start = time.time()
         while self.time_elapsed_accounting_for_freeze(start) < duration:
             self.cycle_start()
-            if self.time_elapsed_accounting_for_freeze(self.lib_2) < 10 and self.is_con_full():
+            if not self.is_solo and self.time_elapsed_accounting_for_freeze(self.lib_2) < 10 and self.is_con_full():
                 return self.switch_next_char()
             if self.click_resonance()[0]:
                 pass

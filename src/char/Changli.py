@@ -101,7 +101,7 @@ class Changli(BaseChar):
         return forte
 
     def liberation_and_heavy(self, con_less_than=-1, send_click=False, wait_if_cd_ready=0, timeout=5):
-        if con_less_than > 0:
+        if con_less_than > 0 and not self.is_solo:
             if self.get_current_con() > con_less_than:
                 return False
         self.logger.debug('click_liberation start')

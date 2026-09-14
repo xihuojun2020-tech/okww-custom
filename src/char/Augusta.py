@@ -111,6 +111,8 @@ class Augusta(BaseChar):
                 return char.auto_dodge(condition=self.flying)
 
     def on_combat_end(self, chars):
+        if self.is_solo:
+            return
         next_char = str((self.index + 1) % len(chars) + 1)
         self.logger.debug(f'Augusta on_combat_end {self.index} switch next char: {next_char}')
         self.task.send_key(next_char)

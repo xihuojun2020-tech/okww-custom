@@ -1,6 +1,7 @@
 import tempfile
 import os
 import unittest
+from types import SimpleNamespace
 
 from ok.util.config import Config
 from src.Labels import Labels
@@ -8,6 +9,7 @@ from src.char.CharFactory import get_char_by_pos
 from src.char.CustomCharLoader import clear_custom_char_cache, get_custom_char_file, load_custom_char_class, \
     remove_custom_char_code, save_custom_char_code, set_custom_char_enabled
 from src.char.Mortefi import Mortefi
+from src.char.Qingxiao import Qingxiao
 
 
 class TestCustomCharLoader(unittest.TestCase):
@@ -50,6 +52,27 @@ class Mortefi(BuiltinMortefi):
         set_custom_char_enabled(Mortefi, False)
 
         self.assertIs(load_custom_char_class(Mortefi), Mortefi)
+
+    def test_custom_rotation_keeps_precedence_over_inherited_solo(self):
+        code = '''from src.char.Qingxiao import Qingxiao as Builtin
+class Qingxiao(Builtin):
+    def do_perform(self):
+        self.used = 'custom'
+'''
+        for explicit_solo in (False, True):
+            with self.subTest(explicit_solo=explicit_solo):
+                source = code
+                if explicit_solo:
+                    source += "    def perform_solo(self):\n        self.used = 'solo'\n"
+                save_custom_char_code(Qingxiao, source)
+                task = SimpleNamespace(chars=[])
+                char = load_custom_char_class(Qingxiao)(task, 0)
+                task.chars = [char]
+                char.perform()
+                self.assertEqual(char.used, 'solo' if explicit_solo else 'custom')
+                task.chars.append(object())
+                char.perform()
+                self.assertEqual(char.used, 'custom')
 
     def test_same_second_same_size_source_reload_does_not_use_stale_bytecode(self):
         code = 'from src.char.BaseChar import BaseChar\nclass Mortefi(BaseChar):\n    marker = 1\n'

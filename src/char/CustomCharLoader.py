@@ -159,5 +159,10 @@ def _load_custom_char_class_from_file(char_cls, path):
     if not isinstance(custom_cls, type) or not issubclass(custom_cls, BaseChar):
         raise RuntimeError(f"{char_cls.__name__} must inherit BaseChar")
 
+    # Existing user rotations must not be bypassed by an inherited built-in
+    # solo method. A custom script can opt into a separate solo axis explicitly.
+    if 'do_perform' in custom_cls.__dict__ and 'perform_solo' not in custom_cls.__dict__:
+        custom_cls.perform_solo = custom_cls.do_perform
+
     _custom_class_cache[cache_key] = (stat.st_mtime_ns, stat.st_size, custom_cls)
     return custom_cls

@@ -25,7 +25,7 @@ class Linnai(BaseChar):
         """
         self.continues_normal_attack(1)
         self.click_echo(time_out=0)
-        if not self.is_con_full():
+        if self.is_solo or not self.is_con_full():
             self.click_liberation()
         if not self.is_mouse_forte_full():
             self.click_resonance()
@@ -54,7 +54,7 @@ class Linnai(BaseChar):
 
                 def click_second_resonance():
                     nonlocal second_kick
-                    if self.is_con_full():
+                    if not self.is_solo and self.is_con_full():
                         return True
                     second_kick = self.click_resonance()[0]
                     return second_kick
@@ -62,7 +62,7 @@ class Linnai(BaseChar):
                 self.task.wait_until(click_second_resonance, post_action=self.click, time_out=3)
                 if second_kick:
                     self.wait_after_resonance_kick()
-        if not self.is_con_full() and self.click_liberation():
+        if (self.is_solo or not self.is_con_full()) and self.click_liberation():
             self.task.wait_until(self.is_con_full, post_action=self.click_with_interval, time_out=1.2) 
         return True
 

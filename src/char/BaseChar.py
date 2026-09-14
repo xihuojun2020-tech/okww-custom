@@ -225,8 +225,30 @@ class BaseChar:
         intact so timing/logging behavior remains consistent.
         """
         self.last_perform = time.time()
-        self.do_perform()
+        if self.is_solo and (self.is_main_dps or self.is_sub_dps):
+            self.has_intro = False
+            self.has_sub_dps_intro = False
+            self.perform_solo()
+        else:
+            self.do_perform()
         self.logger.debug(f'set current char false {self.index}')
+
+    @property
+    def is_solo(self):
+        chars = getattr(self.task, 'chars', ())
+        return len(chars) == 1 and chars[0] is self
+
+    def perform_solo(self):
+        """Reuse the character's independent rotation; team-gated axes override this."""
+        return self.do_perform()
+
+    def perform_solo_basic(self):
+        """Bounded skill fallback for generic characters or an unknown stance."""
+        self.wait_down()
+        self.click_echo(time_out=0)
+        self.click_liberation(wait_if_cd_ready=0)
+        self.click_resonance(send_click=False, time_out=1.5)
+        self.continues_normal_attack(0.4)
 
     def wait_down(self, click=True):
         """等待角色从空中落下到地面。"""
@@ -285,6 +307,8 @@ class BaseChar:
         attack if needed, then switch. Character-specific files replace this
         method with their own bounded rotation logic.
         """
+        if self.is_solo:
+            return self.perform_solo_basic()
         self.wait_intro(1.2)
         self.click_echo(time_out=0)
         self.click_liberation()
@@ -501,6 +525,8 @@ class BaseChar:
             interval (float, optional): 按键按下和释放的间隔。默认为 -1 (使用默认值)。
             down_time (float, optional): 按键按下的持续时间。默认为 0.01。
         """
+        if self.is_solo and not getattr(self.task, 'use_liberation', True):
+            return False
         self._liberation_available = False
         self.task.send_key(self.get_liberation_key(), interval=interval, down_time=down_time, after_sleep=after_sleep)
 
@@ -606,7 +632,7 @@ class BaseChar:
         """
         if not self.task.use_liberation:
             return False
-        if con_less_than > 0:
+        if con_less_than > 0 and not self.is_solo:
             if self.get_current_con() > con_less_than:
                 return False
         self.logger.debug(f'click_liberation start')
@@ -825,6 +851,8 @@ class BaseChar:
         Returns:
             bool: 如果可用则返回 True。
         """
+        if self.is_solo and not getattr(self.task, 'use_liberation', True):
+            return False
         return self.available('liberation', check_color=check_color)
 
     def __str__(self):
@@ -976,6 +1004,8 @@ class BaseChar:
         return False
 
     def switch_other_char(self, allow_auto_combat=False):
+        if self.is_solo:
+            return
         target_index = (self.index + 1) % len(self.task.chars)
         for char in self.task.chars:
             if char and char.is_healer and char.index != self.index:

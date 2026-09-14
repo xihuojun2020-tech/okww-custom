@@ -47,6 +47,23 @@ class Aemeath(BaseChar):
                 self.lib2_cast_this_turn = True
         return liberated
 
+    def perform_solo(self):
+        self.enhance_e_cast_this_turn = False
+        self.lib2_cast_this_turn = False
+        self.must_cast_lib2_this_turn = False
+        if self.handle_heavy():
+            self.f_break()
+        elif self.lib():
+            pass
+        elif self.enhance_e_available():
+            if self.click_resonance(has_animation=True, send_click=True,
+                                    animation_min_duration=0.5, time_out=1.5)[0]:
+                self.record_enhance_e()
+        else:
+            self.click_resonance(send_click=False, time_out=1.5)
+            self.click_echo(time_out=0)
+        self.continues_normal_attack(0.3)
+
     def record_enhance_e(self):
         self.enhance_e_cast_this_turn = True
 

@@ -29,6 +29,16 @@ class Jinhsi(BaseChar):
         self.has_free_intro = False
         self.incarnation_cd = False
 
+    def perform_solo(self):
+        if self.incarnation:
+            self.handle_incarnation()
+        elif self.incarnation_cd or self.resonance_available():
+            self.handle_intro()
+        else:
+            self.click_liberation(wait_if_cd_ready=0)
+            self.click_echo(time_out=0)
+            self.continues_normal_attack(1.2)
+
     def get_switch_priority(self, current_char=None, has_intro=False, target_low_con=False):
         if has_intro or self.incarnation or self.incarnation_cd:
             self.logger.info(
@@ -84,6 +94,10 @@ class Jinhsi(BaseChar):
         start = time.time()
         while True:
             elapsed = time.time() - start
+            if self.is_solo and elapsed >= 3:
+                # No cooldown transition: don't invent an incarnation state.
+                self.continues_normal_attack(0.3)
+                return
             if self.has_cd('resonance'):
                 if 0.3 < elapsed < 1.5:
                     self.incarnation_cd = True

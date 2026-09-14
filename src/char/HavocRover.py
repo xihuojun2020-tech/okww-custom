@@ -50,6 +50,14 @@ class HavocRover(BaseChar):
     def do_perform(self):
         if self._in_zani_liber_insert_window():
             return self._do_zani_liber_insert()
+        self._perform_form_routine()
+        self.switch_next_char()
+
+    def perform_solo(self):
+        self._perform_form_routine()
+        self.continues_normal_attack(0.3)
+
+    def _perform_form_routine(self):
         self.init()
         if not self.has_intro:
             self.sleep(0.01)
@@ -64,7 +72,6 @@ class HavocRover(BaseChar):
             self.perform_wind_routine()
         else:
             self.perform_basic_routine()
-        self.switch_next_char()
 
     def _do_zani_liber_insert(self):
         """赞妮大招插入：E + Q + 大招，然后切回赞妮。"""
@@ -134,7 +141,9 @@ class HavocRover(BaseChar):
             return
         if not self.click_echo():
             self.click()
-        self.continues_normal_attack(1.1 - self.time_elapsed_accounting_for_freeze(self.last_switch_time))
+        duration = 1.1 if self.is_solo else max(
+            0, 1.1 - self.time_elapsed_accounting_for_freeze(self.last_switch_time))
+        self.continues_normal_attack(duration)
 
     def init_wind(self):
         from src.char.Cartethyia import Cartethyia

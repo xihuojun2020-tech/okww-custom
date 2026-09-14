@@ -54,6 +54,16 @@ class Lucilla(BaseChar):
 
         return False
 
+    def perform_solo(self):
+        if self.try_liberation():
+            return
+        if not self.energy_full():
+            self.charge_once()
+        else:
+            self.click_resonance(send_click=False, time_out=1)
+        self.click_echo(time_out=0)
+        self.continues_normal_attack(0.3)
+
     def charge_once(self):
         """攒 1 格回路能量: E 可用优先长按 E、否则蓄力重击.
         """

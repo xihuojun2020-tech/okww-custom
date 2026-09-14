@@ -17,7 +17,10 @@ class Jiyan(BaseChar):
                 self.normal_attack()
             return self.switch_next_char()
         i = 0
+        solo_started = time.monotonic()
         while not self.is_forte_full() and not self.is_con_full():
+            if self.is_solo and time.monotonic() - solo_started >= 2:
+                break
             if i % 4 == 0:
                 self.heavy_attack()
                 if self.resonance_available() or self.echo_available():

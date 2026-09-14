@@ -34,6 +34,8 @@ class Cartethyia(BaseChar):
         self.sword3_half_box = target_box
 
     def on_combat_end(self, chars):
+        if self.is_solo:
+            return
         if not self.is_cartethyia:
             next_char = str((self.index + 1) % len(chars) + 1)
             self.logger.debug(f'on_combat_end {self.index} switch next char: {next_char}')

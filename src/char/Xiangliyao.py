@@ -14,7 +14,10 @@ class Xiangliyao(BaseChar):
         if self.click_liberation():
             self.liberation_time = time.time()
         if self.still_in_liberation():
+            solo_started = time.monotonic()
             while not self.click_resonance(send_click=True)[0]:
+                if self.is_solo and time.monotonic() - solo_started >= 2:
+                    break
                 self.continues_normal_attack(1)
         elif self.echo_available():
             self.logger.debug('click_echo')

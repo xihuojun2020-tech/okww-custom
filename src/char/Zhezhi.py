@@ -53,7 +53,7 @@ class Zhezhi(BaseChar):
             self.send_resonance_key()
             if self.need_fast_perform() and time.time() - start > 1.1:
                 break
-            if self.is_con_full() and (self.char_carlotta is None or self.con_lock()):
+            if not self.is_solo and self.is_con_full() and (self.char_carlotta is None or self.con_lock()):
                 break
             if time.time() - start > 4:
                 break

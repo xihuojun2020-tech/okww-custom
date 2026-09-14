@@ -159,7 +159,7 @@ class Ciaccona(BaseChar):
         return forte
 
     def switch_next_char(self, *args, **kwargs):
-        if self.is_con_full():
+        if not self.is_solo and self.is_con_full():
             self.outrotime = time.time()
         return super().switch_next_char(*args, **kwargs)
 

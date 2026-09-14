@@ -280,6 +280,21 @@ class Camellya(BaseChar):
             ratio = ratio if ratio <= 1 else 1
         return ratio
 
+    def perform_solo(self):
+        self.click_liberation(wait_if_cd_ready=0)
+        try:
+            if self.ephemeral_ready() and self.is_con_full():
+                self.ephemeral_cast()
+                self.heavy_attack(4.6)
+            elif self.click_resonance()[0]:
+                self.continues_normal_attack(0.4)
+            else:
+                self.heavy_attack(1.1)
+                self.continues_normal_attack(0.3)
+        finally:
+            self.task.mouse_up()
+        self.click_echo(time_out=0)
+
     def heavy_attack(self, duration, check_combat=True, until_con_full=False):
         self.logger.info(f'start heavy_attack')
         self.last_forte = 0
