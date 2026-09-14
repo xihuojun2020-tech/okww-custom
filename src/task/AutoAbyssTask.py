@@ -948,28 +948,32 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
 
     def _return_from_result(self, tower_name, floor_number):
         """Retry only a freshly recognized result button, never an unknown/loading page."""
-        deadline = time.monotonic() + 30
-        attempts, last_page, next_click = 0, "未知或加载中", 0
-        while time.monotonic() < deadline:
-            self.next_frame()
-            frame = self.require_game_frame()
-            titles = self.ocr(.02, .03, .95, .20, frame=frame)
-            if all(exact_ocr_box(titles, name) is not None for name in TOWER_NAMES):
-                self.log_info(f"结算返回确认：{tower_name}第{floor_number}层，点击{attempts}次")
-                return
-            boxes = self.ocr(.20, .06, .82, .96, frame=frame)
-            state = abyss_result_state(boxes)
-            button = exact_ocr_box(boxes, "返回深塔")
-            last_page = "结算页" if state else "未知或加载中"
-            if state and button is not None and attempts < 3 and time.monotonic() >= next_click:
-                attempts += 1
-                self.log_info(f"结算返回点击：{tower_name}第{floor_number}层，第{attempts}次")
-                self.ensure_in_front()
-                self.click_box(button, after_sleep=.3)
-                next_click = time.monotonic() + 3
-            self.sleep(.4)
-        self.screenshot("abyss_result_return_failed")
-        raise RuntimeError(f"{tower_name}第{floor_number}层返回深塔失败：点击{attempts}次，最后页面={last_page}")
+        from src.runtime.navigation_status import observe_operation
+        with observe_operation(self, '深塔：结算返回', max_attempts=3, timeout=30) as progress:
+            deadline = time.monotonic() + 30
+            attempts, last_page, next_click = 0, "未知或加载中", 0
+            while time.monotonic() < deadline:
+                self.next_frame()
+                frame = self.require_game_frame()
+                titles = self.ocr(.02, .03, .95, .20, frame=frame)
+                if all(exact_ocr_box(titles, name) is not None for name in TOWER_NAMES):
+                    self.log_info(f"结算返回确认：{tower_name}第{floor_number}层，点击{attempts}次")
+                    return
+                boxes = self.ocr(.20, .06, .82, .96, frame=frame)
+                state = abyss_result_state(boxes)
+                button = exact_ocr_box(boxes, "返回深塔")
+                last_page = "结算页" if state else "未知或加载中"
+                progress(last_page, attempts)
+                if state and button is not None and attempts < 3 and time.monotonic() >= next_click:
+                    attempts += 1
+                    progress("等待返回三塔总览", attempts)
+                    self.log_info(f"结算返回点击：{tower_name}第{floor_number}层，第{attempts}次")
+                    self.ensure_in_front()
+                    self.click_box(button, after_sleep=.3)
+                    next_click = time.monotonic() + 3
+                self.sleep(.4)
+            self.screenshot("abyss_result_return_failed")
+            raise RuntimeError(f"{tower_name}第{floor_number}层返回深塔失败：点击{attempts}次，最后页面={last_page}")
 
     def _read_tower_star_totals(self):
         """Read n/12 from the overview as conflict-detection reference data."""
@@ -1807,16 +1811,17 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         return set(self._selected_records(records)) == set(plan.members)
 
     def _finish_team_formation(self):
-        complete = self._wait_exact_text_or_fail(
-            "完成", (0.76, 0.84, 0.97, 0.99), 6, "未找到快速编队页面右下角的完成按钮"
-        )
-        self.click_box(complete, after_sleep=1)
-        self._wait_exact_text_or_fail(
-            "编辑队伍", (0.01, 0.01, 0.22, 0.16), 8, "完成后未返回编辑队伍页"
-        )
-        self._wait_exact_text_or_fail(
-            "开启挑战", (0.75, 0.82, 0.98, 0.98), 4, "编辑队伍页面结构异常"
-        )
+        def destination(frame):
+            return (exact_ocr_box(self.ocr(.01, .01, .22, .16, frame=frame), '编辑队伍') is not None
+                    and exact_ocr_box(self.ocr(.75, .82, .98, .98, frame=frame), '开启挑战') is not None)
+        def source(frame):
+            if destination(frame):
+                return None
+            title = exact_ocr_box(self.ocr(.01, .01, .18, .14, frame=frame), '详情')
+            if title is None:
+                return None
+            return exact_ocr_box(self.ocr(.76, .84, .97, .99, frame=frame), '完成')
+        self.navigate_ui('深塔完成编队', source, destination, identity='abyss_formation')
         return True
 
     def _character_template_descriptors(self):

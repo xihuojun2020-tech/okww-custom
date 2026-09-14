@@ -260,3 +260,25 @@ def forgery_rows(frame, ocr, catalog):
         if len(groups)==1 and len({i['rarity'] for i in hits})>=2:
             found.append(dict(group_id=next(iter(groups)),top=top,bottom=bottom))
     return found
+
+
+def scrollbar_edges(frame, scene):
+    """Verified 16:9 resource/target scroll tracks; None means no positive evidence."""
+    geometry = {'inventory': (821, 90, 606), 'target': (1246, 98, 635)}
+    if scene not in geometry:
+        return None
+    height, width = frame.shape[:2]
+    if abs(width/height-16/9) > .02:
+        return None
+    image = cv2.resize(frame, (1280, 720))
+    x, top, bottom = geometry[scene]
+    strip = image[top:bottom+1, x-2:x+3]
+    rows = np.count_nonzero(np.min(strip, axis=2) > 150, axis=1) >= 2
+    padded = np.r_[False, rows, False].astype(np.int8)
+    starts = np.flatnonzero(np.diff(padded) == 1)
+    ends = np.flatnonzero(np.diff(padded) == -1)
+    spans = [(a,b) for a,b in zip(starts,ends) if b-a >= 12]
+    if len(spans) != 1:
+        return None
+    start, end = spans[0]
+    return (bool(start <= 5), bool(end >= bottom-top-5))

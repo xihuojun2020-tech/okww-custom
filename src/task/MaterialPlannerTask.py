@@ -17,7 +17,7 @@ from src.materials.model import (Settlement, calculate_gap, equivalent, is_satis
 from src.materials.repository import MaterialRepository
 from src.materials.vision import (normalize, parse_reward_frame, parse_inventory_frame,
                                   parse_target_frame, stitch_reward_pages, target_totals,
-                                  forgery_rows)
+                                  forgery_rows, scrollbar_edges)
 
 MATERIAL_PLANNER = 'Material Planner Enabled'
 
@@ -70,7 +70,8 @@ class MaterialPlannerTask(BaseWWTask):
     @staticmethod
     def _page_signature(page):
         cells = page.get('cells', [])
-        if page.get('scene') not in ('target', 'inventory', 'reward') or not cells:
+        if (page.get('scene') not in ('target', 'inventory', 'reward') or
+                not cells and not (page.get('scene') == 'target' and page.get('has_echo_boundary'))):
             raise RuntimeError('材料页面身份或可见条目未知，停止滚动')
         return (page['scene'], page.get('target_identity'),
                 tuple((cell.get('local_row'), cell.get('column'), cell.get('item_id'),
@@ -119,7 +120,13 @@ class MaterialPlannerTask(BaseWWTask):
             previous_signature = current_signature
             previous = current
             previous_view = current_view
-            if stable >= 2: break
+            if stable >= 2:
+                if identity[0] in ('inventory', 'target'):
+                    edges = scrollbar_edges(current, identity[0])
+                    if edges is None or not edges[0]:
+                        save(current, seq, 'top_scroll_failed')
+                        raise RuntimeError('材料列表未变化但滚动条未确认顶部，停止扫描')
+                break
         else:
             save(previous, seq, 'top_unconfirmed')
             raise RuntimeError('材料列表未确认顶部，停止扫描')
@@ -153,6 +160,11 @@ class MaterialPlannerTask(BaseWWTask):
                 save(current, seq, 'bottom_probe')
                 stable += 1
             if stable >= 2:
+                if identity[0] in ('inventory', 'target'):
+                    edges = scrollbar_edges(current, identity[0])
+                    if edges is None or not edges[1]:
+                        save(current, seq, 'bottom_scroll_failed')
+                        raise RuntimeError('材料列表未变化但滚动条未确认底部，停止扫描')
                 page['observations'].extend(observations)
                 page['at_bottom'] = True
                 return pages

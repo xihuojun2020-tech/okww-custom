@@ -14,7 +14,7 @@ class TestWeeklyNavigation(unittest.TestCase):
         task = weekly_tests.TestWeeklyBossFlow().task(remaining)
         task._executor = SimpleNamespace(method=SimpleNamespace(height=1440))
         for name in ('next_frame', 'sleep', 'scroll_relative', 'click_relative',
-                     'click_box', 'screenshot', '_select_first_target'):
+                     'click_box', 'screenshot', '_select_first_target', '_open_weekly_target'):
             setattr(task, name, Mock())
         return task
 
@@ -52,7 +52,8 @@ class TestWeeklyNavigation(unittest.TestCase):
         result = WeeklyBossTask._select_first_target(task)
         self.assertEqual(result, WEEKLY_BOSSES[2])
         self.assertEqual(task.next_frame.call_count, 5)
-        task.click_box.assert_called_once_with(rows[-1])
+        task._open_weekly_target.assert_called_once_with(WEEKLY_BOSSES[2])
+        task.click_box.assert_not_called()
 
     def test_unknown_first_title_never_selects_second(self):
         task = self.task()
@@ -83,12 +84,12 @@ class TestWeeklyNavigation(unittest.TestCase):
         task = self.task()
         task._confirm_list_top = Mock()
         task._ocr = Mock(return_value=self.rows())
-        task._wait_for.side_effect = WeeklyPageTimeout('详情页不一致')
+        task._open_weekly_target.side_effect = RuntimeError('详情页不一致')
         task._select_first_target = lambda: WeeklyBossTask._select_first_target(task)
-        with self.assertRaisesRegex(WeeklyPageTimeout, '详情页不一致'):
+        with self.assertRaisesRegex(RuntimeError, '详情页不一致'):
             task.run_weekly(WEEKLY_AUTO)
         task._enter_challenge.assert_not_called()
-        self.assertEqual(task._open_weekly_book.call_count, 2)
+        self.assertEqual(task._open_weekly_book.call_count, 1)
 
     def test_stuck_scroll_is_not_top(self):
         task = self.task()

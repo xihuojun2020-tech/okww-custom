@@ -3176,100 +3176,104 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         OCR 显示账号与目标不一致时不会立即终止，而是重新展开列表并再次选择；
         达到重试上限仍无法确认时才安全停止，避免误登录其他账号。
         """
-        last_current = None
-        try:
-            selector_expanded = bool(self._account_list_expanded())
-        except TaskDisabledException:
-            raise
-        except Exception:
-            selector_expanded = True
-        if not selector_expanded:
+        from src.runtime.navigation_status import observe_operation
+        with observe_operation(self, '切号：选择目标账号', max_attempts=max_retries,
+                               attempt_label='选择轮次') as progress:
+            last_current = None
             try:
-                last_current = self._detect_current_account_from_login()
+                selector_expanded = bool(self._account_list_expanded())
             except TaskDisabledException:
                 raise
-            except ValueError:
-                raise
             except Exception:
-                last_current = None
-            if self._same_account(last_current, target):
-                self.log_info('目标账号已处于选中状态，跳过重复点击')
-                return True
+                selector_expanded = True
+            if not selector_expanded:
+                try:
+                    last_current = self._detect_current_account_from_login()
+                except TaskDisabledException:
+                    raise
+                except ValueError:
+                    raise
+                except Exception:
+                    last_current = None
+                if self._same_account(last_current, target):
+                    self.log_info('目标账号已处于选中状态，跳过重复点击')
+                    return True
 
-        unconfirmed_deliveries = 0
-        for attempt in range(1, max_retries + 1):
-            self._account_switch_attempt = attempt
-            record_stage = getattr(self, '_evidence_stage', None)
-            if callable(record_stage):
-                record_stage('select_attempt', attempt=attempt)
-            self.sleep(1)
-            if unconfirmed_deliveries:
-                refresh = getattr(self, '_refresh_hwnd_window_snapshot', None)
-                if callable(refresh):
-                    refresh()
-            if not self._open_account_list():
-                self.log_warning(f'第 {attempt}/{max_retries} 次打开账号列表失败，准备重试')
-                continue
+            unconfirmed_deliveries = 0
+            for attempt in range(1, max_retries + 1):
+                progress("核对账号选择", attempt)
+                self._account_switch_attempt = attempt
+                record_stage = getattr(self, '_evidence_stage', None)
+                if callable(record_stage):
+                    record_stage('select_attempt', attempt=attempt)
+                self.sleep(1)
+                if unconfirmed_deliveries:
+                    refresh = getattr(self, '_refresh_hwnd_window_snapshot', None)
+                    if callable(refresh):
+                        refresh()
+                if not self._open_account_list():
+                    self.log_warning(f'第 {attempt}/{max_retries} 次打开账号列表失败，准备重试')
+                    continue
 
-            clicked = self.wait_until(
-                lambda: self._click_account_in_list(target),
-                time_out=10,
-                raise_if_not_found=False,
-            )
-            actual_mode = getattr(self, '_last_account_click_mode', None) or 'sendinput'
-            if not clicked:
-                self.log_warning(
-                    f'第 {attempt}/{max_retries} 次未能投递目标账号点击（方式={actual_mode}），准备重试'
+                clicked = self.wait_until(
+                    lambda: self._click_account_in_list(target),
+                    time_out=10,
+                    raise_if_not_found=False,
+                )
+                actual_mode = getattr(self, '_last_account_click_mode', None) or 'sendinput'
+                if not clicked:
+                    self.log_warning(
+                        f'第 {attempt}/{max_retries} 次未能投递目标账号点击（方式={actual_mode}），准备重试'
+                    )
+                    if callable(record_stage):
+                        record_stage(
+                            'selection_result', attempt=attempt,
+                            detail=f'{actual_mode}:delivered=False,confirmed=False,current=unknown',
+                        )
+                    continue
+
+                stable, last_current = self._wait_for_account_selection_stable(target)
+                self.log_info(
+                    f'账号点击投递后确认：目标 {profile_status_label(target)}，方式={actual_mode}，'
+                    f'当前显示账号：{profile_status_label(last_current) if last_current else "未识别"}'
                 )
                 if callable(record_stage):
                     record_stage(
                         'selection_result', attempt=attempt,
-                        detail=f'{actual_mode}:delivered=False,confirmed=False,current=unknown',
+                        detail=(
+                            f'{actual_mode}:delivered=True,confirmed={bool(stable)},'
+                            f'current={profile_status_label(last_current) if last_current else "unknown"}'
+                        ),
                     )
-                continue
+                if stable:
+                    self.log_info(f'确认已选择账号：{profile_status_label(target)}')
+                    return True
 
-            stable, last_current = self._wait_for_account_selection_stable(target)
-            self.log_info(
-                f'账号点击投递后确认：目标 {profile_status_label(target)}，方式={actual_mode}，'
-                f'当前显示账号：{profile_status_label(last_current) if last_current else "未识别"}'
-            )
-            if callable(record_stage):
-                record_stage(
-                    'selection_result', attempt=attempt,
-                    detail=(
-                        f'{actual_mode}:delivered=True,confirmed={bool(stable)},'
-                        f'current={profile_status_label(last_current) if last_current else "unknown"}'
-                    ),
-                )
-            if stable:
-                self.log_info(f'确认已选择账号：{profile_status_label(target)}')
-                return True
+                # A transient dropdown animation can prevent two consecutive
+                # collapsed samples even though OCR already identified the target.
+                # Do not reopen the list and risk changing a valid selection.
+                if self._same_account(last_current, target):
+                    self.log_warning(
+                        f'稳定检测超时但已匹配目标账号 {profile_status_label(target)}，'
+                        '跳过重新选择'
+                    )
+                    return True
 
-            # A transient dropdown animation can prevent two consecutive
-            # collapsed samples even though OCR already identified the target.
-            # Do not reopen the list and risk changing a valid selection.
-            if self._same_account(last_current, target):
+                unconfirmed_deliveries += 1
+
                 self.log_warning(
-                    f'稳定检测超时但已匹配目标账号 {profile_status_label(target)}，'
-                    '跳过重新选择'
+                    f'账号选择不一致（目标 {profile_status_label(target)}，当前 '
+                    f'{profile_status_label(last_current) if last_current else "未识别"}），'
+                    f'重新选择（{attempt}/{max_retries}）'
                 )
-                return True
 
-            unconfirmed_deliveries += 1
-
-            self.log_warning(
-                f'账号选择不一致（目标 {profile_status_label(target)}，当前 '
-                f'{profile_status_label(last_current) if last_current else "未识别"}），'
-                f'重新选择（{attempt}/{max_retries}）'
+            self.log_error(
+                f'账号选择在 {max_retries} 次重试后仍失败；'
+                f'目标 {profile_status_label(target)}，最后识别 '
+                f'{profile_status_label(last_current) if last_current else "未识别"}。为防止误登录已停止。'
             )
-
-        self.log_error(
-            f'账号选择在 {max_retries} 次重试后仍失败；'
-            f'目标 {profile_status_label(target)}，最后识别 '
-            f'{profile_status_label(last_current) if last_current else "未识别"}。为防止误登录已停止。'
-        )
-        self.screenshot('multi')
-        raise Exception(self.tr('Failed to switch account'))
+            self.screenshot('multi')
+            raise Exception(self.tr('Failed to switch account'))
 
     def _confirm_target_before_login(self, target, max_retries=3):
         """点登录前再次核对目标；不一致时重新选择，而不是立即停止。"""

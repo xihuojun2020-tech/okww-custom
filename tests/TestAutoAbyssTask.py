@@ -1649,16 +1649,19 @@ class TestAutoAbyssTask(unittest.TestCase):
         self.assertEqual(statuses[-1][0], "无法组成三人队")
 
     def test_finish_team_formation_clicks_only_complete(self):
-        requested = []
-        clicked = []
-        boxes = {text: SimpleNamespace(name=text) for text in ("完成", "编辑队伍", "开启挑战")}
-        task = AutoAbyssTask.__new__(AutoAbyssTask)
-        task._wait_exact_text_or_fail = lambda text, *_args: requested.append(text) or boxes[text]
-        task.click_box = lambda box, **_kwargs: clicked.append(box.name)
-
-        self.assertTrue(task._finish_team_formation())
-        self.assertEqual(requested, ["完成", "编辑队伍", "开启挑战"])
-        self.assertEqual(clicked, ["完成"])
+        from tests import TestNavigationAdapter as nav_tests
+        harness = nav_tests.TestNavigationAdapter()
+        self.addCleanup(harness.doCleanups)
+        task = harness.task()
+        button = harness.button
+        button.name = '完成'
+        def ocr(*args, **kwargs):
+            if task.click_relative.called:
+                return [SimpleNamespace(name=text) for text in ('编辑队伍', '开启挑战')]
+            return [SimpleNamespace(name='详情'), button]
+        task.ocr = ocr
+        self.assertTrue(AutoAbyssTask._finish_team_formation(task))
+        task.click_relative.assert_called_once_with(.7, .9)
 
     def test_clear_character_scan_only_removes_current_account(self):
         from src.task.AutoAbyssTask import AutoAbyssTask

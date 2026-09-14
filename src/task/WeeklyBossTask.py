@@ -155,9 +155,7 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
             self.log_info(f'周本自动首项：标题={title}，同行按钮={button is not None}；原文={[b.name for b in boxes]}')
             if signature is not None and signature == previous:
                 self._stage(f'自动首个周本：{boss.name}')
-                self.click_box(button)
-                self._wait_for(lambda: self._detail_ready(boss),
-                               f'进入的周本与所选目标不一致：{boss.name}，已停止')
+                self._open_weekly_target(boss)
                 return boss
             previous = signature
             self.sleep(.25)
@@ -205,8 +203,7 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
                 target = match_target_button(self._ocr(self.LIST), boss.name, self.height)
             if target:
                 self.log_info(f'周本目标与同行挑战按钮已确认：{boss.name}')
-                self.click_box(target)
-                self._wait_for(lambda: self._detail_ready(boss), '挑战页面与所选周本不一致')
+                self._open_weekly_target(boss)
             return target is not None, signature
 
         self.log_info('周本列表：滚轮回顶 x=0.92 y=0.50 count=30')
@@ -249,6 +246,21 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         if not progressed:
             raise WeeklyPageTimeout(f'未确认列表翻页，无法完成周本搜索：{boss.name}；未选择其他目标')
         raise WeeklyPageTimeout(f'滚动条分段搜索后仍未找到周本或对应挑战按钮：{boss.name}，未选择其他目标')
+
+    def _open_weekly_target(self, boss):
+        def destination(frame):
+            title = boss_title(self._text(self.TITLE, frame))
+            single = self._button(self.SINGLE, '单人挑战', frame)
+            if single and title != boss.name:
+                raise RuntimeError('挑战页面与所选周本不一致，停止输入')
+            return bool(single and title == boss.name)
+        def source(frame):
+            if destination(frame):
+                return None
+            return match_target_button(self._ocr(self.LIST, frame), boss.name, self.height)
+        # TransitionTimeout is intentionally not WeeklyPageTimeout: the outer
+        # list-search recovery cannot multiply this step's three-input budget.
+        self.navigate_ui('周本目标详情', source, destination, identity=boss.key)
 
     def _detail_ready(self, boss):
         frame = self.frame

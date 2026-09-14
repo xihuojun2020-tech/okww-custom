@@ -38,4 +38,21 @@ class TestTaskEntryTransitions(unittest.TestCase):
         AutoAbyssTask._open_adversity_tower(task)
         self.assertEqual(task.click_relative.call_count,2)
 
+    def test_abyss_formation_lost_click_then_verified_editor(self):
+        task=self.task();self.button.name='完成'
+        def ocr(*args,**kw):
+            if task.click_relative.call_count>=2:
+                return [SimpleNamespace(name=n) for n in ('编辑队伍','开启挑战')]
+            return [SimpleNamespace(name='详情'),self.button]
+        task.ocr=ocr
+        self.assertTrue(AutoAbyssTask._finish_team_formation(task))
+        self.assertEqual(task.click_relative.call_count,2)
+
+    def test_abyss_unknown_complete_button_does_not_click(self):
+        task=self.task();self.button.name='完成'
+        task.ocr=Mock(return_value=[self.button])
+        with self.assertRaises(TransitionTimeout):AutoAbyssTask._finish_team_formation(task)
+        task.click_relative.assert_not_called()
+
+
 if __name__=='__main__':unittest.main()

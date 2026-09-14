@@ -1493,8 +1493,47 @@ class BaseWWTask(BaseTask):
         self.send_key_up('alt')
         self.sleep(0.5)
 
+    BOOK_TABS = {'ningsu': '凝素领域', 'moni': '模拟领域', 'qiangdi': '讨伐强敌',
+                 'wuyin': '无音清剿', 'zhange': '战歌重奏', 'canxiang': '残象聚落'}
+
+    def _book_tab(self, name, frame):
+        titles = self.ocr(.02, .02, .32, .10, frame=frame)
+        if not any(str(box.name).strip() == '素材获取' for box in titles):
+            return None
+        boxes = self.ocr(.14, .12, .35, .90, frame=frame)
+        matches = [box for box in boxes if str(box.name).strip() == self.BOOK_TABS[name]]
+        return matches[0] if len(matches) == 1 else None
+
+    @staticmethod
+    def _book_tab_highlight(frame, button):
+        # Full guidebook fixtures: selected card is pale, other cards are dark.
+        height, width = frame.shape[:2]
+        center_y = (button.y + button.height/2)/height
+        crop = frame[max(0, round((center_y-.025)*height)):min(height, round((center_y+.025)*height)),
+                     round(.31*width):round(.335*width)]
+        if not crop.size:
+            return False
+        return float(np.mean(np.min(crop, axis=2) > 150)) >= .75
+
+    def _unselected_book_tab(self, name, frame):
+        button = self._book_tab(name, frame)
+        return button if button is not None and not self._book_tab_highlight(frame, button) else None
+
+    def _book_tab_ready(self, name, frame):
+        button = self._book_tab(name, frame)
+        if button is None or not self._book_tab_highlight(frame, button):
+            return False
+        controls = self.ocr(.82, .16, .97, .91, frame=frame)
+        return any(str(box.name).strip() in ('前往', '直接挑战', '挑战') for box in controls)
+
     def open_boss_book(self, name, after_sleep=2):
         self.log_info(f'open_boss_book {name}')
+        if self.game_lang == 'zh_CN' and name in self.BOOK_TABS:
+            self.navigate_ui('指南页签：'+self.BOOK_TABS[name],
+                lambda frame:self._unselected_book_tab(name, frame),
+                lambda frame:self._book_tab_ready(name, frame), identity=name)
+            return
+        # Other locales and the scrolled nightmare entry retain their legacy flow.
         x = 0.24
         self.sleep(0.4)
         if name == 'ningsu':

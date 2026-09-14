@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from src.task.WeeklyBossTask import WeeklyBossTask
 from src.task.weekly_boss import WEEKLY_BOSSES
 from src.task.ui_transition import TransitionTimeout
@@ -46,5 +46,24 @@ class TestWeeklyTransitions(unittest.TestCase):
         task.in_team_and_world=lambda **kw:task.click_relative.call_count>=2
         WeeklyBossTask._leave_settlement(task,False)
         self.assertEqual(task.click_relative.call_count,2)
+
+    def test_target_detail_retry_does_not_click_different_boss(self):
+        task=self.task();task.LIST=WeeklyBossTask.LIST
+        task._text=lambda *args:task._entry_boss.name
+        task._button=lambda *args:self.button if task.click_relative.call_count>=2 else None
+        task._ocr=Mock(return_value=[])
+        with patch(
+                'src.task.WeeklyBossTask.match_target_button',return_value=self.button):
+            WeeklyBossTask._open_weekly_target(task,task._entry_boss)
+        self.assertEqual(task.click_relative.call_count,2)
+
+    def test_wrong_detail_blocks_without_reopening_list(self):
+        task=self.task();task.LIST=WeeklyBossTask.LIST
+        task._text=Mock(return_value=WEEKLY_BOSSES[1].name)
+        task._button=Mock(return_value=self.button)
+        with self.assertRaisesRegex(RuntimeError,'不一致'):
+            WeeklyBossTask._open_weekly_target(task,task._entry_boss)
+        task.click_relative.assert_not_called()
+
 
 if __name__=='__main__':unittest.main()

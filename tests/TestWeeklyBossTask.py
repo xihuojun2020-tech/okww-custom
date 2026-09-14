@@ -358,6 +358,7 @@ class TestWeeklyBossBoundaries(unittest.TestCase):
         task.next_frame = Mock()
         task.sleep = Mock()
         task._stage = Mock()
+        task._open_weekly_target = Mock()
         return task
 
     def test_stable_zero_and_flicker_use_new_frames(self):
@@ -466,8 +467,8 @@ class TestWeeklyBossBoundaries(unittest.TestCase):
                          if task.click_relative.call_count >= 10 else [box('other title')])
         task._select_target(boss)
         self.assertEqual(task.click_relative.call_count, 10)
-        task.click_box.assert_called_once_with(button)
-        task._wait_for.assert_called_once()
+        task._open_weekly_target.assert_called_once_with(boss)
+        task.click_box.assert_not_called()
 
     def test_wheel_can_find_target_without_scrollbar(self):
         task = self.task()
@@ -482,7 +483,8 @@ class TestWeeklyBossBoundaries(unittest.TestCase):
                         [box(boss.name, 900, 600, 350), button],
                         [box(boss.name, 900, 600, 350), button]])
         task._select_target(boss)
-        task.click_box.assert_called_once_with(button)
+        task._open_weekly_target.assert_called_once_with(boss)
+        task.click_box.assert_not_called()
         task.click_relative.assert_not_called()
 
     def test_scrollbar_scan_with_progress_but_no_target_is_bounded(self):
