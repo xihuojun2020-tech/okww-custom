@@ -146,3 +146,10 @@ ok-ww.exe -t 1 -e
 *   [ok-oldking/OnnxOCR](https://github.com/ok-oldking/OnnxOCR)
 *   [zhiyiYo/PyQt-Fluent-Widgets](https://github.com/zhiyiYo/PyQt-Fluent-Widgets)
 *   [Toufool/AutoSplit](https://github.com/Toufool/AutoSplit)
+
+## 任务稳定性推广方案
+
+- [全任务适用清单与设计](docs/references/task-navigation-reliability.md)
+- [分批实施、测试与验收计划](docs/superpowers/plans/2026-09-14-task-navigation-reliability.md)
+
+以上为待实施方案，不代表全部任务已经接入稳定等待和重试。
