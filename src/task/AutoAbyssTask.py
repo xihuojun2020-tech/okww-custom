@@ -1715,6 +1715,33 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                 selected[identities.pop()] = replace(matches[0], screen_index=page_index, slot=slot)
         return selected
 
+    def _cancel_character_selection(self, record):
+        """A missed click may retry; an already cleared or unknown card must not."""
+        for attempt in range(1, 4):
+            self.next_frame()
+            frame = self.require_game_frame()
+            located = self._relocate_record(frame, record)
+            state = self._selection_marker_present(frame, located) if located is not None else None
+            self.log_info(f"取消复核：{record.display_name}，尝试={attempt}，选中={state}")
+            if state is False:
+                return
+            if state is not True:
+                self.screenshot("abyss_character_selection_clear_unknown", frame=frame)
+                raise RuntimeError(f"取消{record.display_name}前身份或选中状态不明确，停止输入")
+            x, y = character_safe_click(located.slot)
+            self._log_card_action("取消", located, frame, x, y, state)
+            self.click_relative(x, y, after_sleep=.35, name=f"取消{record.display_name}")
+            if self._wait_selection_marker(located, False):
+                self.log_info(f"取消结果：{record.display_name}，第{attempt}次点击后未选中已确认")
+                return
+        # Allow a delayed final response to settle without sending a fourth click.
+        self.next_frame()
+        frame = self.require_game_frame()
+        if self._selection_marker_present(frame, record) is False:
+            return
+        self.screenshot("abyss_character_selection_clear_failed", frame=frame)
+        raise RuntimeError(f"已有角色选择标记未能清除：{record.display_name}，已尝试3次；停止输入")
+
     def _clear_all_selection(self, records=None):
         records = list(records) if records is not None else self._selection_records_all_pages()
         selected = self._selected_records(records)
@@ -1727,18 +1754,8 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             if not selected:
                 return True
             identity, record = next(iter(selected.items()))
-            frame = self._show_character_page(record.screen_index)
-            record = self._relocate_record(frame, record)
-            if record is None or self._selection_marker_present(frame, record) is not True:
-                self.screenshot("abyss_character_selection_clear_failed", frame=frame)
-                raise Exception("取消前角色身份或选中状态复核失败")
-            x, y = character_safe_click(record.slot)
-            self._log_card_action("取消", record, frame, x, y, True)
-            self.click_relative(x, y, after_sleep=.35, name=f"取消{record.display_name}")
-            if not self._wait_selection_marker(record, False):
-                self.screenshot("abyss_character_selection_clear_failed")
-                raise Exception("已有角色选择标记未能清除")
-            self.log_info(f"取消结果：{record.display_name}，未选中已确认")
+            self._show_character_page(record.screen_index)
+            self._cancel_character_selection(record)
             refreshed = self._selected_records(records)
             if set(refreshed) != set(selected) - {identity}:
                 self.screenshot("abyss_selection_contradiction")
