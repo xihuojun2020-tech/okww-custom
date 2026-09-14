@@ -46,5 +46,5 @@ Files: tests/TestAllSoloRotations.py, tests/TestSoloTeam.py, docs/references/sol
 - [x] 新增真实调度覆盖、关键角色无变奏/满协奏/无技能时行为、大招关闭、无切人、成员变化及形态测试。
 - [x] 运行 TestAllSoloRotations、TestChar、TestSoloTeam、TestQingxiaoSolo、TestQingxiaoSoloImages、相关战斗回归。
 - [x] 文档记录通过/跳过/实机待验收边界；版本 1.70.00 校验。
-- [ ] 发布操作：显式暂存、提交、注释 v1.70.00、推送。
-- [ ] 打包与校验更新包，同步 \\192.168.3.173\羲火君 共享给我\AI诊断\OKWW-Updates；原工作树安全快进。
+- [x] 发布操作：显式暂存、提交、注释 v1.70.00、推送。
+- [x] 打包与校验更新包，同步 \\192.168.3.173\羲火君 共享给我\AI诊断\OKWW-Updates；原工作树安全快进。
