@@ -1507,7 +1507,7 @@ class BaseWWTask(BaseTask):
         self.send_key_up('alt')
         self.sleep(0.5)
 
-    BOOK_TABS = {'ningsu': '凝素领域', 'moni': '模拟领域', 'qiangdi': '讨伐强敌',
+    BOOK_TABS = {'target': '培养目标', 'ningsu': '凝素领域', 'moni': '模拟领域', 'qiangdi': '讨伐强敌',
                  'wuyin': '无音清剿', 'zhange': '战歌重奏', 'canxiang': '残象聚落'}
 
     def _book_tab(self, name, frame):
@@ -1524,7 +1524,7 @@ class BaseWWTask(BaseTask):
         height, width = frame.shape[:2]
         center_y = (button.y + button.height/2)/height
         crop = frame[max(0, round((center_y-.025)*height)):min(height, round((center_y+.025)*height)),
-                     round(.31*width):round(.335*width)]
+                     round(.27*width):round(.29*width)]
         if not crop.size:
             return False
         return float(np.mean(np.min(crop, axis=2) > 150)) >= .75

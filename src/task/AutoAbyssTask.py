@@ -1120,65 +1120,34 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         self.close_revive_popup()
         return False
 
+    def _abyss_environment_hint(self, frame):
+        return exact_ocr_box(self.ocr(.02,.18,.34,.58,frame=frame), '环境特性')
+
     def _click_start_challenge(self):
-        entry = {"button": None, "loading": False}
-
-        def read_floor_entry():
-            frame = self.frame
-            environment = self.ocr(
-                x=0.02,
-                y=0.18,
-                to_x=0.34,
-                to_y=0.58,
-                match="环境特性",
-                frame=frame,
-            )
-            if exact_ocr_box(environment, "环境特性") is not None:
-                entry["loading"] = True
-                return True
-            title = self.ocr(
-                x=0.01,
-                y=0.01,
-                to_x=0.22,
-                to_y=0.16,
-                match="编辑队伍",
-                frame=frame,
-            )
-            if exact_ocr_box(title, "编辑队伍") is None:
-                return False
-            buttons = self.ocr(
-                x=0.75,
-                y=0.82,
-                to_x=0.98,
-                to_y=0.98,
-                match="开启挑战",
-                frame=frame,
-            )
-            button = exact_ocr_box(buttons, "开启挑战")
-            if button is not None:
-                entry["button"] = button
-                return True
-            return False
-
-        if not self.wait_until(read_floor_entry, time_out=120, raise_if_not_found=False):
-            self.screenshot("abyss_floor_entry_not_recognized")
-            raise Exception("未识别到编辑队伍页或环境特性提示")
-        if entry["loading"]:
-            self.log_info("已进入关卡加载阶段，跳过重复点击开启挑战")
-            return False
-        button = entry["button"]
-        self.click_box(button, after_sleep=1)
-        return True
+        submitted = False
+        def source(frame):
+            if self._abyss_environment_hint(frame) is not None:
+                return None
+            titles = self.ocr(.01,.01,.22,.16,frame=frame)
+            if exact_ocr_box(titles, '编辑队伍') is None:
+                return None
+            return exact_ocr_box(self.ocr(.75,.82,.98,.98,frame=frame), '开启挑战')
+        def dispatch(button):
+            nonlocal submitted
+            submitted = True
+            self.click_box(button)
+        self.navigate_ui('深塔开启挑战', source, self._abyss_environment_hint,
+                         action=dispatch, identity='abyss_start', timeout=120,
+                         attempts=1, retry_after=120)
+        return submitted
 
     def _prepare_challenge_map(self, tower_name, floor_number):
-        self._set_status("进入挑战地图", f"{tower_name}第 {floor_number} 层正在加载")
-        self._wait_exact_text_or_fail(
-            "环境特性", (0.02, 0.18, 0.34, 0.58), 120, "加载后未识别到环境特性提示"
-        )
-        self.send_key("esc", after_sleep=1)
-        if not self.wait_in_team_and_world(time_out=120, raise_if_not_found=False):
-            self.screenshot("abyss_challenge_world_not_ready")
-            raise Exception("关闭环境特性提示后未进入挑战地图")
+        self._set_status('进入挑战地图', f'{tower_name}第 {floor_number} 层正在加载')
+        self.navigate_ui('深塔关闭环境特性', self._abyss_environment_hint,
+                         lambda frame:self.in_team_and_world(frame=frame) and
+                             self._abyss_environment_hint(frame) is None,
+                         action=lambda _:self.send_key('esc'),
+                         identity=(tower_name,floor_number), timeout=120)
 
     def _run_floor_combat(self, tower_name, floor_number):
         self._set_status("准备战斗", f"{tower_name}第 {floor_number} 层正在寻找开启挑战装置")
@@ -1295,16 +1264,52 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         boxes = self.ocr(match=list(TOWER_NAMES))
         return all(exact_ocr_box(boxes, tower_name) is not None for tower_name in TOWER_NAMES)
 
+    def _formation_back_page(self, frame):
+        titles = self.ocr(.01, .01, .95, .20, frame=frame)
+        if all(exact_ocr_box(titles, name) is not None for name in TOWER_NAMES):
+            return 3
+        if (exact_ocr_box(self.ocr(.054,.035,.18,.10,frame=frame), '详情') is not None and
+                exact_ocr_box(self.ocr(.76,.84,.97,.99,frame=frame), '完成') is not None):
+            return 0
+        if (exact_ocr_box(titles, '编辑队伍') is not None and
+                exact_ocr_box(self.ocr(.75,.82,.98,.98,frame=frame), '开启挑战') is not None):
+            return 1
+        if any(exact_ocr_box(titles,name) is not None for name in TOWER_NAMES):
+            if exact_ocr_box(self.ocr(frame=frame,match='挑战目标'), '挑战目标') is not None:
+                return 2
+        return None
+
     def _return_from_team_to_towers(self):
-        """Back out of quick formation/edit/floor pages without guessing a click target."""
-        for _attempt in range(4):
-            if self._tower_screen_visible():
+        """Only leave positively identified pages; four inputs across the entire return."""
+        deadline = time.monotonic()+18
+        inputs = 0
+        def back(_):
+            nonlocal inputs
+            if inputs >= 4:
+                raise RuntimeError('深塔返回按键预算已耗尽')
+            inputs += 1
+            self.send_key('esc')
+        for _ in range(4):
+            self.next_frame()
+            page = self._formation_back_page(self.require_game_frame())
+            if page == 3:
                 return True
-            self.send_key("esc", after_sleep=1)
-            if self.wait_until(self._tower_screen_visible, time_out=2, raise_if_not_found=False):
-                return True
-        self.screenshot("abyss_return_to_towers_failed")
-        raise Exception("体力或角色不足后未能安全返回三塔页面")
+            if page is None:
+                raise RuntimeError('深塔返回页面未知，未发送Esc')
+            def destination(frame):
+                current = self._formation_back_page(frame)
+                if current is not None and current < page:
+                    raise RuntimeError('深塔返回页面方向异常，停止输入')
+                return current is not None and current > page
+            remaining = deadline-time.monotonic()
+            if remaining <= 0 or inputs >= 4:
+                break
+            self.navigate_ui('深塔逐页返回',
+                lambda frame:self._formation_back_page(frame) == page,
+                destination, identity=page, action=back,
+                timeout=remaining, attempts=min(3,4-inputs))
+        self.screenshot('abyss_return_to_towers_failed')
+        raise RuntimeError('体力或角色不足后未能安全返回三塔页面')
 
     def _enter_and_scan_characters(self, tower_name, tower_states):
         floor_index = first_available_floor(tower_states)
@@ -1480,7 +1485,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         return box
 
     def _wait_character_list_page(self):
-        self._wait_exact_text_or_fail("详情", (0.01, 0.01, 0.18, 0.14), 8, "未进入快速编队角色列表")
+        self._wait_exact_text_or_fail("详情", (0.054, 0.035, 0.18, 0.10), 8, "未进入快速编队角色列表")
         self._wait_exact_text_or_fail("完成", (0.76, 0.84, 0.97, 0.99), 6, "角色列表页面结构异常")
 
     def _wait_stable_character_frame(self):
@@ -1817,7 +1822,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         def source(frame):
             if destination(frame):
                 return None
-            title = exact_ocr_box(self.ocr(.01, .01, .18, .14, frame=frame), '详情')
+            title = exact_ocr_box(self.ocr(.054, .035, .18, .10, frame=frame), '详情')
             if title is None:
                 return None
             return exact_ocr_box(self.ocr(.76, .84, .97, .99, frame=frame), '完成')

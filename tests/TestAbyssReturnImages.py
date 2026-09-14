@@ -14,6 +14,9 @@ class TestAbyssReturnImages(TaskTestCase):
         for height in (720, 1080, 1440, 2160):
             for name in ('failed','overview','roster'):
                 frame = cv2.resize(cv2.imread(str(folder/(name+'.png'))), (height*16//9,height))
+                self.assertEqual(self.task._formation_back_page(frame),
+                                 {'failed': None, 'overview': 3, 'roster': 0}[name],
+                                 (name, height))
                 if name == 'failed':
                     boxes = self.task.ocr(.20,.06,.82,.96,frame=frame)
                     self.assertIsNotNone(exact_ocr_box(boxes,'返回深塔'))

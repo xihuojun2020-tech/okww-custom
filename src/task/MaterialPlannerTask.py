@@ -180,10 +180,7 @@ class MaterialPlannerTask(BaseWWTask):
     def scan_target(self):
         self.guard()
         self.openF2Book('gray_book_boss')
-        button = self.wait_ocr(.1,.12,.34,.23, match=re.compile('培养目标'), time_out=5)
-        if not button:
-            raise RuntimeError('未找到培养目标入口')
-        self.click(button[0], after_sleep=1)
+        self.open_boss_book('target')
         record = str(uuid4())
         pages = self._pages(parse_target_frame, record, (780,230,1970,1000), (.88,.65), stop_at_echo=True)
         groups, errors = target_totals(pages)
@@ -212,11 +209,26 @@ class MaterialPlannerTask(BaseWWTask):
         self.ensure_main()
         return groups
 
+    def _inventory_page(self, frame):
+        text = ''.join(str(box.name).strip() for box in self.ocr(.025,.035,.32,.10,frame=frame))
+        match = re.fullmatch(r'(武器|声骸|资源)\s*\d+\s*/\s*\d+', text)
+        return match[1] if match else None
+
+    def _open_resource_inventory(self):
+        key = self.key_config.get('Bag Key', 'b')
+        self.navigate_ui('材料规划打开背包',
+                         lambda frame:self.in_team_and_world(frame=frame),
+                         self._inventory_page,
+                         action=lambda _:self.send_key(key), identity='bag')
+        self.navigate_ui('材料规划资源页',
+                         lambda frame:self._inventory_page(frame) in ('武器', '声骸'),
+                         lambda frame:self._inventory_page(frame) == '资源',
+                         action=lambda _:self.click_relative(.04,.55), identity='resource_inventory')
+
     def scan_inventory(self):
         self.guard()
         self.ensure_main()
-        self.send_key('b', after_sleep=2)
-        self.click_relative(.04,.55, after_sleep=1)
+        self._open_resource_inventory()
         record = str(uuid4())
         pages = self._pages(parse_inventory_frame, record, (180,140,1290,968), (.50,.65))
         stock = {}; conflicts = []

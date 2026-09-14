@@ -2,7 +2,7 @@
 import unittest
 from dataclasses import replace
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 import cv2
 import numpy as np
@@ -658,73 +658,21 @@ class TestAutoAbyssTask(unittest.TestCase):
         self.assertEqual(events[-2:], [("click", "返回深塔"), "tower_screen"])
 
     def test_click_start_challenge_skips_click_when_floor_is_already_loading(self):
-        frame = object()
-        events = []
-
-        class OfflineAbyssTask(AutoAbyssTask):
-            @property
-            def frame(self):
-                return frame
-
-        task = OfflineAbyssTask.__new__(OfflineAbyssTask)
-
-        def ocr(**kwargs):
-            self.assertIs(kwargs.get("frame"), frame)
-            if kwargs.get("match") == "环境特性":
-                self.assertEqual(
-                    (kwargs["x"], kwargs["y"], kwargs["to_x"], kwargs["to_y"]),
-                    (0.02, 0.18, 0.34, 0.58),
-                )
-                return [SimpleNamespace(name="环境特性")]
-            return []
-
-        task.ocr = ocr
-        task.wait_until = lambda condition, **_kwargs: condition()
-        task.click_box = lambda *_args, **_kwargs: events.append("click")
-        task.log_info = lambda message, **_kwargs: events.append(message)
-        task.screenshot = lambda *_args, **_kwargs: events.append("screenshot")
-
-        self.assertFalse(task._click_start_challenge())
-        self.assertNotIn("click", events)
-        self.assertNotIn("screenshot", events)
+        from tests import TestNavigationAdapter as nav_tests
+        harness=nav_tests.TestNavigationAdapter();self.addCleanup(harness.doCleanups)
+        task=harness.task();task._abyss_environment_hint=lambda frame:harness.button
+        task.click_box=Mock()
+        self.assertFalse(AutoAbyssTask._click_start_challenge(task))
+        task.click_box.assert_not_called()
 
     def test_click_start_challenge_requires_team_page_and_clicks_its_button(self):
-        frame = object()
-        events = []
-        calls = []
-        button = SimpleNamespace(name="开启挑战")
-
-        class OfflineAbyssTask(AutoAbyssTask):
-            @property
-            def frame(self):
-                return frame
-
-        task = OfflineAbyssTask.__new__(OfflineAbyssTask)
-
-        def ocr(**kwargs):
-            self.assertIs(kwargs.get("frame"), frame)
-            calls.append((kwargs.get("match"), kwargs["x"], kwargs["y"], kwargs["to_x"], kwargs["to_y"]))
-            if kwargs.get("match") == "编辑队伍":
-                return [SimpleNamespace(name="编辑队伍")]
-            if kwargs.get("match") == "开启挑战":
-                return [button]
-            return []
-
-        task.ocr = ocr
-        task.wait_until = lambda condition, **_kwargs: condition()
-        task.click_box = lambda box, **_kwargs: events.append(box)
-        task.screenshot = lambda *_args, **_kwargs: events.append("screenshot")
-
-        self.assertTrue(task._click_start_challenge())
-        self.assertEqual(events, [button])
-        self.assertEqual(
-            calls,
-            [
-                ("环境特性", 0.02, 0.18, 0.34, 0.58),
-                ("编辑队伍", 0.01, 0.01, 0.22, 0.16),
-                ("开启挑战", 0.75, 0.82, 0.98, 0.98),
-            ],
-        )
+        from tests import TestNavigationAdapter as nav_tests
+        harness=nav_tests.TestNavigationAdapter();self.addCleanup(harness.doCleanups)
+        task=harness.task();button=harness.button;button.name='开启挑战';task.click_box=Mock()
+        task._abyss_environment_hint=lambda frame:button if task.click_box.called else None
+        task.ocr=lambda *args,**kwargs:[SimpleNamespace(name='编辑队伍'),button]
+        self.assertTrue(AutoAbyssTask._click_start_challenge(task))
+        task.click_box.assert_called_once_with(button)
 
     def test_fight_selected_tower_failure_returns_and_skips_remaining_floors(self):
         events = []
