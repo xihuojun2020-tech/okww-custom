@@ -1434,6 +1434,16 @@
             "id": 284,
             "name": "char_jingran",
             "supercategory": ""
+        },
+        {
+            "id": 285,
+            "name": "solo_player_health",
+            "supercategory": ""
+        },
+        {
+            "id": 286,
+            "name": "solo_party_health",
+            "supercategory": ""
         }
     ],
     "images": [
@@ -2690,6 +2700,12 @@
             "height": 2160,
             "id": 290,
             "width": 3840
+        },
+        {
+            "id": 291,
+            "file_name": "images/solo_hud.png",
+            "width": 2560,
+            "height": 1440
         }
     ],
     "annotations": [
@@ -6747,6 +6763,32 @@
             "category_id": 284,
             "id": 450,
             "image_id": 290,
+            "iscrowd": 0
+        },
+        {
+            "id": 451,
+            "image_id": 291,
+            "category_id": 285,
+            "bbox": [
+                1050,
+                1366,
+                20,
+                29
+            ],
+            "area": 580,
+            "iscrowd": 0
+        },
+        {
+            "id": 452,
+            "image_id": 291,
+            "category_id": 286,
+            "bbox": [
+                2335,
+                378,
+                114,
+                14
+            ],
+            "area": 1596,
             "iscrowd": 0
         }
     ]

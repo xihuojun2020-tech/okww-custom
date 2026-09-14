@@ -614,6 +614,11 @@ class BaseCombatTask(CombatCheck):
             free_intro (bool, optional): 是否强制认为拥有入场技 (通常在协奏值满时)。默认为 False。
             target_low_con (bool, optional): 是否优先切换到协奏值较低的角色。默认为 False。
         """
+        if len(self.chars) == 1 and self.chars[0] is current_char:
+            # Solo rotations still yield an attack, without checking intro or
+            # sending a switch key for a teammate that does not exist.
+            current_char.continues_normal_attack(0.2)
+            return
         has_intro = free_intro
         current_con = 0
         self.update_lib_portrait_icon()

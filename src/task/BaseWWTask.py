@@ -1269,10 +1269,36 @@ class BaseWWTask(BaseTask):
         if exist_count == 2 or exist_count == 1:
             self.logged_in = True
             return True, current, exist_count + 1
-        else:
-            return False, -1, exist_count + 1
+        if exist_count == 0 and self._single_member_hud(frame):
+            self.logged_in = True
+            return True, 0, 1
+        return False, -1, exist_count + 1
 
-        # Function to check if a component forms a ring
+    def _single_member_hud(self, frame=None):
+        # Missing switch digits alone also occurs in menus/loading/cutscenes.
+        # Require the player's health HUD and exactly the first party health bar.
+        # The companion portrait in story quests has no party health bar.
+        kwargs = dict(frame=frame, threshold=0.75, use_gray_scale=True,
+                      horizontal_variance=0.002, vertical_variance=0.002)
+        if not self.find_one('solo_player_health', **kwargs):
+            return False
+        kwargs['mask_function'] = self._party_health_outline_mask
+        if not self.find_one('solo_party_health', **kwargs):
+            return False
+        for top in (0.382, 0.506):
+            box = self.box_of_screen(0.907, top, 0.962, top + 0.023)
+            if self.find_one('solo_party_health', box=box, **kwargs):
+                return False
+        return True
+
+    @staticmethod
+    def _party_health_outline_mask(template):
+        # Match the frame, not the fill: current HP may be anywhere from 0–100%.
+        height, width = template.shape[:2]
+        mask = np.full((height, width), 255, dtype=np.uint8)
+        mask[round(height * 0.25):round(height * 0.85),
+             round(width * 0.05):round(width * 0.95)] = 0
+        return mask
 
     def find_monthly_card(self):
         return self.find_one('monthly_card', threshold=0.65, horizontal_variance=0.05, vertical_variance=0.05)
