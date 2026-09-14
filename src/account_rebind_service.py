@@ -57,6 +57,16 @@ def _values_for_field(value: Any) -> list[str]:
     return [text] if text else []
 
 
+def rebind_confirmation_identity(account: Mapping[str, Any]) -> str:
+    """Use a stored identity, or the exact label of an identity-less legacy profile."""
+    for key in ('masked_phone', 'phone', 'game_feature_code',
+                'alternate_login_name', 'nickname', 'account_aliases'):
+        values = _values_for_field(account.get(key))
+        if values:
+            return values[0]
+    return str(account.get('display_name') or '').strip()
+
+
 class AccountRebindService:
     """Rebind identity through one explicit confirmation and repository CAS."""
 
@@ -128,6 +138,10 @@ class AccountRebindService:
         for value in current.values():
             for item in _values_for_field(value):
                 known.update(identity_candidates(item))
+        if not current:
+            # Legacy imports can store identity only in display_name. Accept
+            # the complete captured label, never its short-name fragments.
+            known.add(normalize_identity(record.account.get('display_name')))
         if not observed or observed not in known:
             raise AccountIdentityError("当前身份确认失败，请重新载入账号后再试")
         preview = self.preview(profile_id, new_identity)
@@ -157,4 +171,4 @@ class AccountRebindService:
             raise AccountIdentityError(sanitize_error(exc)) from exc
 
 
-__all__ = ["AccountRebindService", "RebindPreview"]
+__all__ = ["AccountRebindService", "RebindPreview", "rebind_confirmation_identity"]

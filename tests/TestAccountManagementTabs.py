@@ -23,6 +23,40 @@ from tests.fixture_support import make_account_environment
 
 
 class TestAccountManagementTabs(unittest.TestCase):
+    def test_feature_binding_legacy_profile_persists_after_confirmation(self):
+        from concurrent.futures import Future
+        from src.account_repository import ProfileEditScope
+        from ok import og
+        for answer in (QMessageBox.Yes, QMessageBox.No):
+            with self.subTest(answer=answer), tempfile.TemporaryDirectory() as temp:
+                env = make_account_environment(Path(temp), names=('A3',))
+                original = env.repository.list_profiles()[0]
+                legacy = {'display_name': 'A3-test-199****0003', 'account_aliases': [],
+                          'alternate_login_name': '', 'schedule': {}, 'extensions': {}}
+                env.repository.publish_profile(
+                    ProfileEditScope(original.profile_id, original.revision),
+                    {'account': legacy, 'tasks': dict(original.tasks)}, source='test legacy import')
+                tab = AccountConfigTab(AccountConfigEditor(env.repository))
+                future = Future()
+                future.set_result({'code': '123456789'})
+                try:
+                    with patch.object(og, 'executor', None, create=True), \
+                            patch('src.evidence.service.request_capture', return_value=future), \
+                            patch.object(QMessageBox, 'question', return_value=answer) as question:
+                        tab.read_feature_code()
+                        self._drain_until(lambda: not tab.operation.busy)
+                    self.assertIn('123456789', question.call_args.args[2])
+                    # Reload from a new repository to verify publication, not the UI draft.
+                    from src.account_repository import AccountRepository
+                    saved = AccountRepository(Path(temp)).load_profile(original.profile_id)
+                    self.assertEqual(saved.account.get('game_feature_code'),
+                                     '123456789' if answer == QMessageBox.Yes else None)
+                    if answer == QMessageBox.Yes:
+                        self.assertIn('特征码已绑定', tab.status.text())
+                        self.assertEqual(tab.feature_code_label.text(), '123456789')
+                finally:
+                    tab.deleteLater()
+
     def test_reminders_are_dirty_and_persist_without_changing_tasks_or_sequence_order(self):
         from src.account_reminders import get_reminders
         from src.recording_policy import RECORDING_PAGES

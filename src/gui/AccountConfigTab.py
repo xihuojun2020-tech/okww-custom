@@ -16,7 +16,7 @@ from qfluentwidgets import BodyLabel, FluentIcon
 from ok.gui.widget.CustomTab import CustomTab
 from src.account_config_editor import AccountConfigEditor, ProfileDraft, sanitize_error
 from src.account_display import account_display_label
-from src.account_rebind_service import AccountRebindService
+from src.account_rebind_service import AccountRebindService, rebind_confirmation_identity
 from src.account_repository import AccountRepository, AccountRepositoryError, get_default_repository
 from src.account_field_metadata import (account_field_metadata, localize_account_value,
                                         restore_account_value, normalize_weekday)
@@ -742,10 +742,11 @@ class AccountConfigTab(CustomTab):
                 label = account_display_label(submitted.account)
                 answer = QMessageBox.question(self.view, '确认特征码绑定',
                     f'已连续读取到一致的特征码。确认当前游戏账号是 {label} 并绑定？\n'
+                    f'特征码：{value["code"]}\n'
                     '该绑定将用于初露峥嵘首尾核验，旧身份会备份。')
                 if answer != QMessageBox.StandardButton.Yes:
                     return
-                current = submitted.account.get('masked_phone') or submitted.account.get('phone') or submitted.account.get('game_feature_code')
+                current = rebind_confirmation_identity(submitted.account)
                 self._submit_action(partial(self.rebind_service.rebind, submitted.profile_id,
                     current_identity=current, new_identity=requested, confirmed=True,
                     expected_revision=submitted.revision), '特征码已绑定',
@@ -788,7 +789,8 @@ class AccountConfigTab(CustomTab):
             submitted = copy.deepcopy(self.draft)
             profile_id = submitted.profile_id
             return self._submit_action(
-                partial(self.rebind_service.rebind, profile_id, current_identity=current,
+                partial(self.rebind_service.rebind, profile_id,
+                        current_identity=rebind_confirmation_identity(submitted.account),
                         new_identity=copy.deepcopy(requested), confirmed=True, expected_revision=submitted.revision),
                 '身份重新绑定成功，已创建旧身份备份', lambda result: AccountChangeEvent(
                     'identity_rebound', str(getattr(result, 'revision', '')), (profile_id,), ()),

@@ -3,7 +3,7 @@ import unittest
 from types import SimpleNamespace
 
 from src.account_config_editor import AccountConfigEditor, LockedProfileField
-from src.account_rebind_service import AccountRebindService
+from src.account_rebind_service import AccountRebindService, rebind_confirmation_identity
 from src.account_identity import AccountIdentityError
 
 
@@ -43,6 +43,31 @@ class FakeRepository:
 
 
 class TestAccountIdentityProtection(unittest.TestCase):
+    def test_legacy_label_binding_requires_exact_identity_confirmation(self):
+        repository = FakeRepository()
+        repository.records['a3'] = {
+            'display_name': 'A3-test-199****0008', 'account_aliases': [],
+            'alternate_login_name': '', 'task_config': {},
+        }
+        service = AccountRebindService(repository)
+        requested = {'game_feature_code': '123456789'}
+        for identity in (None, 'A3', '199****0008', 'A3-wrong'):
+            with self.subTest(identity=identity), self.assertRaises(AccountIdentityError):
+                service.rebind('a3', identity, requested, confirmed=True)
+        identity = rebind_confirmation_identity(repository.records['a3'])
+        with self.assertRaises(AccountIdentityError):
+            service.rebind('a3', identity, requested, confirmed=False)
+        result = service.rebind('a3', identity, requested, confirmed=True, expected_revision='r1')
+        self.assertEqual(result.account['game_feature_code'], '123456789')
+        self.assertEqual(len(repository.backups), 1)
+
+    def test_explicit_identity_does_not_accept_label_fallback(self):
+        repository = FakeRepository()
+        with self.assertRaises(AccountIdentityError):
+            AccountRebindService(repository).rebind(
+                'a3', 'A3', {'game_feature_code': '123456789'}, confirmed=True)
+        self.assertEqual(rebind_confirmation_identity(repository.records['a3']), '199****0008')
+
     def setUp(self):
         self.repository = FakeRepository()
         self.editor = AccountConfigEditor(self.repository)
