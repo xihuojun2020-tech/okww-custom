@@ -11,6 +11,17 @@ from src.task.BaseCombatTask import BaseCombatTask
 
 
 class TestTaskNavigationClassification(unittest.TestCase):
+    def test_echoes_remain_uses_executable_activity_card(self):
+        from src.task.EchoesRemainTask import EchoesRemainTask
+        from src.gui.activity_catalog import PLACEHOLDERS, PLACEHOLDER_REVISION, activity_revision
+        from src.activity_catalog import ACTIVITIES
+        task = object.__new__(EchoesRemainTask)
+        self.assertEqual(classify_task(task), TASKS)
+        self.assertEqual(task_category(task), '活动')
+        self.assertFalse(any(key == 'echoes_remain' or title == ACTIVITIES['echoes_remain']
+                             for key, title in PLACEHOLDERS))
+        self.assertGreater(activity_revision(task), PLACEHOLDER_REVISION)
+
     def test_event_is_permanent_and_switch_test_has_clear_owner(self):
         self.assertEqual(EventTask.activity_category, "常驻活动")
         self.assertEqual(classify_task(object.__new__(EventTask)), TASKS)
