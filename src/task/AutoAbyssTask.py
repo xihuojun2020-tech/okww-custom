@@ -905,14 +905,18 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
 
     def _open_adversity_tower(self):
         self.log_info("识别中间深境区并点击同卡片的前往")
-        title = self._wait_content_deep_area()
-        travel = self.wait_ocr(match="前往", time_out=5, raise_if_not_found=True)
-        button = match_travel_button(title, travel)
-        if button is None:
-            self.screenshot("abyss_travel_button_not_found")
-            raise Exception("未找到深境区同卡片的前往按钮")
-        self.click_box(button, after_sleep=2)
-        self._wait_for_tower_screen()
+        def destination(frame):
+            titles = self.ocr(.02, .03, .95, .20, frame=frame)
+            return all(exact_ocr_box(titles, name) is not None for name in TOWER_NAMES)
+        def source(frame):
+            if destination(frame):
+                return None
+            titles = self.ocr(.35, .15, .65, .45, frame=frame)
+            title = exact_ocr_box(titles, '深境区')
+            if title is None:
+                return None
+            return match_travel_button(title, self.ocr(frame=frame, match='前往'))
+        self.navigate_ui('进入深境区', source, destination, identity='adversity_tower')
 
     def _select_adversity_tower(self):
         """Explicitly choose 逆境深塔 before using its 深境区 card."""

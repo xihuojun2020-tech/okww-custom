@@ -13,6 +13,7 @@ from src.task.character_trial import (
 from src.task.CharacterTrialTask import CharacterTrialTask, TrialTimeout, TrialFinished
 from src.task.BaseCombatTask import BaseCombatTask, CharDeadException, CombatStateUnknown
 from src.task.WWOneTimeTask import WWOneTimeTask
+from src.task.ui_transition import TransitionTimeout
 from src.char.BaseChar import BaseChar
 from src.char.TrialGenericChar import TrialGenericChar
 from src.gui.navigation_sections import classify_task, task_category
@@ -91,8 +92,22 @@ class TestTrialRecognition(unittest.TestCase):
 
 
 class TestTrialFlow(unittest.TestCase):
+    def prepare_navigation(self, task):
+        clock=[0.]
+        task._executor._ui_transition_deadline=None
+        task._executor._last_frame_time=0
+        task._executor.current_task=task
+        task._executor.method=SimpleNamespace(width=2560,height=1440)
+        task._executor.device_manager.hwnd_window=SimpleNamespace(hwnd=1,exists=True)
+        task.require_game_frame=lambda:np.zeros((1440,2560,3),np.uint8)
+        task.sleep=lambda seconds:clock.__setitem__(0,clock[0]+seconds)
+        timer=patch('src.task.CharacterTrialTask.time.monotonic',side_effect=lambda:clock[0])
+        timer.start();self.addCleanup(timer.stop)
+        return clock
+
     def exit_task(self):
         t=self.task();clock=[0.0]
+        self.prepare_navigation(t)
         t.next_frame=Mock();t._page=Mock(return_value=False)
         t._button=Mock(return_value=True);t.click=Mock()
         t._trial_point=Mock(return_value=(1682,904))
@@ -117,7 +132,7 @@ class TestTrialFlow(unittest.TestCase):
     def test_exit_persistent_dialog_is_bounded(self):
         t,clock=self.exit_task()
         with patch('src.task.CharacterTrialTask.time.monotonic',side_effect=lambda:clock[0]):
-            with self.assertRaisesRegex(TrialTimeout,'3次后仍未关闭'):t._confirm_trial_exit()
+            with self.assertRaisesRegex(TransitionTimeout,'点击次数'):t._confirm_trial_exit()
         self.assertEqual(t.click.call_count,3)
 
     def test_exit_stop_prevents_input(self):
@@ -155,7 +170,7 @@ class TestTrialFlow(unittest.TestCase):
             self.assertEqual(t._intro(),next_button and close)
 
     def activity_task(self):
-        t=self.task()
+        t=self.task(); self.prepare_navigation(t)
         t.next_frame=Mock(); t._page=Mock(return_value=False)
         t._ocr=Mock(return_value=[box('初露峥嵘',100,200)])
         t.click=Mock(); t._wait=Mock()
@@ -166,10 +181,10 @@ class TestTrialFlow(unittest.TestCase):
         first,second=box('初露峥嵘',100,200),box('初露峥嵘',100,300)
         t._ocr.side_effect=lambda region: ([first if t.next_frame.call_count==1 else second]
                                          if region==t.LIST else [box('若梦仍有回声')])
-        t._wait.side_effect=[TrialTimeout('ignored click'),True]
+        t._page.side_effect=lambda:t.click.call_count>=2
         t._select_activity()
-        self.assertEqual(t.next_frame.call_count,2)
-        self.assertEqual([c.args[0] for c in t.click.call_args_list],[first,second])
+        self.assertGreaterEqual(t.next_frame.call_count,7)
+        self.assertEqual([c.args[0] for c in t.click.call_args_list],[second,second])
 
     def test_activity_already_open_never_clicks(self):
         t=self.activity_task();t._page.return_value=True
@@ -177,20 +192,20 @@ class TestTrialFlow(unittest.TestCase):
 
     def test_activity_failure_is_bounded(self):
         t=self.activity_task();t._wait.side_effect=TrialTimeout('wrong page')
-        with self.assertRaisesRegex(TrialTimeout,'3次后仍未切换'):t._select_activity()
+        with self.assertRaisesRegex(TransitionTimeout,'点击次数'):t._select_activity()
         self.assertEqual(t.click.call_count,3)
 
     def test_activity_disappeared_never_reuses_old_target(self):
         t=self.activity_task();t._wait.side_effect=TrialTimeout('wrong page')
         t._ocr.side_effect=lambda region: [box('初露峥嵘')] if t.next_frame.call_count==1 else []
-        with self.assertRaisesRegex(TrialTimeout,'入口消失'):t._select_activity()
-        self.assertEqual(t.click.call_count,1)
+        with self.assertRaises(TransitionTimeout):t._select_activity()
+        t.click.assert_not_called()
 
     def test_activity_stop_and_capture_errors_do_not_retry(self):
         for error in (TaskDisabledException(),RuntimeError('capture failed')):
-            t=self.activity_task();t._wait.side_effect=error
+            t=self.activity_task();t.next_frame.side_effect=error
             with self.assertRaises(type(error)):t._select_activity()
-            self.assertEqual(t.click.call_count,1)
+            t.click.assert_not_called()
 
     def test_open_routes_visible_entry_to_confirmed_selection(self):
         t=self.activity_task();t._button=Mock(return_value=True);t._select_activity=Mock()
@@ -324,6 +339,7 @@ class TestTrialFlow(unittest.TestCase):
         t._button=Mock(return_value=box('前往试用'))
         t.click=Mock(side_effect=lambda *a:self.assertEqual(t.chars,[]))
         t._wait_trial_map=Mock()
+        t.navigate_ui=Mock(side_effect=lambda *a,**kw:self.assertEqual(t.chars,[]))
         t._enter(); self.assertEqual(t.chars,[])
 
     def test_fallback_only_replaces_basechar(self):

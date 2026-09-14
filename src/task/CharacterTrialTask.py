@@ -204,24 +204,9 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
         raise TrialTimeout('活动列表中未找到初露峥嵘')
 
     def _select_activity(self):
-        for attempt in range(1, 4):
-            self.next_frame()
-            if self._page():
-                return
-            target = self._activity_title(self._ocr(self.LIST))
-            if target is None:
-                raise TrialTimeout('初露峥嵘入口消失或不唯一，停止点击')
-            self.log_info(f'初露峥嵘入口点击 {attempt}/3：({target.x}, {target.y})')
-            self.click(target, after_sleep=.3)
-            try:
-                self._wait(self._page, '初露峥嵘入口点击后未切换', timeout=3)
-                return
-            except TrialTimeout:
-                self._guard()
-                title = [b.name for b in self._ocr(self.TITLE)]
-                buttons = [b.name for b in self._ocr(self.ENTER)]
-                self.log_warning(f'初露峥嵘入口未确认 {attempt}/3：标题={title}，按钮={buttons}')
-        raise TrialTimeout('初露峥嵘入口点击3次后仍未切换，请检查输入响应及故障截图')
+        self.navigate_ui('初露峥嵘活动入口',
+            lambda frame: self._activity_title(self._ocr(self.LIST)) if not self._page() else None,
+            lambda frame: self._page(), identity='character_trial', action=lambda button:self.click(button))
 
     def _trial_point(self, x, y):
         if abs(self.width / self.height - 16 / 9) > .02:
@@ -266,6 +251,7 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
         self.info_set('试用角色', f'第{target+1}人（按配置位置）')
         self.log_info(f'固定位置选择：第{target+1}人 ({x},{y})')
         self._state()  # Unknown rewards never mean already complete.
+        self._selected_trial = target
 
     def _state(self):
         return self._stable(lambda: reward_state(self._ocr(self.REWARD)) if self._page() else None,
@@ -303,10 +289,10 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
         self._trial_map = True
         self._done_count = 0
         self._last_done_frame = -1
-        button = self._button(self.ENTER, '前往试用')
-        if button is None:
-            raise RuntimeError('未找到前往试用按钮')
-        self.click(button)
+        self.navigate_ui('初露峥嵘进入试用',
+            lambda frame: self._button(self.ENTER, '前往试用') if self._page() else None,
+            lambda frame: self._intro() or self._map_ready(),
+            identity=getattr(self, '_selected_trial', None), timeout=60)
         self._wait_trial_map()
 
     def _wait_trial_map(self):
@@ -447,34 +433,21 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
         self._stage('确认离开模拟领域')
         self._stable(lambda: True if self._button(self.HINT, '离开模拟领域') else None,
                      '未确认离开模拟领域，不执行退出')
-        self.send_key('esc')
-        self._wait(lambda: self._button(self.EXIT_MESSAGE, '确认离开') and
-                   self._button(self.EXIT_CONFIRM, '确认'), '未找到确认离开弹窗')
+        def dialog(frame):
+            return self._button(self.EXIT_MESSAGE, '确认离开') and self._button(self.EXIT_CONFIRM, '确认')
+        self.navigate_ui('初露峥嵘打开离开弹窗',
+            lambda frame: self._button(self.HINT, '离开模拟领域') if not dialog(frame) else None,
+            dialog, action=lambda _: self.send_key('esc'), identity='trial_exit')
         self._confirm_trial_exit()
         self._trial_map = False
         self.reset_to_false('trial returned to activity')
 
     def _confirm_trial_exit(self):
-        deadline = time.monotonic() + 60
-        attempts = 0
-        last_click = float('-inf')
-        while time.monotonic() < deadline:
-            self.next_frame()
-            if self._page():
-                return
-            if (self._button(self.EXIT_MESSAGE, '确认离开') and
-                    self._button(self.EXIT_CONFIRM, '确认') and
-                    time.monotonic() - last_click >= 3):
-                if attempts >= 3:
-                    raise TrialTimeout('离开弹窗确认点击3次后仍未关闭')
-                attempts += 1
-                # Center of the right black button, never the dialog message.
-                x, y = self._trial_point(.657, .628)
-                self.log_info(f'点击离开弹窗右侧确认 {attempts}/3：({x}, {y})')
-                self.click(x, y, after_sleep=.3)
-                last_click = time.monotonic()
-            self.sleep(.2)
-        raise TrialTimeout('确认离开后未返回初露峥嵘活动页')
+        self.navigate_ui('初露峥嵘确认离开',
+            lambda frame: self._button(self.EXIT_CONFIRM, '确认')
+                if not self._page() and self._button(self.EXIT_MESSAGE, '确认离开') else None,
+            lambda frame: self._page(), identity='trial_exit', timeout=60,
+            action=lambda _: self.click(*self._trial_point(.657, .628), after_sleep=.3))
 
     def _process(self, target):
         self._select(target)

@@ -635,12 +635,16 @@ class TaskExecutor:
                         continue
                 if is_trigger_task:
                     if task.run():
+                        self._navigation_epoch = getattr(self, "_navigation_epoch", 0) + 1
+                        self._navigation_owner = task
                         self.trigger_task_index = -1
                         self.reset_scene()
                         continue
                 else:
                     prevent_sleeping(True)
                     logger.debug(f'start running onetime_task {task.name}')
+                    self._navigation_epoch = getattr(self, '_navigation_epoch', 0) + 1
+                    self._navigation_owner = task
                     task.run()
                     logger.debug(f'end running onetime_task {task.name}')
                     prevent_sleeping(False)

@@ -419,15 +419,15 @@ class TestWeeklyBossBoundaries(unittest.TestCase):
         with self.assertRaises(FrameUnavailable):
             task._fight_and_claim(60)
 
-    def test_retry_button_is_clicked_once_if_loading_times_out(self):
-        from src.task.WeeklyBossTask import WeeklyPageTimeout
+    def test_settlement_navigation_propagates_unknown_result(self):
+        from src.task.ui_transition import TransitionTimeout
         task = self.task()
-        exit_button, retry_button = object(), object()
-        task._wait_for = Mock(side_effect=[(exit_button, retry_button), True, WeeklyPageTimeout('loading')])
+        task.navigate_ui = Mock(side_effect=TransitionTimeout('loading'))
         task.click_box = Mock()
-        with self.assertRaises(WeeklyPageTimeout):
+        with self.assertRaises(TransitionTimeout):
             task._leave_settlement(True)
-        task.click_box.assert_called_once_with(retry_button)
+        task.navigate_ui.assert_called_once()
+        task.click_box.assert_not_called()
 
     def test_no_weekly_target_does_not_fall_back_to_first(self):
         task = self.task()

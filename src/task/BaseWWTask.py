@@ -55,7 +55,7 @@ class BaseWWTask(BaseTask):
     map_zoomed = False
 
     def navigate_ui(self, step, source, target, *, action=None, timeout=18,
-                    attempts=3, identity=None, loading=None, screenshots=False, on_status=None):
+                    attempts=3, identity=None, loading=None, screenshots=False, on_status=None, retry_after=3):
         """Opt-in semantic navigation, never used to repeat resource submissions."""
         from src.task.ui_transition import (Observation, PageState, Policy, present,
                                             run_transition, TransitionContextChanged)
@@ -144,7 +144,7 @@ class BaseWWTask(BaseTask):
         executor._ui_transition_deadline = deadline
         try:
             frame, machine = run_transition(capture, observe, act, guard,
-                policy=Policy(timeout=timeout, max_attempts=attempts), deadline=deadline,
+                policy=Policy(timeout=timeout, max_attempts=attempts, retry_after=retry_after), deadline=deadline,
                 notify=notify, clock=time.monotonic, pause=self.sleep, cancel_errors=(TaskDisabledException,))
             return frame
         finally:
@@ -1169,47 +1169,73 @@ class BaseWWTask(BaseTask):
             if CONNECT_BUTTON_RE.fullmatch((getattr(box, 'name', '') or '').strip())
         ]
 
-    def wait_login(self):
+    def wait_login(self, background=False):
+        click = self._login_click_tick if background else self._click_login_box
         if not self.logged_in:
             if self.in_team_and_world():
+                if background and getattr(self, '_ui_tick_navigation', None):
+                    from src.task.trigger_navigation import advance
+                    pending = self._ui_tick_navigation
+                    advance(self, pending['step'], lambda frame:None, lambda frame:True, identity=None)
+                if background and getattr(self, '_login_monthly_seen', False):
+                    self.set_check_monthly_card(next_day=True)
+                    self._login_monthly_seen = False
                 self.logged_in = True
                 return True
-            self.handle_monthly_card()
+            if background:
+                if self.find_monthly_card() is not None:
+                    button = self.box_of_screen(.49,.88,.51,.90, name='monthly_card')
+                    click(button, after_sleep=0)
+                    return False
+            else:
+                self.handle_monthly_card()
             if login_close := self.find_one('login_close', horizontal_variance=0.15, vertical_variance=0.1):
-                if self._click_login_box(login_close, after_sleep=1):
+                if click(login_close, after_sleep=1):
                     self.log_info('关闭公告!')
                 return False
             texts = self.ocr(log=self.debug)
+            if background and getattr(self, '_login_monthly_seen', False):
+                dismiss = self.find_boxes(texts, match=[re.compile(r'^点击空白处继续$'),
+                                                      re.compile(r'^點擊空白處繼續$')])
+                if dismiss:
+                    click(dismiss, after_sleep=0)
+                    return False
 
             login_box = self.box_of_screen(0.3, 0.3, 0.7, 0.7, hcenter=True, vcenter=True)
             connect_box = self.box_of_screen(0.25, 0.75, 0.75, 1.0)
             if connect := self._connect_button_boxes(texts, boundary=connect_box):
-                if self._click_login_box(connect, after_sleep=1):
+                if click(connect, after_sleep=1):
                     self.log_info('点击连接入口!')
                 return False
             if login := self._exact_login_button_boxes(texts, boundary=login_box):
                 if not self.find_boxes(texts, boundary=login_box, match="+86"):
                     # the game may be auto logging in with saved credentials, wait and
                     # confirm the login button is still there before clicking (#1356)
+                    if background:
+                        click(login, after_sleep=1)
+                        return False
                     self.sleep(LOGIN_CLICK_SETTLE_TIME)
                     texts = self.ocr(log=self.debug)
                     login = self._exact_login_button_boxes(texts, boundary=login_box)
                     if login and not self.find_boxes(texts, boundary=login_box,
                                                      match="+86"):
-                        if self._click_login_box(login, after_sleep=1):
+                        if click(login, after_sleep=1):
                             self.log_info('点击登录按钮!')
                 return False
             if agree := self.find_boxes(texts, boundary=login_box, match="同意"):
                 self.log_debug(f'found agree {agree}')
                 if self.find_boxes(texts, boundary=login_box, match=re.compile("隐私")):
-                    if self._click_login_box(agree, after_sleep=1):
+                    if click(agree, after_sleep=1):
                         self.log_info('点击同意按钮!')
                 return False
             if self.find_boxes(texts, match=[re.compile("游戏即将重启"), re.compile('遊戲即將重啟')]):
-                self.sleep(0.2)
+                if not background:
+                    self.sleep(0.2)
                 self.log_info('游戏更新成功, 游戏即将重启')
-                self._click_login_box(
+                click(
                     self.find_boxes(texts, match=["确认", "確認"]), after_sleep=60)
+                if background:
+                    return False  # Reconnection is observed on later ticks, never a 90s sleep.
                 result = self.start_device()
                 self.log_info(f'start_device end {result}')
                 self.sleep(30)
@@ -1217,15 +1243,39 @@ class BaseWWTask(BaseTask):
 
             if start := self.find_boxes(texts, boundary='bottom_right', match=["开始游戏", re.compile("进入游戏")]):
                 if not self.find_boxes(texts, boundary='bottom_right', match=LOGIN_TEXTS):
-                    if self._click_login_box(start, after_sleep=0):
+                    if click(start, after_sleep=0):
                         self.log_info(f'点击开始游戏! {start}')
                     return False
             if switch_login := self.find_one(Labels.switch_account, vertical_variance=0.1, threshold=0.7):
                 if boxes := self.find_boxes(texts, boundary=self.box_of_screen(0.37, 0.63, 0.63, 0.99, hcenter=True,
                                                                                vcenter=True)):
                     self.log_info(f'wait_login {switch_login} {boxes}')
-                    self._click_login_box(switch_login, after_sleep=3)
+                    click(switch_login, after_sleep=3)
                     return False
+
+    def _login_click_tick(self, target, after_sleep=0):
+        from src.task.trigger_navigation import advance
+        box = target[0] if isinstance(target, (list, tuple)) and target else target
+        if box is None:
+            return False
+        stage = '自动登录：' + str(box.name)
+        pending = getattr(self, '_ui_tick_navigation', None)
+        if pending and pending['step'] != stage:
+            # A different, positively classified login page proves the previous
+            # navigation ended. Do not also input on the new page in this tick.
+            return advance(self, pending['step'], lambda frame:None, lambda frame:True, identity=None)
+        def dispatch(button):
+            if not self._click_login_box(button, after_sleep=0):
+                raise RuntimeError('自动登录输入未投递，停止本步')
+            self._login_tick_dispatched = True
+            if button.name == 'monthly_card':
+                self._login_monthly_seen = True
+            if after_sleep >= 60:
+                self._login_restart_wait_until = time.monotonic()+after_sleep
+        return advance(self, stage, lambda frame:box, lambda frame:False,
+                       identity=stage, action=dispatch,
+                       attempts=1 if box.name == 'monthly_card' or after_sleep >= 60 else 3,
+                       initial_delay=LOGIN_CLICK_SETTLE_TIME if LOGIN_BUTTON_RE.fullmatch(str(box.name)) else 0)
 
     def in_team_and_world(self, frame=None):
         return self.in_team(frame=frame)[
@@ -1498,26 +1548,54 @@ class BaseWWTask(BaseTask):
         self.click_box(gray_book_boss, after_sleep=1.5)
         return gray_book_boss
 
+    def _travel_button(self, frame):
+        for name in ('fast_travel_custom', 'gray_teleport'):
+            if button := self.find_one(name, threshold=.7, frame=frame):
+                return button
+        return None
+
+    def _travel_identity(self, frame):
+        names = tuple(str(box.name).strip() for box in self.ocr(.65,.10,.97,.32,frame=frame)
+                      if str(box.name).strip())
+        if not names:
+            raise RuntimeError('无法确认传送目标名称，停止输入')
+        return names
+
+    def _travel_confirmation(self, frame):
+        if not self.find_one('skip_dialog_check', frame=frame):
+            return None
+        message = ''.join(str(box.name) for box in self.ocr(.2,.3,.8,.6,frame=frame))
+        if not re.search(r'传送|傳送|快速旅行|Teleport|Travel', message, re.IGNORECASE):
+            return None
+        return self.find_one(['confirm_btn_hcenter_vcenter','confirm_btn_highlight_hcenter_vcenter'], frame=frame)
+
+    def _navigate_travel(self):
+        submitted = False
+        def click(button):
+            nonlocal submitted
+            submitted = True
+            self.click(button)
+        def source(frame):
+            button = self._travel_button(frame)
+            if button is None and self.find_one('remove_custom', frame=frame):
+                raise RuntimeError('当前目标只有移除标记，不能作为传送操作')
+            return button
+        frame = self.navigate_ui('传送目标', source,
+            lambda frame:submitted and (self.in_team_and_world(frame=frame) or self._travel_confirmation(frame)),
+            action=click, identity=self._travel_identity, timeout=120)
+        if submitted and self._travel_confirmation(frame):
+            self.navigate_ui('传送确认',self._travel_confirmation,
+                lambda frame:self.in_team_and_world(frame=frame) and not self._travel_confirmation(frame),
+                identity='travel_confirmation', timeout=120)
+        return True
+
     def click_traval_button(self):
-        for feature_name in ['fast_travel_custom', 'gray_teleport', 'remove_custom']:
-            if self.find_one(feature_name, threshold=0.7):
-                self.sleep(0.5)
-                feature = self.find_one(feature_name, threshold=0.7)
-                if not feature:
-                    continue
-                self.click(feature, after_sleep=1)
-                if feature.name == 'fast_travel_custom':
-                    if confirm := self.wait_feature(
-                            ['confirm_btn_hcenter_vcenter', 'confirm_btn_highlight_hcenter_vcenter'],
-                            raise_if_not_found=False,
-                            threshold=0.6,
-                            time_out=2):
-                        self.click(0.49, 0.55, after_sleep=0.5)  # 点击不再提醒
-                        self.click(confirm, after_sleep=0.5)
-                        self.click_confirm()
-                if feature.name != 'remove_custom':
-                    self.wait_click_skip_dialog_confirm()
-                return True
+        frame = self.require_game_frame()
+        if self._travel_button(frame) is None:
+            if self.find_one('remove_custom', frame=frame):
+                raise RuntimeError('当前仅有移除标记，不能传送')
+            return False
+        return self._navigate_travel()
 
     def click_confirm(self, timeout=1):
         return self.wait_click_feature(
@@ -1577,7 +1655,7 @@ class BaseWWTask(BaseTask):
         self.wait_click_skip_dialog_confirm()
 
     def wait_click_travel(self):
-        self.wait_until(self.click_traval_button, raise_if_not_found=True, time_out=10)
+        return self._navigate_travel()
 
     def wait_book(self, feature="gray_book_all_monsters", time_out=3):
         gray_book_boss = self.wait_until(
@@ -1672,6 +1750,8 @@ class BaseWWTask(BaseTask):
         self.click(target, after_sleep=1)
         feature = self.wait_feature(['fast_travel_custom', 'gray_teleport', 'remove_custom', 'team_close'], time_out=10,
                                     settle_time=0.5, raise_if_not_found=True)
+        if feature.name == 'remove_custom':
+            raise RuntimeError('指南目标没有可用传送或挑战入口，停止；未移除标记')
         return feature.name == 'team_close'
 
     def change_time_to_night(self):

@@ -328,10 +328,12 @@ class TestDailyMergeEchoTask(unittest.TestCase):
     def test_daily_stops_before_initialization_when_additional_config_is_invalid(self):
         daily_task = DailyTask.__new__(DailyTask)
         daily_task._ensure_run_account_confirmation = Mock()
+        daily_task._executor = Mock()
         daily_task.validate_daily_tasks = Mock(side_effect=Exception('invalid daily task config'))
         daily_task.ensure_main = Mock()
 
-        with self.assertRaisesRegex(Exception, 'invalid daily task config'):
+        with patch('src.task.DailyTask.require_account_runtime_for_task'), \
+                self.assertRaisesRegex(Exception, 'invalid daily task config'):
             daily_task.run()
 
         daily_task.ensure_main.assert_not_called()

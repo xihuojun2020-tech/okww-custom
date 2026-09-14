@@ -52,7 +52,7 @@ class TestVisionOptimization(unittest.TestCase):
         task.sleep = Mock()
         task._save_frame = Mock()
         task.catalog = None
-        def parser(*_): return dict(scene='reward', cells=[], errors=[])
+        def parser(*_): return dict(scene='reward', cells=[dict(item_id='known', amount=1, column=0, local_row=0)], errors=[])
         for claim in ('claim1', 'claim2'):
             pages = task._pages(parser, claim, (0, 0, 200, 100), (.5, .5))
             self.assertTrue(pages[0]['at_top'])

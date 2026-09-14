@@ -56,17 +56,13 @@ class TestSkipDialogConfirm(unittest.TestCase):
             raise_if_not_found=False,
         )
 
-    def test_teleport_reuses_optional_dialog_handler(self):
-        teleport = Mock(name='teleport')
-        teleport.name = 'gray_teleport'
-        self.task.find_one.return_value = teleport
-        self.task.wait_click_skip_dialog_confirm = Mock()
-
-        clicked = self.task.click_traval_button()
-
-        self.assertTrue(clicked)
-        self.task.click.assert_called_once_with(teleport, after_sleep=1)
-        self.task.wait_click_skip_dialog_confirm.assert_called_once_with()
+    def test_teleport_delegates_to_verified_navigation(self):
+        self.task.require_game_frame=Mock(return_value=object())
+        self.task._travel_button=Mock(return_value=object())
+        self.task._navigate_travel=Mock(return_value=True)
+        self.assertTrue(self.task.click_traval_button())
+        self.task._navigate_travel.assert_called_once()
+        self.task.click.assert_not_called()
 
 
 if __name__ == '__main__':

@@ -264,12 +264,21 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         return self._stable_value(read, '无法确认周本费用或当前体力')
 
     def _enter_challenge(self):
-        button = self._wait_for(lambda: self._button(self.SINGLE, '单人挑战'), '未找到单人挑战')
-        self.click_box(button)
-        button = self._wait_for(lambda: self._button(self.START, '开启挑战'), '未进入周本编队页')
-        self.click_box(button)
-        self._wait_for(lambda: not self._button(self.START, '开启挑战'), '开启挑战未生效')
-        self._wait_for(self.in_team_and_world, '进入周本加载超时', 120)
+        boss = self._entry_boss
+        def single(frame):
+            title = boss_title(self._text(self.TITLE, frame))
+            button = self._button(self.SINGLE, '单人挑战', frame)
+            if button and title != boss.name:
+                raise RuntimeError('周本目标变化，停止单人挑战')
+            return button if title == boss.name else None
+        self.navigate_ui('周本单人挑战', single,
+            lambda frame: self._button(self.START, '开启挑战', frame), identity=boss.key)
+        # Starting a challenge is one submission. Allow long loading without
+        # resending an input merely because the old start label lingers.
+        self.navigate_ui('周本进入地图',
+            lambda frame: self._button(self.START, '开启挑战', frame),
+            lambda frame: self.in_team_and_world(frame=frame),
+            identity=boss.key, timeout=120, attempts=1, retry_after=120)
 
     def _reward_available(self):
         # The quest label at the left is not an interaction: require the F icon
@@ -452,11 +461,12 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
             return None
 
     def _leave_settlement(self, retry):
-        buttons = self._wait_for(self._settlement, '结算页丢失，无法确认退出或重开')
-        self.click_box(buttons[1 if retry else 0])
-        # Explicitly observe departure before accepting another world frame.
-        self._wait_for(lambda: not self._settlement(), '结算按钮未生效，未重复点击', 20)
-        self._wait_for(self.in_team_and_world, '重开加载超时' if retry else '退出副本加载超时', 120)
+        def source(frame):
+            buttons = self._settlement()
+            return buttons[1 if retry else 0] if buttons else None
+        self.navigate_ui('周本重开' if retry else '周本退出', source,
+            lambda frame: self.in_team_and_world(frame=frame) and not self._settlement(),
+            identity=('weekly_settlement', bool(retry)), timeout=120)
 
     def _recheck(self, initial, claimed, reason=''):
         self._stage('返回战歌重奏复核剩余次数')
@@ -497,6 +507,7 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         cost, stamina = self._read_entry_resources()
         if stamina < cost:
             return self._recheck(initial, 0, '当前体力不足')
+        self._entry_boss = boss
         self._enter_challenge()
         claimed = 0
         reason = ''

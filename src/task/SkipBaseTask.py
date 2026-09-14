@@ -43,14 +43,16 @@ class SkipBaseTask(BaseWWTask):
 
     def try_click_skip(self):
         skipped = False
-        while skip := self.find_skip():
+        if skip := self.find_skip():
             logger.info('Click Skip Dialog')
             self.click_box(skip, after_sleep=0.2)
             skipped = True
         return skipped
 
-    def check_skip(self):
+    def check_skip(self, nonblocking=False):
         if self.try_click_skip():
+            if nonblocking:
+                return True
             return self.wait_until(self.skip_confirm, time_out=3, raise_if_not_found=False)
         if time.time() - self.has_eye_time < 2:
             btn_dialog_close = self.find_one('btn_dialog_close', threshold=0.8)
@@ -64,6 +66,8 @@ class SkipBaseTask(BaseWWTask):
             if btn_auto_play_dialog:
                 self.click_box(btn_auto_play_dialog, move_back=True)
                 logger.info('toggle auto play')
+                if nonblocking:
+                    return True
                 self.sleep(0.2)
             if arrow := self.find_feature('btn_dialog_arrow', x=0.59, y=0.33, to_x=0.75, to_y=0.75,
                                           threshold=0.7):

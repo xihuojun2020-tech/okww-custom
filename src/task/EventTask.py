@@ -1,3 +1,5 @@
+import json
+from pathlib import Path
 import random
 import re
 import time
@@ -6,7 +8,7 @@ import cv2
 import numpy as np
 from qfluentwidgets import FluentIcon as Icon
 
-from ok import Logger
+from ok import Logger, TaskDisabledException
 from src.task.BaseWWTask import BaseWWTask
 from src.task.WWOneTimeTask import WWOneTimeTask
 
@@ -47,8 +49,7 @@ class EventTask(WWOneTimeTask, BaseWWTask):
     # 价格数字就在各自 R 键正上方，必须按页面使用不同检测框。
     # 商店页价是 2 位数，原生 OCR 可读（实测 20/23/25）；奖励页价是 R 键正上方一个
     # 很小的单数字（实测 y≈0.895、x≈0.60），原生分辨率 OCR 读不到，须裁剪放大 4x
-    # 再识别（实测 15 张奖励页命中 13）。仍读不到返回 None，由调用方按
-    # "货币>0 即可刷新"兜底，不再因此中止任务。
+    # 再识别；仍读不到返回 None，禁止用旧余额或未知价格授权消费。
     REWARD_COST_BOX = (0.585, 0.875, 0.625, 0.915)  # 奖励页刷新价（紧贴 R 键上方的小数字）
     SHOP_COST_BOX = (0.66, 0.84, 0.80, 0.94)        # 商店页刷新价
     # 商店页底部右侧 "F 下一波次"
@@ -120,6 +121,8 @@ class EventTask(WWOneTimeTask, BaseWWTask):
             'Stop After Waves': 0,
             'Exit on All Waves Done': True,
         }
+        default_config['_pending_event_spend'] = {}
+        self.config_type['_pending_event_spend'] = {'hidden': True}
         self.default_config = default_config
         self.config_description = {
             'Circle Side Time': '8 方向轮转时每个方向的基准按住秒数。值越小圈越紧、转向越快。',
@@ -143,6 +146,8 @@ class EventTask(WWOneTimeTask, BaseWWTask):
     # ===================== 主流程 =====================
 
     def run(self):
+        if self.config.get('_pending_event_spend'):
+            raise RuntimeError('上次活动消费尚未核实，停止；请先核对余额和商品结果')
         WWOneTimeTask.run(self)
         # 活动为【手动进入地图】，程序不主动 ensure_main / 按 ESC，
         # 否则会反复打开/关闭暂停菜单。直接进入战场轮询。
@@ -257,6 +262,8 @@ class EventTask(WWOneTimeTask, BaseWWTask):
         """
         try:
             texts = self.ocr(0.02, 0.02, 0.98, 0.30)  # 放宽到 0.30：捕获波次进度/倒计时
+        except TaskDisabledException:
+            raise
         except Exception:
             texts = []
         joined = ' '.join(str(getattr(b, 'name', b)) for b in texts) if texts else ''
@@ -273,6 +280,8 @@ class EventTask(WWOneTimeTask, BaseWWTask):
         # 2.5) "进入下一波次"确认对话框（商店后按 F 触发，居中弹窗，文字在屏幕中部）
         try:
             dlg_texts = self.ocr(0.20, 0.30, 0.80, 0.66)
+        except TaskDisabledException:
+            raise
         except Exception:
             dlg_texts = []
         joined_dlg = ' '.join(str(getattr(b, 'name', b)) for b in dlg_texts) if dlg_texts else ''
@@ -284,6 +293,8 @@ class EventTask(WWOneTimeTask, BaseWWTask):
         # 4) 死亡 / 重新挑战：居中弹窗
         try:
             mid_texts = self.ocr(0.30, 0.30, 0.70, 0.55)
+        except TaskDisabledException:
+            raise
         except Exception:
             mid_texts = []
         joined_mid = ' '.join(str(getattr(b, 'name', b)) for b in mid_texts) if mid_texts else ''
@@ -301,6 +312,8 @@ class EventTask(WWOneTimeTask, BaseWWTask):
         """
         try:
             texts = self.ocr(0.55, 0.82, 1.0, 0.97)
+        except TaskDisabledException:
+            raise
         except Exception:
             return False
         joined = ' '.join(str(getattr(b, 'name', b)) for b in texts) if texts else ''
@@ -357,7 +370,7 @@ class EventTask(WWOneTimeTask, BaseWWTask):
         refresh_used = 0
         max_refresh = self.config.get('Max Refresh Count', 20)
 
-        while refresh_used < max_refresh:
+        while refresh_used <= max_refresh:
             # 重新检测推荐（刷新后界面会变）
             recommended_idx = self._find_recommended_card()
             if recommended_idx is not None:
@@ -370,23 +383,12 @@ class EventTask(WWOneTimeTask, BaseWWTask):
                 self.log_info('奖励页点击选择后页面未切换，停止任务，避免误刷新', notify=True)
                 return False
 
-            # 没有推荐：尝试刷新。条件：货币 > 刷新价；或刷新价读不到（奖励页数字太小
-            # OCR 常失败）但货币 > 0 时也兜底刷新——避免"刷新所需货币识别不到"时中止任务。
-            if (refresh_cost is not None and currency > refresh_cost) or (
-                    refresh_cost is None and currency > 0):
-                self.log_info(
-                    f'奖励页：无推荐，刷新价 {refresh_cost}，货币 {currency}，按 R 刷新'
-                )
-                self.send_key('r', after_sleep=1.2)
+            if refresh_used < max_refresh and refresh_cost is not None and currency > refresh_cost:
+                currency = self._spend_once('reward', refresh_cost, currency,
+                                            lambda: self.send_key('r'),
+                                            price_reader=lambda: self._read_refresh_cost('reward'))
                 refresh_used += 1
-                # 刷新后必须重新读取，不能沿用旧值继续消耗货币。
-                self.sleep(0.4)
-                new_currency = self._read_currency('reward')
-                new_cost = self._read_refresh_cost()
-                if new_currency is not None:
-                    currency = new_currency
-                if new_cost is not None:
-                    refresh_cost = new_cost
+                refresh_cost = self._read_refresh_cost('reward')
                 continue
 
             # 没有推荐且不满足刷新条件时不擅自选择错误奖励。
@@ -401,26 +403,28 @@ class EventTask(WWOneTimeTask, BaseWWTask):
 
     def _select_and_confirm(self, card_idx):
         """点击推荐卡的【选择】，并确认奖励页确实已经离开。"""
-        for attempt in range(2):
-            self._click_select(card_idx)
-            if self._wait_for_page_change('reward', time_out=3):
-                return True
-            if attempt == 0:
-                self.log_info('奖励页选择未生效，按较慢节奏重试一次')
-        return False
+        # A second click could select a different card after a delayed response.
+        if self._detect_page() != 'reward' or self._find_recommended_card() != card_idx:
+            return False
+        self._click_select(card_idx)
+        return self._wait_for_page_change('reward', time_out=8)
 
     def _wait_for_page_change(self, old_page, time_out=3):
         """等待页面连续两次不再是 old_page，过滤单帧 OCR 抖动。"""
-        deadline = time.time() + time_out
+        deadline = time.monotonic() + time_out
         changed = 0
-        while time.time() < deadline:
+        previous = None
+        while time.monotonic() < deadline:
+            self.executor.check_enabled()
+            self.next_frame()
             page = self._detect_page()
-            if page != old_page:
-                changed += 1
+            if page in ('shop', 'reward', 'arena', 'death', 'confirm_next') and page != old_page:
+                changed = changed + 1 if page == previous else 1
                 if changed >= 2:
                     return True
             else:
                 changed = 0
+            previous = page
             self.sleep(0.35)
         return False
 
@@ -432,6 +436,8 @@ class EventTask(WWOneTimeTask, BaseWWTask):
         所在 y 区间，约 0.66~0.78）。"""
         try:
             texts = self.ocr(0.28, 0.66, 0.93, 0.78)
+        except TaskDisabledException:
+            raise
         except Exception:
             return False
         joined = ' '.join(str(getattr(b, 'name', b)) for b in texts) if texts else ''
@@ -551,7 +557,6 @@ class EventTask(WWOneTimeTask, BaseWWTask):
         # 否则默认用奖励页框读不到商店页价格，导致"刷新所需货币识别不到"。
         refresh_cost = self._read_refresh_cost('shop')
         max_refresh = self.config.get('Max Refresh Count', 20)
-        currency_ok = True
 
         refresh_used = 0
         while refresh_used <= max_refresh:
@@ -566,7 +571,7 @@ class EventTask(WWOneTimeTask, BaseWWTask):
             for idx in recommended:
                 if not self._is_locked(idx):
                     self.log_info(f'商店：锁定第 {idx + 1} 个推荐商品')
-                    self._click_lock(idx)
+                    self._ensure_shop_locked(idx)
                     self.sleep(shop_interval)
 
             # 从左到右买推荐商品（每次买完重读货币）；同时记录本轮是否买得起推荐商品
@@ -574,24 +579,15 @@ class EventTask(WWOneTimeTask, BaseWWTask):
             for idx in recommended:
                 price = self._read_item_price(idx)
                 if price is None:
-                    # 价格识别失败：推荐商品直接尝试购买（买不起也无害），避免漏买
-                    self.log_info(f'商店：第 {idx + 1} 个价格未识别，按推荐直接尝试购买')
-                    self._click_buy_area(idx)
-                    self.sleep(shop_interval)
-                    new_currency = self._read_currency('shop')
-                    if new_currency is not None:
-                        currency = new_currency
-                    continue
+                    raise RuntimeError('商品价格未知，停止购买与刷新')
                 if price <= currency:
                     any_buyable = True
                     self.log_info(
                         f'商店：买第 {idx + 1} 个（价 {price}，货币 {currency}）'
                     )
-                    self._click_buy_area(idx)
-                    self.sleep(shop_interval)
-                    new_currency = self._read_currency('shop')
-                    if new_currency is not None:
-                        currency = new_currency
+                    currency = self._spend_once('shop', price, currency,
+                                                lambda: self._click_buy_area(idx),
+                                                price_reader=lambda: self._read_item_price(idx))
                 else:
                     self.log_info(
                         f'商店：第 {idx + 1} 个价 {price} > 货币 {currency}，跳过'
@@ -601,26 +597,17 @@ class EventTask(WWOneTimeTask, BaseWWTask):
             # - 有买得起的推荐商品 → 余钱够刷新价就刷新，继续买（可能刷出更便宜的推荐）
             # - 没有推荐商品 → 余钱够刷新价就刷新，找新的推荐
             # - 有推荐但都买不起 → 不再刷新直接进下一波（刷新只会让钱更少、更买不起）
-            can_refresh = currency_ok and refresh_cost is not None and currency > refresh_cost
+            can_refresh = (refresh_used < max_refresh and refresh_cost is not None
+                           and currency > refresh_cost)
             if can_refresh and (any_buyable or not recommended):
                 self.log_info(
                     f'商店：余钱 {currency} > 刷新价 {refresh_cost}，按 R 刷新'
                 )
-                self.send_key('r', after_sleep=1.2)
+                currency = self._spend_once('shop', refresh_cost, currency,
+                                            lambda: self.send_key('r'),
+                                            price_reader=lambda: self._read_refresh_cost('shop'))
                 refresh_used += 1
-                self.sleep(shop_interval)
-                new_currency = self._read_currency('shop')
-                new_cost = self._read_refresh_cost('shop')
-                if new_currency is not None:
-                    currency = new_currency
-                else:
-                    # 货币识别失败：保留上次值但不再刷新，随后走购买/F 流程，避免中止任务
-                    currency_ok = False
-                    self.log_info(
-                        f'商店：刷新后货币未识别，保留上次值 {currency}，不再刷新'
-                    )
-                if new_cost is not None:
-                    refresh_cost = new_cost
+                refresh_cost = self._read_refresh_cost('shop')
                 continue
 
             # 无可购买（推荐均买不起 / 无推荐且不刷新）：不再刷新，直接 F 进入下一波
@@ -630,31 +617,96 @@ class EventTask(WWOneTimeTask, BaseWWTask):
                 )
             else:
                 self.log_info('商店：无可购买，按 F 进入下一波')
-            self.send_key('f', after_sleep=1.5)
+            self._leave_shop()
             return True
 
         # 刷新过多兜底
         self.log_info('商店刷新过多，按 F 兜底进入下一波', notify=True)
-        self.send_key('f', after_sleep=1.5)
+        self._leave_shop()
         return True
 
-    def _handle_confirm_next_wave(self):
-        """处理"当前仍有可购买物品，是否进入下一波次？"居中对话框。
+    def _ensure_shop_locked(self, index):
+        self.next_frame()
+        self.require_game_frame()
+        self._guard_account_input()
+        if self._detect_page() != 'shop':
+            raise RuntimeError('商店页面变化，停止锁定')
+        if self._is_locked(index):
+            return
+        if not self._has_recommend_at(self.CARD_X_CENTERS[index], self.RECOMMEND_Y):
+            raise RuntimeError('推荐商品变化，停止锁定')
+        # A lock is a toggle: an uncertain result never authorizes another click.
+        self._click_lock(index)
+        deadline = time.monotonic() + 5
+        stable = 0
+        while time.monotonic() < deadline:
+            self.executor.check_enabled()
+            self._guard_account_input()
+            self.next_frame()
+            if self._detect_page() != 'shop':
+                raise RuntimeError('锁定后商店页面变化，停止消费')
+            stable = stable + 1 if self._is_locked(index) else 0
+            if stable >= 2:
+                return
+            self.sleep(.35)
+        raise RuntimeError('商品锁定结果未确认，停止消费；不重复切换锁定状态')
 
-        商店按 F 进入下一波时游戏弹此确认框；若不专门识别，程序会卡在 unknown
-        态、既不进战斗也不买东西。这里点击【确定】进入下一波。
-        【确定】按钮先用 OCR 动态定位（实测约在归一化 (0.66, 0.63)），定位失败
-        再回退到该固定坐标，避免分辨率/布局偏移导致点偏。
-        """
-        self.log_info('检测到"进入下一波次"确认对话框 → 点击【确定】', notify=True)
-        self._save_debug('confirm_next', [(0.66, 0.63)])
-        hit = self._click_button_by_text(
-            ['确定', '确认', 'OK'],
-            box=(0.40, 0.45, 0.95, 0.80),
-            fallback=(0.66, 0.63),
-        )
-        if not hit:
-            logger.debug('confirm_next 未 OCR 到【确定】按钮，已回退固定坐标 (0.66,0.63)')
+    def _leave_shop(self):
+        # The handler cannot restart its refresh budget until a known next page.
+        self.navigate_ui('无音危机离开商店',
+                         lambda frame:self._detect_page() == 'shop',
+                         lambda frame:self._detect_page() in ('confirm_next', 'arena'),
+                         action=lambda _:self.send_key('f'), identity='shop_next_wave')
+
+    def _set_event_pending(self, value):
+        value = value or {}  # Keep the type stable across Config reload validation.
+        self.config['_pending_event_spend'] = value
+        # Config may log disk-write errors without raising; verify before input.
+        path = getattr(self.config, 'config_file', None)
+        if path is not None:
+            saved = json.loads(Path(path).read_text(encoding='utf-8-sig'))
+            if saved.get('_pending_event_spend') != value:
+                raise RuntimeError('活动消费保护未成功保存，禁止继续输入')
+
+    def _spend_once(self, page, cost, balance, dispatch, *, price_reader):
+        """Activity currency only: one submission, then two matching debit reads."""
+        if getattr(self, '_event_spend_pending', False) or self.config.get('_pending_event_spend'):
+            raise RuntimeError('上笔活动消费结果未确认，禁止继续消费')
+        if cost is None or balance is None or cost <= 0 or balance < cost:
+            raise RuntimeError('活动价格/余额不可核验，未提交消费')
+        self.executor.check_enabled()
+        self.next_frame()
+        if (self._detect_page() != page or self._read_currency(page) != balance
+                or price_reader() != cost):
+            raise RuntimeError('活动页面或余额变化，未提交消费')
+        self._guard_account_input()
+        self._set_event_pending(dict(page=page, cost=cost, balance=balance, created_at=time.time()))
+        self._event_spend_pending = True
+        dispatch()
+        deadline = time.monotonic() + 8
+        stable = 0
+        while time.monotonic() < deadline:
+            self.executor.check_enabled()
+            self._guard_account_input()
+            self.next_frame()
+            value = self._read_currency(page, retries=1) if self._detect_page() == page else None
+            stable = stable + 1 if value == balance-cost else 0
+            if stable >= 2:
+                self._set_event_pending(None)
+                self._event_spend_pending = False
+                return value
+            self.sleep(.35)
+        raise RuntimeError('活动消费结果未确认，停止；请核实余额后再恢复任务')
+
+    def _handle_confirm_next_wave(self):
+        def source(frame):
+            if self._detect_page() != 'confirm_next':
+                return None
+            buttons=[box for box in self.ocr(.40,.45,.95,.80,frame=frame)
+                     if str(box.name).strip() in ('确定','确认','OK')]
+            return buttons[0] if len(buttons)==1 else None
+        self.navigate_ui('无音危机下一波确认',source,
+                         lambda frame:self._detect_page()=='arena',identity='next_wave')
 
     def _click_button_by_text(self, keywords, box, fallback=None):
         """在 box 区域内 OCR 定位包含任一关键词的按钮并点击。
@@ -783,8 +835,7 @@ class EventTask(WWOneTimeTask, BaseWWTask):
 
         奖励页与商店页的 R 按钮位置不同（奖励 R≈(0.60,0.93)，商店 R≈(0.72,0.93)），
         价格数字在其正上方，必须按页面选择不同检测框。奖励价是单个小数字须放大 4x；
-        商店价是 2 位数放大 2x 即可稳定读（实测 4/4）。读不到返回 None，由调用方按
-        "货币>0 即可刷新"兜底，不再中止任务。
+        商店价是 2 位数放大 2x 即可稳定读（实测 4/4）。读不到返回 None，禁止消费。
         """
         if page == 'shop':
             return self._ocr_int_upscaled(self.SHOP_COST_BOX, upscale=2)
@@ -793,6 +844,8 @@ class EventTask(WWOneTimeTask, BaseWWTask):
     def _ocr_int(self, x1, y1, x2, y2):
         try:
             texts = self.ocr(x1, y1, x2, y2)
+        except TaskDisabledException:
+            raise
         except Exception as e:
             logger.debug(f'ocr int failed: {e}')
             return None
@@ -820,6 +873,8 @@ class EventTask(WWOneTimeTask, BaseWWTask):
                               interpolation=cv2.INTER_CUBIC)
             try:
                 texts = self.ocr(0, 0, 1, 1, frame=crop)
+            except TaskDisabledException:
+                raise
             except Exception as e:
                 logger.debug(f'ocr upscaled failed: {e}')
                 texts = []
@@ -862,18 +917,14 @@ class EventTask(WWOneTimeTask, BaseWWTask):
         return None
 
     def _click_restart(self):
-        self.click_relative(0.5, 0.5, after_sleep=0.5)
-        try:
-            texts = self.ocr(0.30, 0.30, 0.70, 0.60)
-            for box in texts:
-                name = str(getattr(box, 'name', ''))
-                if '重新挑战' in name or 'Retry' in name.lower():
-                    self.click(box, after_sleep=0.5)
-                    return
-        except Exception:
-            pass
-
-    # ===================== 移动：绕小圈 =====================
+        def source(frame):
+            if self._detect_page() != 'death':
+                return None
+            buttons=[box for box in self.ocr(.30,.30,.70,.60,frame=frame)
+                     if str(box.name).strip().lower() in ('重新挑战','retry')]
+            return buttons[0] if len(buttons)==1 else None
+        self.navigate_ui('无音危机重新挑战',source,
+                         lambda frame:self._detect_page()=='arena',identity='event_restart',timeout=60)
 
     def _circle_strafe(self):
         """2D 平面战场（无镜头跟随）：必须用 WASD 全部方向轮转才能绕圈。
@@ -1007,6 +1058,8 @@ class EventTask(WWOneTimeTask, BaseWWTask):
         """获取当前游戏帧（numpy ndarray BGR）。失败返回 None。"""
         try:
             return self.frame  # ok 框架 BaseTask.frame 属性
+        except TaskDisabledException:
+            raise
         except Exception as e:
             logger.debug(f'self.frame failed: {e}')
             return None

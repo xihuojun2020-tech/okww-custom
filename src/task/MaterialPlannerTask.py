@@ -67,6 +67,15 @@ class MaterialPlannerTask(BaseWWTask):
         right = cv2.resize(normalize(b)[y:h,x:w], (160,80))
         return float(np.mean(cv2.absdiff(left, right))) < 1.5
 
+    @staticmethod
+    def _page_signature(page):
+        cells = page.get('cells', [])
+        if page.get('scene') not in ('target', 'inventory', 'reward') or not cells:
+            raise RuntimeError('材料页面身份或可见条目未知，停止滚动')
+        return (page['scene'], page.get('target_identity'),
+                tuple((cell.get('local_row'), cell.get('column'), cell.get('item_id'),
+                       cell.get('amount'), cell.get('need'), cell.get('label')) for cell in cells))
+
     def _pages(self, parser, record, region, scroll_at, *, stop_at_echo=False):
         """Save useful full pages; keep calibration observations without repeated PNGs."""
         seq = 0
@@ -87,6 +96,16 @@ class MaterialPlannerTask(BaseWWTask):
             return saved_hashes[sha]
         previous = capture()
         previous_view = normalize(previous)
+        def signature(view):
+            page = parser(view, self._ocr_image, self.catalog)
+            return self._page_signature(page)
+        previous_signature = signature(previous_view)
+        identity = previous_signature[:2]
+        def checked_signature(view):
+            result = signature(view)
+            if result[:2] != identity:
+                raise RuntimeError('材料扫描页面或培养目标变化，停止滚动')
+            return result
         stable = 0
         for _ in range(16):
             self.scroll_relative(*scroll_at, 8)
@@ -94,7 +113,10 @@ class MaterialPlannerTask(BaseWWTask):
             seq += 1
             current = capture()
             current_view = normalize(current)
-            stable = stable + 1 if self._same_view(previous_view,current_view,region) else 0
+            current_signature = checked_signature(current_view)
+            stable = stable + 1 if (current_signature == previous_signature and
+                                    self._same_view(previous_view,current_view,region)) else 0
+            previous_signature = current_signature
             previous = current
             previous_view = current_view
             if stable >= 2: break
@@ -122,7 +144,10 @@ class MaterialPlannerTask(BaseWWTask):
                 seq += 1
                 current = capture()
                 current_view = normalize(current)
-                if not self._same_view(previous_view,current_view,region):
+                current_signature = checked_signature(current_view)
+                if (current_signature != previous_signature or
+                        not self._same_view(previous_view,current_view,region)):
+                    previous_signature = current_signature
                     stable = 0
                     break
                 save(current, seq, 'bottom_probe')
