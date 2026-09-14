@@ -115,6 +115,37 @@ class TestDiagnosticStatusCard(unittest.TestCase):
                 card.deleteLater()
                 self.app.processEvents()
 
+    def test_navigation_status_uses_existing_theme_and_bounded_recent_rows(self):
+        from src.runtime import navigation_status as nav
+        from src.gui.CodexTheme import apply_codex_light_theme
+        from PySide6.QtGui import QFont, QFontDatabase
+        QFontDatabase.addApplicationFont('C:/Windows/Fonts/msyh.ttc')
+        apply_codex_light_theme(self.app)
+        self.app.setFont(QFont('Microsoft YaHei', 10))
+        with tempfile.TemporaryDirectory() as temp, patch('src.gui.DiagnosticStatusCard.default_root', return_value=Path(temp)):
+            card=DiagnosticStatusCard()
+            try:
+                self.wait(card)
+                card.timer.stop(); card.navigation_timer.stop()
+                with patch.object(nav, '_recent', __import__('collections').deque(maxlen=30)):
+                    for index in range(40):
+                        nav.publish(str(index), '若梦仍有回声', '单人挑战', '等待切页', 1, 2.4, 15.6, max_attempts=2)
+                    self.assertEqual(len(nav.snapshot()),30)
+                    from PySide6.QtWidgets import QWidget, QVBoxLayout
+                    host=QWidget();host.setStyleSheet('background: white;')
+                    layout=QVBoxLayout(host);layout.addWidget(card);layout.addStretch()
+                    card.set_expanded(True);host.resize(900,950);host.show();self.app.processEvents()
+                    card.refresh_navigation();self.app.processEvents()
+                    self.assertIn('1/2 次',card.navigation_status.text())
+                    self.assertEqual(card.navigation_status.text().count('单人挑战'),5)
+                    Path('test_out').mkdir(exist_ok=True)
+                    host.layout().activate();card.layout().activate();card.content_layout.activate()
+                    self.app.processEvents()
+                    host.grab().save('test_out/navigation-status-card.png')
+                    host.close()
+            finally:
+                card.close();card.deleteLater();self.app.processEvents()
+
 
 if __name__ == '__main__':
     unittest.main()

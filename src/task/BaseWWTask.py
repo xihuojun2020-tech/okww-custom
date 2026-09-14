@@ -54,6 +54,102 @@ def normalize_monthly_hour(value):
 class BaseWWTask(BaseTask):
     map_zoomed = False
 
+    def navigate_ui(self, step, source, target, *, action=None, timeout=18,
+                    attempts=3, identity=None, loading=None, screenshots=False, on_status=None):
+        """Opt-in semantic navigation, never used to repeat resource submissions."""
+        from src.task.ui_transition import (Observation, PageState, Policy, present,
+                                            run_transition, TransitionContextChanged)
+        from src.runtime.navigation_status import publish
+        from ok import TaskDisabledException
+        executor = self.executor
+        old_deadline = getattr(executor, '_ui_transition_deadline', None)
+        deadline = min(time.monotonic()+timeout, old_deadline) if old_deadline is not None else time.monotonic()+timeout
+        window = getattr(self, 'hwnd', None)
+        original_hwnd = getattr(window, 'hwnd', None)
+        original_profile = getattr(self, '_verified_profile_id', None)
+        original_task = getattr(executor, 'current_task', None)
+        selected = None
+        size = None
+        logged = None
+        pictures = 0
+        def guard():
+            executor.check_enabled()
+            self._guard_account_input()
+            special = getattr(self, '_guard', None)
+            if callable(special):
+                special()
+            if (getattr(self, '_verified_profile_id', None) != original_profile
+                    or getattr(executor, 'current_task', None) is not original_task
+                    or getattr(getattr(self, 'hwnd', None), 'hwnd', None) != original_hwnd):
+                raise TransitionContextChanged('任务、账号或窗口已变化')
+            if window is not None and not getattr(window, 'exists', True):
+                raise GameProcessLost('游戏窗口已断开')
+        def capture():
+            self.next_frame()
+            frame = self.require_game_frame()
+            return frame, getattr(executor, '_last_frame_time', None) or id(frame)
+        def observe(frame):
+            nonlocal selected, size
+            size = frame.shape[:2]
+            reached = present(target(frame))
+            selected = source(frame)
+            available = present(selected)
+            if reached and available:
+                return Observation(PageState.UNKNOWN)
+            if reached:
+                return Observation(PageState.TARGET)
+            if not available:
+                return Observation(PageState.LOADING if loading and present(loading(frame)) else PageState.UNKNOWN)
+            point = None
+            if hasattr(selected, 'center'):
+                x, y = selected.center()
+                point = (x/size[1], y/size[0])
+            key = identity(frame) if callable(identity) else identity
+            return Observation(PageState.SOURCE, (key, size), point)
+        def act(observation):
+            if size != (self.height, self.width):
+                raise TransitionContextChanged('游戏分辨率已变化，请重新定位')
+            if action:
+                action(selected)
+            elif observation.point is not None:
+                self.click_relative(*observation.point)
+            else:
+                raise TransitionContextChanged('没有明确的导航输入目标')
+        def notify(operation, status, machine, frame):
+            nonlocal logged, pictures
+            if on_status:
+                on_status(operation, status, machine, frame)
+            stamp = (status, machine.attempts)
+            publish(operation, type(self).__name__, step, status, machine.attempts,
+                    time.monotonic()-machine.started, machine.deadline-time.monotonic(),
+                    max_attempts=attempts, error=machine.error)
+            if stamp != logged:
+                self.info_set('导航状态', f'{step}：{status}｜输入 {machine.attempts}/{attempts} 次')
+                self.log_info(f'ui_transition id={operation} step={step} state={status} attempt={machine.attempts} '
+                              f'elapsed={time.monotonic()-machine.started:.2f} '
+                              f'size={size} normalized={machine.last_point} error={machine.error}')
+                logged = stamp
+            if screenshots and frame is not None and pictures < 8 and status in ('准备点击', '已到达目标', '停止/失败'):
+                try:
+                    safe = frame.copy()
+                    safe[:round(len(safe)*.025)] = 0
+                    safe[round(len(safe)*.975):] = 0
+                    self.screenshot(f'nav_{step}_{operation[:8]}_{machine.attempts}_{status}', frame=safe)
+                    pictures += 1
+                except TaskDisabledException:
+                    raise
+                except Exception as error:
+                    # Evidence is best effort; never use it to replay game input.
+                    self.log_warning(f'导航截图保存失败：{type(error).__name__}')
+        executor._ui_transition_deadline = deadline
+        try:
+            frame, machine = run_transition(capture, observe, act, guard,
+                policy=Policy(timeout=timeout, max_attempts=attempts), deadline=deadline,
+                notify=notify, clock=time.monotonic, pause=self.sleep, cancel_errors=(TaskDisabledException,))
+            return frame
+        finally:
+            executor._ui_transition_deadline = old_deadline
+
     def swipe(self, from_x, from_y, to_x, to_y, duration=.5, after_sleep=.1, settle_time=0):
         from ok import PostMessageInteraction
         interaction = self.executor.interaction
@@ -1375,23 +1471,30 @@ class BaseWWTask(BaseTask):
             self.reset_to_false('opening book')
         self.ensure_main()
         book_key = self.key_config.get('Guidebook Key', self.key_config.get('索拉指南', 'f2'))
-        self.log_info(f'click {book_key} to open the book')
-        if self.in_team_and_world():
-            self.send_key(book_key, after_sleep=4)
-            self.log_info(f'send {book_key} key to open')
-        if self.in_team_and_world():
-            self.log_info('send f2 key mouse key to open the book')
-            self.send_key_down('alt')
-            self.sleep(0.05)
-            self.click_relative(0.77, 0.05)
-            self.sleep(0.02)
-            self.send_key_up('alt')
-            self.sleep(4)
+        inputs = 0
+        def open_book(_):
+            nonlocal inputs
+            inputs += 1
+            if inputs == 1:
+                self.send_key(book_key)
+            else:
+                # The icon is a fallback only while the world HUD is still proven.
+                try:
+                    self.send_key_down('alt')
+                    self.sleep(.05)
+                    self.click_relative(.77, .05)
+                finally:
+                    self.send_key_up('alt')
+
+        self.navigate_ui('打开索拉指南',
+            lambda frame: self.in_team_and_world(frame=frame),
+            lambda frame: self.find_one(feature, box='box_gray_book', threshold=.3, frame=frame),
+            action=open_book, identity=feature)
+        # Tab selection is an existing single action: the gray icon does not
+        # prove which content tab is selected, so it is not automatically retried.
         gray_book_boss = self.wait_book(feature)
-        if not gray_book_boss:
-            self.log_error("can't find gray_book_boss, make sure f2 is the hotkey for book", notify=True)
-            raise Exception("can't find gray_book_boss, make sure f2 is the hotkey for book")
-        self.sleep(2)
+        if gray_book_boss is None:
+            raise CannotFindException('指南页签消失，停止点击')
         self.click_box(gray_book_boss, after_sleep=1.5)
         return gray_book_boss
 

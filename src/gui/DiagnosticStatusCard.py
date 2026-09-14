@@ -114,6 +114,14 @@ class DiagnosticStatusCard(SectionPanel):
         self.status = QLabel('正在读取本地状态')
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
+        self.navigation_status = QLabel()
+        self.navigation_status.setWordWrap(True)
+        self.navigation_status.setProperty('role', 'description')
+        self.navigation_status.setAccessibleName('最近导航步骤')
+        layout.addWidget(self.navigation_status)
+        self.navigation_timer = QTimer(self)
+        self.navigation_timer.timeout.connect(self.refresh_navigation)
+        self.navigation_timer.start(1000)
         details = QPushButton('查看日志、截图及上传明细')
         layout.addWidget(details)
         details.clicked.connect(self.open_details)
@@ -143,6 +151,15 @@ class DiagnosticStatusCard(SectionPanel):
         self.timer.timeout.connect(lambda: self.refresh() if self.isVisible() else None)
         self.timer.start(30000)
         self.refresh()
+
+    def refresh_navigation(self):
+        if self.isVisible():
+            from src.runtime.navigation_status import status_text
+            text = '最近导航步骤（本次运行）\n' + status_text()
+            if self.navigation_status.text() != text:
+                self.navigation_status.setText(text)
+            self.navigation_status.setMinimumHeight(
+                max(0, self.navigation_status.heightForWidth(self.navigation_status.width())))
 
     def open_details(self):
         from src.gui.DiagnosticDetails import DiagnosticDetails

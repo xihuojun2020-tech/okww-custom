@@ -104,7 +104,7 @@ class TestEchoesRemainTask(unittest.TestCase):
         import tempfile
         task=self.make_task([])
         task.log_info=Mock();task.log_warning=Mock();task._navigate=Mock();task._choose=Mock(return_value=self.final)
-        task._wait=Mock()
+        task._wait=Mock(); task._click_transition=Mock()
         verification=Mock();verification.begin.return_value=verification
         verification.finish.return_value='verified';verification.profile_id='test';verification.run_id='run'
         with tempfile.TemporaryDirectory() as folder:
@@ -114,7 +114,8 @@ class TestEchoesRemainTask(unittest.TestCase):
                     patch('src.task.account_feature_verification.FeatureRun',return_value=verification), \
                     patch('src.task.account_feature_verification.expected_profile',return_value='test'):
                 task.run()
-        task._click.assert_called_once_with(.831,.912)
+        task._click.assert_not_called()
+        self.assertEqual(task._click_transition.call_args.args[:2], ('完成编队', 'done'))
         self.assertEqual(task.last_result['phase'],'formation_ready')
         self.assertFalse(task.last_result['activity_complete'])
 
@@ -207,6 +208,19 @@ class TestQuickFormationRetry(unittest.TestCase):
         button = Mock(); button.center.return_value = (.698*width,.92*height)
         task._formation_page = lambda frame: button if frame[0,0,0] == 1 else None
         task._roster_page = lambda frame: frame[0,0,0] == 2
+        task._guard = Mock(); task._guard_account_input = Mock()
+        task._executor = SimpleNamespace(check_enabled=Mock(), current_task=task,
+            device_manager=SimpleNamespace(hwnd_window=SimpleNamespace(hwnd=1, exists=True)),
+            method=SimpleNamespace(width=width, height=height), _last_frame_time=0)
+        task.require_game_frame = lambda: task.next_frame.return_value if isinstance(task.next_frame.return_value, np.ndarray) else frames[2 if task._click.call_count >= enter_on else 1]
+        original_next = task.next_frame
+        def fresh():
+            frame = original_next()
+            task._executor._last_frame_time += 1
+            task._test_frame = frame
+            return frame
+        task.next_frame = Mock(side_effect=fresh)
+        task.require_game_frame = lambda: task._test_frame
         return task, clock, frames
 
     def test_ignored_first_click_retries_fresh_button_at_both_resolutions(self):
@@ -232,15 +246,19 @@ class TestQuickFormationRetry(unittest.TestCase):
     def test_three_missed_clicks_stop(self):
         task, clock, _ = self.make_task(enter_on=99)
         with patch('src.task.EchoesRemainTask.time.monotonic', side_effect=lambda: clock[0]):
-            with self.assertRaisesRegex(RuntimeError, '点击3次'):
+            with self.assertRaisesRegex(RuntimeError, '点击次数'):
                 task._open_quick()
         self.assertEqual(task._click.call_count, 3)
 
     def test_changed_page_is_never_clicked_again(self):
         task, clock, frames = self.make_task()
-        task.next_frame.side_effect = lambda: frames[3 if task._click.call_count else 1]
+        def changed():
+            task._executor._last_frame_time += 1
+            task._test_frame = frames[3 if task._click.call_count else 1]
+            return task._test_frame
+        task.next_frame.side_effect = changed
         with patch('src.task.EchoesRemainTask.time.monotonic', side_effect=lambda: clock[0]):
-            with self.assertRaisesRegex(RuntimeError, '页面已变化'):
+            with self.assertRaisesRegex(RuntimeError, '耗尽'):
                 task._open_quick()
         self.assertEqual(task._click.call_count, 1)
 
@@ -256,8 +274,10 @@ class TestQuickFormationRetry(unittest.TestCase):
         def frame():
             if task._click.call_count:
                 calls_after_click[0] += 1
-            # Nine timeout probes, one failure snapshot, then delayed transition.
-            return frames[2 if calls_after_click[0] >= 11 else 1]
+            # Destination arrives on the last observation before a retry is allowed.
+            task._executor._last_frame_time += 1
+            task._test_frame = frames[2 if calls_after_click[0] >= 9 else 1]
+            return task._test_frame
         task.next_frame.side_effect = frame
         with patch('src.task.EchoesRemainTask.time.monotonic', side_effect=lambda: clock[0]):
             task._open_quick()
@@ -277,7 +297,7 @@ class TestQuickFormationRetry(unittest.TestCase):
         button.center.side_effect = lambda: (1700 if task.next_frame.call_count % 2 else 1800, 1300)
         task._formation_page = Mock(return_value=button)
         with patch('src.task.EchoesRemainTask.time.monotonic', side_effect=lambda: clock[0]):
-            with self.assertRaisesRegex(RuntimeError, '未稳定'):
+            with self.assertRaisesRegex(RuntimeError, '耗尽'):
                 task._open_quick()
         task._click.assert_not_called()
 

@@ -262,17 +262,9 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
             self.queues.pop(0)
 
     def _open_book_with_retry(self, feature, attempts=3):
-        for attempt in range(1, attempts + 1):
-            try:
-                return self.openF2Book(feature)
-            except TaskDisabledException:
-                raise
-            except Exception:
-                if attempt >= attempts:
-                    raise
-                self.log_warning(f'打开 F2 页面失败，正在恢复后重试（{attempt}/{attempts}）')
-                self.ensure_main(time_out=30)
-                self.sleep(1)
+        # openF2Book owns the bounded input budget. Never restart that budget
+        # or escape an unknown page after a navigation/account failure.
+        return self.openF2Book(feature)
 
     def _init_queue(self):
         quests = self.config.get('Which to Farm') or ['Nightmare Purification', 'Tacet Discord Nest']

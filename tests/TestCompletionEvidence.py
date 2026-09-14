@@ -92,10 +92,12 @@ class TestCompletionEvidence(unittest.TestCase):
     def test_progress_task_page_selects_daily_tab_instead_of_remembered_weekly_tab(self):
         from unittest.mock import Mock
         from src.task.DailyTask import DailyTask
-        task = SimpleNamespace(openF2Book=Mock(), click=Mock())
+        task = SimpleNamespace(openF2Book=Mock(), click=Mock(), navigate_ui=Mock())
         self.assertTrue(DailyTask._open_record_page(task, '任务页'))
         task.openF2Book.assert_called_once_with('gray_book_quest')
-        task.click.assert_called_once_with(.17, .12, after_sleep=1)
+        task.navigate_ui.assert_called_once()
+        task.navigate_ui.call_args.kwargs['action'](None)
+        task.click.assert_called_once_with(.17, .12)
 
     def progress_task(self, service, *, screenshot=True, video=False):
         from unittest.mock import Mock
@@ -204,7 +206,8 @@ class TestCompletionEvidence(unittest.TestCase):
         from ok import TaskDisabledException
         for error, expected in ((None, 'returned'), (RuntimeError('failed'), 'failed'),
                                 (TaskDisabledException('stopped'), 'stopped')):
-            task = SimpleNamespace(clear_profile_binding=Mock(), _guard_bound_profile_identity=Mock(),
+            task = SimpleNamespace(executor=SimpleNamespace(), _refresh_reserve_activity=Mock(),
+                                   clear_profile_binding=Mock(), _guard_bound_profile_identity=Mock(),
                                    account_input_guard=lambda _: nullcontext(),
                                    _run_daily_inner=Mock(side_effect=error, return_value='original'))
             with patch('src.evidence.service.finish_daily_run') as finish:

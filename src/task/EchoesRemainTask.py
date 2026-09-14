@@ -81,61 +81,35 @@ class EchoesRemainTask(WWOneTimeTask, BaseWWTask):
 
     def _click_transition(self, label, key, source, target):
         self.info_set('活动阶段', f'等待页面稳定并点击{label}')
-        for attempt in range(1, 4):
-            previous, stable = None, 0
+        entries = self.last_result.setdefault(f'{key}_entry_attempts', [])
 
-            def ready(frame):
-                nonlocal previous, stable
-                if target(frame):
-                    return ('roster', frame, None)
-                button = source(frame)
-                if button is None:
-                    previous, stable = None, 0
-                    return None
-                x, y = button.center()
-                h, w = frame.shape[:2]
-                point = (x/w, y/h)
-                same = previous is not None and max(abs(a-b) for a, b in zip(previous, point)) <= .005
-                stable = stable + 1 if same else 1
-                previous = point
-                return ('formation', frame, point) if stable >= 3 else None
+        def capture_result(frame, result, save=True):
+            if entries and 'result' not in entries[-1]:
+                entry = entries[-1]
+                entry['result'] = result
+                entry['elapsed'] = round(time.monotonic()-entry.pop('_started'), 3)
+                if save:
+                    self._quick_capture(f'echoes_{key}_{entry["attempt"]}_after_{result}', frame)
 
-            page, before, point = self._wait(ready, f'{label}页面未稳定或已变化，停止点击', timeout=4)
-            if page == 'roster':
-                if attempt > 1:
-                    self.last_result[f'{key}_entry_attempts'][-1]['result'] = 'entered_late'
-                    self._quick_capture(f'echoes_{key}_{attempt-1}_entered_late', before)
-                    self.log_info(f'{label}延迟切页成功 attempt={attempt-1}，取消重试')
-                return before
-            self._quick_capture(f'echoes_{key}_{attempt}_before', before)
-            started = time.monotonic()
-            entry = {'attempt': attempt, 'at': time.time(), 'point': point}
-            self.last_result.setdefault(f'{key}_entry_attempts', []).append(entry)
-            self.log_info(f'{label}点击 attempt={attempt} time={entry["at"]:.3f} normalized={point}')
+        def click(button):
+            frame = self.require_game_frame()
+            capture_result(frame, 'still_formation' if key == 'quick' else 'still_source')
+            x, y = button.center()
+            h, w = frame.shape[:2]
+            point = (x/w, y/h)
+            attempt = len(entries)+1
+            self._quick_capture(f'echoes_{key}_{attempt}_before', frame)
+            entries.append(dict(attempt=attempt, at=time.time(), point=point, _started=time.monotonic()))
+            self.log_info(f'{label}点击 attempt={attempt} normalized={point}')
             self._click(*point)
-            try:
-                after, = self._wait(lambda f: (f,) if target(f) else None,
-                                    f'{label}点击后未切页', timeout=3)
-            except RuntimeError as error:
-                if str(error) != f'{label}点击后未切页':
-                    raise
-                after = self.next_frame()
-                if target(after):
-                    entry['result'] = 'entered'
-                elif source(after) is not None:
-                    entry['result'] = 'still_formation' if key == 'quick' else 'still_source'
-                else:
-                    entry['result'] = 'page_changed'
-            else:
-                entry['result'] = 'entered'
-            entry['elapsed'] = round(time.monotonic()-started, 3)
-            self._quick_capture(f'echoes_{key}_{attempt}_after_{entry["result"]}', after)
-            self.log_info(f'{label}结果 attempt={attempt} result={entry["result"]} elapsed={entry["elapsed"]}')
-            if entry['result'] == 'entered':
-                return after
-            if entry['result'] == 'page_changed':
-                raise RuntimeError(f'{label}点击后页面已变化，停止重试')
-        raise RuntimeError(f'{label}点击3次仍未进入，请查看点击日志和诊断截图')
+
+        def status(operation, state, machine, frame):
+            if state in ('已到达目标', '停止/失败'):
+                capture_result(frame, 'entered' if state == '已到达目标' else 'unconfirmed',
+                               save=state == '已到达目标')
+
+        return self.navigate_ui(label, source, target, action=click,
+                                identity=self.last_result.get('stage'), on_status=status)
 
     def _open_quick(self):
         return self._click_transition('快速编队', 'quick', self._formation_page, self._roster_page)
@@ -290,8 +264,10 @@ class EchoesRemainTask(WWOneTimeTask, BaseWWTask):
             frame = self._choose()
             self.last_result['phase'] = 'formation_verified'
             self._save_proof(frame)
-            self._click(.831, .912)
-            self._wait(self._formation_page, '点击完成后未返回编队页')
+            expected = self.last_result.get('stage')
+            self._click_transition('完成编队', 'done',
+                lambda f: self._button(f, self.DONE, '完成') if self._roster_page(f) else None,
+                lambda f: self._formation_for_stage(f, expected))
             if self._verification.finish() != 'verified':
                 raise RuntimeError('编队结束账号核验未通过')
             self.last_result['phase'] = 'formation_ready'

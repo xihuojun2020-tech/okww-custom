@@ -224,47 +224,22 @@ class TestNightmareNestTask(unittest.TestCase):
         self.assertTrue(task._travel_to_nest_or_skip(NestTarget(object(), 'go_nest:36:10')))
         self.assertEqual([{'time_out': 120, 'raise_if_not_found': False}], world_waits)
 
-    def test_open_book_retries_after_restoring_world(self):
+    def test_open_book_delegates_one_budget_to_shared_navigation(self):
+        from unittest.mock import Mock
         task = NightmareNestTask.__new__(NightmareNestTask)
-        attempts = []
-        recoveries = []
+        task.openF2Book = Mock(return_value=FakeBox('gray_book_boss'))
+        self.assertEqual(task._open_book_with_retry('gray_book_boss').name, 'gray_book_boss')
+        task.openF2Book.assert_called_once_with('gray_book_boss')
 
-        def open_book(feature):
-            attempts.append(feature)
-            if len(attempts) == 1:
-                raise RuntimeError('transient book failure')
-            return FakeBox(feature)
-
-        task.openF2Book = open_book
-        task.ensure_main = lambda **kwargs: recoveries.append(kwargs)
-        task.sleep = lambda *args, **kwargs: None
-        task.log_warning = lambda *args, **kwargs: None
-
-        result = task._open_book_with_retry('gray_book_boss')
-
-        self.assertEqual('gray_book_boss', result.name)
-        self.assertEqual(['gray_book_boss', 'gray_book_boss'], attempts)
-        self.assertEqual([{'time_out': 30}], recoveries)
-
-    def test_open_book_stops_after_bounded_retries(self):
+    def test_open_book_failure_does_not_restart_navigation_or_escape(self):
+        from unittest.mock import Mock
         task = NightmareNestTask.__new__(NightmareNestTask)
-        attempts = []
-        recoveries = []
-
-        def open_book(feature):
-            attempts.append(feature)
-            raise RuntimeError('persistent book failure')
-
-        task.openF2Book = open_book
-        task.ensure_main = lambda **kwargs: recoveries.append(kwargs)
-        task.sleep = lambda *args, **kwargs: None
-        task.log_warning = lambda *args, **kwargs: None
-
-        with self.assertRaisesRegex(RuntimeError, 'persistent book failure'):
+        task.openF2Book = Mock(side_effect=RuntimeError('persistent book failure'))
+        task.ensure_main = Mock()
+        with self.assertRaisesRegex(RuntimeError, 'persistent'):
             task._open_book_with_retry('gray_book_boss')
-
-        self.assertEqual(['gray_book_boss'] * 3, attempts)
-        self.assertEqual([{'time_out': 30}] * 2, recoveries)
+        task.openF2Book.assert_called_once_with('gray_book_boss')
+        task.ensure_main.assert_not_called()
 
     def test_find_nest_skips_cached_unreachable_row(self):
         task = NightmareNestTask.__new__(NightmareNestTask)

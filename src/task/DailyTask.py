@@ -1981,7 +1981,13 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         if page == '任务页':
             self.openF2Book('gray_book_quest')
             # The guidebook remembers the weekly tab; explicitly select daily progress.
-            self.click(0.17, 0.12, after_sleep=1)
+            def ready(frame):
+                return bool(self.ocr(.1, .1, .5, .75, frame=frame,
+                                     match=re.compile(r'^(\d+)/180$')))
+            self.navigate_ui('完成检查：每日任务页',
+                lambda frame: self.find_one('gray_book_quest', box='box_gray_book', threshold=.3, frame=frame)
+                    if not ready(frame) else None,
+                ready, action=lambda _:self.click(.17, .12), identity='daily_progress')
             return True
         if page == '每周乐园':
             self.get_task_by_class(GardenTask).open_garden_weekly_page()

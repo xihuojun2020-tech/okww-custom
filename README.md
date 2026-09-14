@@ -1,5 +1,5 @@
 <div align="center">
-  <p>当前版本：<a href="更新日志.md">1.70.07 活动导航点击重试</a> · <a href="docs/references/solo-combat.md">单人输出支持清单</a> · <a href="docs/references/completion-evidence.md">完成检查分组与图片复制</a> · <a href="docs/references/material-planner-1.59.md">养成材料规划</a></p>
+  <p>当前版本：<a href="更新日志.md">1.71.00 稳定导航首批接入</a> · <a href="docs/references/solo-combat.md">单人输出支持清单</a> · <a href="docs/references/completion-evidence.md">完成检查分组与图片复制</a> · <a href="docs/references/material-planner-1.59.md">养成材料规划</a></p>
   <h1 align="center">
     <img src="icons/icon.png" width="200" alt="ok-ww logo"/>
     <br/>
@@ -153,3 +153,5 @@ ok-ww.exe -t 1 -e
 - [分批实施、测试与验收计划](docs/superpowers/plans/2026-09-14-task-navigation-reliability.md)
 
 以上为待实施方案，不代表全部任务已经接入稳定等待和重试。
+
+- [稳定导航 1.71.00：实际覆盖、限制与使用端验收](docs/reviews/2026-09-14-navigation-rollout-1.71.00.md)
