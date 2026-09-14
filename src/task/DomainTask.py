@@ -41,17 +41,28 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
         return True
 
     def make_sure_in_world(self):
+        # The exit/loading animation can outlast the reward screen's delay.
+        # Observe fresh frames without ESC before deciding this is still a realm.
+        if self.wait_until(self._returned_to_world, time_out=15, settle_time=.5,
+                           raise_if_not_found=False):
+            return
         if self.in_realm():
             self.send_key('esc', after_sleep=1)
             self.wait_click_feature('gray_confirm_exit_button', relative_x=-1, raise_if_not_found=False,
                                     time_out=3, click_after_delay=0.5, threshold=0.7, after_sleep=1)
-            self.wait_in_team_and_world(time_out=self.teleport_timeout)
-        else:
-            self.ensure_main()
+        if not self.wait_until(self._returned_to_world, time_out=self.teleport_timeout,
+                               settle_time=.5, raise_if_not_found=False):
+            self.screenshot('domain_exit_unknown', frame=self.require_game_frame())
+            raise CombatStateUnknown('退出副本后未确认大世界，停止输入并保留待补跑')
+
+    def _returned_to_world(self):
+        self.next_frame()
+        self.require_game_frame()
+        return self.in_team_and_world() and self.in_world() and not self.in_realm()
 
     def open_F2_book_and_get_stamina(self):
         self.openF2Book('gray_book_boss')
-        return self.get_stamina()
+        return self.get_verified_stamina()
 
     def farm_domain_with_recovery_loop(self, must_use, teleport_into_domain_once,
                                        activity_ready=None, stamina_budget=0, max_recovery_retries=3,

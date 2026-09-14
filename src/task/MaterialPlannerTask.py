@@ -286,8 +286,9 @@ class MaterialPlannerTask(BaseWWTask):
                 buttons = domain.ocr(.83,top/1152,.96,bottom/1152,match=re.compile('直接挑战|前往'))
                 if len(buttons)!=1: continue
                 domain.click(buttons[0],after_sleep=1)
-                feature = domain.wait_feature(['fast_travel_custom','gray_teleport','team_close'],time_out=10)
-                if feature.name != 'team_close': domain.click_traval_button()
+                feature = domain.wait_book_target_state()
+                if feature.name not in ('team_start_challenge', 'team_entry'):
+                    domain.wait_click_travel()
                 domain.click_team_challenge()
                 domain.wait_in_team_and_world(time_out=domain.teleport_timeout)
                 return

@@ -646,6 +646,20 @@ class BaseWWTask(BaseTask):
         back_up = max(back_up - remaining_cost, 0)
         return current, back_up, current + back_up
 
+    def get_verified_stamina(self):
+        """An unreadable resource bar is not an empty resource bar."""
+        for attempt in range(3):
+            self.executor.check_enabled()
+            self.next_frame()
+            self.require_game_frame()
+            current, reserve, total = self.get_stamina(time_out=1, screenshot_on_failure=False)
+            if min(current, reserve, total) >= 0:
+                return current, reserve, total
+            self.log_warning(f'体力读数未知，重新识别资源栏 ({attempt + 1}/3)')
+            self.sleep(.5)
+        self.screenshot('stamina_unreadable', frame=self.require_game_frame())
+        raise RuntimeError('体力读数持续未知，未按体力不足结束；账号保留待补跑')
+
     @staticmethod
     def daily_stamina_budget(activity_ready, once):
         if activity_ready:
@@ -1588,10 +1602,44 @@ class BaseWWTask(BaseTask):
         return gray_book_boss
 
     def _travel_button(self, frame):
+        self._check_travel_unavailable(frame)
         for name in ('fast_travel_custom', 'gray_teleport'):
             if button := self.find_one(name, threshold=.7, frame=frame):
                 return button
         return None
+
+    def _check_travel_unavailable(self, frame):
+        texts = self.ocr(.65, .55, 1, .95, frame=frame) or []
+        message = ''.join(str(box.name) for box in texts)
+        if re.search(r'无法快速到达|無法快速到達|无法传送|無法傳送|cannot.*(?:travel|teleport)', message, re.I):
+            target = ' / '.join(self._travel_identity(frame))
+            raise RuntimeError(f'目标不可快速到达：{target}；保留原目标待补跑，不替换账号设置')
+
+    def wait_book_target_state(self):
+        def detect():
+            frame = self.require_game_frame()
+            self._check_travel_unavailable(frame)
+            # A map close icon can match team_close. Only the challenge action
+            # positively identifies formation; never use the shared X icon.
+            return (self.find_one(['fast_travel_custom', 'gray_teleport', 'remove_custom'], frame=frame)
+                    or self._team_start_button(frame) or self._single_challenge_entry(frame))
+        return self.wait_until(detect, time_out=10, settle_time=.5, raise_if_not_found=True)
+
+    def _single_challenge_entry(self, frame):
+        boxes = self.ocr(.7, .78, 1, .98, frame=frame,
+                         match=re.compile(r'^(?:单人挑战|單人挑戰|Solo Challenge)$', re.I)) or []
+        if boxes:
+            boxes[0].name = 'team_entry'
+            return boxes[0]
+
+    def _team_start_button(self, frame):
+        if button := self.find_one('team_start_challenge', frame=frame):
+            return button
+        boxes = self.ocr(.7, .78, 1, .98, frame=frame,
+                         match=re.compile(r'^(?:开启挑战|開啟挑戰|开始挑战|開始挑戰|Start Challenge)$', re.I)) or []
+        if boxes:
+            boxes[0].name = 'team_start_challenge'
+            return boxes[0]
 
     def _travel_identity(self, frame):
         names = tuple(str(box.name).strip() for box in self.ocr(.65,.10,.97,.32,frame=frame)
@@ -1690,7 +1738,14 @@ class BaseWWTask(BaseTask):
         )
 
     def click_team_challenge(self):
-        self.wait_click_feature('team_start_challenge', raise_if_not_found=True, after_sleep=1)
+        def source(frame):
+            self._check_travel_unavailable(frame)
+            return self._single_challenge_entry(frame)
+        frame = self.navigate_ui('确认编队挑战入口', source, self._team_start_button, timeout=15)
+        button = self._team_start_button(frame)
+        if button is None:
+            raise CannotFindException('编队挑战按钮消失，停止输入')
+        self.click(button, after_sleep=1)
         self.wait_click_skip_dialog_confirm()
 
     def wait_click_travel(self):
@@ -1787,11 +1842,10 @@ class BaseWWTask(BaseTask):
             target = max(btns, key=lambda box: box.y)
         self.draw_boxes(boxes=target, color="red")
         self.click(target, after_sleep=1)
-        feature = self.wait_feature(['fast_travel_custom', 'gray_teleport', 'remove_custom', 'team_close'], time_out=10,
-                                    settle_time=0.5, raise_if_not_found=True)
+        feature = self.wait_book_target_state()
         if feature.name == 'remove_custom':
             raise RuntimeError('指南目标没有可用传送或挑战入口，停止；未移除标记')
-        return feature.name == 'team_close'
+        return feature.name in ('team_start_challenge', 'team_entry')
 
     def change_time_to_night(self):
         logger.info('change time to night')

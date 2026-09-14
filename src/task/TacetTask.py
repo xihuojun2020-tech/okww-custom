@@ -61,10 +61,7 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
         while True:
             self.sleep(1)
             self.openF2Book("gray_book_boss")
-            current, back_up, total = self.get_stamina()
-            if current == -1:
-                self.click_relative(0.04, 0.4, after_sleep=1)
-                current, back_up, total = self.get_stamina()
+            current, back_up, total = self.get_verified_stamina()
             if not backup_policy_decided:
                 allow_backup = self.should_use_backup_stamina(
                     activity_ready, current, back_up, must_use)
@@ -114,6 +111,11 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
 
     def teleport_to_tacet(self, index):
         self.info_set('Teleport to Tacet Suppression', index)
-        if index >= self.total_number:
+        if not 0 <= index < self.total_number:
             raise IndexError(f'Index out of range, max is {self.total_number}')
-        return self.click_on_book_target(index + 1, self.total_number, self.structure)
+        is_team = self.click_on_book_target(index + 1, self.total_number, self.structure)
+        if not is_team:
+            self.wait_click_travel()
+            self.walk_until_f(time_out=10, backward_time=0, raise_if_not_found=True)
+            self.pick_f(handle_claim=False)
+        return True

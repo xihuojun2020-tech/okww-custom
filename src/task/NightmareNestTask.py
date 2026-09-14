@@ -9,7 +9,7 @@ from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task_status import publish_task_status
 
 logger = Logger.get_logger(__name__)
-TRAVEL_FEATURES = ['fast_travel_custom', 'gray_teleport', 'remove_custom']
+TRAVEL_FEATURES = ['fast_travel_custom', 'gray_teleport']
 CONFIRM_FEATURES = ['confirm_btn_hcenter_vcenter', 'confirm_btn_highlight_hcenter_vcenter']
 
 # 残象聚落（Tacet Discord Nest）名称，按游戏内 F2 残象页面从上到下的顺序
@@ -96,6 +96,8 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
             if self._capture_success:
                 break
         self.ensure_main(time_out=30)
+        if not self._capture_success:
+            raise CombatStateUnknown('每日声骸未确认获取，保留待补跑')
 
     def on_combat_check(self):
         if self._capture_mode:
@@ -116,9 +118,8 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
         target_name = nest.display_name if isinstance(nest, NestTarget) else '当前目标'
         publish_task_status(self, stage='刷梦魇巢穴', detail=f'{target_name} · 正在进入挑战')
         self.click(target_box, after_sleep=2)
-        feature = self.wait_feature(['fast_travel_custom', 'gray_teleport', 'remove_custom', 'team_close'], time_out=10,
-                                    settle_time=0.5, raise_if_not_found=True)
-        is_team = feature.name == 'team_close'
+        feature = self.wait_book_target_state()
+        is_team = feature.name in ('team_start_challenge', 'team_entry')
         if is_team:
             self.click_team_challenge()
             self.wait_in_team_and_world(time_out=120)

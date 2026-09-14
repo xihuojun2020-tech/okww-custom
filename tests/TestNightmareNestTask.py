@@ -47,7 +47,7 @@ class TestNightmareNestTask(unittest.TestCase):
         task._capture_mode = False
         task._capture_success = False
         task.click = lambda *args, **kwargs: None
-        task.wait_feature = lambda *args, **kwargs: FakeBox('team_close')
+        task.wait_book_target_state = lambda *args, **kwargs: FakeBox('team_start_challenge')
         task.click_team_challenge = lambda: None
         task.wait_in_team_and_world = lambda *args, **kwargs: True
         task.sleep = lambda *args, **kwargs: None
@@ -100,7 +100,7 @@ class TestNightmareNestTask(unittest.TestCase):
         self.assertEqual('echo captured', task.out_of_combat_reason)
 
     def test_combat_nest_rechecks_after_pickup_in_team_and_open_world(self):
-        for feature_name in ('team_close', 'fast_travel_custom'):
+        for feature_name in ('team_start_challenge', 'fast_travel_custom'):
             with self.subTest(feature_name=feature_name):
                 task = NightmareNestTask.__new__(NightmareNestTask)
                 task._capture_mode = False
@@ -110,7 +110,7 @@ class TestNightmareNestTask(unittest.TestCase):
                 combat_results = iter([True, False])
 
                 task.click = lambda *args, **kwargs: None
-                task.wait_feature = lambda *args, **kwargs: FakeBox(feature_name)
+                task.wait_book_target_state = lambda *args, **kwargs: FakeBox(feature_name)
                 task.click_team_challenge = lambda: None
                 task.wait_in_team_and_world = lambda *args, **kwargs: True
                 task._travel_to_nest_or_skip = lambda nest: True
@@ -143,7 +143,7 @@ class TestNightmareNestTask(unittest.TestCase):
         recoveries = []
 
         task.click = lambda *args, **kwargs: None
-        task.wait_feature = lambda *args, **kwargs: FakeBox('fast_travel_custom')
+        task.wait_book_target_state = lambda *args, **kwargs: FakeBox('fast_travel_custom')
         task._travel_to_nest_or_skip = lambda nest: True
         task.sleep = lambda *args, **kwargs: None
         task.find_f_with_text = lambda: False

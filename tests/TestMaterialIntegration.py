@@ -59,7 +59,7 @@ class TestMaterialIntegration(unittest.TestCase):
         from src.task.TacetTask import TacetTask
         task=Mock(spec=TacetTask)
         task.config={}; task.stamina_once=60
-        task.get_stamina.return_value=(240,0,240)
+        task.get_verified_stamina.return_value=(240,0,240)
         task.use_stamina.return_value=(False,60)
         TacetTask.farm_tacet(task,daily=True,stamina_budget=80)
         self.assertEqual(task.use_stamina.call_args.kwargs['must_use'],60)

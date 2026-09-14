@@ -3,6 +3,8 @@ import re
 import copy
 import importlib
 import inspect
+import hashlib
+import json
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
@@ -474,8 +476,14 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 and self._profile_get('Which to Farm', self.support_tasks[0]) != self.support_tasks[0]
         )
 
+        nightmare_checkpoint = self._nightmare_checkpoint_key(auto_farm)
+        nightmare_done = self._daily_step_completed(nightmare_checkpoint)
+        if need_nightmare and nightmare_done:
+            self.log_info('每日补跑：本账号当前配置的梦魇步骤已确认完成，跳过；体力与活跃度仍重新检查')
+            need_nightmare = False
+
         nightmare_error = None
-        nightmare_attempted = False
+        nightmare_attempted = nightmare_done
         if need_nightmare:
             nightmare_attempted = True
             try:
@@ -494,6 +502,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                     self.log_info('开始刷梦魇巢穴（打梦魇聚落）', notify=True)
                     nightmare_task.run_capture_mode()
                 self.record_last_completed('Nightmare Nest', profile_id=getattr(self, '_verified_profile_id', None))
+                self.record_last_completed(nightmare_checkpoint, profile_id=verified_id)
             except TaskDisabledException:
                 raise
             except (ConfigIntegrityBlocked, ConfigWriteBlocked):
@@ -552,6 +561,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 nightmare_attempted = True
                 self.record_last_completed(
                     'Nightmare Nest', profile_id=getattr(self, '_verified_profile_id', None))
+                self.record_last_completed(self._nightmare_checkpoint_key(False), profile_id=verified_id)
                 _, daily_reward_ready = self.open_daily()
             except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked, GameProcessLost, FrameUnavailable):
                 raise
@@ -593,6 +603,27 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _notify_incomplete_daily_activity(self, message):
         self.log_warning(message, notify=True)
+
+    def _nightmare_checkpoint_key(self, auto_farm):
+        # Reuse the validated profile's completion store. Legacy generic
+        # completion stamps cannot prove capture vs full-clear or target scope.
+        intent = [bool(auto_farm),
+                  sorted(self._profile_get('Nightmare Which to Farm', ['Tacet Discord Nest'])),
+                  sorted(self._profile_get('Tacet Discord Nests to Farm', NEST_NAMES))]
+        digest = hashlib.sha256(json.dumps(intent, ensure_ascii=False).encode()).hexdigest()[:20]
+        return f'daily_step_v1:nightmare:{digest}'
+
+    def _daily_step_completed(self, key, now=None):
+        stamp = self.get_last_completed(key)
+        if not stamp:
+            return False
+        try:
+            completed = datetime.fromisoformat(str(stamp))
+            now = now or datetime.now()
+            # Daily game rewards reset at 04:00, including an overnight retry.
+            return completed <= now and (completed - timedelta(hours=4)).date() == (now - timedelta(hours=4)).date()
+        except (ValueError, TypeError):
+            return False
 
     @staticmethod
     def _stamina_policy_activity_ready(activity_ready):
