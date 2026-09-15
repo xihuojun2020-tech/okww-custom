@@ -15,6 +15,33 @@ ROOT = Path('tests/fixtures/echoes_remain/continuation')
 
 
 class TestEchoesContinuation(unittest.TestCase):
+    def test_confirm_names_requires_consecutive_matching_reads(self):
+        task=Mock(spec=EchoesRemainTask)
+        task.last_result={}
+        a=[dict(identity='a',order=1,name='a',role='输出')]
+        b=[dict(identity='b',order=1,name='b',role='输出')]
+        task._read_formation_members.side_effect=[a,None,a,b,b]
+        def wait(probe,reason):
+            for _ in range(4):
+                self.assertIsNone(probe(None))
+            return probe(None)
+        task._wait.side_effect=wait
+        EchoesRemainTask._confirm_formation_members(task)
+        self.assertEqual(task.last_result['members'],b)
+
+    def test_formation_name_mapping_handles_luhesi_and_unknown(self):
+        import gettext
+        task=Mock(spec=EchoesRemainTask)
+        task.tr=gettext.translation('ok','i18n',['zh_CN']).gettext
+        task.last_result={'stage':'孤寂遗魂·浅梦'}
+        task._formation_for_stage.return_value=True
+        task.ocr.side_effect=[[SimpleNamespace(name=n,confidence=.99)] for n in ('爱弥斯','陆赫斯','莫宁')]
+        members=EchoesRemainTask._read_formation_members(task,None)
+        self.assertEqual([m['identity'] for m in members],['char_aemeath','char_luhesi','char_moning'])
+        for text,conf in [('未知角色',.99),('陆赫斯',.5)]:
+            task.ocr.side_effect=[[SimpleNamespace(name=text,confidence=conf)]]
+            self.assertIsNone(EchoesRemainTask._read_formation_members(task,None))
+
     def retry_task(self, outcomes):
         task=Mock(spec=EchoesRemainTask)
         task.config={'Event Max Attempts':3}
@@ -164,6 +191,8 @@ class TestEchoesContinuation(unittest.TestCase):
         task._challenge_event.return_value='failed'
         EchoesRemainTask._continue_event(task)
         task._challenge_event.assert_called_once()
+        task._identify_team.assert_not_called()
+        task._confirm_formation_members.assert_called_once()
         task._record_stage_result.assert_called_once()
         task._open_quick.assert_not_called()
         self.assertEqual(task.last_result['phase'],'challenge_failed')

@@ -55,6 +55,15 @@ class TestEchoesContinuationImages(TaskTestCase):
         self.task.last_result['members'].reverse()
         self.assertFalse(self.task._verify_team_names(f))
 
+    def test_formation_names_are_authoritative_without_avatar_matching(self):
+        self.task.tr=gettext.translation('ok',localedir='i18n',languages=['zh_CN']).gettext
+        for image,stage,names in [('lynae_formation','堕梦神躯·浅梦',['爱弥斯','莫宁','琳奈']),
+                                  ('equipped','溺梦魔影·浅梦',['穗穗','秧秧·玄翎','千咲'])]:
+            self.task.last_result={'stage':stage}
+            members=self.task._read_formation_members(self.page(image))
+            self.assertIsNotNone(members,image)
+            self.assertEqual([m['name'] for m in members],names)
+
     def test_control_support_failure_screenshot(self):
         f=self.page('control_selected')
         state=self.task._support_selection_state(f,1)

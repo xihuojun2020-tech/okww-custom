@@ -24,6 +24,10 @@ class EventSettlement(Exception):
     pass
 
 
+def character_name_key(text):
+    return compact(text).replace('·', '').replace('・', '')
+
+
 def activity_role(identity):
     if identity == 'char_chisa':
         return '辅助'
@@ -98,13 +102,58 @@ class EchoesContinuation:
     def _character_template_descriptors(self):
         return AutoAbyssTask._character_template_descriptors(self)
 
+    def _read_formation_members(self, frame):
+        if not self._formation_for_stage(frame, self.last_result['stage']):
+            return None
+        candidates = {}
+        for info in char_dict.values():
+            identity = info['canonical_name']
+            name = self.tr(character_display_name(info['cls']))
+            candidates.setdefault(character_name_key(name), {})[identity] = name
+        members = []
+        observed = []
+        for index, x in enumerate((.28, .55, .85)):
+            boxes = self.ocr(x, .755, x+.10, .81, frame=frame)
+            texts = [compact(b.name) for b in boxes]
+            observed.append(texts)
+            matches = [(identity, name, b.confidence)
+                       for b in boxes if b.confidence >= .8
+                       for identity, name in candidates.get(character_name_key(b.name), {}).items()]
+            if len(matches) != 1:
+                self.last_result['formation_name_observation'] = observed
+                return None
+            identity, name, confidence = matches[0]
+            members.append(dict(order=index+1, identity=getattr(identity, 'value', identity),
+                                name=name, role=activity_role(identity), confidence=confidence,
+                                identity_source='formation_name'))
+        self.last_result['formation_name_observation'] = observed
+        if len({m['identity'] for m in members}) != 3:
+            return None
+        return members
+
+    def _confirm_formation_members(self):
+        previous = None
+        def stable(frame):
+            nonlocal previous
+            members = self._read_formation_members(frame)
+            signature = tuple(m['identity'] for m in members) if members else None
+            confirmed = members if signature is not None and signature == previous else None
+            previous = signature
+            return confirmed
+        self.last_result['members'] = self._wait(stable, '编队页三个姓名未能连续确认，未装配声骸')
+        self.last_result['identity_source'] = 'formation_name'
+        self.info_set('试用角色', '；'.join(f"{m['order']}.{m['name']}（{m['role']}）"
+                                         for m in self.last_result['members']))
+        self._quick_capture('echoes_formation_names_verified', self.require_game_frame())
+        self._save_run_summary()
+
     def _verify_team_names(self, frame):
         if not self._formation_for_stage(frame, self.last_result['stage']):
             return False
         for index, member in enumerate(self.last_result['members']):
             x = (.28, .55, .85)[index]
-            names = [compact(b.name) for b in self.ocr(x, .755, x+.10, .81, frame=frame)]
-            if compact(member['name']) not in names:
+            names = [character_name_key(b.name) for b in self.ocr(x, .755, x+.10, .81, frame=frame)]
+            if character_name_key(member['name']) not in names:
                 return False
         return True
 
@@ -435,20 +484,13 @@ class EchoesContinuation:
             if stage in seen:
                 raise RuntimeError('返回后仍选择同一关卡，停止重复挑战')
             seen.add(stage)
+            self.last_result.pop('members', None)
             frame = self._choose()
-            members = self._identify_team(frame)
-            if any(m['confidence'] < .6 for m in members):
-                fresh, state = self._observe_roster()
-                if not state['valid'] or state['numbers'] != FINAL:
-                    raise RuntimeError('身份复读时选人状态变化')
-                repeated = self._identify_team(fresh)
-                if [m['identity'] for m in repeated] != [m['identity'] for m in members]:
-                    raise RuntimeError('两次角色身份识别不一致')
-                frame = fresh
             self._save_proof(frame)
             self._click_transition('完成编队', 'done',
                 lambda f: self._button(f, self.DONE, '完成') if self._roster_page(f) else None,
                 lambda f: self._formation_for_stage(f, stage))
+            self._confirm_formation_members()
             self._equip_supports()
             outcome = self._challenge_event()
             self._record_stage_result()
