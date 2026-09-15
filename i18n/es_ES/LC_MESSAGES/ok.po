@@ -1655,3 +1655,14 @@ msgstr ""
 "Verifica los personajes de prueba, equipa ecos de apoyo según su rol y "
 "completa ambas dificultades. Sale y se detiene si falla; no recoge "
 "recompensas."
+
+msgid "Event Max Attempts"
+msgstr "Intentos máximos por dificultad"
+
+msgid "每个难度最多尝试次数（包含首次，1至10次）"
+msgstr "Máximo de intentos por dificultad, incluido el primero (1–10)"
+
+msgid "复核试用角色并按定位装配支援声骸，依次通关浅梦和深梦；失败按次数重新挑战，不领取奖励。"
+msgstr ""
+"Verifica personajes de prueba y Ecos de apoyo para superar las dificultades."
+" Reintenta los fallos dentro del límite y no reclama recompensas."

@@ -32,6 +32,11 @@ class TestEchoesContinuationImages(TaskTestCase):
         self.assertFalse(state['key_ocr'],state)
         self.assertTrue(state['key_template'],state)
 
+    def test_actual_failed_settlement(self):
+        f=self.page('failed_retry')
+        self.assertEqual(self.task._settlement(f),'failed')
+        self.assertIsNotNone(self.task._button(f,(.54,.79,.73,.90),'重新挑战'))
+
     def test_next_stage_zero_score_is_pending(self):
         f=self.page('zero_score')
         self.task.last_result={}

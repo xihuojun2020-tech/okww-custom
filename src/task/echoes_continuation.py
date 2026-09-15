@@ -156,6 +156,9 @@ class EchoesContinuation:
     def _settlement(self, frame):
         if not self._button(frame, (.27, .79, .46, .90), '退出副本'):
             return None
+        if (self._button(frame, (.40, .45, .60, .55), '本次挑战失败')
+                and self._button(frame, (.54, .79, .73, .90), '重新挑战')):
+            return 'failed'
         for text, outcome in (('挑战成功', 'success'), ('挑战失败', 'failed')):
             if self._button(frame, (.32, .23, .68, .37), text):
                 return outcome
@@ -217,6 +220,32 @@ class EchoesContinuation:
             self.next_frame()
         return super().sleep_check()
 
+    def _recover_event_character(self):
+        self._release_event_inputs()
+        self.log_info('活动角色阵亡：尝试切换队友并等待自动复活')
+        deadline = time.monotonic() + 25
+        next_switch = 0
+        slot = 0
+        while time.monotonic() < deadline:
+            frame = self.next_frame()  # Settlement observer interrupts immediately.
+            if self._settlement(frame):
+                return
+            ready, current, count = self.in_team(frame=frame)
+            if ready and count == 3:
+                text = ''.join(compact(b.name) for b in self.ocr(.43, .94, .60, .98, frame=frame))
+                hp = re.search(r'(\d+)/(\d+)', text)
+                if hp and 0 < int(hp[1]) <= int(hp[2]):
+                    self.chars = []
+                    self.reset_to_false(reason='活动存活角色恢复后重新识别战斗状态')
+                    self.log_info(f'活动存活/复活角色已确认 slot={current+1}，恢复战斗')
+                    return
+                if time.monotonic() >= next_switch:
+                    self.send_key(str(slot + 1))
+                    slot = (slot + 1) % 3
+                    next_switch = time.monotonic() + 2
+            self.sleep(.5)
+        raise CombatStateUnknown('等待自动复活25秒后仍未确认存活角色或结算，停止本轮')
+
     def _fight_event(self):
         self._event_outcome = None
         self._next_result_check = 0
@@ -226,12 +255,12 @@ class EchoesContinuation:
                 self.skip_combat_check = False
                 try:
                     self.combat_once(wait_combat_time=12, target=True)
+                except CharDeadException:
+                    self.skip_combat_check = True
+                    self._recover_event_character()
                 except (CombatStateUnknown, NotInCombatException):
                     # A wave gap is not completion; wait for enemies or settlement.
                     pass
-                except CharDeadException:
-                    self.skip_combat_check = True
-                    self._wait(lambda f: self._settlement(f), '角色阵亡后未确认失败结算', timeout=25)
                 finally:
                     self.skip_combat_check = True
                     self._release_event_inputs()
@@ -246,7 +275,7 @@ class EchoesContinuation:
             self.skip_combat_check = True
             self._release_event_inputs()
 
-    def _challenge_event(self):
+    def _enter_event_map(self):
         def ready(frame):
             supports = self.last_result['supports']
             return (self._verify_team_names(frame) and enabled_start(frame) and
@@ -255,11 +284,15 @@ class EchoesContinuation:
             lambda f: self._button(f, self.DONE, '开启挑战') if ready(f) else None,
             lambda f: self.in_team_and_world(frame=f) and not self._formation_page(f),
             attempts=1, timeout=120, identity=self.last_result['stage'])
+
+    def _start_event_combat(self):
         started = False
         prompt_state = {}
         try:
             for _ in range(40):
                 frame = self.next_frame()
+                if self.in_combat():
+                    return
                 boxes = self.ocr(.60, .43, .86, .61, frame=frame)
                 prompt_state = challenge_prompt_state(frame, boxes)
                 if prompt_state['text'] and (prompt_state['key_ocr'] or prompt_state['key_template']):
@@ -277,11 +310,35 @@ class EchoesContinuation:
         if not started:
             self.log_warning(f'开启挑战提示未确认 state={prompt_state}')
             raise RuntimeError('未找到F开启挑战提示，停止移动')
-        outcome = self._fight_event()
-        frame = self._wait(lambda f: self._settlement(f) == outcome, '结算页面不稳定')
-        self._quick_capture('echoes_result_' + outcome, self.require_game_frame())
-        self.last_result['outcome'] = outcome
-        self.last_result['score'] = ' '.join(b.name for b in self.ocr(.40, .48, .60, .61))
+
+    def _challenge_event(self):
+        limit = max(1, min(10, int(self.config.get('Event Max Attempts', 3))))
+        self._enter_event_map()
+        for attempt in range(1, limit + 1):
+            self.info_set('活动阶段', f"{self.last_result['stage']}：第{attempt}/{limit}次尝试")
+            self._start_event_combat()
+            outcome = self._fight_event()
+            self._wait(lambda f: self._settlement(f) == outcome, '结算页面不稳定')
+            self._quick_capture(f'echoes_result_{outcome}_attempt_{attempt}', self.require_game_frame())
+            self.last_result['outcome'] = outcome
+            self.last_result['score'] = ' '.join(b.name for b in self.ocr(.40, .48, .60, .61))
+            self.last_result.setdefault('attempts', []).append(dict(
+                stage=self.last_result['stage'], attempt=attempt, outcome=outcome, at=time.time()))
+            self._save_run_summary()
+            if outcome == 'success' or attempt == limit:
+                break
+            self.navigate_ui('重新挑战若梦副本',
+                lambda f: self._button(f, (.54, .79, .73, .90), '重新挑战')
+                    if self._settlement(f) == 'failed' else None,
+                lambda f: self._formation_for_stage(f, self.last_result['stage'])
+                    or self.in_team_and_world(frame=f),
+                attempts=1, timeout=120, identity=(self.last_result['stage'], attempt))
+            frame = self.next_frame()
+            if self._formation_for_stage(frame, self.last_result['stage']):
+                self._equip_supports()
+                self._enter_event_map()
+            self.chars = []
+            self.reset_to_false(reason='活动重新挑战，清理上一局战斗状态')
         self.navigate_ui('退出若梦副本',
             lambda f: self._button(f, (.27, .79, .46, .90), '退出副本') if self._settlement(f) == outcome else None,
             self._stage_page, timeout=120, identity=self.last_result['stage'])

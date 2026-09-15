@@ -15,6 +15,69 @@ ROOT = Path('tests/fixtures/echoes_remain/continuation')
 
 
 class TestEchoesContinuation(unittest.TestCase):
+    def retry_task(self, outcomes):
+        task=Mock(spec=EchoesRemainTask)
+        task.config={'Event Max Attempts':3}
+        task.last_result={'stage':'堕梦神躯·浅梦'}
+        task._fight_event.side_effect=outcomes
+        task.ocr.return_value=[]
+        task._formation_for_stage.return_value=False
+        return task
+
+    def test_retry_failure_then_success(self):
+        task=self.retry_task(['failed','success'])
+        self.assertEqual(EchoesRemainTask._challenge_event(task),'success')
+        self.assertEqual(task._fight_event.call_count,2)
+        self.assertEqual([c.args[0] for c in task.navigate_ui.call_args_list],
+                         ['重新挑战若梦副本','退出若梦副本'])
+        self.assertEqual(len(task.last_result['attempts']),2)
+
+    def test_retry_limit_and_cancel(self):
+        task=self.retry_task(['failed']*3)
+        self.assertEqual(EchoesRemainTask._challenge_event(task),'failed')
+        self.assertEqual(task._fight_event.call_count,3)
+        self.assertEqual(task.navigate_ui.call_count,3)
+        task=self.retry_task([TaskDisabledException('stop')])
+        with self.assertRaises(TaskDisabledException):
+            EchoesRemainTask._challenge_event(task)
+        task.navigate_ui.assert_not_called()
+
+    def test_retry_formation_reuses_equipment_verification(self):
+        task=self.retry_task(['failed','success'])
+        task._formation_for_stage.return_value=True
+        EchoesRemainTask._challenge_event(task)
+        task._equip_supports.assert_called_once()
+        self.assertEqual(task._enter_event_map.call_count,2)
+
+    def test_recovery_requires_positive_health(self):
+        task=Mock(spec=EchoesRemainTask)
+        task._settlement.return_value=None
+        task.in_team.return_value=(True,1,3)
+        task.ocr.side_effect=[[SimpleNamespace(name='0/100')],[SimpleNamespace(name='100/100')]]
+        EchoesRemainTask._recover_event_character(task)
+        task.send_key.assert_called_once()
+        self.assertEqual(task.chars,[])
+
+    def test_death_exception_reaches_recovery_before_generic_end(self):
+        from src.task.BaseCombatTask import CharDeadException
+        task=Mock(spec=EchoesRemainTask)
+        task.combat_once.side_effect=CharDeadException('dead')
+        task._wait.return_value='success'
+        self.assertEqual(EchoesRemainTask._fight_event(task),'success')
+        task._recover_event_character.assert_called_once()
+
+    def test_unknown_failure_does_not_retry(self):
+        task=self.retry_task([RuntimeError('unknown page')])
+        with self.assertRaisesRegex(RuntimeError,'unknown page'):
+            EchoesRemainTask._challenge_event(task)
+        task.navigate_ui.assert_not_called()
+
+    def test_recovery_timeout_stops(self):
+        task=Mock(spec=EchoesRemainTask)
+        with patch('src.task.echoes_continuation.time.monotonic',side_effect=[0,26]):
+            with self.assertRaisesRegex(RuntimeError,'25秒'):
+                EchoesRemainTask._recover_event_character(task)
+
     def test_stage_separator_normalization_preserves_identity(self):
         for text in ('堕梦神躯··浅梦','堕梦神躯・浅梦',' 堕梦神躯 · · 浅梦 '):
             self.assertEqual(canonical_stage(text),'堕梦神躯·浅梦')

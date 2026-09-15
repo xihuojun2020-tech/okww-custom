@@ -32,7 +32,9 @@ class EchoesRemainTask(EchoesContinuation, WWOneTimeTask, BaseCombatTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = ACTIVITIES['echoes_remain']
-        self.description = '复核试用角色并按定位装配支援声骸，依次通关浅梦和深梦；失败退出后停止，不领取奖励。'
+        self.description = '复核试用角色并按定位装配支援声骸，依次通关浅梦和深梦；失败按次数重新挑战，不领取奖励。'
+        self.default_config.update({'Event Max Attempts': 3})
+        self.config_description['Event Max Attempts'] = '每个难度最多尝试次数（包含首次，1至10次）'
         self.group_name = '限时活动'
         self.supported_languages = ['zh_CN']
         self.support_schedule_task = False
