@@ -39,6 +39,34 @@ def recording_defaults():
             'Record Duration': config.get('Record Duration', 1.5)}
 
 
+class NestSelection(QWidget):
+    changed = Signal()
+
+    def __init__(self, value, parent=None):
+        super().__init__(parent)
+        from src.nightmare_nests import NEST_NAMES
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        self.boxes = {}
+        for name in NEST_NAMES:
+            box = QCheckBox(name, self)
+            layout.addWidget(box)
+            box.toggled.connect(self.changed.emit)
+            self.boxes[name] = box
+        self.set_values(value)
+
+    def set_values(self, value):
+        selected = set(self.boxes if value is None else value)
+        for name, box in self.boxes.items():
+            box.blockSignals(True)
+            box.setChecked(name in selected)
+            box.blockSignals(False)
+
+    def values(self):
+        return [name for name, box in self.boxes.items() if box.isChecked()]
+
+
 class FixedRecordingPages(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -98,6 +126,8 @@ class AccountTemplateDialog(QDialog):
             value = self._tasks.get(field.key)
             if field.key == 'Record Pages':
                 widget = FixedRecordingPages(self)
+            elif field.key == "Tacet Discord Nests to Farm":
+                widget = NestSelection(value, self)
             elif field.editor_type == "bool":
                 widget = QCheckBox(self)
                 widget.setChecked(bool(value))
@@ -129,7 +159,9 @@ class AccountTemplateDialog(QDialog):
         for key, widget in self._widgets.items():
             if key == 'Record Pages':
                 continue
-            if isinstance(widget, QCheckBox):
+            if isinstance(widget, NestSelection):
+                result[key] = widget.values()
+            elif isinstance(widget, QCheckBox):
                 result[key] = widget.isChecked()
             elif isinstance(widget, QComboBox):
                 result[key] = _read_account_choice(widget, key)
@@ -468,7 +500,9 @@ class AccountConfigTab(CustomTab):
         for key, widget in self.form_widgets.items():
             if not widget.isEnabled():
                 continue
-            if isinstance(widget, QCheckBox):
+            if isinstance(widget, NestSelection):
+                self.draft.tasks[key] = widget.values()
+            elif isinstance(widget, QCheckBox):
                 self.draft.tasks[key] = widget.isChecked()
             elif isinstance(widget, QComboBox):
                 self.draft.tasks[key] = _read_account_choice(widget, key)
@@ -564,6 +598,8 @@ class AccountConfigTab(CustomTab):
             value = self.draft.tasks.get(field.key)
             if field.key == 'Record Pages':
                 widget = FixedRecordingPages(self.form_host)
+            elif field.key == "Tacet Discord Nests to Farm":
+                widget = NestSelection(value, self.form_host)
             elif field.editor_type == "bool":
                 widget = QCheckBox(self.form_host)
                 widget.setChecked(bool(value))
@@ -586,7 +622,9 @@ class AccountConfigTab(CustomTab):
                                                                   self.identity_task_fields))
             else:
                 heading.add_row(field.label, widget, field.help_text)
-            if isinstance(widget, QCheckBox):
+            if isinstance(widget, NestSelection):
+                widget.changed.connect(self._mark_draft_edited)
+            elif isinstance(widget, QCheckBox):
                 widget.toggled.connect(self._mark_draft_edited)
             elif isinstance(widget, QComboBox):
                 widget.currentIndexChanged.connect(self._mark_draft_edited)
@@ -847,7 +885,9 @@ class AccountConfigTab(CustomTab):
             if self.draft.tasks.get(key) == submitted.tasks.get(key):
                 continue
             value = self.draft.tasks.get(key)
-            if isinstance(widget, QCheckBox):
+            if isinstance(widget, NestSelection):
+                widget.set_values(value)
+            elif isinstance(widget, QCheckBox):
                 widget.setChecked(bool(value))
             elif isinstance(widget, QComboBox):
                 _select_account_choice(widget, key, value)

@@ -144,7 +144,7 @@ PROFILE_EXTRA_FIELDS = ('last_completed', 'account_aliases')
 NIGHTMARE_OPTIONS = ['Nightmare Purification', 'Tacet Discord Nest']
 
 # 残象聚落名称（合并进每日任务模块，随方案切换）
-NEST_NAMES = ['落渊南丘残象聚落', '盲望之塌残象聚落', '复生丘原残象聚落', '陷足流川残象聚落']
+from src.nightmare_nests import NEST_NAMES
 
 # 凝素领域显示名。持久化值仍为 F2 列表中的整数序号，便于兼容旧账号。
 # 第 5～20 项暂保留序号占位，后续按游戏内实际名称继续补全。

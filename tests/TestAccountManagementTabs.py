@@ -23,6 +23,24 @@ from tests.fixture_support import make_account_environment
 
 
 class TestAccountManagementTabs(unittest.TestCase):
+    def test_nest_checkboxes_preserve_selection_and_empty_template(self):
+        from src.gui.AccountConfigTab import NestSelection, AccountTemplateDialog
+        from src.nightmare_nests import NEST_NAMES
+        widget=NestSelection([NEST_NAMES[1],NEST_NAMES[3]])
+        self.assertEqual(widget.values(),[NEST_NAMES[1],NEST_NAMES[3]])
+        widget.boxes[NEST_NAMES[0]].setChecked(True)
+        self.assertEqual(widget.values(),[NEST_NAMES[0],NEST_NAMES[1],NEST_NAMES[3]])
+        widget.set_values(None)
+        self.assertEqual(widget.values(),NEST_NAMES)
+        dialog=AccountTemplateDialog({'Tacet Discord Nests to Farm':[NEST_NAMES[2]]})
+        control=dialog._widgets['Tacet Discord Nests to Farm']
+        self.assertIsInstance(control,NestSelection)
+        self.assertEqual(dialog.tasks()['Tacet Discord Nests to Farm'],[NEST_NAMES[2]])
+        control.set_values([])
+        self.assertEqual(dialog.tasks()['Tacet Discord Nests to Farm'],[])
+        dialog.deleteLater()
+        widget.deleteLater()
+
     def test_feature_read_shows_progress_and_timeout_then_allows_retry(self):
         from concurrent.futures import Future
         from ok import og

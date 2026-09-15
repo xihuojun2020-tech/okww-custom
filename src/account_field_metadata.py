@@ -46,7 +46,7 @@ _LABELS = {
     "Material Selection": ("材料选择", "模拟领域中优先获取的材料。不会影响账号识别。"),
     "Farm Nightmare Nest for Daily Echo": ("每日刷取梦魇声骸", "开启后每日任务会尝试刷取梦魇声骸。"),
     "Nightmare Which to Farm": ("梦魇刷取目标", "选择梦魇巢穴目标；多个值保留为列表。"),
-    "Tacet Discord Nests to Farm": ("残象聚落目标", "选择刷取的残象聚落；多个值保留为列表。"),
+    "Tacet Discord Nests to Farm": ("残象聚落目标", "勾选哪些聚落就刷取哪些；全部取消则跳过残象聚落。"),
     "Auto Farm all Nightmare Nest": ("自动刷取全部梦魇", "开启后按现有任务规则遍历全部梦魇目标。"),
     "Weekly Garden Check Day": ("周常乐园检查日", "选择自动检查周常乐园的星期。"),
     "Merge Echo on Sunday": ("周日合成声骸", "开启后在周日执行声骸合成。"),

@@ -13,7 +13,7 @@ TRAVEL_FEATURES = ['fast_travel_custom', 'gray_teleport']
 CONFIRM_FEATURES = ['confirm_btn_hcenter_vcenter', 'confirm_btn_highlight_hcenter_vcenter']
 
 # 残象聚落（Tacet Discord Nest）名称，按游戏内 F2 残象页面从上到下的顺序
-NEST_NAMES = ['落渊南丘残象聚落', '盲望之塌残象聚落', '复生丘原残象聚落', '陷足流川残象聚落']
+from src.nightmare_nests import NEST_NAMES
 # 每个位置的聚落怪物总数（用于校验行位置是否对应正确，48 出现两次所以不能单独用总数定位）
 NEST_TOTAL_BY_POSITION = [41, 48, 48, 24]
 # 可识别的聚落总数（保留 36 以兼容旧版本/历史数据）
