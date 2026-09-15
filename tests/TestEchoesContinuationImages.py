@@ -1,4 +1,5 @@
 import unittest
+import gettext
 from pathlib import Path
 from config import config
 from ok.test.TaskTestCase import TaskTestCase
@@ -37,6 +38,17 @@ class TestEchoesContinuationImages(TaskTestCase):
         stage=self.task._stage_page(f)
         self.assertTrue(stage and stage.endswith('浅梦'),stage)
         self.assertTrue(self.task._selected_stage_pending(f,stage))
+
+    def test_lynae_identity_translates_and_matches_formation(self):
+        self.task.tr=gettext.translation('ok',localedir='i18n',languages=['zh_CN']).gettext
+        self.task.last_result={'stage':'堕梦神躯·浅梦'}
+        members=self.task._identify_team(self.page('lynae_roster'))
+        self.assertEqual([m['name'] for m in members],['爱弥斯','莫宁','琳奈'])
+        self.assertEqual([m['role'] for m in members],['输出','治疗','辅助'])
+        f=self.page('lynae_formation')
+        self.assertTrue(self.task._verify_team_names(f))
+        self.task.last_result['members'].reverse()
+        self.assertFalse(self.task._verify_team_names(f))
 
     def test_control_support_failure_screenshot(self):
         f=self.page('control_selected')

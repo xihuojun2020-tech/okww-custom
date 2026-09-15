@@ -14,7 +14,7 @@ from src.task.character_trial import compact
 from src.task.echoes_remain import FINAL
 from src.task.echoes_support import (SLOTS, KINDS, choose_support, support_point,
                                     equipped, enabled_start, selected_support, challenge_prompt_state)
-from src.task.BaseCombatTask import CombatStateUnknown, NotInCombatException, CharDeadException
+from src.task.BaseCombatTask import CombatStateUnknown, NotInCombatException, CharDeadException, mismatched_names
 from src.runtime.diagnostic_export import atomic_json
 from src.runtime.diagnostic_storage import storage_path
 
@@ -85,7 +85,8 @@ class EchoesContinuation:
                 raise RuntimeError(f'第{order}位试用角色身份无法确认')
             identity, score = result
             info = char_dict[identity]
-            name = getattr(info['cls'], 'DISPLAY_NAME', info['cls'].__name__)
+            name = getattr(info['cls'], 'DISPLAY_NAME', None) or mismatched_names.get(
+                info['cls'].__name__, info['cls'].__name__)
             members.append(dict(order=order, identity=getattr(identity, 'value', identity), name=self.tr(name),
                                 role=activity_role(identity), confidence=score))
         if len({m['identity'] for m in members}) != 3:
