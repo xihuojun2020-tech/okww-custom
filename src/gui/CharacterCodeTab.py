@@ -25,16 +25,8 @@ from src.char.CustomCharLoader import (
 
 BASE_CHAR_URL = "https://raw.githubusercontent.com/ok-oldking/ok-wuthering-waves/refs/heads/master/src/char/BaseChar.py"
 CONTRIBUTE_CHAR_URL = "https://github.com/ok-oldking/ok-wuthering-waves/edit/master/src/char/{class_name}.py"
-CHARACTER_DISPLAY_NAMES = {
-    "Douling": "Buling",
-    "Xigelika": "Sigrika",
-    "Linnai": "Lynae",
-    "Luhesi": "Luuk Herssen",
-    "Xiangliyao": "Xiangli Yao",
-    "ShoreKeeper": "Shorekeeper",
-    "HavocRover": "Rover",
-    "YangYangSp": "Yangyang: Xuanling",
-}
+from src.char.character_names import character_display_name, CHARACTER_DISPLAY_NAMES
+
 
 
 class CharacterCodeTab(CustomTab):
@@ -534,7 +526,7 @@ class CharacterCodeTab(CustomTab):
         return getattr(label, "value", label)
 
     def _display_char_name(self, char_cls):
-        display_name = CHARACTER_DISPLAY_NAMES.get(char_cls.__name__, char_cls.__name__)
+        display_name = character_display_name(char_cls)
         return self.tr(display_name)
 
     def showEvent(self, event):

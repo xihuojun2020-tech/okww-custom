@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Scan, form teams for, and automatically challenge Adversity Tower floors."""
+from src.char.character_names import character_display_name
 from dataclasses import dataclass, replace
 from pathlib import Path
 import re
@@ -2062,7 +2063,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                 continue
             character_id, confidence = identified
             info = char_dict.get(character_id, {})
-            display_name = getattr(info.get("cls"), "__name__", character_id)
+            display_name = character_display_name(info.get("cls") or character_id)
             rover_form = None
             rover_confidence = 0.0
             if character_id in ROVER_CHARACTER_IDS:

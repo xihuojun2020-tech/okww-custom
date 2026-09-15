@@ -38,16 +38,8 @@ class CharRevivedException(CharDeadException):
     pass
 
 
-mismatched_names = {
-    "Douling": "Buling",
-    "Xigelika": "Sigrika",
-    "Linnai": "Lynae",
-    "Luhesi": "Luuk Herssen",
-    "Xiangliyao": "Xiangli Yao",
-    "ShoreKeeper": "Shorekeeper",
-    "HavocRover": "Rover",
-    "YangYangSp": "Yangyang: Xuanling",
-}
+from src.char.character_names import character_display_name, CHARACTER_DISPLAY_NAMES as mismatched_names
+
 
 
 class BaseCombatTask(CombatCheck):
@@ -912,7 +904,7 @@ class BaseCombatTask(CombatCheck):
                 if c is not None:
                     if hasattr(c, 'ensure_display_form'):
                         c.ensure_display_form()
-                    official_name = getattr(c, 'display_name', None) or mismatched_names.get(c.name, c.name)
+                    official_name = character_display_name(c)
                     translated_names.append(self.tr(official_name) if self._app is not None else official_name)
             self.info_set('Chars', ', '.join(translated_names))
             for c in self.chars:
