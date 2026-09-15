@@ -1,5 +1,6 @@
 """Clear available event difficulties with verified trial characters and supports."""
 import time
+import re
 from pathlib import Path
 from uuid import uuid4
 
@@ -10,6 +11,11 @@ from src.task.character_trial import compact, exact_button
 from src.task.echoes_remain import INITIAL, FINAL, inspect_roster, correction
 from src.task.BaseCombatTask import BaseCombatTask
 from src.task.echoes_continuation import EchoesContinuation
+
+
+def canonical_stage(text):
+    text = compact(text).replace('・', '·')
+    return re.sub(r'·+(?=浅梦$|深梦$)', '·', text)
 
 
 class EchoesRemainTask(EchoesContinuation, WWOneTimeTask, BaseCombatTask):
@@ -121,7 +127,7 @@ class EchoesRemainTask(EchoesContinuation, WWOneTimeTask, BaseCombatTask):
         return self._click_transition('快速编队', 'quick', self._formation_page, self._roster_page)
 
     def _stage_name(self, frame):
-        names = [compact(b.name).replace('・', '·') for b in self.ocr(*self.STAGE, frame=frame)]
+        names = [canonical_stage(b.name) for b in self.ocr(*self.STAGE, frame=frame)]
         matches = [n for n in names if n.endswith(('浅梦', '深梦')) and len(n) > 2]
         return matches[0] if len(matches) == 1 else None
 
@@ -133,15 +139,17 @@ class EchoesRemainTask(EchoesContinuation, WWOneTimeTask, BaseCombatTask):
                 and self._button(frame, self.SINGLE, '单人挑战') else None)
 
     def _single_button(self, frame, expected):
+        expected = canonical_stage(expected)
         name = self._stage_page(frame)
         if name and name != expected:
-            raise RuntimeError('单人挑战前关卡已变化，停止点击')
+            raise RuntimeError(f'单人挑战前关卡已变化，停止点击：预期={expected}，当前={name}')
         return self._button(frame, self.SINGLE, '单人挑战') if name == expected else None
 
     def _formation_for_stage(self, frame, expected):
+        expected = canonical_stage(expected)
         if self._formation_page(frame) is None:
             return False
-        names = [compact(b.name).replace('・', '·') for b in self.ocr(.09, .085, .50, .16, frame=frame)]
+        names = [canonical_stage(b.name) for b in self.ocr(.09, .085, .50, .16, frame=frame)]
         stages = [n for n in names if n.endswith(('浅梦', '深梦')) and len(n) > 2]
         if len(stages) == 1 and stages[0] != expected:
             raise RuntimeError('编队页关卡与进入前不一致，停止操作')

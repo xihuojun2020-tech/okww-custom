@@ -8,13 +8,24 @@ import cv2
 
 from src.task.echoes_support import choose_support, unlocked, equipped, enabled_start, challenge_prompt_state
 from src.task.echoes_continuation import activity_role, event_echo
-from src.task.EchoesRemainTask import EchoesRemainTask
+from src.task.EchoesRemainTask import EchoesRemainTask, canonical_stage
 from src.char.BaseChar import CharType
 
 ROOT = Path('tests/fixtures/echoes_remain/continuation')
 
 
 class TestEchoesContinuation(unittest.TestCase):
+    def test_stage_separator_normalization_preserves_identity(self):
+        for text in ('堕梦神躯··浅梦','堕梦神躯・浅梦',' 堕梦神躯 · · 浅梦 '):
+            self.assertEqual(canonical_stage(text),'堕梦神躯·浅梦')
+        task=Mock(spec=EchoesRemainTask)
+        task._stage_page.return_value='堕梦神躯·浅梦'
+        self.assertIsNotNone(EchoesRemainTask._single_button(task,None,'堕梦神躯··浅梦'))
+        for actual in ('堕梦神躯·深梦','溺梦魔影·浅梦'):
+            task._stage_page.return_value=actual
+            with self.assertRaisesRegex(RuntimeError,'关卡已变化'):
+                EchoesRemainTask._single_button(task,None,'堕梦神躯·浅梦')
+
     def test_zero_score_pending_and_unreadable_score_rejected(self):
         task=Mock(spec=EchoesRemainTask)
         task.height=1152
