@@ -1,0 +1,59 @@
+import unittest
+from pathlib import Path
+from config import config
+from ok.test.TaskTestCase import TaskTestCase
+from src.task.EchoesRemainTask import EchoesRemainTask
+from src.task.echoes_support import selected_support
+from src.task.character_trial import start_prompt
+
+
+class TestEchoesContinuationImages(TaskTestCase):
+    task_class=EchoesRemainTask
+    config=config
+
+    def page(self,name):
+        self.set_image(f'tests/fixtures/echoes_remain/continuation/{name}.png')
+        return self.task.frame
+
+    def test_support_selection_and_type(self):
+        f=self.page('support')
+        self.assertTrue(self.task._support_page(f))
+        self.assertTrue(selected_support(f,0))
+        self.assertFalse(selected_support(f,1))
+        self.assertIsNotNone(self.task._button(f,(.86,.10,.97,.18),'攻击型'))
+
+    def test_selected_roster_identity_order_and_activity_role(self):
+        f=self.page('roster')
+        self.task.last_result={}
+        # TaskTestCase has no application translator; production uses the app catalog.
+        self.task.tr=lambda name: {'Suisui':'穗穗','Yangyang: Xuanling':'秧秧·玄翎','Chisa':'千咲'}.get(name,name)
+        members=self.task._identify_team(f)
+        self.assertEqual([m['identity'] for m in members],['char_suisui','yangyang_sp','char_chisa'])
+        self.assertEqual([m['name'] for m in members],['穗穗','秧秧·玄翎','千咲'])
+        self.assertEqual([m['role'] for m in members],['治疗','输出','辅助'])
+
+    def test_formation_names_are_in_real_order(self):
+        f=self.page('equipped')
+        self.task.last_result={'stage':'溺梦魔影·浅梦','members':[
+            {'name':'穗穗'},{'name':'秧秧·玄翎'},{'name':'千咲'}]}
+        self.assertTrue(self.task._verify_team_names(f))
+        self.task.last_result['members'].reverse()
+        self.assertFalse(self.task._verify_team_names(f))
+
+    def test_start_prompt_and_settlement(self):
+        f=self.page('map')
+        self.assertFalse(start_prompt(self.task.ocr(.60,.43,.86,.61,frame=f),self.task.height))
+        f=self.page('start')
+        self.assertTrue(start_prompt(self.task.ocr(.60,.43,.86,.61,frame=f),self.task.height))
+        self.assertIsNone(self.task._settlement(f))
+        f=self.page('result')
+        self.assertEqual(self.task._settlement(f),'success')
+
+    def test_next_difficulty_pending(self):
+        f=self.page('next')
+        self.assertEqual(self.task._stage_page(f),'溺梦魔影·深梦')
+        self.assertTrue(self.task._selected_stage_pending(f,'溺梦魔影·深梦'))
+        self.assertFalse(self.task._selected_stage_pending(f,'溺梦魔影·浅梦'))
+
+
+if __name__=='__main__':unittest.main()

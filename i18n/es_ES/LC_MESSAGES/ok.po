@@ -1649,3 +1649,9 @@ msgid "进入当前关卡，换上三个试用角色并截图复核；完成编�
 msgstr ""
 "Entra en la fase actual, elige tres personajes de prueba y verifica la "
 "formación con una captura. Se detiene sin iniciar el desafío."
+
+msgid "复核试用角色并按定位装配支援声骸，依次通关浅梦和深梦；失败退出后停止，不领取奖励。"
+msgstr ""
+"Verifica los personajes de prueba, equipa ecos de apoyo según su rol y "
+"completa ambas dificultades. Sale y se detiene si falla; no recoge "
+"recompensas."

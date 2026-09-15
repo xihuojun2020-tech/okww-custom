@@ -100,23 +100,21 @@ class TestEchoesRemainTask(unittest.TestCase):
         with self.assertRaises(RuntimeError):task._choose()
         self.assertEqual(task._click.call_count,6)
 
-    def test_full_run_stops_after_done_and_does_not_mark_activity_complete(self):
-        import tempfile
+    def test_run_executes_continuation_and_preserves_result(self):
         task=self.make_task([])
-        task.log_info=Mock();task.log_warning=Mock();task._navigate=Mock();task._choose=Mock(return_value=self.final)
-        task._wait=Mock(); task._click_transition=Mock()
+        task.log_info=Mock();task.log_warning=Mock();task._navigate=Mock()
+        task._save_run_summary=Mock()
+        def continuation():
+            task.last_result['phase']='challenge_failed'
+        task._continue_event=Mock(side_effect=continuation)
         verification=Mock();verification.begin.return_value=verification
         verification.finish.return_value='verified';verification.profile_id='test';verification.run_id='run'
-        with tempfile.TemporaryDirectory() as folder:
-            def save(frame):task.last_result['proof']=str(Path(folder)/'proof.png')
-            task._save_proof=save
-            with patch('src.task.WWOneTimeTask.WWOneTimeTask.run'), patch('src.account_repository.get_default_repository',return_value=Mock()), \
-                    patch('src.task.account_feature_verification.FeatureRun',return_value=verification), \
-                    patch('src.task.account_feature_verification.expected_profile',return_value='test'):
-                task.run()
-        task._click.assert_not_called()
-        self.assertEqual(task._click_transition.call_args.args[:2], ('完成编队', 'done'))
-        self.assertEqual(task.last_result['phase'],'formation_ready')
+        with patch('src.task.WWOneTimeTask.WWOneTimeTask.run'), patch('src.account_repository.get_default_repository',return_value=Mock()), \
+                patch('src.task.account_feature_verification.FeatureRun',return_value=verification), \
+                patch('src.task.account_feature_verification.expected_profile',return_value='test'):
+            task.run()
+        task._continue_event.assert_called_once()
+        self.assertEqual(task.last_result['phase'],'challenge_failed')
         self.assertFalse(task.last_result['activity_complete'])
 
     def test_stop_interrupts_click_sequence(self):
@@ -132,6 +130,7 @@ class TestEchoesRemainTask(unittest.TestCase):
         task._button=Mock(return_value=object());task._wait=Mock();task._open_event=Mock()
         task._open_quick=Mock()
         task._click_transition=Mock()
+        task._selected_stage_pending=Mock(return_value=True)
         task._navigate()
         task._click.assert_not_called()
         self.assertEqual(task._click_transition.call_args.args[:2], ('单人挑战', 'single'))
@@ -145,6 +144,7 @@ class TestEchoesRemainTask(unittest.TestCase):
         task._stage_page=Mock(side_effect=[None, '溺梦魔影·浅梦'])
         task._open_event=Mock(); task._open_quick=Mock()
         task._click_transition=Mock(return_value=self.initial)
+        task._selected_stage_pending=Mock(return_value=True)
         task._navigate()
         self.assertEqual([call.args[:2] for call in task._click_transition.call_args_list],
                          [('前往','event_enter'), ('单人挑战','single')])

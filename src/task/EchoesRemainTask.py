@@ -1,17 +1,18 @@
-"""Prepare the current event stage with its trial team; never start combat."""
+"""Clear available event difficulties with verified trial characters and supports."""
 import time
 from pathlib import Path
 from uuid import uuid4
 
 from ok import TaskDisabledException
 from src.activity_catalog import ACTIVITIES
-from src.task.BaseWWTask import BaseWWTask
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.character_trial import compact, exact_button
 from src.task.echoes_remain import INITIAL, FINAL, inspect_roster, correction
+from src.task.BaseCombatTask import BaseCombatTask
+from src.task.echoes_continuation import EchoesContinuation
 
 
-class EchoesRemainTask(WWOneTimeTask, BaseWWTask):
+class EchoesRemainTask(EchoesContinuation, WWOneTimeTask, BaseCombatTask):
     navigation_section = 'activities'
     activity_category = '限时活动'
     LIST = (.08, .14, .23, .83)
@@ -25,13 +26,16 @@ class EchoesRemainTask(WWOneTimeTask, BaseWWTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = ACTIVITIES['echoes_remain']
-        self.description = '进入当前关卡，换上三个试用角色并截图复核；完成编队后停止，不开启挑战。'
+        self.description = '复核试用角色并按定位装配支援声骸，依次通关浅梦和深梦；失败退出后停止，不领取奖励。'
         self.group_name = '限时活动'
         self.supported_languages = ['zh_CN']
         self.support_schedule_task = False
         self.skip_combat_check = True
         self._verification = None
         self.last_result = None
+        self._battle_deadline = None
+        self._held_keys = set()
+        self._held_mouse = set()
 
     def _guard(self):
         self.executor.check_enabled()
@@ -41,7 +45,9 @@ class EchoesRemainTask(WWOneTimeTask, BaseWWTask):
     def next_frame(self):
         self._guard()
         super().next_frame()
-        return self.require_game_frame()
+        frame = self.require_game_frame()
+        self._battle_observe(frame)
+        return frame
 
     def _button(self, frame, region, text):
         return exact_button(self.ocr(*region, frame=frame), text)
@@ -115,7 +121,7 @@ class EchoesRemainTask(WWOneTimeTask, BaseWWTask):
         return self._click_transition('快速编队', 'quick', self._formation_page, self._roster_page)
 
     def _stage_name(self, frame):
-        names = [compact(b.name) for b in self.ocr(*self.STAGE, frame=frame)]
+        names = [compact(b.name).replace('・', '·') for b in self.ocr(*self.STAGE, frame=frame)]
         matches = [n for n in names if n.endswith(('浅梦', '深梦')) and len(n) > 2]
         return matches[0] if len(matches) == 1 else None
 
@@ -135,7 +141,7 @@ class EchoesRemainTask(WWOneTimeTask, BaseWWTask):
     def _formation_for_stage(self, frame, expected):
         if self._formation_page(frame) is None:
             return False
-        names = [compact(b.name) for b in self.ocr(.09, .085, .50, .16, frame=frame)]
+        names = [compact(b.name).replace('・', '·') for b in self.ocr(.09, .085, .50, .16, frame=frame)]
         stages = [n for n in names if n.endswith(('浅梦', '深梦')) and len(n) > 2]
         if len(stages) == 1 and stages[0] != expected:
             raise RuntimeError('编队页关卡与进入前不一致，停止操作')
@@ -193,6 +199,11 @@ class EchoesRemainTask(WWOneTimeTask, BaseWWTask):
                 self._stage_page)
             name = self._stage_page(frame)
         self.last_result['stage'] = name
+        if not self._selected_stage_pending(frame, name):
+            if self.last_result.get('phase') != 'waiting_unlock':
+                self.last_result['phase'] = 'available_stages_finished'
+            self._audit_completion()
+            return False
         self._click_transition('单人挑战', 'single',
             lambda f: self._single_button(f, name), lambda f: self._formation_for_stage(f, name))
         self._open_quick()
@@ -260,29 +271,32 @@ class EchoesRemainTask(WWOneTimeTask, BaseWWTask):
             self._verification = FeatureRun(self, repository, expected_profile(self)).begin()
             self.last_result['profile_id'] = self._verification.profile_id
             self.last_result['run_id'] = self._verification.run_id
-            self._navigate()
-            frame = self._choose()
-            self.last_result['phase'] = 'formation_verified'
-            self._save_proof(frame)
-            expected = self.last_result.get('stage')
-            self._click_transition('完成编队', 'done',
-                lambda f: self._button(f, self.DONE, '完成') if self._roster_page(f) else None,
-                lambda f: self._formation_for_stage(f, expected))
+            if self._navigate() is not False:
+                self._continue_event()
             if self._verification.finish() != 'verified':
-                raise RuntimeError('编队结束账号核验未通过')
-            self.last_result['phase'] = 'formation_ready'
-            from src.runtime.diagnostic_export import atomic_json
-            atomic_json(Path(self.last_result['proof']).with_suffix('.json'), self.last_result)
+                raise RuntimeError('活动结束账号核验未通过')
+            self._save_run_summary()
             self.log_info(str(self.last_result))
-            self.info_set('活动阶段', '试用编队完成，未开启挑战')
+            status = {'challenge_failed': '挑战失败，已退出副本，本轮停止',
+                      'waiting_unlock': '下一关尚未解锁，本轮结束',
+                      'available_stages_finished': '当前选择已通关，本轮结束',
+                      'round_limit_reached': '已达到本轮关卡上限'}
+            message = ('所有关卡均已通关' if self.last_result['activity_complete'] else
+                       status.get(self.last_result['phase'], '本轮结束'))
+            self.info_set('活动阶段', message + '；未领取奖励')
         except TaskDisabledException:
             raise
-        except Exception:
+        except Exception as failure:
             self.last_result['phase'] = 'failed'
+            self.last_result['error'] = str(failure)
             try:
                 self.screenshot('echoes_remain_failed')
+                if self.last_result.get('profile_id') and self.last_result.get('run_id'):
+                    self._save_run_summary()
             except Exception as error:
                 self.log_warning(f'活动故障截图不可用：{error}')
             raise
         finally:
+            self._battle_deadline = None
+            self._release_event_inputs()
             self._verification = None
