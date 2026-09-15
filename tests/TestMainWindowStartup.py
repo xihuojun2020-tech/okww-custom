@@ -96,8 +96,9 @@ class Launcher { static void Main(string[] args) {
 } }''', encoding='utf-8')
             a, b = root / 'a' / 'fake-launcher.exe', root / 'b' / 'fake-launcher.exe'
             a.parent.mkdir(); b.parent.mkdir()
+            # Hosted Windows runners can take longer to cold-start the framework compiler.
             subprocess.run([str(compiler), '/nologo', '/target:exe', '/out:' + str(a), str(source)],
-                           check=True, capture_output=True, timeout=30)
+                           check=True, capture_output=True, timeout=90)
             shutil.copy2(a, b)
             marker = root / 'cleaned.txt'
             probe = root / 'probe.py'
