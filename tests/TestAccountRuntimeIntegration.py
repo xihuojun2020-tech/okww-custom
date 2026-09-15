@@ -239,7 +239,9 @@ class TestAccountRuntimeIntegration(unittest.TestCase):
             self.assertIsNone(executor._account_input_guard)
 
     def test_daily_exception_releases_run_binding(self):
+        from types import SimpleNamespace
         task = object.__new__(DailyTask)
+        task._executor = SimpleNamespace()
         task._snapshot_bound_externally = True
         task._verified_profile_snapshot = {'old': True}
         task._run_daily_inner = lambda: (_ for _ in ()).throw(RuntimeError('forced'))

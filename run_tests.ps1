@@ -15,6 +15,17 @@ $Python = if (Test-Path ".\.venv\Scripts\python.exe") {
 
 $groups = @{
   unit = @(
+    "TestAbyssCancelRetry.py", "TestAbyssFormationBack.py", "TestAbyssReturnRecovery.py",
+    "TestAccountFeatureVerification.py", "TestAllSoloRotations.py", "TestAutoLoginTicks.py",
+    "TestBackgroundNavigationTasks.py", "TestBookTabTransitions.py", "TestCharacterNames.py",
+    "TestDiagnosticScheduling.py", "TestEchoesContinuation.py", "TestEchoesRemainTask.py",
+    "TestEventSpendSafety.py", "TestJingRan.py", "TestMaterialEntry.py", "TestMaterialPagingSafety.py",
+    "TestMaterialScrollEdges.py", "TestPostMessageDrag.py", "TestQingxiaoSolo.py",
+    "TestRuntimePerformance.py", "TestSoloTeam.py", "TestSpecialistNavigationStatus.py",
+    "TestTaskEntryTransitions.py", "TestTriggerNavigation.py", "TestVisionOptimization.py",
+    "TestWeeklyTransitions.py",
+    "TestDailyFailureRecovery.py", "TestDailyReservePolicy.py", "TestUITransition.py",
+    "TestNavigationAdapter.py", "TestTravelTransitions.py",
     "TestMaterialModel.py", "TestMaterialRepository.py", "TestMaterialCatalog.py", "TestNasLocation.py",
     "TestUpstreamIntegration.py",
     "TestAccountReminders.py",
@@ -39,6 +50,8 @@ $groups = @{
     "TestWin32LoginInput.py"
   )
   integration = @(
+    "TestDiagnosticArchive.py", "TestDiagnosticArchiveRetention.py", "TestDiagnosticDetails.py",
+    "TestStorageBootstrap.py",
     "TestMaterialIntegration.py",
     "TestWeeklyDailyIntegration.py",
     "TestDiagnosticPipeline.py",
@@ -49,6 +62,8 @@ $groups = @{
     "TestAccountSwitchEvidence.py", "TestMultiAccountDailyTask.py", "TestAccountRepositoryMigrationScenario.py"
   )
   ui = @(
+    "TestDiagnosticDetailsUI.py",
+    "TestTaskInfoSnapshot.py",
     "TestFlatUI.py",
     "TestDiagnosticStatusCard.py",
     "TestDailyRunConfirmation.py",
@@ -59,6 +74,9 @@ $groups = @{
     "TestSkipDialogWideMode.py", "TestTaskStatusWindow.py", "TestUsabilityUI.py"
   )
   image = @(
+    "TestAbyssReturnImages.py", "TestBookTabImages.py", "TestEchoesContinuationImages.py",
+    "TestEchoesRemainImages.py", "TestQingxiaoSoloImages.py",
+    "TestDailyRecoveryImages.py",
     "TestMaterialVision.py",
     "TestCharacterTrialImages.py",
     "TestWeeklyBossImages.py",

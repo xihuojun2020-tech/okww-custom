@@ -8,7 +8,10 @@ class TestAccountReminders(unittest.TestCase):
         from src.evidence.model import CURRENT_PROJECTS
         from src.account_reminders import REMINDERS
         from src.activity_catalog import ACTIVITIES
-        self.assertEqual(len(CURRENT_PROJECTS), 12)
+        self.assertEqual(set(CURRENT_PROJECTS), {
+            'daily_activity', 'nightmare_nest', 'battle_pass', 'weekly_boss', 'weekly_garden',
+            'adversity_tower', 'sea_ruins', 'matrix', 'character_trial', *ACTIVITIES,
+        })
         self.assertEqual({key: REMINDERS[key] for key in ACTIVITIES}, ACTIVITIES)
         account = {'extensions': {'completion_reminders': ['activity_1', 'activity_3']}}
         self.assertEqual(get_reminders(set_reminders(account, get_reminders(account))), ['activity_1', 'activity_3'])

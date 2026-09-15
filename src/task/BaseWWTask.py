@@ -72,6 +72,7 @@ class BaseWWTask(BaseTask):
         size = None
         logged = None
         pictures = 0
+        signals = {}
         def guard():
             executor.check_enabled()
             self._guard_account_input()
@@ -94,6 +95,10 @@ class BaseWWTask(BaseTask):
             reached = present(target(frame))
             selected = source(frame)
             available = present(selected)
+            signals.update(source=available, target=reached,
+                           frame_token=getattr(executor, '_last_frame_time', None),
+                           window_exists=getattr(window, 'exists', None),
+                           window_visible=getattr(window, 'visible', None))
             if reached and available:
                 return Observation(PageState.UNKNOWN)
             if reached:
@@ -119,7 +124,7 @@ class BaseWWTask(BaseTask):
             nonlocal logged, pictures
             if on_status:
                 on_status(operation, status, machine, frame)
-            stamp = (status, machine.attempts)
+            stamp = (status, machine.attempts, signals.get('source'), signals.get('target'))
             publish(operation, type(self).__name__, step, status, machine.attempts,
                     time.monotonic()-machine.started, machine.deadline-time.monotonic(),
                     max_attempts=attempts, error=machine.error)
@@ -127,9 +132,11 @@ class BaseWWTask(BaseTask):
                 self.info_set('导航状态', f'{step}：{status}｜输入 {machine.attempts}/{attempts} 次')
                 self.log_info(f'ui_transition id={operation} step={step} state={status} attempt={machine.attempts} '
                               f'elapsed={time.monotonic()-machine.started:.2f} '
-                              f'size={size} normalized={machine.last_point} error={machine.error}')
+                              f'size={size} normalized={machine.last_point} error={machine.error} '
+                              f'signals={signals}')
                 logged = stamp
-            if screenshots and frame is not None and pictures < 8 and status in ('准备点击', '已到达目标', '停止/失败'):
+            failure = status == '停止/失败' and machine.error != 'TaskDisabledException'
+            if (screenshots or failure) and frame is not None and pictures < 8 and status in ('准备点击', '已到达目标', '停止/失败'):
                 try:
                     safe = frame.copy()
                     safe[:round(len(safe)*.025)] = 0
@@ -1569,9 +1576,26 @@ class BaseWWTask(BaseTask):
             raise Exception(f'unknown_lang {name}')
         self.click_relative(x, y, after_sleep=after_sleep, name=name)
 
+    def _guidebook_tab(self, feature, frame):
+        # A loose sidebar template also matches terrain. Require a second tab
+        # and reject the world HUD before accepting this as the guidebook.
+        if self.in_team_and_world(frame=frame):
+            return None
+        button = self.find_one(feature, box='box_gray_book', threshold=.6, frame=frame)
+        if button is not None and any(
+                self.find_one(other, box='box_gray_book', threshold=.7, frame=frame) is not None
+                for other in ('gray_book_quest', 'gray_book_boss', 'gray_book_all_monsters')
+                if other != feature):
+            return button
+        return None
+
     def openF2Book(self, feature="gray_book_all_monsters"):
         if hasattr(self, 'reset_to_false'):
             self.reset_to_false('opening book')
+        self.next_frame()
+        if button := self._guidebook_tab(feature, self.require_game_frame()):
+            self.click_box(button, after_sleep=1.5)
+            return button
         self.ensure_main()
         book_key = self.key_config.get('Guidebook Key', self.key_config.get('索拉指南', 'f2'))
         inputs = 0
@@ -1589,13 +1613,13 @@ class BaseWWTask(BaseTask):
                 finally:
                     self.send_key_up('alt')
 
-        self.navigate_ui('打开索拉指南',
+        frame = self.navigate_ui('打开索拉指南',
             lambda frame: self.in_team_and_world(frame=frame),
-            lambda frame: self.find_one(feature, box='box_gray_book', threshold=.3, frame=frame),
+            lambda frame: self._guidebook_tab(feature, frame),
             action=open_book, identity=feature)
         # Tab selection is an existing single action: the gray icon does not
         # prove which content tab is selected, so it is not automatically retried.
-        gray_book_boss = self.wait_book(feature)
+        gray_book_boss = self._guidebook_tab(feature, frame)
         if gray_book_boss is None:
             raise CannotFindException('指南页签消失，停止点击')
         self.click_box(gray_book_boss, after_sleep=1.5)
@@ -1613,7 +1637,8 @@ class BaseWWTask(BaseTask):
         message = ''.join(str(box.name) for box in texts)
         if re.search(r'无法快速到达|無法快速到達|无法传送|無法傳送|cannot.*(?:travel|teleport)', message, re.I):
             target = ' / '.join(self._travel_identity(frame))
-            raise RuntimeError(f'目标不可快速到达：{target}；保留原目标待补跑，不替换账号设置')
+            from src.task.ui_transition import TargetUnavailable
+            raise TargetUnavailable(f'目标不可快速到达：{target}；请确认目标解锁，本轮不自动补跑、不替换账号设置')
 
     def wait_book_target_state(self):
         def detect():

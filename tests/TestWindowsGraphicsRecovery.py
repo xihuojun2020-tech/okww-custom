@@ -27,7 +27,12 @@ class TestWindowsGraphicsRecovery(unittest.TestCase):
             exit_event=threading.Event(), reset_scene=Mock(), check_enabled=Mock(),
             sleep=Mock(), blur_overlay_processor=None)
         executor.can_capture = lambda: TaskExecutor.can_capture(executor)
-        self.assertIs(TaskExecutor.next_frame(executor, time_out=0.1), frame)
+        clock = [100.0]
+        executor.sleep = lambda seconds: clock.__setitem__(0, clock[0] + seconds)
+        with patch('custom_ok.ok.task.TaskExecutor.time.time', side_effect=lambda: clock[0]), \
+                patch('custom_ok.ok.task.TaskExecutor.time.monotonic', side_effect=lambda: clock[0]):
+            self.assertIs(TaskExecutor.next_frame(executor, time_out=3), frame)
+        self.assertEqual(clock[0], 102.0)  # Failed captures honor the shared 2s backoff.
         self.assertEqual(capture.get_frame.call_count, 2)
         capture.exit_event.set()
         self.assertFalse(capture.connected())

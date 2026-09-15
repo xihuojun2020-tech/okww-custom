@@ -22,6 +22,23 @@ from src.win32_login_input import ForegroundResult, LoginClickDelivery
 
 
 class TestPersistentDailyRetry(unittest.TestCase):
+    def test_unavailable_target_stays_pending_without_same_run_retry(self):
+        from src.task.ui_transition import TargetUnavailable
+        task = self.make_task()
+        cause = TargetUnavailable('目标未解锁')
+        wrapped = RuntimeError('梦魇未完成')
+        wrapped.__cause__ = cause
+        for account in ['A1', 'A2', 'A3', 'A4']:
+            task.run_task_by_class.side_effect = wrapped if account == 'A2' else None
+            task._run_daily_account(account)
+        self.assertIsNone(task._next_target_account())
+        self.assertTrue(task._is_failed('A2'))
+        self.assertNotIn('A2', task.done_set)
+        # A new explicit run may retry after the user has unlocked the target.
+        task._account_attempts = {}
+        task._retry_phase = False
+        self.assertEqual(task._next_target_account(), 'A2')
+
     def make_task(self, service=None, start='A1'):
         from unittest.mock import Mock
         task = object.__new__(MultiAccountDailyTask)

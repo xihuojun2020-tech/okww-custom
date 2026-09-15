@@ -135,7 +135,8 @@ class TestWeeklyDailyIntegration(unittest.TestCase):
         task.get_active_profile_name = Mock(return_value='A1')
         task._readonly_profile_config = Mock(return_value={})
         task._profile_get = lambda key, default=None: ('Tacet Suppression' if key == 'Which to Farm'
-                                                      else False if 'Nightmare' in key else default)
+                                                      else False if 'Nightmare' in key and isinstance(default, bool) else default)
+        task.get_last_completed = Mock(return_value=None)
         reads = iter([(0, False), (180, True), (180, True)])
         task.open_daily = lambda: (events.append('read'), next(reads))[1]
         task.check_weekly_boss = lambda: events.append('weekly') or True

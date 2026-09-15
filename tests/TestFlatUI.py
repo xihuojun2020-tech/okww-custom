@@ -729,7 +729,7 @@ class TestFlatUI(unittest.TestCase):
 
     def test_activity_placeholders_are_not_executable_and_follow_release_order(self):
         from ok.gui.tasks.OneTimeTaskTab import OneTimeTaskTab
-        from src.gui.activity_catalog import ACTIVITY_REVISIONS
+        from src.gui.activity_catalog import ACTIVITY_REVISIONS, PLACEHOLDERS
         from qfluentwidgets import PrimaryPushButton
         piano = type('PianoTeachingTask', (), {})()
         piano.__dict__.update(vars(example_task()))
@@ -743,7 +743,8 @@ class TestFlatUI(unittest.TestCase):
             page = OneTimeTaskTab(section='tasks', group_tasks=True, fluent_sample=True)
             try:
                 self.assertEqual([card.task for card in page.card_widgets], [piano])
-                self.assertEqual(len(page._activity_placeholders), 2)
+                self.assertEqual([card.task for card in page._activity_placeholders],
+                                 [project for project, _ in PLACEHOLDERS])
                 placeholder = page._activity_placeholders[0]
                 self.assertLess(page.taskCardLayout.indexOf(page.card_widgets[0]), page.taskCardLayout.indexOf(placeholder))
                 self.assertFalse(placeholder.isExpand)

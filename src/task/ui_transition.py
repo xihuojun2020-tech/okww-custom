@@ -26,6 +26,10 @@ class TransitionContextChanged(TransitionError):
     pass
 
 
+class TargetUnavailable(TransitionError):
+    """The configured destination requires user action, not another click."""
+
+
 @dataclass(frozen=True)
 class Policy:
     timeout: float = 18
@@ -167,6 +171,9 @@ def run_transition(capture, observe, act, guard, *, policy=None, deadline=None,
                 emit('等待切页')
             pause(min(.35, max(0, machine.deadline-clock())))
     except BaseException as error:
+        if isinstance(error, TransitionTimeout):
+            detail = '页面未确认，未发送输入' if machine.attempts == 0 else '输入后未确认切页'
+            error.args = (f'{error}；{detail}（输入 {machine.attempts}/{machine.policy.max_attempts} 次）',)
         machine.error = type(error).__name__
         try:
             emit('停止/失败')

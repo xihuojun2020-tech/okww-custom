@@ -150,7 +150,9 @@ class TaskTab(Tab):
             return
         if not self.task_info_table.isVisible():
             self.task_info_container.show()
-        info = task.info
+        # TaskExecutor mutates this plain dict while the GUI formats values.
+        # Snapshot before calling translators/formatters, which can yield control.
+        info = task.info.copy()
         from src.account_display import account_option_label
         summary = [(key, account_option_label(value) if key == 'Status Account' else value)
                    for key, value in info.items()]
@@ -160,7 +162,7 @@ class TaskTab(Tab):
             self.task_summary.setText(self.task_summary.text() + f"\n另有 {len(summary) - 8} 项，可打开详细状态。")
         if task.enabled:
             self.current_task_name = f": {og.app.tr(task.name)} {self.tr('Time Elapsed')}: {self.time_elapsed(task.start_time)}"
-        self.task_info_table.setRowCount(len(info))
+        self.task_info_table.setRowCount(len(summary))
         for row, (key, value) in enumerate(summary):
             if not self.task_info_table.item(row, 0):
                 item0 = self.uneditable_item()

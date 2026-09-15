@@ -1976,6 +1976,17 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         if isinstance(info, dict):
             stage = str(info.get('current task') or '')
         reason = f'{type(error).__name__}: {error}'
+        from src.task.ui_transition import TargetUnavailable
+        cause, visited = error, set()
+        retryable = True
+        while cause is not None and id(cause) not in visited:
+            visited.add(id(cause))
+            if isinstance(cause, TargetUnavailable):
+                retryable = False
+                if cause is not error:
+                    reason += f'；原因：{cause}'
+                break
+            cause = cause.__cause__
         key = self._failure_key(account)
         previous = self.failed_accounts.get(key, {})
         history = list(previous.get('history', []))
@@ -1986,6 +1997,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             'stage': stage,
             'reason': reason,
             'status': 'pending',
+            'retryable': retryable,
             'failed_at': datetime.now().isoformat(),
             'attempt': getattr(self, '_account_attempts', {}).get(self._failure_key(account), 1),
             'scope': getattr(self, '_attempt_scope', 'daily'),
@@ -2794,6 +2806,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     return acc
         for acc in retry_order:
             if (MultiAccountDailyTask._is_failed(self, acc) and
+                    (getattr(self, 'failed_accounts', {}).get(
+                        MultiAccountDailyTask._failure_key(self, acc), {}).get('retryable', True)) and
                     attempts.get(MultiAccountDailyTask._failure_key(self, acc), 0) < 2):
                 self._retry_phase = True
                 return acc

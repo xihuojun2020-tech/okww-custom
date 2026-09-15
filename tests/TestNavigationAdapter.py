@@ -42,9 +42,40 @@ class TestNavigationAdapter(unittest.TestCase):
 
     def test_ambiguous_source_and_target_never_click(self):
         task=self.task()
-        with self.assertRaises(TransitionTimeout):
+        with self.assertRaisesRegex(TransitionTimeout, '未发送输入'):
             task.navigate_ui('ambiguous',lambda f:self.button,lambda f:True,timeout=1)
         task.click_relative.assert_not_called()
+        task.screenshot.assert_called_once()
+        self.assertIn("'source': True, 'target': True", task.log_info.call_args.args[0])
+
+    def test_book_already_open_does_not_close_it_or_press_f2(self):
+        task = self.task()
+        task.ensure_main = Mock()
+        task.send_key = Mock()
+        task.click_box = Mock()
+        task.in_team_and_world = Mock(return_value=False)
+        task.find_one = Mock(return_value=self.button)
+        self.assertIs(task.openF2Book('gray_book_quest'), self.button)
+        task.ensure_main.assert_not_called()
+        task.send_key.assert_not_called()
+        task.click_box.assert_called_once()
+
+    def test_unknown_page_never_opens_guidebook(self):
+        task = self.task()
+        task.ensure_main = Mock()
+        task.key_config = {}
+        task.send_key = Mock()
+        task.in_team_and_world = Mock(return_value=False)
+        task.find_one = Mock(return_value=None)
+        with self.assertRaisesRegex(TransitionTimeout, '未发送输入'):
+            task.openF2Book()
+        task.send_key.assert_not_called()
+
+    def test_lost_navigation_inputs_report_attempted_transition(self):
+        task = self.task()
+        with self.assertRaisesRegex(TransitionTimeout, '输入后未确认切页'):
+            task.navigate_ui('lost', lambda f: self.button, lambda f: False)
+        self.assertEqual(task.click_relative.call_count, 3)
 
     def test_account_window_or_task_change_stops(self):
         for field in ('account','window','task'):
