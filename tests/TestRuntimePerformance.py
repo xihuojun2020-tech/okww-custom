@@ -90,7 +90,8 @@ class TestRuntimePerformance(unittest.TestCase):
     def test_pending_index_avoids_historical_walk_after_reconciliation(self):
         from src.runtime.diagnostic_queue import pending_batches, queue_batch, acknowledge
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            # GitHub Windows runners expose TEMP through an 8.3 user alias.
+            root = Path(directory).resolve()
             batch = root / 'run/batches/new'
             batch.mkdir(parents=True)
             (batch / '_READY').touch()
