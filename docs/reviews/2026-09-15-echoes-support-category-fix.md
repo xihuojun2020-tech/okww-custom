@@ -29,4 +29,6 @@
 
 ## 发布
 
-目标：GitHub 注释标签 `v1.75.01`；NAS 更新根目录 `\\192.168.3.173\羲火君 共享给我\AI诊断\OKWW-Updates`。发布结果在完成后补充。
+代码提交 `51cd6ddc` 和 GitHub 注释标签 `v1.75.01` 已推送。NAS 更新根目录 `\\192.168.3.173\羲火君 共享给我\AI诊断\OKWW-Updates` 的 `stable/latest.json` 已读回确认版本 1.75.01。
+
+更新包位于 `stable/releases/v1.75.01/okww_update_v1.75.01.zip`，大小 38,191,917 字节；SHA256 为 `1f23bb369093e5f091e8d9a7ef118cb66a5f8e998d34dffeabb4e8d60095de97`。相对 v1.75.00 的 404 个文件验证通过，账号配置保留校验通过。GitHub 安装器 CI 完成状态不在本次确认范围。
