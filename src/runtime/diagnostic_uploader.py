@@ -187,7 +187,8 @@ def fair_batches(pending, slot=0):
 
 
 def retry_pending(root, target, *, timeout=None, now=None, transfer=None):
-    root = Path(root)
+    # pending_batches returns resolved paths, including Windows 8.3 aliases.
+    root = Path(root).resolve()
     now = time.time() if now is None else now
     transfer = transfer or bounded_upload
     try:

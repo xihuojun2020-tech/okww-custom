@@ -126,6 +126,14 @@ class TestDiagnosticPipeline(unittest.TestCase):
         self.assertEqual(json.loads(state_path.read_text())['status'], 'uploaded')
         self.assertTrue(batch.exists())
 
+    def test_retry_accepts_noncanonical_root_without_dropping_pending_batches(self):
+        self.batch()
+        transferred = []
+        alias = self.root / '..' / self.root.name
+        retry_pending(alias, self.remote, transfer=lambda batch, target, timeout: transferred.append(batch))
+        self.assertTrue(transferred)
+        self.assertTrue(all(batch.is_relative_to(self.root.resolve()) for batch in transferred))
+
     def test_running_session_is_not_recovered(self):
         recover_sessions(self.root)
         self.assertFalse((self.session.run / '_FINAL_SEALED').exists())
