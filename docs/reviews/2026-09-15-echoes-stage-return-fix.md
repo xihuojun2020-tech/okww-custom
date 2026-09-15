@@ -22,4 +22,6 @@ TestEchoesContinuation 17 项、TestEchoesContinuationImages 8 项、TestEchoesR
 
 ## 发布
 
-目标 GitHub v1.75.03 与 NAS .173 稳定更新通道，发布后补充结果。
+提交 dbd9af76 与注释标签 v1.75.03 已推送 GitHub；NAS `\\192.168.3.173\羲火君 共享给我\AI诊断\OKWW-Updates\stable\latest.json` 已确认版本 1.75.03。
+
+更新包 SHA256：`a437380e2a04d9d53823982f61c870f855051bdf191a2d41b7700e404a9b63ef`，405 个受控文件及账号配置保留验证通过。NAS 包哈希读回一致。GitHub 安装器 CI 是否完成未检查。
