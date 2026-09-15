@@ -22,6 +22,14 @@ class TestEchoesContinuationImages(TaskTestCase):
         self.assertFalse(selected_support(f,1))
         self.assertIsNotNone(self.task._button(f,(.86,.10,.97,.18),'攻击型'))
 
+    def test_control_support_failure_screenshot(self):
+        f=self.page('control_selected')
+        state=self.task._support_selection_state(f,1)
+        self.assertTrue(all(state[key] for key in ('page','category','selected')),state)
+        self.assertIsNotNone(self.task._button(f,(.76,.86,.95,.96),'装配'))
+        self.assertFalse(self.task._support_selection_state(f,0)['category'])
+        self.assertFalse(self.task._support_selection_state(f,3)['selected'])
+
     def test_selected_roster_identity_order_and_activity_role(self):
         f=self.page('roster')
         self.task.last_result={}

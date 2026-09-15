@@ -110,6 +110,16 @@ class EchoesContinuation:
     def _support_page(self, frame):
         return self._button(frame, (.02, .03, .25, .10), '选择支援声骸')
 
+    def _support_selection_state(self, frame, index):
+        # OCR can read simplified 控制型 as 控製型. Keep this alias local
+        # to support categories; do not relax other page/button matching.
+        texts = [compact(b.name) for b in self.ocr(.86, .10, .97, .18, frame=frame)]
+        kinds = [{'控製型': '控制型'}.get(text, text) for text in texts]
+        return dict(page=bool(self._support_page(frame)),
+                    category=kinds.count(KINDS[index]) == 1,
+                    selected=bool(selected_support(frame, index)),
+                    expected=KINDS[index], observed=texts)
+
     def _equip_supports(self):
         self._wait(self._verify_team_names, '编队页姓名与选人复核不一致，未装配声骸')
         selected = []
@@ -121,11 +131,16 @@ class EchoesContinuation:
             if index is None:
                 raise RuntimeError(f"{member['name']}没有已确认解锁的{member['role']}声骸")
             self._click(*support_point(index))
+            selection_state = {}
             def chosen(f):
                 # Exact category and selected frame border must both agree.
-                return (self._support_page(f) and self._button(f, (.86, .10, .97, .18), KINDS[index])
-                        and selected_support(f, index))
-            self._wait(chosen, '声骸选中或类型未确认，未点击装配')
+                selection_state.update(self._support_selection_state(f, index))
+                return all(selection_state[key] for key in ('page', 'category', 'selected'))
+            try:
+                self._wait(chosen, '声骸选中或类型未确认，未点击装配')
+            except RuntimeError:
+                self.log_warning(f'支援声骸复核失败 slot={slot+1} index={index} state={selection_state}')
+                raise
             self.navigate_ui('装配支援声骸',
                 lambda f: self._button(f, (.76, .86, .95, .96), '装配') if chosen(f) else None,
                 lambda f: self._verify_team_names(f) and equipped(f, slot, index),

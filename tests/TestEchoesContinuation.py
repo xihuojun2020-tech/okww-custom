@@ -15,6 +15,19 @@ ROOT = Path('tests/fixtures/echoes_remain/continuation')
 
 
 class TestEchoesContinuation(unittest.TestCase):
+    def test_support_category_alias_is_exact_and_local(self):
+        task=EchoesRemainTask.__new__(EchoesRemainTask)
+        task._support_page=Mock(return_value=True)
+        with patch('src.task.echoes_continuation.selected_support',return_value=True):
+            for text, expected in [('控制型',True),('控製型',True),(' 控 製 型 ',True),
+                                   ('攻击型',False),('控制',False),('控制型未解锁',False)]:
+                task.ocr=Mock(return_value=[SimpleNamespace(name=text)])
+                self.assertEqual(task._support_selection_state(None,1)['category'],expected,text)
+            task.ocr=Mock(return_value=[])
+            self.assertFalse(task._support_selection_state(None,1)['category'])
+            task.ocr=Mock(return_value=[SimpleNamespace(name='控制型'),SimpleNamespace(name='控製型')])
+            self.assertFalse(task._support_selection_state(None,1)['category'])
+
     def test_support_preferences_and_locked_exclusion(self):
         for height in (720, 1080, 1440, 2160):
             frame = cv2.resize(cv2.imread(str(ROOT/'support.png')), (height*16//9, height))
