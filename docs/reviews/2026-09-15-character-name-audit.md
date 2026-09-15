@@ -26,4 +26,6 @@ CharFactory 共注册 52 个不同类；排除 BaseChar 通用占位后，51 个
 
 ## 发布
 
-目标 GitHub v1.75.06、NAS .173 稳定通道，完成后记录。
+提交 f8f343f2、注释标签 v1.75.06 已推送 GitHub。NAS `\\192.168.3.173\羲火君 共享给我\AI诊断\OKWW-Updates\stable\latest.json` 已确认版本 1.75.06。
+
+更新包 SHA256：`0c79ad7590c666e02a8cf98bcc17f58e8fffcb8d3a93e97ebcb61aa3a4693953`，NAS 包哈希读回一致。406 个文件和账号配置保留校验通过。未确认 GitHub 安装器 CI 状态。
