@@ -22,4 +22,8 @@ TestEchoesContinuation 25 项、TestEchoesContinuationImages 10 项、TestEchoes
 
 ## 发布
 
-目标 GitHub v1.76.00 和 NAS .173 稳定通道，完成后补充。
+提交 b8446f95 和注释标签 v1.76.00 已推送 GitHub。包含已提交的 1.75.07 多账号指南与状态修复；本次没有覆盖另一任务的更改。
+
+NAS `\\192.168.3.173\羲火君 共享给我\AI诊断\OKWW-Updates\stable\latest.json` 已读回确认版本 1.76.00，更新包大小 38,198,778 字节，SHA256 为 `552946fbff0c6b1bf36cdc2c57c7de9342c6608862897996119a11b2e67101f4`，NAS 文件哈希一致。406 个受控文件和账号配置保留校验通过。
+
+GitHub 安装器 CI 完成状态未确认；并行任务报告此前 1.75.07 CI 存在测试临时目录短路径比较问题，该独立测试修复不包含在本次已发布标签中。NAS 更新包已就绪。
