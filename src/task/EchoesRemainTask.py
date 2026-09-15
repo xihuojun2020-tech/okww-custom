@@ -273,6 +273,8 @@ class EchoesRemainTask(EchoesContinuation, WWOneTimeTask, BaseCombatTask):
             self.last_result['run_id'] = self._verification.run_id
             if self._navigate() is not False:
                 self._continue_event()
+            # The activity page hides the feature code; verify back in the world.
+            self.ensure_main(time_out=60)
             if self._verification.finish() != 'verified':
                 raise RuntimeError('活动结束账号核验未通过')
             self._save_run_summary()

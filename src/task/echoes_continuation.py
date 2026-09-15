@@ -306,7 +306,10 @@ class EchoesContinuation:
         if '未通关' in text:
             return True
         if '最高分数' in text:
-            return False
+            score = re.search(r'最高分数[:：]?([0-9][0-9,，]*)', text)
+            if score is None:
+                raise RuntimeError('当前难度最高分数无法读取，不能判定已通关')
+            return int(score.group(1).replace(',', '').replace('，', '')) == 0
         raise RuntimeError('当前难度未通关状态不明确')
 
     def _audit_completion(self):

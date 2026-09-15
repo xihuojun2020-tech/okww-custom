@@ -15,6 +15,17 @@ ROOT = Path('tests/fixtures/echoes_remain/continuation')
 
 
 class TestEchoesContinuation(unittest.TestCase):
+    def test_zero_score_pending_and_unreadable_score_rejected(self):
+        task=Mock(spec=EchoesRemainTask)
+        task.height=1152
+        label=SimpleNamespace(name='浅梦',y=280)
+        for text,expected in [('最高分数：0',True),('最高分数：1241',False),('最高分数：1,241',False)]:
+            task.ocr.side_effect=[[label],[SimpleNamespace(name=text)]]
+            self.assertEqual(EchoesRemainTask._selected_stage_pending(task,None,'堕梦神躯·浅梦'),expected)
+        task.ocr.side_effect=[[label],[SimpleNamespace(name='最高分数：')]]
+        with self.assertRaisesRegex(RuntimeError,'无法读取'):
+            EchoesRemainTask._selected_stage_pending(task,None,'堕梦神躯·浅梦')
+
     def test_f_icon_resolutions_and_missing_or_misaligned_key(self):
         original=cv2.imread(str(ROOT/'start_f_icon.png'))
         for height in (720,1080,1440,2160):

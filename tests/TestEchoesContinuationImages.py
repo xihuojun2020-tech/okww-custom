@@ -31,6 +31,13 @@ class TestEchoesContinuationImages(TaskTestCase):
         self.assertFalse(state['key_ocr'],state)
         self.assertTrue(state['key_template'],state)
 
+    def test_next_stage_zero_score_is_pending(self):
+        f=self.page('zero_score')
+        self.task.last_result={}
+        stage=self.task._stage_page(f)
+        self.assertTrue(stage and stage.endswith('浅梦'),stage)
+        self.assertTrue(self.task._selected_stage_pending(f,stage))
+
     def test_control_support_failure_screenshot(self):
         f=self.page('control_selected')
         state=self.task._support_selection_state(f,1)

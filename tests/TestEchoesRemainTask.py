@@ -109,6 +109,8 @@ class TestEchoesRemainTask(unittest.TestCase):
         task._continue_event=Mock(side_effect=continuation)
         verification=Mock();verification.begin.return_value=verification
         verification.finish.return_value='verified';verification.profile_id='test';verification.run_id='run'
+        task.ensure_main=Mock()
+        verification.finish.side_effect=lambda: (task.ensure_main.assert_called_once_with(time_out=60) or 'verified')
         with patch('src.task.WWOneTimeTask.WWOneTimeTask.run'), patch('src.account_repository.get_default_repository',return_value=Mock()), \
                 patch('src.task.account_feature_verification.FeatureRun',return_value=verification), \
                 patch('src.task.account_feature_verification.expected_profile',return_value='test'):
