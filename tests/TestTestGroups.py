@@ -30,6 +30,7 @@ class TestTestGroups(unittest.TestCase):
         for relative in (".github/workflows/test.yml", ".github/workflows/build.yml"):
             text = (root / relative).read_text(encoding="utf-8")
             self.assertIn("run_tests.ps1", text)
+            self.assertIn("PYTHONUTF8: '1'", text)
             self.assertNotIn("tests\\*.py", text)
 
 
