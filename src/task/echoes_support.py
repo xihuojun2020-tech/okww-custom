@@ -17,6 +17,26 @@ def normalized(frame):
     return cv2.resize(frame, (2048, 1152))
 
 
+def challenge_prompt_state(frame, boxes):
+    from src.task.character_trial import exact_button, start_prompt
+    label = exact_button(boxes, '开启挑战')
+    state = dict(text=label is not None, key_ocr=start_prompt(boxes, frame.shape[0]),
+                 key_template=False, key_score=0.0)
+    if label is None:
+        return state
+    # Search only to the left of the interaction label, at the same height.
+    scale = 2048 / frame.shape[1]
+    x = round(label.x * scale)
+    y = round((label.y + label.height / 2) * scale)
+    roi = normalized(frame)[max(0,y-24):y+24, max(0,x-145):max(0,x-65)]
+    template = reference('f_key')
+    if roi.shape[0] >= template.shape[0] and roi.shape[1] >= template.shape[1]:
+        score = float(cv2.matchTemplate(cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY),
+            cv2.cvtColor(template, cv2.COLOR_BGR2GRAY), cv2.TM_CCOEFF_NORMED).max())
+        state.update(key_score=round(score, 3), key_template=score >= .85)
+    return state
+
+
 @lru_cache(maxsize=10)
 def reference(index):
     return cv2.imdecode(np.frombuffer((ROOT / f'{index}.png').read_bytes(), np.uint8), 1)

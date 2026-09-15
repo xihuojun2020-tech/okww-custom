@@ -3,7 +3,7 @@ from pathlib import Path
 from config import config
 from ok.test.TaskTestCase import TaskTestCase
 from src.task.EchoesRemainTask import EchoesRemainTask
-from src.task.echoes_support import selected_support
+from src.task.echoes_support import selected_support, challenge_prompt_state
 from src.task.character_trial import start_prompt
 
 
@@ -21,6 +21,15 @@ class TestEchoesContinuationImages(TaskTestCase):
         self.assertTrue(selected_support(f,0))
         self.assertFalse(selected_support(f,1))
         self.assertIsNotNone(self.task._button(f,(.86,.10,.97,.18),'攻击型'))
+
+    def test_start_with_ocr_missing_f(self):
+        f=self.page('start_f_icon')
+        boxes=self.task.ocr(.60,.43,.86,.61,frame=f)
+        boxes=[b for b in boxes if b.name != 'F']
+        state=challenge_prompt_state(f,boxes)
+        self.assertTrue(state['text'],state)
+        self.assertFalse(state['key_ocr'],state)
+        self.assertTrue(state['key_template'],state)
 
     def test_control_support_failure_screenshot(self):
         f=self.page('control_selected')

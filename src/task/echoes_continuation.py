@@ -10,10 +10,10 @@ import cv2
 from src.char.CharFactory import char_dict, _apply_char_config, _get_buff_time
 from src.char.BaseChar import CharType
 from src.task.AutoAbyssTask import AutoAbyssTask, character_card_slots
-from src.task.character_trial import compact, start_prompt
+from src.task.character_trial import compact
 from src.task.echoes_remain import FINAL
 from src.task.echoes_support import (SLOTS, KINDS, choose_support, support_point,
-                                    equipped, enabled_start, selected_support)
+                                    equipped, enabled_start, selected_support, challenge_prompt_state)
 from src.task.BaseCombatTask import CombatStateUnknown, NotInCombatException, CharDeadException
 from src.runtime.diagnostic_export import atomic_json
 from src.runtime.diagnostic_storage import storage_path
@@ -255,11 +255,15 @@ class EchoesContinuation:
             lambda f: self.in_team_and_world(frame=f) and not self._formation_page(f),
             attempts=1, timeout=120, identity=self.last_result['stage'])
         started = False
+        prompt_state = {}
         try:
             for _ in range(40):
                 frame = self.next_frame()
                 boxes = self.ocr(.60, .43, .86, .61, frame=frame)
-                if start_prompt(boxes, self.height):
+                prompt_state = challenge_prompt_state(frame, boxes)
+                if prompt_state['text'] and (prompt_state['key_ocr'] or prompt_state['key_template']):
+                    self.send_key_up('w')
+                    self.log_info(f'开启挑战提示已确认 state={prompt_state}')
                     self.send_key('f')
                     started = True
                     break
@@ -270,6 +274,7 @@ class EchoesContinuation:
         finally:
             self.send_key_up('w')
         if not started:
+            self.log_warning(f'开启挑战提示未确认 state={prompt_state}')
             raise RuntimeError('未找到F开启挑战提示，停止移动')
         outcome = self._fight_event()
         frame = self._wait(lambda f: self._settlement(f) == outcome, '结算页面不稳定')

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from ok import TaskDisabledException
 import cv2
 
-from src.task.echoes_support import choose_support, unlocked, equipped, enabled_start
+from src.task.echoes_support import choose_support, unlocked, equipped, enabled_start, challenge_prompt_state
 from src.task.echoes_continuation import activity_role, event_echo
 from src.task.EchoesRemainTask import EchoesRemainTask
 from src.char.BaseChar import CharType
@@ -15,6 +15,20 @@ ROOT = Path('tests/fixtures/echoes_remain/continuation')
 
 
 class TestEchoesContinuation(unittest.TestCase):
+    def test_f_icon_resolutions_and_missing_or_misaligned_key(self):
+        original=cv2.imread(str(ROOT/'start_f_icon.png'))
+        for height in (720,1080,1440,2160):
+            frame=cv2.resize(original,(height*16//9,height))
+            scale=height/1152
+            label=SimpleNamespace(name='开启挑战',x=1423*scale,y=580*scale,height=29*scale)
+            self.assertTrue(challenge_prompt_state(frame,[label])['key_template'],height)
+            self.assertFalse(challenge_prompt_state(frame,[])['key_template'])
+            missing=frame.copy()
+            missing[int(575*scale):int(617*scale),int(1290*scale):int(1340*scale)]=0
+            self.assertFalse(challenge_prompt_state(missing,[label])['key_template'])
+            label.y += 100*scale
+            self.assertFalse(challenge_prompt_state(frame,[label])['key_template'])
+
     def test_support_category_alias_is_exact_and_local(self):
         task=EchoesRemainTask.__new__(EchoesRemainTask)
         task._support_page=Mock(return_value=True)
