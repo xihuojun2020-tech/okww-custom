@@ -137,7 +137,8 @@ class EchoesRemainTask(EchoesContinuation, WWOneTimeTask, BaseCombatTask):
         return bool(self._button(frame, self.TITLE, self.name) and self._button(frame, self.ENTER, '前往'))
 
     def _stage_page(self, frame):
-        return (self._stage_name(frame) if self._button(frame, (.02, .03, .24, .10), self.name)
+        # Exclude the crossed-swords icon, which OCR can merge into the title at 720p.
+        return (self._stage_name(frame) if self._button(frame, (.055, .03, .24, .10), self.name)
                 and self._button(frame, self.SINGLE, '单人挑战') else None)
 
     def _single_button(self, frame, expected):
