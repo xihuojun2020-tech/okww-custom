@@ -10,4 +10,4 @@
 
 验证：TestAccountManagementTabs 29 项及 TestNightmareNestTask 19 项通过，共 48 项，覆盖旧选择、增加勾选、模板保存、清空选择和原有任务过滤。Qt 测试退出有既有 GC ResourceWarning，结果通过。未操作游戏实机刷取。
 
-发布结果完成后补充。
+提交 5821258c 与注释标签 v1.77.02 已推送 GitHub。NAS .173 的 OKWW-Updates/stable/latest.json 已确认版本 1.77.02。更新包 SHA256：`76816390357d3f0b9ad0ecd4c14f1cce24faefd67da5715e40c46dd7d1b04628`，NAS 哈希一致；407 个文件及账号配置保留校验通过。安装器 CI 完成状态未确认。
