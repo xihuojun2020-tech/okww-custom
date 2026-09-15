@@ -10,4 +10,4 @@
 
 验证：TestEchoesContinuation 29 项、TestEchoesContinuationImages 11 项，共 40 项通过。包含本次高亮截图接续既有正常声骸页的回放、未知帧重置及索引 0 验证。正常页来自已有截图，不是同一次开页录像；实际高亮是否在等待窗口内消退仍需用户实机验收。若高亮持续，仍会停止并保留失败截图，不强行点击。图像测试退出有既有框架 GC ResourceWarning，结果通过。
 
-发布结果完成后补充。未审阅 NAS ZIP。
+提交 693b42ea、注释标签 v1.77.01 已推送 GitHub。NAS .173 的 OKWW-Updates/stable/latest.json 已确认版本 1.77.01；包 SHA256 为 `6629acfba6e84471e387c08ca9790dddbd1f9c88a8de463250c2377f38a9b3eb`，读回一致。406 个受控文件和账号配置保留验证通过。安装器 CI 状态未确认。未审阅 NAS 诊断 ZIP。
