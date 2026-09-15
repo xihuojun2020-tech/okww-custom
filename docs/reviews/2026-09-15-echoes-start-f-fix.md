@@ -24,4 +24,6 @@
 
 ## 发布
 
-发布目标：GitHub `v1.75.02` 和 NAS `.173` 稳定更新通道；结果完成后补充。
+提交 `dfa4f7e5` 和注释标签 `v1.75.02` 已推送 GitHub。NAS `\\192.168.3.173\羲火君 共享给我\AI诊断\OKWW-Updates\stable\latest.json` 已发布并读回确认版本 1.75.02。
+
+更新包 `stable/releases/v1.75.02/okww_update_v1.75.02.zip`，SHA256：`e72f7b9cf2d5e484a4c5fb8e15be71c0dd36590e1f8ca721a8b45972f58ad0a8`。405 个文件校验通过，账号配置保留校验通过。GitHub 安装器 CI 完成状态未检查。
