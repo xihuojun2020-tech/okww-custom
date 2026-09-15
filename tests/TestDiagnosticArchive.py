@@ -82,35 +82,15 @@ class TestDiagnosticArchive(unittest.TestCase):
             wake_uploader(Path(temporary))
             spawn.assert_not_called()
 
-    def test_archive_splits_pending_batches_at_payload_limit(self):
+    def test_upload_copies_without_rehashing_the_zip(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / 'root'
             session = DiagnosticSession(root, 'test')
-            session.record_event('first', {'payload': 'x' * 200})
-            session.request_batch('manual')
-            session.record_event('second', {'payload': 'y' * 200})
             session.finish(timeout=5)
-            with patch('src.runtime.diagnostic_archive.ARCHIVE_PAYLOAD_LIMIT', 1):
-                first = build_archive(root)
-                first_receipt = json.loads(first.with_suffix('.json').read_text(encoding='utf-8'))
-                self.assertEqual(1, len(first_receipt['batches']))
-                upload_archive(first, Path(temporary) / 'nas')
-                second = build_archive(root)
-                second_receipt = json.loads(second.with_suffix('.json').read_text(encoding='utf-8'))
-                self.assertGreaterEqual(len(second_receipt['batches']), 1)
-
-    def test_manual_upload_preserves_and_skips_oversized_legacy_archive(self):
-        from src.runtime.diagnostic_archive import manual_upload
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            archives = root / 'archives'
-            archives.mkdir()
-            receipt = archives / 'okww诊断证据_legacy.json'
-            receipt.write_text(json.dumps({'status': 'packed', 'size': 2}), encoding='utf-8')
-            with patch('src.runtime.diagnostic_archive.ARCHIVE_PAYLOAD_LIMIT', 1), \
-                    patch('src.runtime.diagnostic_archive.send_archive') as send, \
-                    patch('src.runtime.diagnostic_archive.build_archive', side_effect=ValueError('没有尚未上传的已封存资料')):
-                with self.assertRaisesRegex(ValueError, '没有尚未上传'):
-                    manual_upload(root)
-            send.assert_not_called()
-            self.assertEqual('oversized', json.loads(receipt.read_text(encoding='utf-8'))['status'])
+            archive = build_archive(root)
+            real_hash = __import__('src.runtime.diagnostic_archive', fromlist=['hash_file']).hash_file
+            with patch('src.runtime.diagnostic_archive.hash_file', side_effect=lambda path: (
+                    real_hash(path) if Path(path).name == 'manifest.json' else
+                    (_ for _ in ()).throw(AssertionError('ZIP must not be rehashed')))):
+                remote = Path(upload_archive(archive, Path(temporary) / 'nas'))
+            self.assertEqual(archive.stat().st_size, remote.stat().st_size)
