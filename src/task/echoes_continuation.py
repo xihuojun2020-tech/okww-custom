@@ -177,9 +177,7 @@ class EchoesContinuation:
             self.info_set('活动阶段', f"为第{slot+1}位{member['name']}装配{member['role']}声骸")
             frame = self.navigate_ui('打开支援声骸', self._verify_team_names, self._support_page,
                 action=lambda _, slot=slot: self._click(*SLOTS[slot]), identity=(self.last_result['stage'], slot))
-            index = choose_support(frame, member['role'])
-            if index is None:
-                raise RuntimeError(f"{member['name']}没有已确认解锁的{member['role']}声骸")
+            index = self._wait_support_choice(member)
             self._click(*support_point(index))
             selection_state = {}
             def chosen(f):
@@ -201,6 +199,18 @@ class EchoesContinuation:
             self._button(f, self.DONE, '开启挑战'), '三槽装配或开启挑战按钮未确认')
         self.last_result['supports'] = selected
         self._quick_capture('echoes_supports_verified', self.require_game_frame())
+
+    def _wait_support_choice(self, member):
+        previous = None
+        def stable(frame):
+            nonlocal previous
+            index = choose_support(frame, member['role']) if self._support_page(frame) else None
+            confirmed = (index,) if index is not None and index == previous else None
+            previous = index
+            return confirmed  # Index zero must remain a truthy wait result.
+        return self._wait(stable,
+            f"{member['name']}的{member['role']}声骸在等待后仍未能确认（可能未解锁或画面识别不稳定）",
+            timeout=8)[0]
 
     def _settlement(self, frame):
         if not self._button(frame, (.27, .79, .46, .90), '退出副本'):

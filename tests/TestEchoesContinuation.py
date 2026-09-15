@@ -245,10 +245,35 @@ class TestEchoesContinuation(unittest.TestCase):
         task=Mock(spec=EchoesRemainTask)
         task.last_result={'stage':'test','members':[
             {'name':'a','role':'辅助'},{'name':'b','role':'输出'},{'name':'c','role':'辅助'}]}
+        task._wait_support_choice.side_effect=[1,0,1]
         with patch('src.task.echoes_continuation.choose_support',side_effect=[1,0,1]):
             EchoesRemainTask._equip_supports(task)
         self.assertEqual(task.last_result['supports'],[1,0,1])
         self.assertEqual(task.navigate_ui.call_count,6)
+
+    def test_support_choice_waits_for_repeated_valid_frame(self):
+        task=Mock(spec=EchoesRemainTask)
+        task._support_page.return_value=True
+        def wait(probe,reason,timeout):
+            for _ in range(4):
+                self.assertIsNone(probe(None))
+            return probe(None)
+        task._wait.side_effect=wait
+        with patch('src.task.echoes_continuation.choose_support',side_effect=[None,1,None,0,0]):
+            self.assertEqual(EchoesRemainTask._wait_support_choice(task,{'name':'test','role':'输出'}),0)
+
+    def test_real_support_flash_then_normal_page(self):
+        task=Mock(spec=EchoesRemainTask)
+        task._support_page.return_value=True
+        flash=cv2.imread(str(ROOT/'support_flash.png'))
+        normal=cv2.imread(str(ROOT/'support.png'))
+        self.assertIsNone(choose_support(flash,'辅助'))
+        def wait(probe,reason,timeout):
+            self.assertIsNone(probe(flash))
+            self.assertIsNone(probe(normal))
+            return probe(normal)
+        task._wait.side_effect=wait
+        self.assertEqual(EchoesRemainTask._wait_support_choice(task,{'name':'达妮娅','role':'辅助'}),1)
 
     def test_combat_slot_identity_uses_verified_order(self):
         task=Mock(spec=EchoesRemainTask)
