@@ -15,6 +15,8 @@ from src.runtime.diagnostic_export import atomic_json, safe_path, validate_manif
 from src.runtime.diagnostic_session import FileLease
 from src.runtime.diagnostic_policy import DEFAULT_TARGET, connect
 
+ARCHIVE_PAYLOAD_LIMIT = 1536 * 1024**2
+
 
 def hash_file(path):
     with Path(path).open('rb') as stream:
@@ -33,7 +35,7 @@ def build_archive(root):
     archive = directory / (name + '.zip')
     receipt = archive.with_suffix('.json')
     pending = archive.with_suffix('.zip.partial')
-    entries, logs, references = [], {}, []
+    entries, logs, references, payload_size = [], {}, [], 0
     with FileLease(root / '.archive.lock'), FileLease(root / '.uploader.lock'):
         try:
             with zipfile.ZipFile(pending, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=1, allowZip64=True) as package:
@@ -49,6 +51,9 @@ def build_archive(root):
                     if ready.read_text(encoding='ascii') != sha:
                         raise ValueError(f'批次尚未完整封存：{key}')
                     manifest = validate_manifest(batch, json.loads(manifest_path.read_text(encoding='utf-8')))
+                    batch_size = sum(item['size'] for item in manifest['files'])
+                    if entries and payload_size + batch_size > ARCHIVE_PAYLOAD_LIMIT:
+                        break
                     prefix = 'batches/' + key + '/'
                     package.write(manifest_path, prefix + 'manifest.json')
                     package.write(ready, prefix + '_READY')
@@ -64,6 +69,7 @@ def build_archive(root):
                         if source.suffix in ('.log', '.txt', '.jsonl'):
                             logs.setdefault(batch.parents[1].name, []).append((manifest.get('created_at', 0), source))
                     entries.append({'key': key, 'manifest_sha256': sha})
+                    payload_size += batch_size
                     if len(entries) % 32 == 0:
                         atomic_json(directory / 'progress.json', {'status': 'packing', 'batches': len(entries)})
                 if not entries:
@@ -189,6 +195,10 @@ def manual_upload(root):
         if receipt_path.name == 'progress.json':
             continue
         value = json.loads(receipt_path.read_text(encoding='utf-8'))
+        if value.get('status') == 'packed' and value.get('size', 0) > ARCHIVE_PAYLOAD_LIMIT:
+            value.update(status='oversized', reason='旧版压缩包超过分包上限，保留本地但不再上传')
+            atomic_json(receipt_path, value)
+            continue
         if value.get('status') == 'packed':
             previous = send_archive(receipt_path.with_suffix('.zip'))
             break
