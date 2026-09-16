@@ -65,6 +65,40 @@ def save_credentials(target, username, password):
                         'Persist': win32cred.CRED_PERSIST_LOCAL_MACHINE}, 0)
 
 
+def _windows_error_code(error):
+    code = getattr(error, 'winerror', None)
+    if code is None and error.args:
+        code = error.args[0]
+    return code if isinstance(code, int) else None
+
+
+def _disconnect_target_connections(share, win32wnet):
+    """Drop only SMB connections to this server so error 1219 can recover."""
+    server = share.split('\\')[2].casefold()
+    resources = []
+    handle = None
+    try:
+        handle = win32wnet.WNetOpenEnum(1, 1, 0, None)  # connected, disk
+        while True:
+            try:
+                batch = win32wnet.WNetEnumResource(handle, 0xFFFFFFFF)
+                if not batch:
+                    break
+                resources.extend(batch)
+            except Exception as error:
+                if _windows_error_code(error) == 259:  # no more items
+                    break
+                raise
+    finally:
+        if handle is not None:
+            win32wnet.WNetCloseEnum(handle)
+    for resource in resources:
+        remote = (resource.get('lpRemoteName') or '').replace('/', '\\')
+        parts = remote.split('\\')
+        if len(parts) >= 3 and parts[2].casefold() == server:
+            win32wnet.WNetCancelConnection2(resource.get('lpLocalName') or remote, 0, True)
+
+
 def connect(target):
     """Only called in the timeout-controlled SMB worker, never on the UI thread."""
     share = share_name(target)
@@ -86,10 +120,18 @@ def connect(target):
     if isinstance(secret, bytes):
         secret = secret.decode('utf-16-le')
     try:
-        win32wnet.WNetAddConnection2(1, None, share, None, credential['UserName'], secret, 0)
+        try:
+            win32wnet.WNetAddConnection2(1, None, share, None, credential['UserName'], secret, 0)
+        except Exception as error:
+            if _windows_error_code(error) != 1219:
+                raise
+            _disconnect_target_connections(share, win32wnet)
+            win32wnet.WNetAddConnection2(1, None, share, None, credential['UserName'], secret, 0)
     except Exception as error:
-        # Never tear down unrelated connections to resolve error 1219.
-        raise OSError('NAS authentication failed, Windows code ' + str(error.args[0])) from None
+        code = _windows_error_code(error)
+        message = ('NAS 连接被正在使用的同服务器共享阻止，请关闭该 NAS 上已打开的文件'
+                   if code == 1219 else 'NAS authentication failed, Windows code ' + str(code))
+        raise OSError(message) from None
     finally:
         secret = credential = None
 

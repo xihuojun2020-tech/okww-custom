@@ -20,6 +20,47 @@ class TestDiagnosticPolicy(unittest.TestCase):
     def test_default_nas_uses_current_smb_host(self):
         self.assertEqual(r'\\192.168.3.173\羲火君 共享给我\AI诊断', DEFAULT_TARGET)
 
+    def test_connect_repairs_1219_by_dropping_only_target_server_connections(self):
+        from src.runtime import diagnostic_policy
+
+        class WindowsError(Exception):
+            def __init__(self, code):
+                self.winerror = code
+                super().__init__(code)
+
+        credential = {'UserName': 'ai-upload', 'CredentialBlob': 'secret'}
+        win32cred = SimpleNamespace(CRED_TYPE_GENERIC=1, CredRead=lambda *_: credential)
+        calls = []
+        additions = iter([WindowsError(1219), None])
+        resources = [
+            {'lpLocalName': 'Z:', 'lpRemoteName': r'\\192.168.3.173\羲火君 共享给我'},
+            {'lpLocalName': 'Y:', 'lpRemoteName': r'\\192.168.3.99\Other'},
+        ]
+        enumerations = iter([resources, WindowsError(259)])
+
+        def add(*_):
+            result = next(additions)
+            if result:
+                raise result
+
+        def enumerate_resources(*_):
+            result = next(enumerations)
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+        win32wnet = SimpleNamespace(
+            WNetAddConnection2=add,
+            WNetOpenEnum=lambda *_: object(),
+            WNetEnumResource=enumerate_resources,
+            WNetCloseEnum=lambda *_: None,
+            WNetCancelConnection2=lambda name, *_: calls.append(name),
+        )
+        with patch.object(diagnostic_policy.os, 'name', 'nt'), patch.dict(
+                sys.modules, {'win32cred': win32cred, 'win32wnet': win32wnet}):
+            diagnostic_policy.connect(DEFAULT_TARGET)
+        self.assertEqual(calls, ['Z:'])
+
     @unittest.skipUnless(os.name == 'nt', 'Windows isolated uploader runtime')
     def test_independent_runtime_preserves_source_identity_and_ignores_pythonpath(self):
         from src.runtime.diagnostic_runtime import prepare_runtime, check_runtime, isolated_environment
