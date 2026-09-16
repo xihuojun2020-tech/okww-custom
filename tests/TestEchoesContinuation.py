@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from ok import TaskDisabledException
 import cv2
 
-from src.task.echoes_support import choose_support, unlocked, equipped, enabled_start, challenge_prompt_state
+from src.task.echoes_support import choose_support, unlocked, support_slot_state, enabled_start, challenge_prompt_state
 from src.task.echoes_continuation import activity_role, event_echo, character_name_key
 from src.task.EchoesRemainTask import EchoesRemainTask, canonical_stage
 from src.char.BaseChar import CharType
@@ -184,23 +184,22 @@ class TestEchoesContinuation(unittest.TestCase):
             self.assertTrue(enabled_start(full))
             self.assertFalse(enabled_start(empty))
             for slot, echo in enumerate((6,0,1)):
-                self.assertTrue(equipped(full,slot,echo), (height,slot))
-                self.assertFalse(equipped(empty,slot,echo))
+                self.assertEqual(support_slot_state(full,slot), 'occupied', (height,slot))
+                self.assertEqual(support_slot_state(empty,slot), 'empty')
 
     def test_actual_second_equipment_and_empty_third_slot(self):
-        for name in ('equipment_failure_1', 'equipment_failure_2'):
+        for name in ('equipment_failure_1', 'equipment_failure_2', 'equipment_failure_3'):
             original = cv2.imread(str(ROOT / f'{name}.png'))
             for height in (720, 1080, 1440, 2160):
                 frame = cv2.resize(original, (height*16//9, height))
                 with self.subTest(image=name, height=height):
-                    for slot, expected in enumerate((1, 8, None)):
-                        self.assertEqual([i for i in range(9) if equipped(frame, slot, i)],
-                                         [] if expected is None else [expected])
+                    self.assertEqual([support_slot_state(frame, slot) for slot in range(3)],
+                                     ['occupied', 'occupied', 'empty'])
                     self.assertFalse(enabled_start(frame))
 
     def test_actual_second_equipment_verification_reaches_third_slot(self):
         task = Mock(spec=EchoesRemainTask)
-        frame = cv2.imread(str(ROOT / 'equipment_failure_2.png'))
+        frame = cv2.imread(str(ROOT / 'equipment_failure_3.png'))
         # Synthetic final frame: copy the already verified first support into slot 3.
         from src.task.echoes_support import normalized
         final = normalized(frame).copy()
@@ -209,7 +208,8 @@ class TestEchoesContinuation(unittest.TestCase):
         task.last_result = {'stage':'test', 'members':[
             {'name':'洛瑟菈','role':'辅助'}, {'name':'绯雪','role':'输出'}, {'name':'千咲','role':'辅助'}]}
         task._verify_team_names.return_value = True
-        task._wait_support_choice.side_effect = [1, 8, 1]
+        task._equipped_slots.side_effect = lambda f, slots: EchoesRemainTask._equipped_slots(task, f, slots)
+        task._wait_support_choice.side_effect = [1, 7, 1]
         task._support_selection_state.return_value = dict(page=True, category=True, selected=True)
         task._wait.side_effect = lambda probe, reason: probe(final)
         visited = []
@@ -222,7 +222,28 @@ class TestEchoesContinuation(unittest.TestCase):
         task.navigate_ui.side_effect = navigate
         EchoesRemainTask._equip_supports(task)
         self.assertEqual(visited, [0, 1, 2])
-        self.assertEqual(task.last_result['supports'], [1, 8, 1])
+        self.assertEqual(task.last_result['supports'], [1, 7, 1])
+
+    def test_missing_plus_without_visible_artwork_is_unknown(self):
+        import numpy as np
+        for value in (0, 80, 255):
+            frame = np.full((1152, 2048, 3), value, np.uint8)
+            self.assertEqual([support_slot_state(frame, i) for i in range(3)], ['unknown']*3)
+        frame = cv2.imread(str(ROOT/'empty.png'))
+        frame[845:900,365:420] = frame[845,365]
+        self.assertEqual(support_slot_state(frame, 0), 'unknown')
+
+    def test_wrong_page_and_empty_previous_slot_block_confirmation(self):
+        task = Mock(spec=EchoesRemainTask)
+        task.last_result = {}
+        frame = cv2.imread(str(ROOT/'equipment_failure_3.png'))
+        task._verify_team_names.return_value = False
+        self.assertFalse(EchoesRemainTask._equipped_slots(task, frame, range(2)))
+        task._verify_team_names.return_value = True
+        self.assertTrue(EchoesRemainTask._equipped_slots(task, frame, range(2)))
+        self.assertFalse(EchoesRemainTask._equipped_slots(task, frame, range(3)))
+        self.assertEqual(task.last_result['support_slot_observation']['slots'],
+                         ['occupied', 'occupied', 'empty'])
 
     def test_role_override_is_activity_only(self):
         self.assertEqual(activity_role('char_suisui'), '治疗')
@@ -359,7 +380,7 @@ class TestEchoesContinuation(unittest.TestCase):
         frame=cv2.imread(str(ROOT/'equipped.png'))
         empty=cv2.imread(str(ROOT/'empty.png'))
         frame[830:912,950:1032]=empty[830:912,950:1032]
-        self.assertFalse(all(equipped(frame,i,e) for i,e in enumerate((6,0,1))))
+        self.assertFalse(all(support_slot_state(frame,i) == 'occupied' for i in range(3)))
 
 
 if __name__=='__main__':unittest.main()

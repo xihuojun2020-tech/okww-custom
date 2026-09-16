@@ -80,6 +80,20 @@ class TestEchoesContinuationImages(TaskTestCase):
                 self.task.last_result['members'] = list(reversed(members))
                 self.assertFalse(self.task._verify_team_names(frame))
 
+    def test_actual_equipment_frames_pass_page_names_and_first_two_slots(self):
+        self.task.tr = gettext.translation('ok', localedir='i18n', languages=['zh_CN']).gettext
+        for image in ('equipment_failure_1', 'equipment_failure_2', 'equipment_failure_3'):
+            with self.subTest(image=image):
+                self.task.last_result = {'stage': '燃核兽形·浅梦'}
+                frame = self.page(image)
+                members = self.task._read_formation_members(frame)
+                self.assertIsNotNone(members)
+                self.task.last_result['members'] = members
+                self.assertTrue(self.task._equipped_slots(frame, range(2)))
+                self.assertFalse(self.task._equipped_slots(frame, range(3)))
+                self.assertEqual(self.task.last_result['support_slot_observation']['slots'],
+                                 ['occupied', 'occupied', 'empty'])
+
     def test_control_support_failure_screenshot(self):
         f=self.page('control_selected')
         state=self.task._support_selection_state(f,1)

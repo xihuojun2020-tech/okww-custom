@@ -13,7 +13,7 @@ from src.task.AutoAbyssTask import AutoAbyssTask, character_card_slots
 from src.task.character_trial import compact
 from src.task.echoes_remain import FINAL
 from src.task.echoes_support import (SLOTS, KINDS, choose_support, support_point,
-                                    equipped, enabled_start, selected_support, challenge_prompt_state)
+                                    support_slot_state, enabled_start, selected_support, challenge_prompt_state)
 from src.task.BaseCombatTask import CombatStateUnknown, NotInCombatException, CharDeadException
 from src.char.character_names import character_display_name
 from src.runtime.diagnostic_export import atomic_json
@@ -172,6 +172,12 @@ class EchoesContinuation:
                     selected=bool(selected_support(frame, index)),
                     expected=KINDS[index], observed=texts)
 
+    def _equipped_slots(self, frame, slots):
+        page_ready = self._verify_team_names(frame)
+        states = [support_slot_state(frame, i) for i in range(3)] if page_ready else ['unknown']*3
+        self.last_result['support_slot_observation'] = dict(page_ready=bool(page_ready), slots=states)
+        return page_ready and all(states[i] == 'occupied' for i in slots)
+
     def _equip_supports(self):
         self._wait(self._verify_team_names, '编队页姓名与选人复核不一致，未装配声骸')
         selected = []
@@ -193,11 +199,10 @@ class EchoesContinuation:
                 raise
             self.navigate_ui('装配支援声骸',
                 lambda f: self._button(f, (.76, .86, .95, .96), '装配') if chosen(f) else None,
-                lambda f: self._verify_team_names(f) and equipped(f, slot, index),
+                lambda f: self._equipped_slots(f, range(slot+1)),
                 identity=(self.last_result['stage'], slot, index))
             selected.append(index)
-        frame = self._wait(lambda f: self._verify_team_names(f) and
-            all(equipped(f, i, e) for i, e in enumerate(selected)) and enabled_start(f) and
+        frame = self._wait(lambda f: self._equipped_slots(f, range(3)) and enabled_start(f) and
             self._button(f, self.DONE, '开启挑战'), '三槽装配或开启挑战按钮未确认')
         self.last_result['supports'] = selected
         self._quick_capture('echoes_supports_verified', self.require_game_frame())
@@ -339,8 +344,7 @@ class EchoesContinuation:
     def _enter_event_map(self):
         def ready(frame):
             supports = self.last_result['supports']
-            return (self._verify_team_names(frame) and enabled_start(frame) and
-                    all(equipped(frame, i, e) for i, e in enumerate(supports)))
+            return (len(supports) == 3 and self._equipped_slots(frame, range(3)) and enabled_start(frame))
         self.navigate_ui('进入若梦战斗地图',
             lambda f: self._button(f, self.DONE, '开启挑战') if ready(f) else None,
             lambda f: self.in_team_and_world(frame=f) and not self._formation_page(f),

@@ -37,7 +37,7 @@ def challenge_prompt_state(frame, boxes):
     return state
 
 
-@lru_cache(maxsize=10)
+@lru_cache(maxsize=12)
 def reference(index):
     return cv2.imdecode(np.frombuffer((ROOT / f'{index}.png').read_bytes(), np.uint8), 1)
 
@@ -83,11 +83,19 @@ def selected_support(frame, index):
     return selection_marker_present(image[y:y+168, x:x+168])
 
 
-def equipped(frame, slot, index):
+def support_slot_state(frame, slot):
+    """Occupancy only; callers must first verify the formation page and team."""
     image = normalized(frame)
     x = (351, 950, 1548)[slot]
-    icon = image[830:912, x:x+82]
-    return icon_score(icon, index) >= .60
+    gray = cv2.cvtColor(image[830:912, x:x+82], cv2.COLOR_BGR2GRAY)
+    plus = cv2.cvtColor(reference('slot_plus'), cv2.COLOR_BGR2GRAY)
+    if cv2.matchTemplate(gray[15:67, 15:67], plus, cv2.TM_CCOEFF_NORMED).max() >= .80:
+        return 'empty'
+    # Absence of '+' alone is not success: require visible artwork, not a blank/fade.
+    inner = gray[12:70, 12:70]
+    if inner.std() >= 20 and np.mean(cv2.Canny(inner, 40, 100) > 0) >= .08:
+        return 'occupied'
+    return 'unknown'
 
 
 def enabled_start(frame):
