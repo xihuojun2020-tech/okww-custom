@@ -22,9 +22,17 @@
 
 新增脱敏原始图片：`reward_daily.png`、`reward_opening.png`、`reward_ready.png`。生产 OCR 分别识别为普通每日页、opening、ready；遮罩下空红点不作为完成证据。流程测试绑定真实 `claim_daily` 和 `_run_daily_inner`，验证后续顺序，以及遮罩卡住时不执行后续、不写完成。
 
-全量 `./run_tests.ps1 -Group all` 通过：166 个测试文件，1697 项（其中 8 项跳过），0 失败、0 错误；结果目录 `test_out/test_runs/20260916-175629-505`。发布回执另附。
+全量 `./run_tests.ps1 -Group all` 通过：166 个测试文件，1697 项（其中 8 项跳过），0 失败、0 错误；结果目录 `test_out/test_runs/20260916-175629-505`。
 
 更新包覆盖验证已通过：以 v1.79.01 为旧版基线，412 个受控文件全部一致，目标账号配置保留；SHA256 `6b3403dd575b1671f9c7b5fe5e8fc41963bce8f3c699e0cd20dd76a9ae32ec75`。
+
+## 发布回执
+
+- 提交 `ea462ab0`：`fix: restore daily reward overlays before account completion`。
+- 分支 `codex/daily-reward-overlay` 和注释标签 `v1.79.02` 已成功推送 `origin`（GitHub `xihuojun2020-tech/okww-custom`）。未声称 GitHub Actions 安装器构建完成。
+- NAS 发布前 stable 为 1.79.01；发布程序校验写入哈希并原子更新 latest，读回 stable 已为 1.79.02。
+- 包：`OKWW-Updates/stable/releases/v1.79.02/okww_update_v1.79.02.zip`，38237161 字节；SHA256 如上；UTC 发布时间 `2026-09-16T10:03:45Z`（北京时间 18:03:45）。
+- 本实施报告随 NAS 版本目录保存，不重复登记或延长原诊断 ZIP 审阅保留期限。
 
 ## 验证限制
 
