@@ -30,6 +30,7 @@ TASK_PROJECTS = {
     'WeeklyBossTask': 'weekly_boss', 'AutoAbyssTask': 'adversity_tower',
     'CharacterTrialTask': 'character_trial',
     'PianoTeachingTask': 'piano_activity', 'SecondSolTask': 'second_sol',
+    'ResonanceSimulationTask': 'resonance_simulation',
 }
 STATUSES = {'completed': '已完成', 'partial': '部分完成', 'incomplete': '未完成',
             'unknown': '待核验', 'not_applicable': '不适用'}

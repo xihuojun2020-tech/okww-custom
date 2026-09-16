@@ -15,6 +15,7 @@ $Python = if (Test-Path ".\.venv\Scripts\python.exe") {
 
 $groups = @{
   unit = @(
+    "TestResonanceSimulation.py",
     "TestAbyssCancelRetry.py", "TestAbyssFormationBack.py", "TestAbyssReturnRecovery.py",
     "TestAccountFeatureVerification.py", "TestAllSoloRotations.py", "TestAutoLoginTicks.py",
     "TestBackgroundNavigationTasks.py", "TestBookTabTransitions.py", "TestCharacterNames.py",
@@ -74,6 +75,7 @@ $groups = @{
     "TestSkipDialogWideMode.py", "TestTaskStatusWindow.py", "TestUsabilityUI.py"
   )
   image = @(
+    "TestResonanceSimulationImages.py",
     "TestDailyFollowupImages.py",
     "TestAbyssReturnImages.py", "TestBookTabImages.py", "TestEchoesContinuationImages.py",
     "TestEchoesRemainImages.py", "TestQingxiaoSoloImages.py",

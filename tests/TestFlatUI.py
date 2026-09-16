@@ -34,6 +34,42 @@ def example_task(name='周本挑战'):
 
 
 class TestFlatUI(unittest.TestCase):
+    def test_resonance_executable_card_has_editable_rules_and_manual_evidence(self):
+        from ok.gui.tasks.TaskCard import TaskCard
+        from src.task.ResonanceSimulationTask import ResonanceSimulationTask
+        source = ResonanceSimulationTask(executor=Mock(scene=None), app=None)
+        task = type('ResonanceSimulationTask', (), {})()
+        task.__dict__.update(vars(example_task()))
+        for key in ('name', 'description', 'default_config', 'config_description', 'config_type'):
+            setattr(task, key, getattr(source, key))
+        task.config = MemoryConfig(source.default_config)
+        with patch.object(og, 'app', SimpleNamespace(tr=str)), \
+                patch.object(og, 'executor', SimpleNamespace(waiting_for_task=lambda _: '')):
+            card = TaskCard(task, True, fluent_sample=True)
+            try:
+                card.setExpand(True)
+                self.assertIsNotNone(card.start_button)
+                self.assertEqual(card._evidence_project, 'resonance_simulation')
+                self.assertIn('Target Text', card.config_widget_by_key)
+                self.assertIn('Combat Keys', card.config_widget_by_key)
+                rule_widget = card.config_widget_by_key['Target Text']
+                custom_rules = '奖励|行动资金\n下一关|藏宝地\n通用|测试入口'
+                def apply_rules(dialog):
+                    dialog.findChild(QPlainTextEdit).setPlainText(custom_rules)
+                    return QDialog.Accepted
+                with patch.object(QDialog, 'exec', apply_rules):
+                    rule_widget.edit_button.click()
+                self.assertEqual(task.config['Target Text'], custom_rules)
+                card.resize(1000, card.sizeHint().height())
+                card.show()
+                QApplication.processEvents()
+                destination = Path('test_out/resonance-config.png')
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                self.assertTrue(card.grab().save(str(destination)))
+            finally:
+                card.close()
+                card.deleteLater()
+
     def test_legacy_sequence_display_keeps_selection_and_completion_keys(self):
         from src.gui.LabelAndAccountSequence import LabelAndAccountSequence
         with tempfile.TemporaryDirectory() as temp:
@@ -745,13 +781,13 @@ class TestFlatUI(unittest.TestCase):
                 self.assertEqual([card.task for card in page.card_widgets], [piano])
                 self.assertEqual([card.task for card in page._activity_placeholders],
                                  [project for project, _ in PLACEHOLDERS])
-                placeholder = page._activity_placeholders[0]
-                self.assertLess(page.taskCardLayout.indexOf(page.card_widgets[0]), page.taskCardLayout.indexOf(placeholder))
-                self.assertFalse(placeholder.isExpand)
-                self.assertFalse(placeholder.findChildren(PrimaryPushButton))
-                placeholder.setExpand(True)
-                page.refresh_ui()
-                self.assertTrue(page._activity_placeholders[0].isExpand)
+                for placeholder in page._activity_placeholders:
+                    self.assertLess(page.taskCardLayout.indexOf(page.card_widgets[0]), page.taskCardLayout.indexOf(placeholder))
+                    self.assertFalse(placeholder.isExpand)
+                    self.assertFalse(placeholder.findChildren(PrimaryPushButton))
+                    placeholder.setExpand(True)
+                    page.refresh_ui()
+                    self.assertTrue(placeholder.isExpand)
                 self.assertEqual(executor.onetime_tasks, [piano])
             finally:
                 page.timer.stop()

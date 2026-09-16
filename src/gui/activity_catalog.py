@@ -1,12 +1,10 @@
 """Display revisions are release metadata, never filesystem/user-edit times."""
 from src.activity_catalog import ACTIVITIES
-ACTIVITY_REVISIONS = {'EchoesRemainTask': 2026091401,
+ACTIVITY_REVISIONS = {'ResonanceSimulationTask': 2026091601, 'EchoesRemainTask': 2026091401,
                       'PianoTeachingTask': 2026091101, 'CharacterTrialTask': 2026091100,
                       'SecondSolTask': 2026091001}
 PLACEHOLDER_REVISION = 2026091101
-PLACEHOLDERS = (
-    ('resonance_simulation', ACTIVITIES['resonance_simulation']),
-)
+PLACEHOLDERS = ()
 
 
 def activity_revision(task):
