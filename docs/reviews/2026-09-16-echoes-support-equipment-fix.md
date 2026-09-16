@@ -20,4 +20,12 @@
 
 两张真实故障图在 720/1080/1440/2160 高度下逐槽比对全部 9 个图标：第一槽仅 index 1、第二槽仅 index 8 命中，第三空槽全部不命中；已有装备、空槽、锁定排除回归均保留。
 
-连续装配测试执行真实 `_equip_supports` 及真实 `equipped`，第二槽使用故障原图，第三槽使用显式合成的最终帧；确认顺序到达 0/1/2、记录 [1,8,1]。合成最终帧不是第三位实机成功证据。没有启动游戏或操作真实账号，也未自动安装补丁。相关测试和发布回执在完成后补充；本次不重跑仓库全量测试。
+连续装配测试执行真实 `_equip_supports` 及真实 `equipped`，第二槽使用故障原图，第三槽使用显式合成的最终帧；确认顺序到达 0/1/2、记录 [1,8,1]。合成最终帧不是第三位实机成功证据。没有启动游戏或操作真实账号，也未自动安装补丁；本次不重跑仓库全量测试。
+
+## 验证与发布回执
+
+- 6 个相关测试文件、87 项全部通过：TestEchoesContinuation、TestEchoesContinuationImages、TestEchoesRemainTask、TestEchoesRemainImages、TestReleaseReadiness、TestTestGroups。
+- 提交 `d92ab7af`（`fix: exclude reference lock overlays from support icon matching`）、分支 `codex/echoes-support-lock-mask`、注释标签 `v1.79.04` 已推送 GitHub origin。
+- 从 v1.79.03 覆盖升级校验通过，412 个受控文件一致，账号配置保留。包 38237660 字节，SHA256 `8eaf16e06395083c21990c321fbaac6df8004e13e4d7a280117cb3b60000e121`。
+- NAS `\\192.168.3.173\羲火君 共享给我\AI诊断\OKWW-Updates\stable\latest.json` 读回版本 1.79.04，包 `releases/v1.79.04/okww_update_v1.79.04.zip`，UTC 发布时间 `2026-09-16T14:43:22Z`。
+- 本报告同步到 NAS 版本目录。未宣称 GitHub Actions 安装器构建完成或本机已安装。
