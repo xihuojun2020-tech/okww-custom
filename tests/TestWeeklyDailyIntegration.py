@@ -80,6 +80,18 @@ class TestWeeklyDailyIntegration(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'world unavailable'):
             task.check_weekly_boss()
 
+    def test_repeated_check_preserves_pending_in_same_run(self):
+        task=self.daily(None)
+        task.check_weekly_boss()
+        count=task.info_set.call_count
+        task.check_weekly_boss()
+        self.assertEqual(task.info_set.call_count,count)
+        self.assertIn('待补检',task.info_set.call_args.args[1])
+        task.get_task_by_class.return_value.run_for_target.assert_called_once()
+        task._weekly_checked_run=None  # next daily run gets its own attempt
+        task.check_weekly_boss()
+        self.assertEqual(task.get_task_by_class.return_value.run_for_target.call_count,2)
+
     def test_cross_refresh_does_not_write_new_week_completion(self):
         task = self.daily()
         windows = [(datetime(2026, 9, 7).date(), WEEKLY_SUNDAY),

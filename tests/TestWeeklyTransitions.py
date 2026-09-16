@@ -15,6 +15,7 @@ class TestWeeklyTransitions(unittest.TestCase):
         for name in ('TITLE','SINGLE','START'):
             setattr(task,name,getattr(WeeklyBossTask,name))
         task._text=Mock(return_value=task._entry_boss.name)
+        task.click=lambda button:task.click_relative(.7,.9)
         return task
 
     def test_single_then_start_once_after_first_input_loss(self):
@@ -64,6 +65,21 @@ class TestWeeklyTransitions(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,'不一致'):
             WeeklyBossTask._open_weekly_target(task,task._entry_boss)
         task.click_relative.assert_not_called()
+
+    def test_story_warning_is_confirmed_once_then_original_boss_verified(self):
+        task=self.task();task.LIST=WeeklyBossTask.LIST
+        def text(region,frame):
+            if region==(.25,.43,.75,.53):
+                return '提前到达目标位置可能影响剧情体验，是否确认前往？' if task.click_relative.call_count==1 else ''
+            return task._entry_boss.name
+        task._text=text
+        task._button=lambda region,*args:self.button if (
+            region==(.55,.59,.76,.67) and task.click_relative.call_count==1 or
+            region==task.SINGLE and task.click_relative.call_count>=2) else None
+        task._ocr=Mock(return_value=[])
+        with patch('src.task.WeeklyBossTask.match_target_button',return_value=self.button):
+            WeeklyBossTask._open_weekly_target(task,task._entry_boss)
+        self.assertEqual(task.click_relative.call_count,2)
 
 
 if __name__=='__main__':unittest.main()

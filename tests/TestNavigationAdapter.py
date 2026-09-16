@@ -55,10 +55,12 @@ class TestNavigationAdapter(unittest.TestCase):
         task.click_box = Mock()
         task.in_team_and_world = Mock(return_value=False)
         task.find_one = Mock(return_value=self.button)
+        task._guidebook_content = Mock(return_value=True)
         self.assertIs(task.openF2Book('gray_book_quest'), self.button)
         task.ensure_main.assert_not_called()
         task.send_key.assert_not_called()
-        task.click_box.assert_called_once()
+        task.click_box.assert_not_called()
+        task.click_relative.assert_not_called()
 
     def test_unknown_page_never_opens_guidebook(self):
         task = self.task()
@@ -124,11 +126,12 @@ class TestNavigationAdapter(unittest.TestCase):
         task.in_team_and_world=lambda **kw:not task.click_relative.called
         task.find_one=lambda *a,**kw:self.button if task.click_relative.called else None
         task.wait_book=Mock(return_value=self.button);task.click_box=Mock()
+        task._guidebook_content=lambda *a:task.click_relative.called
         task.openF2Book()
         task.send_key.assert_called_once_with('f2')
         task.click_relative.assert_called_once_with(.77,.05)
         task.send_key_up.assert_called_once_with('alt')
-        task.click_box.assert_called_once()
+        task.click_box.assert_not_called()
 
     def test_book_icon_failure_releases_alt_and_does_not_retry(self):
         task=self.task();task.ensure_main=Mock();task.key_config={}
@@ -141,19 +144,36 @@ class TestNavigationAdapter(unittest.TestCase):
     def test_daily_record_without_progress_never_reports_success(self):
         from src.task.DailyTask import DailyTask
         task=self.task(); task.openF2Book=Mock()
-        task.ocr=Mock(return_value=[]); task.find_one=Mock(return_value=self.button)
-        task.click=Mock()
+        task._daily_page_ready=Mock(return_value=False)
+        task._guidebook_tab=Mock(return_value=self.button)
+        task._open_daily_page=lambda:DailyTask._open_daily_page(task)
         with self.assertRaises(TransitionTimeout):
             DailyTask._open_record_page(task, '任务页')
-        self.assertEqual(task.click.call_count, 3)
+        self.assertEqual(task.click_relative.call_count, 3)
 
     def test_daily_record_waits_for_content_and_does_not_reclick(self):
         from src.task.DailyTask import DailyTask
-        task=self.task(); task.openF2Book=Mock(); task.click=Mock()
-        task.ocr=lambda *a,**kw: [SimpleNamespace(name='100/180')] if task.click.called else []
-        task.find_one=Mock(return_value=self.button)
+        task=self.task(); task.openF2Book=Mock()
+        task._daily_page_ready=lambda *a:task.click_relative.called
+        task._guidebook_tab=Mock(return_value=self.button)
+        task._open_daily_page=lambda:DailyTask._open_daily_page(task)
         self.assertTrue(DailyTask._open_record_page(task, '任务页'))
-        task.click.assert_called_once_with(.17,.12)
+        task.click_relative.assert_called_once_with(.17,.13)
+
+    def test_lost_tab_click_requires_content_before_return(self):
+        task=self.task();task.find_one=Mock(return_value=self.button)
+        task.in_team_and_world=Mock(return_value=False)
+        task._guidebook_content=lambda *a:task.click_relative.call_count>=2
+        task.openF2Book('gray_book_boss')
+        self.assertEqual(task.click_relative.call_count,2)
+
+    def test_wrong_content_reopens_only_once_then_fails(self):
+        task=self.task();task.find_one=Mock(return_value=self.button)
+        task.in_team_and_world=Mock(return_value=False)
+        task._guidebook_content=Mock(return_value=False);task.ensure_main=Mock()
+        with self.assertRaises(TransitionTimeout):task.openF2Book('gray_book_boss')
+        self.assertEqual(task.click_relative.call_count,4)
+        task.ensure_main.assert_called_once()
 
 
 if __name__=='__main__':unittest.main()

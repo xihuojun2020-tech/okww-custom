@@ -49,8 +49,7 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
     def farm_tacet(self, daily=False, used_stamina=0, config=None, activity_ready=False, stamina_budget=None):
         if config is None:
             config = self.config
-        del used_stamina
-        must_use = self.daily_stamina_budget(activity_ready, self.stamina_once) if daily else 0
+        must_use = self.daily_stamina_budget(activity_ready, self.stamina_once, used_stamina) if daily else 0
         if stamina_budget is not None:
             if stamina_budget < self.stamina_once:
                 return
@@ -62,6 +61,8 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
             self.sleep(1)
             self.openF2Book("gray_book_boss")
             current, back_up, total = self.get_verified_stamina()
+            if daily and current < self.stamina_once and must_use > 0:
+                current, back_up, total = self.prepare_daily_reserve(self.stamina_once, must_use)
             if not backup_policy_decided:
                 allow_backup = self.should_use_backup_stamina(
                     activity_ready, current, back_up, must_use)
@@ -69,7 +70,7 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
                 self.log_info(
                     f'每日体力策略：current={current}, backup={back_up}, budget={must_use}, '
                     f'allow_backup={allow_backup}')
-            available = total if allow_backup else current
+            available = current if daily else (total if allow_backup else current)
             if available < self.stamina_once:
                 return self.not_enough_stamina()
 

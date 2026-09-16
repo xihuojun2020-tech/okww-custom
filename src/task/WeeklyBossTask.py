@@ -248,19 +248,40 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         raise WeeklyPageTimeout(f'滚动条分段搜索后仍未找到周本或对应挑战按钮：{boss.name}，未选择其他目标')
 
     def _open_weekly_target(self, boss):
+        submitted = False
+        story_confirmed = False
+        def story(frame):
+            text = self._text((.25, .43, .75, .53), frame)
+            if '提前到达目标位置可能影响剧情体验' in text and '是否确认' in text:
+                return self._button((.55, .59, .76, .67), '确认', frame)
+            return None
         def destination(frame):
+            if story(frame):
+                return False
             title = boss_title(self._text(self.TITLE, frame))
             single = self._button(self.SINGLE, '单人挑战', frame)
             if single and title != boss.name:
                 raise RuntimeError('挑战页面与所选周本不一致，停止输入')
             return bool(single and title == boss.name)
         def source(frame):
+            warning = story(frame)
+            if warning:
+                return warning if submitted and not story_confirmed else None
             if destination(frame):
                 return None
             return match_target_button(self._ocr(self.LIST, frame), boss.name, self.height)
         # TransitionTimeout is intentionally not WeeklyPageTimeout: the outer
         # list-search recovery cannot multiply this step's three-input budget.
-        self.navigate_ui('周本目标详情', source, destination, identity=boss.key)
+        def act(button):
+            nonlocal submitted, story_confirmed
+            if story(self.require_game_frame()):
+                if not submitted or story_confirmed:
+                    raise RuntimeError('剧情前往确认状态变化')
+                story_confirmed = True
+            else:
+                submitted = True
+            self.click(button)
+        self.navigate_ui('周本目标详情', source, destination, identity=boss.key, action=act)
 
     def _detail_ready(self, boss):
         frame = self.frame

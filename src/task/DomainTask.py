@@ -74,6 +74,8 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
         backup_policy_decided = activity_ready is None
         while True:
             current, back_up, total = self.open_F2_book_and_get_stamina()
+            if current < self.stamina_once and getattr(self.executor, '_daily_reserve_policy', None) is not None and must_use > 0:
+                current, back_up, total = self.prepare_daily_reserve(self.stamina_once, must_use)
             if not backup_policy_decided:
                 allow_backup = self.should_use_backup_stamina(
                     activity_ready, current, back_up, stamina_budget)
@@ -81,7 +83,9 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
                 self.log_info(
                     f'每日体力策略：current={current}, backup={back_up}, budget={stamina_budget}, '
                     f'allow_backup={allow_backup}')
-            available = total if allow_backup else current
+            # Daily reserve is converted before combat, never on stale activity.
+            available = current if getattr(self.executor, '_daily_reserve_policy', None) is not None else (
+                total if allow_backup else current)
             if available < self.stamina_once:
                 self.log_info('not enough stamina', notify=True)
                 self.back()

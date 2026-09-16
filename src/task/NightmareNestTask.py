@@ -81,7 +81,7 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
         self._assert_selected_targets_complete()
         self.ensure_main(time_out=30)
 
-    def run_capture_mode(self):
+    def run_capture_mode(self, verify_capture=None):
         publish_task_status(self, stage='刷梦魇巢穴', detail='正在打开 F2 梦魇页面')
         self._capture_mode = True
         self._capture_success = False
@@ -93,6 +93,10 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
         self.log_info('opened gray_book_boss')
         while nest := self.get_nest_to_go():
             self.combat_nest(nest)
+            if verify_capture is not None:
+                # Pickup/search signals are candidates; daily progress is the result.
+                self._capture_success = bool(verify_capture())
+                self.ensure_main(time_out=30)
             if self._capture_success:
                 break
         self.ensure_main(time_out=30)
@@ -107,9 +111,8 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
         return True
 
     def has_echo_notification(self):
-        if self.find_best_match_in_box(self.box_of_screen(0.078, 0.488, 0.094, 0.514),
-                                       ['char_1_text', 'char_3_text'], 0.6,
-                                       frame_processor=convert_image_to_negative):
+        if self.ocr(.02, .40, .35, .65, match=re.compile(
+                r'获得.*声骸|獲得.*聲骸|(?:Obtained|Acquired).*Echo|Echo.*(?:Obtained|Acquired)', re.I)):
             self._capture_success = True
         return self._capture_success
 
@@ -166,7 +169,8 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
                 return
             captured_early = False
             if self._capture_mode:
-                if self._capture_success or self.wait_until(self.has_echo_notification, time_out=3):
+                if self._capture_success or self.wait_until(self.has_echo_notification, time_out=3,
+                                                          raise_if_not_found=False):
                     self.log_info("Captured echo during combat, skipping search.")
                     captured_early = True
             if not captured_early:

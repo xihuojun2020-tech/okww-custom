@@ -146,6 +146,7 @@ class TestDomainRecoveryLoop(unittest.TestCase):
     def test_entry_timeout_recovers_once_before_farming(self):
         from unittest.mock import Mock
         task = Mock(spec=DomainTask)
+        task.executor._daily_reserve_policy = None
         task.stamina_once = 40
         task.open_F2_book_and_get_stamina.return_value = (40, 0, 40)
         task.require_game_frame.return_value = object()
@@ -163,6 +164,7 @@ class TestDomainRecoveryLoop(unittest.TestCase):
         from unittest.mock import Mock
         from src.task.BaseCombatTask import CombatStateUnknown
         task = Mock(spec=DomainTask)
+        task.executor._daily_reserve_policy = None
         task.stamina_once = 40
         task.open_F2_book_and_get_stamina.return_value = (40, 0, 40)
         task.require_game_frame.return_value = object()
@@ -180,6 +182,7 @@ class TestDomainRecoveryLoop(unittest.TestCase):
         from unittest.mock import Mock
         from src.runtime.game_runtime_errors import FrameUnavailable
         task = Mock(spec=DomainTask)
+        task.executor._daily_reserve_policy = None
         task.stamina_once = 40
         task.open_F2_book_and_get_stamina.return_value = (40, 0, 40)
         task.require_game_frame.side_effect = FrameUnavailable('no frame')

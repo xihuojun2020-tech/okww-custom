@@ -24,7 +24,7 @@ $groups = @{
     "TestRuntimePerformance.py", "TestSoloTeam.py", "TestSpecialistNavigationStatus.py",
     "TestTaskEntryTransitions.py", "TestTriggerNavigation.py", "TestVisionOptimization.py",
     "TestWeeklyTransitions.py",
-    "TestDailyFailureRecovery.py", "TestDailyReservePolicy.py", "TestUITransition.py",
+    "TestDailyFailureRecovery.py", "TestDailyReservePolicy.py", "TestDailyOutcomeRecovery.py", "TestUITransition.py",
     "TestNavigationAdapter.py", "TestTravelTransitions.py",
     "TestMaterialModel.py", "TestMaterialRepository.py", "TestMaterialCatalog.py", "TestNasLocation.py",
     "TestUpstreamIntegration.py",
@@ -74,6 +74,7 @@ $groups = @{
     "TestSkipDialogWideMode.py", "TestTaskStatusWindow.py", "TestUsabilityUI.py"
   )
   image = @(
+    "TestDailyFollowupImages.py",
     "TestAbyssReturnImages.py", "TestBookTabImages.py", "TestEchoesContinuationImages.py",
     "TestEchoesRemainImages.py", "TestQingxiaoSoloImages.py",
     "TestDailyRecoveryImages.py",

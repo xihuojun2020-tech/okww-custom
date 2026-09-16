@@ -308,7 +308,7 @@ class MaterialPlannerTask(BaseWWTask):
             domain.sleep(.5)
         raise RuntimeError(f'未确认 {weapon} / {self.group_id} 的材料预览，停止进入副本')
 
-    def run_for_profile(self, profile_id, config, guard, activity_ready=False, report=None):
+    def run_for_profile(self, profile_id, config, guard, activity_ready=False, report=None, used_stamina=0):
         from src.task.ForgeryTask import ForgeryTask
         from src.task.TacetTask import TacetTask
         if self.game_lang != 'zh_CN' or abs(self.width/self.height-16/9)>.02:
@@ -323,7 +323,7 @@ class MaterialPlannerTask(BaseWWTask):
         snapshot = self.repository.latest_complete_snapshot(self.profile_id,'inventory')
         if not snapshot or week_id(datetime.fromisoformat(snapshot['captured_at'])) != week_id():
             self.scan_inventory()
-        budget = self.daily_stamina_budget(activity_ready,40)
+        budget = self.daily_stamina_budget(activity_ready,40,used_stamina)
         domain = self.get_task_by_class(ForgeryTask)
         try:
             while True:
@@ -340,7 +340,8 @@ class MaterialPlannerTask(BaseWWTask):
                         continue
                     self._report('养成进度','凝素材料已满足，进入声骸培养')
                     self.get_task_by_class(TacetTask).farm_tacet(daily=True,config=config,
-                        activity_ready=activity_ready,stamina_budget=remaining if budget else None)
+                        activity_ready=activity_ready, used_stamina=used_stamina,
+                        stamina_budget=remaining if budget else None)
                     return
                 self.group_id,gap = missing[0]
                 self.max_claims = 1 if equivalent(gap.missing)<120 or (budget and remaining<80) else 2

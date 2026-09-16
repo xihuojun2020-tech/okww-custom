@@ -19,7 +19,7 @@ from src.win32_login_input import send_input_click
 
 logger = Logger.get_logger(__name__)
 number_re = re.compile(r'(\d+)')
-stamina_re = re.compile(r'(\d+)/(\d+)')
+stamina_re = re.compile(r'(\d+)\s*[/／]\s*(\d+)')
 LOGIN_TEXTS = ["登录", re.compile('Log', re.IGNORECASE), '登入']
 CONNECT_TEXTS = [
     '点击连接',
@@ -631,16 +631,11 @@ class BaseWWTask(BaseTask):
             if screenshot_on_failure:
                 self.screenshot('stamina_error')
             return -1, -1, -1
-        current = -1
-        back_up = 0
-        for box in boxes:
-            if match := stamina_re.search(box.name):
-                current = int(match.group(1))
-            elif match := number_re.search(box.name):
-                back_up = int(match.group(1))
+        from src.task.daily_observation import resource_values
+        current, back_up, total = resource_values(boxes, self.width)
         self.info_set('current_stamina', current)
         self.info_set('back_up_stamina', back_up)
-        return current, back_up, current + back_up
+        return current, back_up, total
 
     @staticmethod
     def project_stamina_after_use(current, back_up, used):
@@ -668,10 +663,55 @@ class BaseWWTask(BaseTask):
         raise RuntimeError('体力读数持续未知，未按体力不足结束；账号保留待补跑')
 
     @staticmethod
-    def daily_stamina_budget(activity_ready, once):
-        if activity_ready:
+    def daily_stamina_budget(activity_ready, once, used_stamina=0):
+        if activity_ready is not False or used_stamina is None:
             return 0
-        return 200 if int(once) == 40 else 180
+        remaining = max(0, 180 - int(used_stamina))
+        return ((remaining + int(once) - 1) // int(once)) * int(once)
+
+    def prepare_daily_reserve(self, once, budget):
+        """Convert only a freshly authorized shortfall, before combat changes activity."""
+        from src.task.daily_reserve_policy import conversion_amount, conversion_matches
+        policy = getattr(self.executor, '_daily_reserve_policy', None)
+        before = self.get_verified_stamina()
+        current, reserve, _ = before
+        if policy is None:
+            return before
+        if policy.pending_conversion:
+            raise RuntimeError('备用转换结果尚未确认，禁止重复消费')
+        if current >= once:
+            return before
+        policy.remaining = max(0, budget)
+        policy.budget_initialized = True
+        limit = policy.allowance(current, once)
+        if not policy.profile_id or limit <= 0 or reserve < once - current:
+            return before
+        # The reserve number is observed in the same resource bar as both balances.
+        buttons = self.ocr(.50, .0, .68, .10, match=re.compile(r'^\d{1,4}$'))
+        buttons = [b for b in buttons if str(b.name).strip() == str(reserve)]
+        if len(buttons) != 1:
+            return before
+        self.click(buttons[0], after_sleep=.5)
+        self.next_frame()
+        amount = conversion_amount(self.ocr(.20, .20, .80, .80))
+        confirm = self.ocr(.55, .60, .80, .80, match=re.compile(r'^(确认|確認|Confirm)$', re.I))
+        if amount != once - current or amount > limit or len(confirm) != 1:
+            self.screenshot('reserve_precombat_unverified')
+            self.back(after_sleep=.5)
+            self.log_warning(f'备用补齐未执行：需 {once-current}，识别数量={amount}；禁止默认批量转换')
+            return before
+        if amount > policy.allowance(current, once):
+            self.back(after_sleep=.5)
+            return before
+        policy.pending_conversion = True
+        self.click(confirm[0], after_sleep=.5)
+        self.openF2Book('gray_book_boss')
+        after = self.get_verified_stamina()
+        if not conversion_matches(before, after, amount):
+            raise RuntimeError('战前备用转换余额未确认，停止且不重复转换')
+        policy.pending_conversion = False
+        self.log_info(f'战前备用补齐已核验：before={before}, after={after}, amount={amount}')
+        return after
 
     @staticmethod
     def should_use_backup_stamina(activity_ready, current, back_up, budget):
@@ -687,7 +727,9 @@ class BaseWWTask(BaseTask):
             raise RuntimeError('未确认体力领取界面，停止消费')
         current, back_up, total = self.get_stamina()
         if min(current, back_up, total) < 0:
-            raise RuntimeError('体力读数无效，停止消费')
+            current, back_up, total = self.get_verified_stamina()
+            if not self.has_claim_stamina():
+                raise RuntimeError('体力复读期间领奖界面已变化，停止消费')
         requested_before = must_use
         policy = getattr(getattr(self, 'executor', None), '_daily_reserve_policy', None)
         if policy is not None:
@@ -804,7 +846,7 @@ class BaseWWTask(BaseTask):
             policy.refresh_required = False
             if callable(policy.refresh):
                 policy.refresh()
-            self.log_info('已返回大世界复核每日活跃度；本次未确认的备用领取已取消，不自动重复战斗或转换')
+            self.log_info('已返回大世界复核每日活跃度；由每日缺项补齐步骤决定是否继续')
 
     def get_settlement_stamina(self):
         # The result page hides the top resource bar. Anchor on its retry button,
@@ -1589,12 +1631,39 @@ class BaseWWTask(BaseTask):
             return button
         return None
 
-    def openF2Book(self, feature="gray_book_all_monsters"):
+    def _guidebook_content(self, feature, frame):
+        if self._guidebook_tab(feature, frame) is None:
+            return False
+        titles = ''.join(str(b.name) for b in self.ocr(.02, .025, .36, .10, frame=frame))
+        patterns = {
+            'gray_book_quest': r'活跃行迹|活躍行跡|Activity',
+            'gray_book_boss': r'素材获取|素材獲取|Forgery|Materials',
+            'gray_book_all_monsters': r'残象探寻|殘象探尋|Echo.*Hunt|Echo.*Hunting',
+        }
+        return bool(re.search(patterns.get(feature, r'(?!)'), titles, re.I))
+
+    def _select_guidebook_content(self, feature):
+        return self.navigate_ui('指南正文：' + feature,
+            lambda frame: None if self._guidebook_content(feature, frame) else self._guidebook_tab(feature, frame),
+            lambda frame: self._guidebook_content(feature, frame), identity=feature, timeout=10, attempts=2)
+
+    def openF2Book(self, feature="gray_book_all_monsters", _reopened=False):
+        from src.task.ui_transition import TransitionTimeout
+        try:
+            return self._open_guidebook(feature)
+        except TransitionTimeout:
+            if _reopened:
+                raise
+            self.log_warning('指南切页未确认，返回大世界后重开一次')
+            self.ensure_main()
+            return self.openF2Book(feature, _reopened=True)
+
+    def _open_guidebook(self, feature):
         if hasattr(self, 'reset_to_false'):
             self.reset_to_false('opening book')
         self.next_frame()
         if button := self._guidebook_tab(feature, self.require_game_frame()):
-            self.click_box(button, after_sleep=1.5)
+            self._select_guidebook_content(feature)
             return button
         self.ensure_main()
         book_key = self.key_config.get('Guidebook Key', self.key_config.get('索拉指南', 'f2'))
@@ -1617,12 +1686,11 @@ class BaseWWTask(BaseTask):
             lambda frame: self.in_team_and_world(frame=frame),
             lambda frame: self._guidebook_tab(feature, frame),
             action=open_book, identity=feature)
-        # Tab selection is an existing single action: the gray icon does not
-        # prove which content tab is selected, so it is not automatically retried.
+        # The gray icon only proves the book is open; verify the content separately.
         gray_book_boss = self._guidebook_tab(feature, frame)
         if gray_book_boss is None:
             raise CannotFindException('指南页签消失，停止点击')
-        self.click_box(gray_book_boss, after_sleep=1.5)
+        self._select_guidebook_content(feature)
         return gray_book_boss
 
     def _travel_button(self, frame):

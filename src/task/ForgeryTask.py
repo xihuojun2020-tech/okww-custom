@@ -32,8 +32,7 @@ class ForgeryTask(DomainTask):
         self.farm_forgery()
 
     def farm_forgery(self, daily=False, used_stamina=0, config=None, activity_ready=False):
-        del used_stamina
-        must_use = self.daily_stamina_budget(activity_ready, self.stamina_once) if daily else 0
+        must_use = self.daily_stamina_budget(activity_ready, self.stamina_once, used_stamina) if daily else 0
         if config is None:
             config = self.config
         serial = config.get('Which Forgery Challenge to Farm', 1)

@@ -1,5 +1,7 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import Mock, patch
+import numpy as np
 
 from src.task.DailyTask import (
     DailyActivityDetectionError,
@@ -143,82 +145,43 @@ class TestDailyActivityFlow(unittest.TestCase):
 
         self.assertLess(task.events.index('claim'), task.events.index('notify'))
 
-    def test_claim_daily_prefers_ocr_button_and_retries_only_once(self):
-        first = SimpleNamespace(name='领取', confidence=0.8)
-        retry = SimpleNamespace(name='领取', confidence=0.9)
+    def claim_task(self):
+        task = Mock(spec=DailyTask)
+        task.require_game_frame.return_value = np.zeros((90,160,3),np.uint8)
+        task._daily_page_ready.return_value = True
+        return task
 
-        class FakeTask:
-            def __init__(self):
-                self.buttons = iter((first, retry))
-                self.clicks = []
+    def test_claim_lost_first_click_retries_same_chest_only(self):
+        task = self.claim_task()
+        with patch('src.task.daily_observation.claimable_tiers',
+                   side_effect=lambda f:[20] if task.click_relative.call_count<2 else []):
+            DailyTask.claim_daily(task)
+        self.assertEqual(task.click_relative.call_count,2)
+        self.assertTrue(all(c.args==(.392,.887) for c in task.click_relative.call_args_list))
+        task.ensure_main.assert_called_once()
 
-            def info_set(self, *_args):
-                pass
+    def test_unchanged_chest_never_reports_success(self):
+        task = self.claim_task()
+        with patch('src.task.daily_observation.claimable_tiers',return_value=[20]):
+            with self.assertRaises(DailyActivityIncomplete):DailyTask.claim_daily(task)
+        self.assertEqual(task.click_relative.call_count,2)
+        task.ensure_main.assert_not_called()
 
-            def openF2Book(self, *_args):
-                pass
+    def test_already_claimed_does_not_click_locked_tier(self):
+        task = self.claim_task()
+        with patch('src.task.daily_observation.claimable_tiers',return_value=[]):
+            DailyTask.claim_daily(task)
+        task.click_relative.assert_not_called()
 
-            def find_one(self, *_args, **_kwargs):
-                return True
-
-            def box_of_screen(self, *_args):
-                return object()
-
-            def _find_daily_claim_button(self):
-                return next(self.buttons)
-
-            def log_info(self, *_args):
-                pass
-
-            def click(self, target, *args, **kwargs):
-                self.clicks.append(target)
-
-            def next_frame(self):
-                pass
-
-            def ensure_main(self, **_kwargs):
-                pass
-
-        task = FakeTask()
-
-        DailyTask.claim_daily(task)
-
-        self.assertEqual([first, retry], task.clicks)
-
-    def test_claim_daily_keeps_coordinate_fallback(self):
-        class FakeTask:
-            def __init__(self):
-                self.clicks = []
-
-            def info_set(self, *_args):
-                pass
-
-            def openF2Book(self, *_args):
-                pass
-
-            def find_one(self, *_args, **_kwargs):
-                return True
-
-            def box_of_screen(self, *_args):
-                return object()
-
-            def _find_daily_claim_button(self):
-                return None
-
-            def log_info(self, *_args):
-                pass
-
-            def click(self, *args, **kwargs):
-                self.clicks.append((args, kwargs))
-
-            def ensure_main(self, **_kwargs):
-                pass
-
-        task = FakeTask()
-
-        DailyTask.claim_daily(task)
-
-        self.assertEqual((0.930, 0.882), task.clicks[0][0])
+    def test_reward_overlay_is_closed_before_verification(self):
+        task = self.claim_task()
+        task._daily_page_ready.side_effect=[False,True]
+        task.ocr.return_value=[SimpleNamespace(name='获得奖励')]
+        with patch('src.task.daily_observation.claimable_tiers',
+                   side_effect=lambda f:[20] if not task.click_relative.called else []):
+            DailyTask.claim_daily(task)
+        self.assertEqual([c.args for c in task.click_relative.call_args_list],[(.392,.887),(.50,.78)])
+        self.assertEqual(task._open_daily_page.call_count,2)
 
 
 if __name__ == '__main__':

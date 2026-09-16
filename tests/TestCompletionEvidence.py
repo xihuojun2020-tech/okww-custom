@@ -92,12 +92,9 @@ class TestCompletionEvidence(unittest.TestCase):
     def test_progress_task_page_selects_daily_tab_instead_of_remembered_weekly_tab(self):
         from unittest.mock import Mock
         from src.task.DailyTask import DailyTask
-        task = SimpleNamespace(openF2Book=Mock(), click=Mock(), navigate_ui=Mock())
+        task = SimpleNamespace(_open_daily_page=Mock())
         self.assertTrue(DailyTask._open_record_page(task, '任务页'))
-        task.openF2Book.assert_called_once_with('gray_book_quest')
-        task.navigate_ui.assert_called_once()
-        task.navigate_ui.call_args.kwargs['action'](None)
-        task.click.assert_called_once_with(.17, .12)
+        task._open_daily_page.assert_called_once()
 
     def progress_task(self, service, *, screenshot=True, video=False):
         from unittest.mock import Mock
