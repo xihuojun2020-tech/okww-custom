@@ -1638,7 +1638,7 @@ class BaseWWTask(BaseTask):
         patterns = {
             'gray_book_quest': r'活跃行迹|活躍行跡|Activity',
             'gray_book_boss': r'素材获取|素材獲取|Forgery|Materials',
-            'gray_book_all_monsters': r'残象探寻|殘象探尋|Echo.*Hunt|Echo.*Hunting',
+            'gray_book_all_monsters': r'敌迹探寻|敵跡探尋|Echo.*Hunt|Echo.*Hunting',
         }
         return bool(re.search(patterns.get(feature, r'(?!)'), titles, re.I))
 
