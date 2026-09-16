@@ -17,7 +17,7 @@ Execution is already authorized; execute inline. Preserve unrelated working-tree
 - [ ] Add bounded activity completion based on actual missing objectives; retain full/unknown reserve revocation and exact conversion checks. Resume only after an observed recovery and positive progress, never multiply account retry count.
 - [x] Handle exact weekly story-travel modal once, verify original boss after confirming, preserve pending weekly outcome through repeated calls. Keep login/switch implementation shared with TestAccountSwitchTask.
 - [x] Replay NAS frames through production OCR and detection, run focused logic/navigation/account-switch tests, register new test files in the repository manifest, run wider required verification.
-- [ ] Synchronize config.py and changelog; commit only owned files, annotated v1.78.00, push branch/tag, build/publish matching NAS update with the existing release script; document offline/real-device verification boundary.
+- [x] Synchronize config.py and changelog; commit only owned files, annotated v1.78.00, push branch/tag, build/publish matching NAS update with the existing release script; document offline/real-device verification boundary.
 
 Commands use `.venv/Scripts/python.exe scripts/run_test_file.py tests/<file>.py`; image tests derive sanitized fixtures from `test_out/nas_0915_audit/frames`. Confirm each meaningful behavior with assertions (wrong content must not reach resource reading; echo 0/1 must defeat old checkpoint; red markers remaining must defeat claim success).
 
