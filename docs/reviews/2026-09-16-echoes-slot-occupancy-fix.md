@@ -24,3 +24,10 @@
 - 连续装配测试使用真实 `_equip_supports`、槽位状态函数和最新 index 7 故障帧；第三槽用显式合成的最终帧，验证顺序 0/1/2 和所选记录 [1,7,1]。合成最终帧不是实机成功证据。
 
 未自动安装补丁、未启动游戏或操作真实账号；未重跑仓库全量测试。图标存在只证明占用，不独立证明图标身份；具体目标通过前置选择确认保证。真实设备完整挑战仍待验收。
+
+## 发布回执
+
+- 提交 `44bf513b`：`fix: verify event support occupancy using empty-slot plus markers`；分支 `codex/echoes-slot-occupancy` 和注释标签 `v1.79.05` 已成功推送 GitHub origin。
+- 以 v1.79.04 覆盖升级验证：413 个受控文件一致，账号配置保留；更新包 38238925 字节，SHA256 `0cf120a1e0d79fba226bc79b3cfa889c974fd6478692d1cbe75b503363b9163b`。
+- NAS `\\192.168.3.173\羲火君 共享给我\AI诊断\OKWW-Updates\stable\latest.json` 已读回 1.79.05；包 `releases/v1.79.05/okww_update_v1.79.05.zip`；UTC 发布时间 `2026-09-16T15:07:15Z`。
+- 报告随 NAS 版本目录保存；未宣称安装器 CI 构建完成或目标设备已更新。
