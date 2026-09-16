@@ -2242,15 +2242,37 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         return sorted((b for b in self.ocr(.81, .18, .96, .79, frame=frame, match=pattern)
                        if pattern.fullmatch(str(b.name))), key=lambda b: b.y)
 
+    def _daily_reward_overlay(self, frame):
+        """Only used during daily claiming; inspect the foreground before page anchors."""
+        if self.ocr(.25, .80, .75, .96, frame=frame, match=re.compile(
+                r'点击空白处继续|點擊空白處繼續|(?:Click|Tap).*?(?:continue|blank)', re.I)):
+            return 'ready'
+        if self.ocr(.30, .15, .70, .55, frame=frame, match=re.compile(
+                r'^\s*(?:获得(?:物品|奖励)?|獲得(?:物品|獎勵)?|Rewards?|Obtained)\s*$', re.I)):
+            return 'opening'
+        return None
+
     def _restore_daily_claim_page(self):
-        self.next_frame()
-        frame = self.require_game_frame()
-        if self._daily_page_ready(frame):
-            return
-        if self.ocr(.20, .10, .80, .65, frame=frame,
-                    match=re.compile(r'获得物品|获得奖励|獲得物品|獲得獎勵|Rewards|Obtained', re.I)):
-            self.click_relative(.50, .78, after_sleep=.5)
-        self._open_daily_page()
+        stable = opening = clicks = 0
+        for _ in range(16):
+            self.next_frame()
+            frame = self.require_game_frame()
+            overlay = self._daily_reward_overlay(frame)
+            if overlay:
+                stable = 0
+                opening += 1
+                # Allow the title-only opening animation to settle before dismissing.
+                if (overlay == 'ready' or opening >= 3) and clicks < 3:
+                    self.click_relative(.50, .78, after_sleep=.5)
+                    clicks += 1
+                    opening = 0
+            else:
+                opening = 0
+                stable = stable + 1 if self._daily_page_ready(frame) else 0
+                if stable >= 3:
+                    return frame
+            self.sleep(.25)
+        raise DailyActivityIncomplete('每日领奖遮罩未关闭或每日页面未稳定恢复，后续环节未执行，保留补跑')
 
     def _claim_daily_objectives(self):
         self.scroll_relative(.65, .45, 20)
@@ -2288,28 +2310,23 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self.info_set('current task', 'claim daily')
         self._open_daily_page()
         self._claim_daily_objectives()
+        frame = self._restore_daily_claim_page()
         claimed = []
         for tier, x in CHESTS:
-            self.next_frame()
-            if tier not in claimable_tiers(self.require_game_frame()):
+            if tier not in claimable_tiers(frame):
                 continue
             for attempt in range(2):
+                before = claimable_tiers(frame)
                 self.click_relative(x, .887, after_sleep=.7)
-                self.next_frame()
-                frame = self.require_game_frame()
-                if not self._daily_page_ready(frame):
-                    if self.ocr(.20, .10, .80, .65, frame=frame,
-                                match=re.compile(r'获得物品|获得奖励|獲得物品|獲得獎勵|Rewards|Obtained', re.I)):
-                        self.click_relative(.50, .78, after_sleep=.5)
-                    self._open_daily_page()
-                self.next_frame()
-                if tier not in claimable_tiers(self.require_game_frame()):
-                    claimed.append(tier)
+                frame = self._restore_daily_claim_page()
+                remaining = claimable_tiers(frame)
+                if tier not in remaining:
+                    claimed.extend(t for t in before if t not in remaining and t not in claimed)
                     break
             else:
                 raise DailyActivityIncomplete(f'每日奖励 {tier} 档点击后仍可领取，未确认领取成功')
-        self.next_frame()
-        if not self._daily_page_ready(self.require_game_frame()) or claimable_tiers(self.require_game_frame()):
+        frame = self._restore_daily_claim_page()
+        if claimable_tiers(frame):
             raise DailyActivityIncomplete('每日奖励领取状态未稳定确认，保留补跑')
         self.info_set('已核验领取档位', claimed)
         self.log_info(f'每日奖励领取已核验：本次领取档位={claimed}，当前无可领取红点')

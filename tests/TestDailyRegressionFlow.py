@@ -16,6 +16,7 @@ class TestDailyRegressionFlow(unittest.TestCase):
         state = {'pending': [20, 60, 20, 20], 'points': 0, 'chests': []}
         task.require_game_frame.return_value = np.zeros((90, 160, 3), np.uint8)
         task._daily_page_ready.return_value = True
+        task._restore_daily_claim_page.return_value = task.require_game_frame.return_value
         task._daily_objective_claim_buttons.side_effect = lambda: [
             SimpleNamespace(y=200+i*100, name='领取') for i in range(len(state['pending']))]
         task.get_total_daily_points.side_effect = lambda **kw: state['points'] if points_known else None
@@ -74,11 +75,11 @@ class TestDailyRegressionFlow(unittest.TestCase):
 
     def test_claim_modal_restored_before_next_action(self):
         task = Mock(spec=DailyTask)
-        task._daily_page_ready.return_value = False
-        task.ocr.return_value = [SimpleNamespace(name='获得奖励')]
+        task._daily_page_ready.return_value = True
+        task._daily_reward_overlay.side_effect = lambda f: None if task.click_relative.called else 'ready'
         DailyTask._restore_daily_claim_page(task)
         task.click_relative.assert_called_once_with(.50, .78, after_sleep=.5)
-        task._open_daily_page.assert_called_once()
+        task._open_daily_page.assert_not_called()
 
     def test_local_revive_success_does_not_call_exit_recovery(self):
         task = Mock(spec=BaseCombatTask)

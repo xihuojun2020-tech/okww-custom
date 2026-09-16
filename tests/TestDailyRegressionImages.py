@@ -21,6 +21,17 @@ class TestDailyRegressionImages(TaskTestCase):
         self.load('unclaimed_zero')
         self.assertFalse(self.task._guidebook_content('gray_book_all_monsters', self.task.frame))
 
+    def test_actual_a3_daily_and_reward_animation_are_distinguished(self):
+        from src.task.daily_observation import claimable_tiers
+        for name, expected in (('reward_daily', None), ('reward_opening', 'opening'),
+                               ('reward_ready', 'ready')):
+            with self.subTest(frame=name):
+                self.load(name)
+                self.assertEqual(self.task._daily_reward_overlay(self.task.frame), expected)
+                self.assertEqual(self.task._daily_page_ready(self.task.frame), expected is None)
+                self.assertEqual(claimable_tiers(self.task.frame),
+                                 [20, 40, 60, 80, 100] if expected is None else [])
+
     def test_zero_and_claim_buttons_at_supported_sizes(self):
         original = cv2.imread('tests/images/daily_regression/unclaimed_zero.png')
         with tempfile.TemporaryDirectory() as folder:

@@ -1,5 +1,5 @@
 import unittest
-from types import SimpleNamespace
+from types import SimpleNamespace, MethodType
 from unittest.mock import Mock, patch
 
 from src.task.BaseWWTask import BaseWWTask
@@ -168,6 +168,49 @@ class TestDailyOutcomeRecovery(unittest.TestCase):
         task.run_task_by_class=Mock(side_effect=RuntimeError('full clear failed'))
         with self.assertRaisesRegex(RuntimeError,'梦魇巢穴未完整完成'):self.run_daily_flow(task)
         self.assertNotIn('Daily Task',[c.args[0] for c in task.record_last_completed.call_args_list])
+
+    def test_real_reward_claim_continues_tail_and_stuck_overlay_never_completes(self):
+        for stuck in (False, True):
+            with self.subTest(stuck=stuck):
+                task, _, flags = self.daily_flow()
+                flags['Farm Nightmare Nest for Daily Echo'] = False
+                flags['Record After Daily Task'] = True
+                task.open_daily.return_value = (180, True)
+                task.claim_daily = MethodType(DailyTask.claim_daily, task)
+                events = []
+                state = {'chest': True, 'overlay': False}
+                for name in ('_open_daily_page', '_claim_daily_objectives', 'next_frame'):
+                    setattr(task, name, Mock())
+                task.require_game_frame = Mock(return_value=object())
+                task._daily_page_ready = Mock(return_value=True)  # Dim background may match.
+                task._daily_reward_overlay = Mock(side_effect=lambda f: 'ready' if state['overlay'] else None)
+                def click(x, y, **kwargs):
+                    if y == .887:
+                        state.update(chest=False, overlay=True)
+                        events.append('chest')
+                    else:
+                        state['overlay'] = stuck
+                        events.append('dismiss')
+                task.click_relative = Mock(side_effect=click)
+                for name in ('claim_mail', 'claim_battle_pass', 'run_weekly_tasks', 'record_progress'):
+                    setattr(task, name, Mock(side_effect=lambda n=name: events.append(n)))
+                task.record_last_completed.side_effect = lambda name, **kw: events.append(name)
+                def tiers(frame):
+                    self.assertFalse(state['overlay'], 'Must never inspect red dots beneath an overlay')
+                    return [20,40,60,80,100] if state['chest'] else []
+                with patch('src.task.daily_observation.claimable_tiers', side_effect=tiers):
+                    if stuck:
+                        with self.assertRaises(DailyActivityIncomplete):
+                            self.run_daily_flow(task)
+                        task.claim_mail.assert_not_called()
+                        task.claim_battle_pass.assert_not_called()
+                        task.run_weekly_tasks.assert_not_called()
+                        task.record_progress.assert_not_called()
+                        self.assertNotIn('Daily Task', events)
+                    else:
+                        self.run_daily_flow(task)
+                        self.assertEqual(events[-7:], ['chest', 'dismiss', 'claim_mail',
+                                         'claim_battle_pass', 'run_weekly_tasks', 'record_progress', 'Daily Task'])
 
 
 if __name__=='__main__':unittest.main()
