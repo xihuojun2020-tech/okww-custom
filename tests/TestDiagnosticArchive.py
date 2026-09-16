@@ -5,10 +5,33 @@ import unittest
 import zipfile
 from unittest.mock import patch
 from src.runtime.diagnostic_session import DiagnosticSession
-from src.runtime.diagnostic_archive import build_archive, upload_archive
+from src.runtime.diagnostic_archive import build_archive, upload_archive, pending_days, hash_file
 
 
 class TestDiagnosticArchive(unittest.TestCase):
+    def _dated_session(self, root, day):
+        from datetime import datetime
+        session = DiagnosticSession(root, 'test')
+        session.finish(timeout=5)
+        for manifest_path in session.run.glob('batches/*/manifest.json'):
+            value = json.loads(manifest_path.read_text(encoding='utf-8'))
+            value['created_at'] = datetime.fromisoformat(day + 'T12:00:00').timestamp()
+            manifest_path.write_text(json.dumps(value), encoding='utf-8')
+            manifest_path.with_name('_READY').write_text(hash_file(manifest_path), encoding='ascii')
+        return session
+
+    def test_pending_days_and_daily_archive_exclude_today(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / 'root'
+            old = self._dated_session(root, '2026-09-14')
+            today = self._dated_session(root, '2026-09-16')
+            self.assertEqual(['2026-09-14'], pending_days(root, today='2026-09-16'))
+            archive = build_archive(root, day='2026-09-16', mode='manual', flush_current=False)
+            receipt = json.loads(archive.with_suffix('.json').read_text(encoding='utf-8'))
+            self.assertEqual(('2026-09-16', 'manual'), (receipt['day'], receipt['mode']))
+            self.assertEqual({today.run.name}, {item['key'].split('--', 1)[0] for item in receipt['batches']})
+            old.finish(timeout=1); today.finish(timeout=1)
+
     def test_active_archive_flush_keeps_session_open_and_later_events_pending(self):
         from src.runtime import diagnostic_lifecycle
         with tempfile.TemporaryDirectory() as temporary:

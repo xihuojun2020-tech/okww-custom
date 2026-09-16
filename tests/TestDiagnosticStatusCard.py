@@ -8,10 +8,22 @@ from unittest.mock import patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 from PySide6.QtWidgets import QApplication
-from src.gui.DiagnosticStatusCard import DiagnosticStatusCard, diagnostic_error_message, diagnostic_status_text
+from src.gui.DiagnosticStatusCard import DiagnosticStatusCard, diagnostic_error_message, diagnostic_status_text, format_archive_progress
 
 
 class TestDiagnosticStatusCard(unittest.TestCase):
+    def test_progress_formats_speed_and_eta(self):
+        text = format_archive_progress({'mode':'automatic','day':'2026-09-15','stage':'uploading',
+            'copied':650117120,'total':1621932239,'speed_bps':19451084,
+            'average_speed_bps':18126322,'elapsed_seconds':35.8,'eta_seconds':49.9})
+        self.assertIn('自动上传：2026-09-15', text)
+        self.assertIn('MiB/s', text)
+        self.assertIn('预计剩余：50 秒', text)
+
+    def test_progress_formats_packing_batches(self):
+        text = format_archive_progress({'mode':'manual','day':'2026-09-16','stage':'packing',
+                                        'completed_batches':1250,'total_batches':1840})
+        self.assertIn('批次：1250 / 1840', text)
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])

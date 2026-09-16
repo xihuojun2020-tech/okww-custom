@@ -31,10 +31,46 @@ def diagnostic_error_message(error):
     return text
 
 
+def _size(value):
+    value = float(value or 0)
+    for unit in ('B', 'KiB', 'MiB', 'GiB'):
+        if value < 1024 or unit == 'GiB':
+            return f'{value:.1f} {unit}'
+        value /= 1024
+
+
+def _duration(value):
+    seconds = max(0, round(float(value or 0)))
+    if seconds < 60:
+        return f'{seconds} 秒'
+    return f'{seconds // 60} 分 {seconds % 60} 秒'
+
+
+def format_archive_progress(progress):
+    mode = '自动上传' if progress.get('mode') == 'automatic' else '手动上传'
+    labels = {'discovering':'检查待传日期', 'sealing':'封存当前日志', 'packing':'正在打包',
+              'packed':'压缩包已生成', 'connecting':'连接 NAS', 'uploading':'正在上传',
+              'recording':'写入回执', 'uploaded':'已上传', 'failed':'上传失败', 'idle':'无历史待传资料'}
+    lines = [f'{mode}：{progress.get("day", "-")}', f'阶段：{labels.get(progress.get("stage") or progress.get("status"), "等待") }']
+    if progress.get('stage') == 'packing':
+        lines.append(f'批次：{progress.get("completed_batches", 0)} / {progress.get("total_batches", 0)}')
+    if progress.get('total'):
+        copied, total = progress.get('copied', 0), progress['total']
+        lines.append(f'进度：{_size(copied)} / {_size(total)}（{min(100, copied / total * 100):.1f}%）')
+        lines.append(f'速度：{_size(progress.get("speed_bps"))}/s')
+        eta = '计算中' if progress.get('eta_seconds') is None else _duration(progress['eta_seconds'])
+        lines.append(f'已用：{_duration(progress.get("elapsed_seconds"))}｜预计剩余：{eta}')
+    if progress.get('error'):
+        lines.append('错误：' + diagnostic_error_message(progress['error']))
+    return '\n'.join(lines)
+
+
 def diagnostic_status_text(root):
     from src.runtime.diagnostic_status import read_json
     if read_json(root/'settings.json',{}).get('upload_mode') == 'manual_archive':
         progress=read_json(root/'archives/progress.json',{})
+        if progress.get('stage'):
+            return format_archive_progress(progress)
         scheduler=read_json(root/'scheduler.json',{})
         labels={'packing':'正在打包','packed':'压缩包已生成','uploading':'正在上传','uploaded':'压缩包已上传'}
         return ('上传模式：手动压缩包（不自动上传）\n'+
@@ -149,7 +185,7 @@ class DiagnosticStatusCard(SectionPanel):
             pass
         self.timer = QTimer(self)
         self.timer.timeout.connect(lambda: self.refresh() if self.isVisible() else None)
-        self.timer.start(30000)
+        self.timer.start(1000)
         self.refresh()
 
     def refresh_navigation(self):
@@ -207,8 +243,8 @@ class DiagnosticStatusCard(SectionPanel):
     def retry(self):
         root = self.root
         from src.runtime.diagnostic_archive import manual_upload
-        self._show_status('正在打包全部待传资料并上传；校验成功满一天后清理本地资料。')
-        self.operation.start(lambda:manual_upload(root), lambda path:self._show_status('压缩包已上传并校验：'+path),
+        self._show_status('正在打包并上传今天的日志与截图。')
+        self.operation.start(lambda:manual_upload(root), lambda path:self._show_status('今日诊断资料已上传：'+path),
                              lambda e:self._show_status(sanitize_text(e)))
 
     def test_connection(self):

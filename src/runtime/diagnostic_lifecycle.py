@@ -61,6 +61,21 @@ def wake_uploader(root=None):
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def start_automatic_archive_upload(root):
+    worker = threading.Thread(target=_automatic_archive_worker, args=(Path(root),),
+                              name='DailyDiagnosticUpload', daemon=True)
+    worker.start()
+    return worker
+
+
+def _automatic_archive_worker(root):
+    try:
+        from src.runtime.diagnostic_archive import automatic_upload
+        automatic_upload(root)
+    except (OSError, ValueError, subprocess.TimeoutExpired) as error:
+        logging.getLogger(__name__).warning('daily diagnostic upload failed: %s', sanitize_text(error))
+
+
 def start_diagnostics(version, root=None):
     global _session
     if _session is not None:
@@ -80,6 +95,7 @@ def start_diagnostics(version, root=None):
         session.on_batch_ready = lambda: wake_uploader(session.root)
         _session = session
         from src.runtime.diagnostic_archive_retention import maintenance_loop
+        start_automatic_archive_upload(root)
         threading.Thread(target=maintenance_loop, args=(root,), name='DiagnosticRetention', daemon=True).start()
         logging.getLogger().addHandler(session)
         previous, previous_thread = sys.excepthook, threading.excepthook

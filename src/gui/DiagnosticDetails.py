@@ -206,8 +206,8 @@ class DiagnosticDetails(QDialog):
     def retry(self):
         from src.runtime.diagnostic_archive import manual_upload
         root=self.root
-        self.message.setText('正在打包全部待传资料并上传；校验成功满一天后清理本地资料。')
-        self.operation.start(lambda:manual_upload(root),lambda p:self.message.setText('压缩包已校验上传：'+str(p)),self.error)
+        self.message.setText('正在打包并上传今天的日志与截图。')
+        self.operation.start(lambda:manual_upload(root),lambda p:self.message.setText('今日诊断资料已上传：'+str(p)),self.error)
     def pack(self):
         from src.runtime.diagnostic_archive import build_archive
         root=self.root
