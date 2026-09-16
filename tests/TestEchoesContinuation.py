@@ -187,6 +187,43 @@ class TestEchoesContinuation(unittest.TestCase):
                 self.assertTrue(equipped(full,slot,echo), (height,slot))
                 self.assertFalse(equipped(empty,slot,echo))
 
+    def test_actual_second_equipment_and_empty_third_slot(self):
+        for name in ('equipment_failure_1', 'equipment_failure_2'):
+            original = cv2.imread(str(ROOT / f'{name}.png'))
+            for height in (720, 1080, 1440, 2160):
+                frame = cv2.resize(original, (height*16//9, height))
+                with self.subTest(image=name, height=height):
+                    for slot, expected in enumerate((1, 8, None)):
+                        self.assertEqual([i for i in range(9) if equipped(frame, slot, i)],
+                                         [] if expected is None else [expected])
+                    self.assertFalse(enabled_start(frame))
+
+    def test_actual_second_equipment_verification_reaches_third_slot(self):
+        task = Mock(spec=EchoesRemainTask)
+        frame = cv2.imread(str(ROOT / 'equipment_failure_2.png'))
+        # Synthetic final frame: copy the already verified first support into slot 3.
+        from src.task.echoes_support import normalized
+        final = normalized(frame).copy()
+        final[830:912,1548:1630] = final[830:912,351:433]
+        final[1040:1075,1660:1850] = 255
+        task.last_result = {'stage':'test', 'members':[
+            {'name':'洛瑟菈','role':'辅助'}, {'name':'绯雪','role':'输出'}, {'name':'千咲','role':'辅助'}]}
+        task._verify_team_names.return_value = True
+        task._wait_support_choice.side_effect = [1, 8, 1]
+        task._support_selection_state.return_value = dict(page=True, category=True, selected=True)
+        task._wait.side_effect = lambda probe, reason: probe(final)
+        visited = []
+        def navigate(label, source, target, **kwargs):
+            if label == '装配支援声骸':
+                slot = kwargs['identity'][1]
+                self.assertTrue(target(final if slot == 2 else frame))
+                visited.append(slot)
+            return frame
+        task.navigate_ui.side_effect = navigate
+        EchoesRemainTask._equip_supports(task)
+        self.assertEqual(visited, [0, 1, 2])
+        self.assertEqual(task.last_result['supports'], [1, 8, 1])
+
     def test_role_override_is_activity_only(self):
         self.assertEqual(activity_role('char_suisui'), '治疗')
         self.assertEqual(activity_role('yangyang_sp'), '输出')

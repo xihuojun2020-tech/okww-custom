@@ -52,7 +52,11 @@ def icon_score(image, index):
     # Exclude selection border and corner badges; compare the same inner artwork.
     a = cv2.resize(image, (80, 80))[10:70, 10:70]
     b = cv2.resize(reference(index), (80, 80))[10:70, 10:70]
-    return float(cv2.matchTemplate(a, b, cv2.TM_CCOEFF_NORMED)[0, 0])
+    # Reference cards can carry a central lock; equipped/unlocked artwork does not.
+    # Lock detection remains separate in unlocked(), never part of identity scoring.
+    mask = np.ones((60, 60), np.uint8)
+    mask[18:43, 18:43] = 0
+    return float(cv2.matchTemplate(a, b, cv2.TM_CCOEFF_NORMED, mask=mask)[0, 0])
 
 
 def unlocked(frame, index):
