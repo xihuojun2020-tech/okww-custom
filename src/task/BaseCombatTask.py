@@ -5,7 +5,9 @@ from decimal import Decimal, ROUND_UP, ROUND_DOWN
 import cv2
 import numpy as np
 
-from ok import Logger, Config
+from ok import Logger, Config, TaskDisabledException
+from src.runtime.game_runtime_errors import FrameUnavailable, GameProcessLost
+from src.config_integrity import ConfigIntegrityBlocked, ConfigWriteBlocked
 from ok import color_range_to_bound
 from ok import safe_get
 from src import text_white_color
@@ -36,6 +38,10 @@ class CharDeadException(NotInCombatException):
 class CharRevivedException(CharDeadException):
     """角色已复活，用于中断当前战斗上下文并让任务重新进入。"""
     pass
+
+
+class CharRevivedInPlace(NotInCombatException):
+    """Unwind stale character actions, but keep the current challenge running."""
 
 
 from src.char.character_names import character_display_name, CHARACTER_DISPLAY_NAMES as mismatched_names
@@ -241,9 +247,40 @@ class BaseCombatTask(CombatCheck):
             self.revive_at_tower_and_heal()
             logger.info(f'revive_action success')
             return True
+        except (TaskDisabledException, FrameUnavailable, GameProcessLost, ConfigIntegrityBlocked, ConfigWriteBlocked):
+            raise
         except Exception as e:
             logger.error(f'revive_action failed', e)
             return False
+
+    def _local_revive_button(self):
+        frame = self.require_game_frame()
+        if not self.ocr(.17, .16, .51, .25, frame=frame, match=re.compile(
+                r'选择复苏物品|選擇復甦物品|Select.*Revival|Select.*Revive', re.I)):
+            return None
+        buttons = self.ocr(.60, .68, .80, .78, frame=frame,
+                           match=re.compile(r'^\s*(?:确认|確認|Confirm)\s*$', re.I))
+        return next(iter(buttons), None)
+
+    def _try_revive_in_place(self):
+        for _ in range(2):
+            self.next_frame()
+            button = self._local_revive_button()
+            if button is None:
+                return False
+            self.click(button, after_sleep=.3)
+
+            def restored():
+                self.next_frame()
+                self.require_game_frame()
+                return (not self.find_one('revive_confirm_hcenter_vcenter', threshold=.8)
+                        and self._local_revive_button() is None and self.in_team()[0])
+
+            if self.wait_until(restored, time_out=3, settle_time=.3, raise_if_not_found=False):
+                self.log_info('复苏物品确认成功，刷新角色状态后原地继续战斗')
+                return True
+        self.log_warning('复苏确认未恢复队伍，转入原有死亡恢复流程')
+        return False
 
     def get_revive_search_boss_name(self):
         revive_search_names = {
@@ -333,6 +370,14 @@ class BaseCombatTask(CombatCheck):
             if self.reset_to_false(reason=message):
                 logger.error(f'reset to false failed: {message}')
             from src.task.AutoCombatTask import AutoCombatTask
+            # Only combat_once consumes this signal. Keep legacy overworld
+            # recovery and restricted challenge overrides unchanged on failure.
+            if (getattr(self, '_local_revive_active', False) is True
+                    and getattr(self, '_local_revive_count', 0) < 3
+                    and not isinstance(self, AutoCombatTask) and self._try_revive_in_place()):
+                self._local_revive_count += 1
+                self.info_set('Revive', '原地复苏成功')
+                raise CharRevivedInPlace(message)
             if not isinstance(self, AutoCombatTask) and self.revive_action():
                 exception_type = CharRevivedException
                 self.info_set('Revive', 'Success')
@@ -393,21 +438,41 @@ class BaseCombatTask(CombatCheck):
         """
         if wait_combat_time <= 0:
             raise ValueError('wait_combat_time must be positive')
-        result = self.wait_combat(target=target, time_out=wait_combat_time, raise_if_not_found=raise_if_not_found)
-        if self.switch_healer_enabled():
-            self.load_chars()
-            self.switch_healer()
-        self.info['Combat Count'] = self.info.get('Combat Count', 0) + 1
+        previous = getattr(self, '_local_revive_active', False)
+        self._local_revive_active = True
+        self._local_revive_count = 0
+        result = None
         try:
-            while self.in_combat():
-                logger.debug(f'combat_once loop {self.chars}')
-                self.get_current_char().perform()
-        except CharDeadException as e:
-            raise e
-        except NotInCombatException as e:
-            if not self.is_expected_combat_end():
-                raise CombatStateUnknown(str(e)) from e
-            logger.info(f'combat_once out of combat break {e}')
+            for recovery in range(4):
+                try:
+                    entered = self.wait_combat(target=target, time_out=3 if recovery else wait_combat_time,
+                                               raise_if_not_found=False if recovery else raise_if_not_found)
+                    if recovery == 0:
+                        result = entered
+                        self.info['Combat Count'] = self.info.get('Combat Count', 0) + 1
+                    if self.switch_healer_enabled():
+                        self.load_chars()
+                        self.switch_healer()
+                    while self.in_combat():
+                        logger.debug(f'combat_once loop {self.chars}')
+                        self.get_current_char().perform()
+                    break
+                except CharRevivedInPlace:
+                    if recovery == 3:
+                        raise CombatStateUnknown('原地复苏续战次数达到上限')
+                    self.next_frame()
+                    if not self.load_chars():
+                        raise CombatStateUnknown('原地复苏后未能重新识别队伍')
+                    continue
+                except CharDeadException:
+                    raise
+                except NotInCombatException as e:
+                    if not self.is_expected_combat_end():
+                        raise CombatStateUnknown(str(e)) from e
+                    logger.info(f'combat_once out of combat break {e}')
+                    break
+        finally:
+            self._local_revive_active = previous
         self.combat_end()
         if self.switch_healer_enabled():
             self.switch_healer()

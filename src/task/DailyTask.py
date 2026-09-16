@@ -2071,7 +2071,12 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         status, reason, progress = 'unknown', '每日收尾页面截图，完成情况待核验', {}
         try:
             if page == '任务页':
-                boxes = self.ocr(0.19, 0.8, 0.30, 0.93, match=DAILY_POINTS_RE, frame=frame) or []
+                boxes = self.ocr(.188, .84, .285, .895, match=DAILY_POINTS_RE,
+                                 frame=frame, target_height=1080) or []
+                if not boxes:
+                    from src.task.daily_observation import activity_digits_image
+                    boxes = self.ocr(.188, .84, .285, .895, match=DAILY_POINTS_RE,
+                                     frame=frame, frame_processor=activity_digits_image) or []
                 values = [int(box.name.strip()) for box in boxes
                           if DAILY_POINTS_RE.fullmatch(box.name.strip()) and 0 <= int(box.name.strip()) <= 180]
                 if values:
@@ -2169,6 +2174,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
     def open_daily(self):
         self.log_info('open_daily')
         self._open_daily_page()
+        # Completed objectives do not contribute points until explicitly claimed.
+        # This must precede every reserve authorization and missing-objective check.
+        self._claim_daily_objectives()
         progress = self._daily_objective('stamina')
         current = progress[0] if progress is not None and progress[1] == 180 else None
         self.info_set('current daily progress', current)
@@ -2187,13 +2195,17 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         return current, None if points is None else points >= 100
 
     def get_total_daily_points(self, attempts=3):
+        from src.task.daily_observation import activity_digits_image
         attempts = max(int(attempts), 1)
         candidates = []
         raw_candidates = []
         evidence_frame = None
         evidence_points = -1
         for attempt in range(attempts):
-            points_boxes = self.ocr(0.19, 0.8, 0.30, 0.93, match=DAILY_POINTS_RE) or []
+            points_boxes = self.ocr(.188, .84, .285, .895, match=DAILY_POINTS_RE, target_height=1080) or []
+            if not points_boxes:
+                points_boxes = self.ocr(.188, .84, .285, .895, match=DAILY_POINTS_RE,
+                                        frame_processor=activity_digits_image) or []
             for box in points_boxes:
                 text = str(getattr(box, 'name', '')).strip()
                 raw_candidates.append(text)
@@ -2222,10 +2234,60 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         buttons = self.ocr(0.82, 0.80, 0.99, 0.96, match=DAILY_CLAIM_RE) or []
         return max(buttons, key=lambda box: getattr(box, 'confidence', 0), default=None)
 
+    def _daily_objective_claim_buttons(self):
+        frame = self.require_game_frame()
+        if not self._daily_page_ready(frame):
+            return []
+        pattern = re.compile(r'^\s*(?:领取|領取|Claim)\s*$', re.I)
+        return sorted((b for b in self.ocr(.81, .18, .96, .79, frame=frame, match=pattern)
+                       if pattern.fullmatch(str(b.name))), key=lambda b: b.y)
+
+    def _restore_daily_claim_page(self):
+        self.next_frame()
+        frame = self.require_game_frame()
+        if self._daily_page_ready(frame):
+            return
+        if self.ocr(.20, .10, .80, .65, frame=frame,
+                    match=re.compile(r'获得物品|获得奖励|獲得物品|獲得獎勵|Rewards|Obtained', re.I)):
+            self.click_relative(.50, .78, after_sleep=.5)
+        self._open_daily_page()
+
+    def _claim_daily_objectives(self):
+        self.scroll_relative(.65, .45, 20)
+        self.sleep(.4)
+        clicks = 0
+        stalled = 0
+        for page in range(3):
+            while True:
+                self.next_frame()
+                if not self._daily_page_ready(self.require_game_frame()):
+                    raise DailyActivityIncomplete('领取任务积分时离开每日页面')
+                buttons = self._daily_objective_claim_buttons()
+                if not buttons:
+                    break
+                if clicks >= 12:
+                    raise DailyActivityIncomplete('任务积分领取次数达到上限，保留待补跑')
+                before = self.get_total_daily_points(attempts=1)
+                self.click(buttons[0], after_sleep=.5)
+                clicks += 1
+                self._restore_daily_claim_page()
+                remaining = self._daily_objective_claim_buttons()
+                after = self.get_total_daily_points(attempts=1)
+                progressed = (len(remaining) < len(buttons) or
+                              (before is not None and after is not None and after > before))
+                stalled = 0 if progressed else stalled + 1
+                if stalled >= 2:
+                    raise DailyActivityIncomplete('任务积分领取连续无变化，保留待补跑')
+            if page < 2:
+                self.scroll_relative(.65, .55, -4)
+                self.sleep(.4)
+        self.log_info(f'每日任务积分领取：本次点击 {clicks} 次')
+
     def claim_daily(self):
         from src.task.daily_observation import CHESTS, claimable_tiers
         self.info_set('current task', 'claim daily')
         self._open_daily_page()
+        self._claim_daily_objectives()
         claimed = []
         for tier, x in CHESTS:
             self.next_frame()

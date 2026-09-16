@@ -107,7 +107,7 @@ class TestCompletionEvidence(unittest.TestCase):
         task._publish_daily_stage = Mock()
         task._open_record_page = Mock(return_value=True)
         task.next_frame = Mock(return_value=np.zeros((12, 16, 3), np.uint8))
-        task.ocr = Mock(side_effect=lambda *a, **k: [SimpleNamespace(name='100')] if a[0] == .19 else [])
+        task.ocr = Mock(side_effect=lambda *a, **k: [SimpleNamespace(name='100')] if a[0] == .188 else [])
         for name in ('ensure_main', 'log_warning', 'log_info', 'log_error', 'sleep'):
             setattr(task, name, Mock())
         task.get_active_profile_name = Mock(return_value='synthetic')
@@ -280,8 +280,10 @@ class TestCompletionEvidence(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             service = EvidenceService(EvidenceRepository(root))
             task = SimpleNamespace(_verified_profile_id=ACCOUNT, start_time=1,
-                ocr=Mock(side_effect=[[SimpleNamespace(name='100')], [], [SimpleNamespace(name='70')]]),
+                ocr=Mock(),
                 next_frame=Mock(), log_info=Mock(), info_set=Mock())
+            frames = [[SimpleNamespace(name='100')], [], [SimpleNamespace(name='70')]]
+            task.ocr.side_effect = lambda *a, **kw: frames[task.next_frame.call_count]
             task.executor = SimpleNamespace(current_task=task, completion_evidence_service=service,
                 nullable_frame=Mock(return_value=np.full((5, 5, 3), 100, np.uint8)))
             try:
