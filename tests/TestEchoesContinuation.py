@@ -7,7 +7,7 @@ from ok import TaskDisabledException
 import cv2
 
 from src.task.echoes_support import choose_support, unlocked, equipped, enabled_start, challenge_prompt_state
-from src.task.echoes_continuation import activity_role, event_echo
+from src.task.echoes_continuation import activity_role, event_echo, character_name_key
 from src.task.EchoesRemainTask import EchoesRemainTask, canonical_stage
 from src.char.BaseChar import CharType
 
@@ -15,6 +15,21 @@ ROOT = Path('tests/fixtures/echoes_remain/continuation')
 
 
 class TestEchoesContinuation(unittest.TestCase):
+    def test_lucilla_alias_is_exact_and_preserves_name_guards(self):
+        import gettext
+        self.assertEqual(character_name_key('洛瑟拉'), '洛瑟菈')
+        for text in ('洛瑟', '洛瑟菈未知', '洛可可'):
+            self.assertEqual(character_name_key(text), text)
+        task = Mock(spec=EchoesRemainTask)
+        task.tr = gettext.translation('ok', 'i18n', ['zh_CN']).gettext
+        task.last_result = {'stage': '燃核兽形·浅梦'}
+        task._formation_for_stage.return_value = True
+        for names, confidence in ((('洛瑟拉', '绯雪', '千咲'), .79),
+                                  (('洛瑟拉', '洛瑟菈', '千咲'), .99),
+                                  (('未知角色', '绯雪', '千咲'), .99)):
+            task.ocr.side_effect = [[SimpleNamespace(name=n, confidence=confidence)] for n in names]
+            self.assertIsNone(EchoesRemainTask._read_formation_members(task, None))
+
     def test_confirm_names_requires_consecutive_matching_reads(self):
         task=Mock(spec=EchoesRemainTask)
         task.last_result={}

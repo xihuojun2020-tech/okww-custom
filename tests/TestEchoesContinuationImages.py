@@ -64,6 +64,22 @@ class TestEchoesContinuationImages(TaskTestCase):
             self.assertIsNotNone(members,image)
             self.assertEqual([m['name'] for m in members],names)
 
+    def test_actual_lucilla_ocr_failures_read_and_reverify_same_team(self):
+        self.task.tr = gettext.translation('ok', localedir='i18n', languages=['zh_CN']).gettext
+        for image in ('lucilla_name_failure_1', 'lucilla_name_failure_2'):
+            with self.subTest(image=image):
+                self.task.last_result = {'stage': '燃核兽形·浅梦'}
+                frame = self.page(image)
+                members = self.task._read_formation_members(frame)
+                self.assertIsNotNone(members)
+                self.assertEqual([m['name'] for m in members], ['洛瑟菈', '绯雪', '千咲'])
+                self.assertEqual([m['identity'] for m in members],
+                                 ['char_lucilla', 'char_hiyuki', 'char_chisa'])
+                self.task.last_result['members'] = members
+                self.assertTrue(self.task._verify_team_names(frame))
+                self.task.last_result['members'] = list(reversed(members))
+                self.assertFalse(self.task._verify_team_names(frame))
+
     def test_control_support_failure_screenshot(self):
         f=self.page('control_selected')
         state=self.task._support_selection_state(f,1)

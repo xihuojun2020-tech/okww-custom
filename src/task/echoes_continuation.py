@@ -25,7 +25,9 @@ class EventSettlement(Exception):
 
 
 def character_name_key(text):
-    return compact(text).replace('·', '').replace('・', '')
+    name = compact(text).replace('·', '').replace('・', '')
+    # Local, observed OCR alias; shared by initial identification and team rechecks.
+    return {'洛瑟拉': '洛瑟菈'}.get(name, name)
 
 
 def activity_role(identity):
