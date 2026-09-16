@@ -7,6 +7,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2] / 'assets/images/activities/echoes_remain/support'
 KINDS = ('攻击型', '控制型', '生存型', '控制型', '支援型', '支援型', '生存型', '攻击型', '攻击型')
 PREFERENCES = {'输出': (7, 8, 0), '治疗': (6, 2), '辅助': (1, 3, 4, 5)}
+PREFERRED_SUPPORT = 5  # Gold mask: first choice for every role when available.
 SLOTS = ((.1915, .755), (.484, .755), (.776, .755))
 
 
@@ -69,7 +70,8 @@ def unlocked(frame, index):
 def choose_support(frame, role):
     if role not in PREFERENCES:
         raise RuntimeError('角色活动定位未知，不能选择声骸')
-    return next((i for i in PREFERENCES[role] if unlocked(frame, i)), None)
+    order = (PREFERRED_SUPPORT,) + tuple(i for i in PREFERENCES[role] if i != PREFERRED_SUPPORT)
+    return next((i for i in order if unlocked(frame, i)), None)
 
 
 def support_point(index):

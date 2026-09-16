@@ -173,9 +173,22 @@ class TestEchoesContinuation(unittest.TestCase):
         for height in (720, 1080, 1440, 2160):
             frame = cv2.resize(cv2.imread(str(ROOT/'support.png')), (height*16//9, height))
             self.assertEqual([unlocked(frame,i) for i in range(9)], [True]*7+[False]*2)
-            self.assertEqual(choose_support(frame, '输出'), 0)
-            self.assertEqual(choose_support(frame, '治疗'), 6)
-            self.assertEqual(choose_support(frame, '辅助'), 1)
+            for role in ('输出', '治疗', '辅助'):
+                self.assertEqual(choose_support(frame, role), 5)
+
+    def test_gold_mask_priority_and_original_role_fallbacks(self):
+        for role, order in {'输出': (7,8,0), '治疗': (6,2), '辅助': (1,3,4,5)}.items():
+            with self.subTest(role=role):
+                with patch('src.task.echoes_support.unlocked', return_value=True) as available:
+                    self.assertEqual(choose_support(None, role), 5)
+                    available.assert_called_once_with(None, 5)
+                fallback = [i for i in order if i != 5]
+                for offset, expected in enumerate(fallback):
+                    with patch('src.task.echoes_support.unlocked',
+                               side_effect=lambda f,i,allowed=fallback[offset:]: i in allowed):
+                        self.assertEqual(choose_support(None, role), expected)
+                with patch('src.task.echoes_support.unlocked', return_value=False):
+                    self.assertIsNone(choose_support(None, role))
 
     def test_actual_equipment_and_disabled_button(self):
         for height in (720,1080,1440,2160):
@@ -346,7 +359,7 @@ class TestEchoesContinuation(unittest.TestCase):
             self.assertIsNone(probe(normal))
             return probe(normal)
         task._wait.side_effect=wait
-        self.assertEqual(EchoesRemainTask._wait_support_choice(task,{'name':'达妮娅','role':'辅助'}),1)
+        self.assertEqual(EchoesRemainTask._wait_support_choice(task,{'name':'达妮娅','role':'辅助'}),5)
 
     def test_combat_slot_identity_uses_verified_order(self):
         task=Mock(spec=EchoesRemainTask)
