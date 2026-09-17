@@ -375,19 +375,101 @@ class TestEchoesContinuation(unittest.TestCase):
         self.assertEqual([c.call_args.args[1] for c in classes],[0,1,2])
         self.assertEqual([c.is_current_char for c in task.chars],[False,True,False])
 
-    def test_complete_requires_all_eight_game_counts(self):
+    def final_card(self, text='最高分数：1234'):
+        return [SimpleNamespace(name='终梦之渊', x=190, y=740),
+                SimpleNamespace(name=text, x=190, y=780)]
+
+    def test_final_stage_uses_score_without_left_difficulty_label(self):
         task=Mock(spec=EchoesRemainTask);task.last_result={};task.height=1000
-        roman=('I','II','III','IV','V','VI','VII','VIII')
-        boxes=[]
-        for i,n in enumerate(roman):
-            boxes += [SimpleNamespace(name=n,x=50,y=100+i*80),
-                      SimpleNamespace(name='2/2',x=100,y=110+i*80)]
+        for text, expected in [('最高分数：0',True),('最高分数：1,234',False)]:
+            task.ocr.return_value=self.final_card(text)
+            self.assertEqual(EchoesRemainTask._selected_stage_pending(task,None,'终梦之渊·深梦'),expected)
+        for boxes in ([],self.final_card('最高分数：'),self.final_card('最高分数：1x'),
+                      self.final_card()+self.final_card()):
+            task.ocr.return_value=boxes
+            with self.assertRaisesRegex(RuntimeError,'最终关卡.*无法读取'):
+                EchoesRemainTask._selected_stage_pending(task,None,'终梦之渊·深梦')
+
+    def test_final_score_does_not_bypass_other_stage_difficulty(self):
+        task=Mock(spec=EchoesRemainTask);task.last_result={};task.height=1000
+        task.ocr.return_value=self.final_card()
+        with self.assertRaisesRegex(RuntimeError,'通关状态无法确认'):
+            EchoesRemainTask._selected_stage_pending(task,None,'寂空星视·深梦')
+
+    def test_final_score_is_bound_to_its_card_and_accepts_split_ocr(self):
+        task=Mock(spec=EchoesRemainTask);task.last_result={};task.height=1000
+        boxes=self.final_card('最高分数：')
+        boxes.append(SimpleNamespace(name='1，234',x=290,y=780))
         task.ocr.return_value=boxes
+        self.assertFalse(EchoesRemainTask._selected_stage_pending(task,None,'终梦之渊·深梦'))
+        self.assertEqual(task.last_result['final_stage_score'],1234)
+        for y in (680,840):
+            task.ocr.return_value=[boxes[0],SimpleNamespace(name='最高分数：9999',x=190,y=y)]
+            with self.assertRaisesRegex(RuntimeError,'最终关卡.*无法读取'):
+                EchoesRemainTask._selected_stage_pending(task,None,'终梦之渊·深梦')
+
+    def test_complete_requires_seven_counts_and_final_score(self):
+        task=Mock(spec=EchoesRemainTask);task.last_result={};task.height=1000
+        titles=('终世王骸','荣城武神','溺梦魔影','堕梦神躯','孤寂遗魂','燃核兽形','寂空星视')
+        boxes=[]
+        for i,n in enumerate(titles):
+            boxes += [SimpleNamespace(name=n,x=190,y=100+i*80),
+                      SimpleNamespace(name='2/2',x=190,y=135+i*80)]
+        task.ocr.return_value=boxes+self.final_card()
         EchoesRemainTask._audit_completion(task)
         self.assertTrue(task.last_result['activity_complete'])
-        task.last_result={};boxes[-1].name='1/2'
+        self.assertEqual(task.last_result['final_stage_score'],1234)
+        task.last_result={'rounds':[{'stage':'终梦之渊·深梦','outcome':'failed'}]}
         EchoesRemainTask._audit_completion(task)
         self.assertFalse(task.last_result['activity_complete'])
+        # Progress is collected across scrolling pages, not required in one frame.
+        task.last_result={};task.ocr.side_effect=[boxes[:8],boxes[8:]+self.final_card()]
+        EchoesRemainTask._audit_completion(task)
+        self.assertTrue(task.last_result['activity_complete'])
+        task.ocr.side_effect=None
+        for incomplete in (boxes+self.final_card('最高分数：0'), boxes,
+                           boxes[2:]+self.final_card(),boxes+self.final_card('最高分数：')):
+            task.last_result={};task.ocr.return_value=incomplete
+            EchoesRemainTask._audit_completion(task)
+            self.assertFalse(task.last_result['activity_complete'])
+        boxes[-1].name='1/2'
+        task.last_result={};task.ocr.return_value=boxes+self.final_card()
+        EchoesRemainTask._audit_completion(task)
+        self.assertFalse(task.last_result['activity_complete'])
+
+    def test_final_transition_and_completed_final_do_not_repeat(self):
+        task=Mock(spec=EchoesRemainTask);task.height=1000
+        task.last_result={'stage':'寂空星视·深梦'}
+        task._challenge_event.return_value='success'
+        task._stage_page.return_value='终梦之渊·深梦'
+        task.ocr.side_effect=[self.final_card('最高分数：0'),self.final_card()]
+        task._selected_stage_pending.side_effect=lambda f,s: EchoesRemainTask._selected_stage_pending(task,f,s)
+        EchoesRemainTask._continue_event(task)
+        self.assertEqual(task._challenge_event.call_count,2)
+        self.assertEqual(task.last_result['stage'],'终梦之渊·深梦')
+        self.assertEqual(task.last_result['phase'],'available_stages_finished')
+        task._open_quick.assert_called_once()
+        task._audit_completion.assert_called_once()
+
+    def test_pending_error_records_actual_next_stage(self):
+        task=Mock(spec=EchoesRemainTask);task.last_result={'stage':'寂空星视·深梦'}
+        task._challenge_event.return_value='success'
+        task._stage_page.return_value='终梦之渊·深梦'
+        task._selected_stage_pending.side_effect=RuntimeError('score unreadable')
+        with self.assertRaisesRegex(RuntimeError,'score unreadable'):
+            EchoesRemainTask._continue_event(task)
+        self.assertEqual(task.last_result['stage'],'终梦之渊·深梦')
+        self.assertEqual(task.last_result['rounds'],[{'stage':'寂空星视·深梦','outcome':'success'}])
+
+    def test_resume_final_stage_uses_shared_pending_check(self):
+        for score, enters in (('0',True),('1234',False)):
+            task=Mock(spec=EchoesRemainTask);task.height=1000;task.last_result={}
+            task._stage_page.return_value='终梦之渊·深梦'
+            task.ocr.return_value=self.final_card('最高分数：'+score)
+            task._selected_stage_pending.side_effect=lambda f,s: EchoesRemainTask._selected_stage_pending(task,f,s)
+            EchoesRemainTask._navigate(task)
+            self.assertEqual(task._open_quick.called,enters)
+            self.assertEqual(task._audit_completion.called,not enters)
 
     def test_partial_equipment_never_allows_start(self):
         frame=cv2.imread(str(ROOT/'equipped.png'))

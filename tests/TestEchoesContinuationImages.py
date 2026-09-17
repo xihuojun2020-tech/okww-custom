@@ -1,5 +1,8 @@
 import unittest
 import gettext
+import tempfile
+from unittest.mock import patch
+import cv2
 from pathlib import Path
 from config import config
 from ok.test.TaskTestCase import TaskTestCase
@@ -43,6 +46,32 @@ class TestEchoesContinuationImages(TaskTestCase):
         stage=self.task._stage_page(f)
         self.assertTrue(stage and stage.endswith('浅梦'),stage)
         self.assertTrue(self.task._selected_stage_pending(f,stage))
+
+    def test_final_stage_zero_score_without_difficulty_label(self):
+        original=self.page('final_stage_zero')
+        with tempfile.TemporaryDirectory() as folder:
+            for height in (720,1080,1440,2160):
+                with self.subTest(height=height):
+                    path=Path(folder)/'final.png'
+                    cv2.imwrite(str(path),cv2.resize(original,(height*16//9,height)))
+                    self.set_image(str(path))
+                    f=self.task.frame
+                    self.task.last_result={}
+                    stage=self.task._stage_page(f)
+                    self.assertEqual(stage,'终梦之渊·深梦')
+                    self.assertTrue(self.task._selected_stage_pending(f,stage))
+
+    def test_final_screenshot_audit_reads_names_not_roman_numerals(self):
+        f=self.page('final_stage_zero')
+        self.task.last_result={}
+        # Fixed offline frame: no scrolling, sleeps or live game input.
+        with patch.object(self.task,'next_frame',return_value=f), \
+             patch.object(self.task,'_guard'), patch.object(self.task,'scroll_relative'), \
+             patch.object(self.task,'sleep'):
+            self.task._audit_completion()
+        self.assertEqual(self.task.last_result['stage_counts'],dict.fromkeys(range(2,8),2))
+        self.assertEqual(self.task.last_result['final_stage_score'],0)
+        self.assertFalse(self.task.last_result['activity_complete'])
 
     def test_lynae_identity_translates_and_matches_formation(self):
         self.task.tr=gettext.translation('ok',localedir='i18n',languages=['zh_CN']).gettext

@@ -20,6 +20,23 @@ from src.runtime.diagnostic_export import atomic_json
 from src.runtime.diagnostic_storage import storage_path
 
 
+FINAL_STAGE = '终梦之渊·深梦'
+FINAL_SCORE = r'最高分数[:：]?([0-9]+(?:[,，][0-9]{3})*)'
+
+
+def stage_card_value(boxes, title, height, pattern):
+    """Read only the value directly below one named stage card, not a neighbour."""
+    heads = [b for b in boxes if compact(b.name) == title]
+    if len(heads) != 1:
+        return None
+    head = heads[0]
+    values = [b for b in boxes if .015 <= (b.y-head.y)/height < .065
+              and b.x >= head.x-.015*height]
+    text = ''.join(compact(b.name) for b in sorted(values, key=lambda b: b.x))
+    match = re.fullmatch(pattern, text)
+    return match.group(1) if match else None
+
+
 class EventSettlement(Exception):
     pass
 
@@ -410,6 +427,13 @@ class EchoesContinuation:
         return outcome
 
     def _selected_stage_pending(self, frame, stage):
+        if stage == FINAL_STAGE:
+            boxes = self.ocr(.05, .10, .28, .86, frame=frame)
+            score = stage_card_value(boxes, '终梦之渊', self.height, FINAL_SCORE)
+            if score is None:
+                raise RuntimeError('最终关卡最高分数无法读取，不能判定已通关')
+            self.last_result['final_stage_score'] = int(score.replace(',', '').replace('，', ''))
+            return self.last_result['final_stage_score'] == 0
         difficulty = stage[-2:]
         labels = [b for b in self.ocr(.05, .12, .28, .85, frame=frame) if compact(b.name) == difficulty]
         if len(labels) != 1:
@@ -436,9 +460,13 @@ class EchoesContinuation:
         raise RuntimeError('当前难度未通关状态不明确')
 
     def _audit_completion(self):
-        """Only all eight visible 2/2 records prove the entire activity complete."""
-        roman = {name: index for index, name in enumerate(('I','II','III','IV','V','VI','VII','VIII'),1)}
+        """Seven 2/2 cards plus the score-only finale prove activity progress."""
+        titles = ('终世王骸','荣城武神','溺梦魔影','堕梦神躯','孤寂遗魂','燃核兽形','寂空星视')
         counts = {}
+        final_score = None
+        # A failed attempt in this run must not be overridden by a historical score.
+        final_outcome = next((r['outcome'] for r in reversed(self.last_result.get('rounds', []))
+                              if r['stage'] == FINAL_STAGE), None)
         previous, same = None, 0
         # Read-only scroll sweep; never click a stage or the rewards icon here.
         for direction in (1, -1):
@@ -446,18 +474,19 @@ class EchoesContinuation:
                 frame = self.next_frame()
                 if not self._stage_page(frame):
                     raise RuntimeError('检查通关进度时离开了关卡页')
-                boxes = self.ocr(.035,.10,.29,.85,frame=frame)
-                for b in boxes:
-                    key = compact(b.name)
-                    if key not in roman:
-                        continue
-                    values = [v for v in boxes if re.fullmatch(r'[012]/2',compact(v.name))
-                              and 0 <= (v.y-b.y)/self.height < .065 and v.x > b.x]
-                    if len(values) == 1:
-                        counts[roman[key]] = int(compact(values[0].name)[0])
-                if len(counts)==8:
+                boxes = self.ocr(.05,.10,.28,.86,frame=frame)
+                for index, title in enumerate(titles, 1):
+                    value = stage_card_value(boxes, title, self.height, r'([012])/2')
+                    if value is not None:
+                        counts[index] = int(value)
+                score = stage_card_value(boxes, '终梦之渊', self.height, FINAL_SCORE)
+                if score is not None:
+                    final_score = int(score.replace(',', '').replace('，', ''))
+                if len(counts)==7 and final_score is not None:
                     self.last_result['stage_counts'] = counts
-                    self.last_result['activity_complete'] = all(v==2 for v in counts.values())
+                    self.last_result['final_stage_score'] = final_score
+                    self.last_result['activity_complete'] = (all(v==2 for v in counts.values())
+                        and final_score > 0 and final_outcome in (None, 'success'))
                     return
                 signature=tuple((compact(b.name),round(b.y/self.height,2)) for b in boxes)
                 same=same+1 if signature==previous else 0
@@ -468,6 +497,7 @@ class EchoesContinuation:
                 self.sleep(.3)
             previous,same=None,0
         self.last_result['stage_counts'] = counts
+        self.last_result['final_stage_score'] = final_score
         self.last_result['activity_complete'] = False
 
     def _progress_path(self):
@@ -519,6 +549,7 @@ class EchoesContinuation:
             next_stage = self._stage_page(frame)
             if not next_stage:
                 raise RuntimeError('退出后未确认自动选中的下一关')
+            self.last_result['stage'] = next_stage
             if not self._selected_stage_pending(frame, next_stage):
                 if self.last_result.get('phase') != 'waiting_unlock':
                     self.last_result['phase'] = 'available_stages_finished'
@@ -526,7 +557,6 @@ class EchoesContinuation:
                 return
             if next_stage in seen:
                 raise RuntimeError('成功后关卡未推进，停止重复挑战')
-            self.last_result['stage'] = next_stage
             self._click_transition('单人挑战', 'single',
                 lambda f: self._single_button(f, next_stage), lambda f: self._formation_for_stage(f, next_stage))
             self._open_quick()
