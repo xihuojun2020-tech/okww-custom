@@ -1,7 +1,9 @@
 import unittest
 import gettext
 import tempfile
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+from contextlib import ExitStack
+from types import SimpleNamespace
 import cv2
 from pathlib import Path
 from config import config
@@ -18,6 +20,58 @@ class TestEchoesContinuationImages(TaskTestCase):
     def page(self,name):
         self.set_image(f'tests/fixtures/echoes_remain/continuation/{name}.png')
         return self.task.frame
+
+    def test_real_selected_support_reaches_assembly_through_production_navigation(self):
+        selected=self.page('support_already_selected').copy()
+        unselected=cv2.resize(self.page('control_selected'),(selected.shape[1],selected.shape[0]))
+        task=self.task
+        real_executor=task.executor
+        class OfflineExecutor(SimpleNamespace):
+            def __getattr__(self,name):
+                return getattr(real_executor,name)
+        # Surrounding formation/equipment transitions are stubbed; selection OCR,
+        # _equip_supports and selection navigate_ui use production implementations.
+        for click_threshold in (0,2,99,-1):
+            with self.subTest(click_threshold=click_threshold), ExitStack() as stack:
+                clock=[0.]; clicks=Mock(); assembled=[]
+                blank=selected*0
+                frame=lambda: blank if click_threshold==-1 else (
+                    selected if clicks.call_count>=click_threshold else unselected)
+                executor=OfflineExecutor(check_enabled=Mock(),current_task=task,paused=False,
+                    device_manager=SimpleNamespace(hwnd_window=SimpleNamespace(hwnd=1,exists=True)),
+                    method=SimpleNamespace(width=selected.shape[1],height=selected.shape[0]),
+                    _last_frame_time=0)
+                def capture():
+                    executor._last_frame_time+=1
+                    return frame()
+                original_navigate=task.navigate_ui
+                def navigate(label,source,target,**kwargs):
+                    if label=='选中支援声骸':
+                        return original_navigate(label,source,target,**kwargs)
+                    if label=='装配支援声骸':
+                        self.assertIsNotNone(source(frame()))
+                        assembled.append(kwargs['identity'][1])
+                    return frame()
+                replacements={'_executor':executor,'_guard':Mock(),'_guard_account_input':Mock(),
+                    'next_frame':capture,'require_game_frame':frame,'_click':clicks,
+                    'sleep':lambda dt:clock.__setitem__(0,clock[0]+dt),
+                    '_wait':Mock(return_value=selected),'_wait_support_choice':Mock(return_value=0),
+                    'navigate_ui':navigate,'_quick_capture':Mock(),'screenshot':Mock(),
+                    'info_set':Mock(),'log_info':Mock(),'log_warning':Mock()}
+                for name,value in replacements.items():
+                    stack.enter_context(patch.object(task,name,value))
+                stack.enter_context(patch('src.task.EchoesRemainTask.time.monotonic',side_effect=lambda:clock[0]))
+                task.last_result={'stage':'终世王骸·浅梦','members':[{'name':'test','role':'输出'}]*3}
+                if click_threshold in (99,-1):
+                    with self.assertRaisesRegex(RuntimeError,'上限|耗尽|超时'):
+                        task._equip_supports()
+                    self.assertEqual(assembled,[])
+                    self.assertEqual(clicks.call_count,3 if click_threshold==99 else 0)
+                else:
+                    task._equip_supports()
+                    self.assertEqual(assembled,[0,1,2])
+                    self.assertEqual(clicks.call_count,click_threshold)
+                    self.assertEqual(task.last_result['supports'],[0,0,0])
 
     def test_support_selection_and_type(self):
         f=self.page('support')

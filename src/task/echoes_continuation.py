@@ -210,7 +210,9 @@ class EchoesContinuation:
                 selection_state.update(self._support_selection_state(f, index))
                 return all(selection_state[key] for key in ('page', 'category', 'selected'))
             try:
-                self.navigate_ui('选中支援声骸', self._support_page, chosen,
+                # Selection stays on the same page; source and target must be exclusive.
+                self.navigate_ui('选中支援声骸',
+                    lambda f: self._support_page(f) if not chosen(f) else None, chosen,
                     action=lambda _: self._click(*support_point(index)),
                     identity=(self.last_result['stage'], slot, index), attempts=3, retry_after=3)
             except RuntimeError:
