@@ -18,6 +18,7 @@ from src.task.BaseCombatTask import CombatStateUnknown, NotInCombatException, Ch
 from src.char.character_names import character_display_name
 from src.runtime.diagnostic_export import atomic_json
 from src.runtime.diagnostic_storage import storage_path
+from src.combat.CombatCheck import CombatFlowInterrupt
 
 
 FINAL_STAGE = '终梦之渊·深梦'
@@ -37,7 +38,7 @@ def stage_card_value(boxes, title, height, pattern):
     return match.group(1) if match else None
 
 
-class EventSettlement(Exception):
+class EventSettlement(CombatFlowInterrupt):
     pass
 
 
@@ -203,14 +204,15 @@ class EchoesContinuation:
             frame = self.navigate_ui('打开支援声骸', self._verify_team_names, self._support_page,
                 action=lambda _, slot=slot: self._click(*SLOTS[slot]), identity=(self.last_result['stage'], slot))
             index = self._wait_support_choice(member)
-            self._click(*support_point(index))
             selection_state = {}
             def chosen(f):
                 # Exact category and selected frame border must both agree.
                 selection_state.update(self._support_selection_state(f, index))
                 return all(selection_state[key] for key in ('page', 'category', 'selected'))
             try:
-                self._wait(chosen, '声骸选中或类型未确认，未点击装配')
+                self.navigate_ui('选中支援声骸', self._support_page, chosen,
+                    action=lambda _: self._click(*support_point(index)),
+                    identity=(self.last_result['stage'], slot, index), attempts=3, retry_after=3)
             except RuntimeError:
                 self.log_warning(f'支援声骸复核失败 slot={slot+1} index={index} state={selection_state}')
                 raise
@@ -414,7 +416,7 @@ class EchoesContinuation:
                     if self._settlement(f) == 'failed' else None,
                 lambda f: self._formation_for_stage(f, self.last_result['stage'])
                     or self.in_team_and_world(frame=f),
-                attempts=1, timeout=120, identity=(self.last_result['stage'], attempt))
+                attempts=3, retry_after=5, timeout=120, identity=(self.last_result['stage'], attempt))
             frame = self.next_frame()
             if self._formation_for_stage(frame, self.last_result['stage']):
                 self._equip_supports()

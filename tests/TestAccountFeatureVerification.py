@@ -169,6 +169,51 @@ class TestAccountFeatureVerification(unittest.TestCase):
                     executor.thread.join(timeout=3)
             self.assertFalse(executor.thread.is_alive())
 
+    def test_binding_waits_for_background_boundary(self):
+        import threading
+        from src.evidence.service import request_capture, process_capture
+        task=SimpleNamespace(running=True)
+        executor=SimpleNamespace(current_task=task,trigger_tasks=[task],exit_event=threading.Event(),
+            device_manager=SimpleNamespace(hwnd_window=SimpleNamespace(hwnd=12,exists=True)),
+            method=SimpleNamespace(get_frame=Mock()),get_task_by_class=Mock())
+        future=request_capture(executor,feature_code=True)
+        process_capture(executor)
+        self.assertFalse(future.done())
+        executor.method.get_frame.assert_not_called()
+        task.running=False;executor.current_task=None
+        observed=Observation('verified','00123')
+        with patch('src.task.account_feature_verification.observe',return_value=observed):
+            process_capture(executor)
+        self.assertEqual(future.result()['code'],'00123')
+
+    def test_paused_background_unwinds_but_foreground_stays_protected(self):
+        from custom_ok.ok.task.TaskExecutor import TaskExecutor
+        from ok import TaskDisabledException
+        task=SimpleNamespace(running=True,_enabled=True)
+        executor=SimpleNamespace(paused=True,current_task=task,trigger_tasks=[task])
+        with self.assertRaises(TaskDisabledException):
+            TaskExecutor.check_enabled(executor)
+        self.assertTrue(task._enabled)
+
+    def test_successful_trigger_clears_running_even_on_continue(self):
+        import threading
+        from custom_ok.ok.task.TaskExecutor import TaskExecutor
+        executor=TaskExecutor.__new__(TaskExecutor)
+        executor.exit_event=threading.Event();executor.paused=False
+        executor.current_task=None;executor._frame=object();executor._last_frame_time=0
+        executor._get_wake_version=Mock(return_value=0)
+        executor.reset_scene=Mock();executor.destroy=Mock()
+        task=Mock();task.running=False
+        def run():
+            executor.exit_event.set()
+            return True
+        task.run.side_effect=run
+        executor.next_task=Mock(return_value=(task,False,True))
+        with patch.object(TaskExecutor,'_service_diagnostic_capture'):
+            executor.execute()
+        self.assertFalse(task.running)
+        self.assertIsNone(executor.current_task)
+
     def test_resolution_statuses(self):
         a, b = record(3,'123'), record(4,'456')
         self.assertEqual(resolve(Observation('verified','123'),[a,b],a.profile_id)[0], 'verified')

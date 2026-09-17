@@ -26,6 +26,21 @@ class TestEchoesContinuationImages(TaskTestCase):
         self.assertFalse(selected_support(f,1))
         self.assertIsNotNone(self.task._button(f,(.86,.10,.97,.18),'攻击型'))
 
+    def test_actual_missed_support_click_is_not_mistaken_for_selection(self):
+        from src.task.echoes_support import choose_support
+        f=self.page('support_click_missed')
+        self.assertEqual(choose_support(f,'治疗'),2)
+        state=self.task._support_selection_state(f,2)
+        self.assertTrue(state['page'])
+        self.assertFalse(state['selected'])
+        self.assertFalse(state['category'])
+        self.assertTrue(self.task._support_selection_state(f,0)['selected'])
+
+    def test_actual_retry_click_failure_still_has_retry_button(self):
+        f=self.page('retry_click_missed')
+        self.assertEqual(self.task._settlement(f),'failed')
+        self.assertIsNotNone(self.task._button(f,(.54,.79,.73,.90),'重新挑战'))
+
     def test_start_with_ocr_missing_f(self):
         f=self.page('start_f_icon')
         boxes=self.task.ocr(.60,.43,.86,.61,frame=f)

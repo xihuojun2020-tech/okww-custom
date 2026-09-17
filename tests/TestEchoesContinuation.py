@@ -15,6 +15,34 @@ ROOT = Path('tests/fixtures/echoes_remain/continuation')
 
 
 class TestEchoesContinuation(unittest.TestCase):
+    def test_support_selection_retries_through_navigation(self):
+        task=Mock(spec=EchoesRemainTask)
+        task.last_result={'stage':'test','members':[{'name':'a','role':'治疗'}]}
+        task._wait_support_choice.return_value=2
+        task._support_page.return_value=True
+        task._support_selection_state.return_value=dict(page=True,category=True,selected=True)
+        EchoesRemainTask._equip_supports(task)
+        selections=[c for c in task.navigate_ui.call_args_list if c.args[0]=='选中支援声骸']
+        self.assertEqual(len(selections),1)
+        self.assertEqual(selections[0].kwargs['attempts'],3)
+        self.assertTrue(selections[0].args[2](None))
+
+    def test_retry_button_has_separate_click_budget(self):
+        task=self.retry_task(['failed','success'])
+        EchoesRemainTask._challenge_event(task)
+        retry=task.navigate_ui.call_args_list[0]
+        self.assertEqual(retry.kwargs['attempts'],3)
+        self.assertGreaterEqual(retry.kwargs['retry_after'],5)
+
+    def test_settlement_signal_is_not_logged_as_combat_error(self):
+        from src.combat.CombatCheck import CombatCheck
+        from src.task.echoes_continuation import EventSettlement
+        task=Mock();task.do_check_in_combat.side_effect=EventSettlement()
+        with patch('src.combat.CombatCheck.logger') as logger:
+            with self.assertRaises(EventSettlement):
+                CombatCheck.in_combat(task)
+            logger.error.assert_not_called()
+
     def test_lucilla_alias_is_exact_and_preserves_name_guards(self):
         import gettext
         self.assertEqual(character_name_key('洛瑟拉'), '洛瑟菈')
@@ -335,7 +363,7 @@ class TestEchoesContinuation(unittest.TestCase):
         with patch('src.task.echoes_continuation.choose_support',side_effect=[1,0,1]):
             EchoesRemainTask._equip_supports(task)
         self.assertEqual(task.last_result['supports'],[1,0,1])
-        self.assertEqual(task.navigate_ui.call_count,6)
+        self.assertEqual(task.navigate_ui.call_count,9)
 
     def test_support_choice_waits_for_repeated_valid_frame(self):
         task=Mock(spec=EchoesRemainTask)

@@ -15,6 +15,10 @@ from src.task.BaseWWTask import BaseWWTask
 logger = Logger.get_logger(__name__)
 
 
+class CombatFlowInterrupt(Exception):
+    """Expected handoff from combat to a task-owned result handler."""
+
+
 class CombatCheck(BaseWWTask):
     TARGET_GONE_END_REASON = 'enemy_defeated_or_target_gone'
     EXPLICIT_END_REASON = 'explicit_end_condition'
@@ -215,7 +219,7 @@ class CombatCheck(BaseWWTask):
         self.in_sleep_check = True
         try:
             return self.do_check_in_combat(target)
-        except (GameProcessLost, FrameUnavailable, TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked):
+        except (CombatFlowInterrupt, GameProcessLost, FrameUnavailable, TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked):
             raise
         except Exception as e:
             logger.error(f'do_check_in_combat:', e)
