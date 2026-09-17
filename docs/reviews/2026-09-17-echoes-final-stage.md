@@ -36,4 +36,8 @@
 
 ## 发布
 
-本地包验证与 GitHub/NAS 发布状态在完成后补充。发布期间指定 NAS 共享目录暂时无法访问，不使用历史地址替代。
+- 提交 `c6f18801`：`fix: recognize score-only finale and audit event completion`。分支 `codex/echoes-final-stage` 和注释标签 `v1.79.07` 已成功推送 GitHub origin。
+- 更新包 `okww_update_v1.79.07.zip` 为 38239842 字节，SHA256 为 `7e09d8eab6f32e6cc4baaa57ea4ac8dbce7f39c844b01a4989c8b9021d847346`。
+- 从 v1.79.06 临时检出并覆盖升级验证：413 个文件一致，账号配置保留；包内容校验通过。
+- NAS 最初共享访问被拒绝，使用项目已有凭据建立连接后恢复；未使用历史 NAS 地址。
+- 指定 NAS `\\192.168.3.173\羲火君 共享给我\AI诊断\OKWW-Updates\stable\latest.json` 已读回 1.79.07，包路径为 `releases/v1.79.07/okww_update_v1.79.07.zip`，UTC 发布时间为 `2026-09-17T04:38:58Z`。本报告随版本保存。
