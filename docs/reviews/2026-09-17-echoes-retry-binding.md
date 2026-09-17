@@ -28,3 +28,9 @@
 全量回归 `run_tests.ps1 -Group all` 已完成，166 个测试文件共 1722 项，0 失败、0 错误、8 项跳过（结果目录 `test_out/test_runs/20260917-150254-181`）。部分故障注入用例会打印预期错误日志，统计以测试结果为准。
 
 从 v1.79.07 临时检出并覆盖更新验证通过：413 个文件一致，账号配置保留。更新包 `okww_update_v1.79.08.zip` 为 38240545 字节，SHA256 为 `33330cbcc4287f883b04ea47fbf12f7c3aa876e3d38cc6de669ca9b23811f312`。
+
+## 发布回执
+
+- 提交 `126b1ad4`：`fix: recover event clicks and clear background binding blockers`。分支 `codex/echoes-retry-binding` 和注释标签 `v1.79.08` 已成功推送 GitHub origin。
+- 指定 NAS `\\192.168.3.173\羲火君 共享给我\AI诊断\OKWW-Updates\stable\latest.json` 已读回 1.79.08，更新包为 `releases/v1.79.08/okww_update_v1.79.08.zip`，UTC 发布时间 `2026-09-17T08:29:10Z`。报告同步保存到该版本目录。
+- 未自动安装或覆盖正在运行的打包版，需用户更新后验证实机绑定与若梦重试。
