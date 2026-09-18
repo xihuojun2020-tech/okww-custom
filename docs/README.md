@@ -13,6 +13,8 @@ Navigation and theme settings live in `mkdocs.yml` at the repository root.
 
 ## Architecture and code review
 
+- [自动冥歌海墟：预设、信物与上下半转场（1.80.00）](references/sea-ruins.md)
+
 - [框架升级说明与验收方案](references/framework-upgrade-assessment-2026-09-11.md)
 
 - [原版更新检查与融合方案（2026-09-11）](references/upstream-integration-assessment-2026-09-11.md)

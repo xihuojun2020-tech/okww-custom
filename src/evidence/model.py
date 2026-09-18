@@ -28,6 +28,7 @@ TASK_PROJECTS = {
     'DailyTask': 'daily_activity', 'MultiAccountDailyTask': 'daily_activity',
     'NightmareNestTask': 'nightmare_nest', 'GardenTask': 'weekly_garden',
     'WeeklyBossTask': 'weekly_boss', 'AutoAbyssTask': 'adversity_tower',
+    'AutoSeaRuinsTask': 'sea_ruins',
     'CharacterTrialTask': 'character_trial',
     'PianoTeachingTask': 'piano_activity', 'SecondSolTask': 'second_sol',
     'ResonanceSimulationTask': 'resonance_simulation',

@@ -19,7 +19,7 @@ from src.task.process_feature import process_feature
 # okww 版本号（固定宽度 X.YY.ZZ）：
 #   小改动 → 第三位 +1；中等改动 → 第二位 +1 且第三位归 00；
 #   大改动 → 第一位 +1 且后两位归 00（仅用户明确提出时执行）
-version = "1.79.00"
+version = "1.80.00"
 
 
 def _find_most_recently_run_pc_exe():
@@ -303,6 +303,7 @@ config = {
         # 保持注册位置，分类由任务元数据决定。
         ["src.task.TestAccountSwitchTask", "TestAccountSwitchTask"],
         ["src.task.AutoAbyssTask", "AutoAbyssTask"],
+        ["src.task.AutoSeaRuinsTask", "AutoSeaRuinsTask"],
         ["src.task.WeeklyBossTask", "WeeklyBossTask"],
         ["src.task.PianoTeachingTask", "PianoTeachingTask"],
         ["src.task.SecondSolTask", "SecondSolTask"],

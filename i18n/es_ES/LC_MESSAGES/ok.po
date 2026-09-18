@@ -1456,6 +1456,12 @@ msgstr "Comprobación del lunes"
 msgid "Last Completed - Weekly Boss Sunday"
 msgstr "Revisión del domingo"
 
+msgid "自动冥歌海墟"
+msgstr "Desafío automático de las ruinas marinas"
+
+msgid "使用完整预设编队，按周期属性与可用信物自动挑战再生海域7至11层；不含无尽、凹分和领奖。"
+msgstr "Usa equipos predefinidos completos y elige insignias según los atributos del ciclo para los pisos 7–11. No incluye modo infinito, repetición por puntuación ni recompensas."
+
 msgid "自动深塔"
 msgstr "Torre de la Adversidad automática"
 
