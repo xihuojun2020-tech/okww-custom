@@ -120,6 +120,29 @@ class AutoSeaRuinsTask(WWOneTimeTask, BaseCombatTask):
         return bool(self._button(frame, (.07, .58, .20, .67), '信物一览')
                     and self._button(frame, (.07, .70, .20, .77), '无尽记录'))
 
+    def _seven_boat(self, frame):
+        # Full-map OCR drops the stylized 7, even in the original fixture.
+        # Anchor on the name, then match only the white digit above it.
+        frame = cv2.resize(frame, (1280, 720))
+        name = self._button(frame, (.15, .18, .83, .89), '险滩')
+        if name is None:
+            return None
+        x, y = max(0, name.x-16), max(0, name.y-70)
+        region = frame[y:name.y-5, x:min(1280, name.x+name.width+16)]
+        if region.size == 0:
+            return None
+        def white(im):
+            lo, hi = im.min(axis=2), im.max(axis=2)
+            return ((lo > 190) & (hi-lo < 45)).astype(np.uint8)*255
+        template = vision.reference('seven')
+        if template is None or region.shape[0] < template.shape[0] or region.shape[1] < template.shape[1]:
+            return None
+        _, score, _, location = cv2.minMaxLoc(cv2.matchTemplate(white(region), white(template), cv2.TM_CCOEFF_NORMED))
+        if score < .8:
+            return None
+        return ((x+location[0]+template.shape[1]/2)/1280+.12,
+                (y+location[1]+template.shape[0]/2)/720+.02)
+
     def _open(self):
         self.openF2Book()
         self._open_period_challenge()
@@ -131,17 +154,10 @@ class AutoSeaRuinsTask(WWOneTimeTask, BaseCombatTask):
             buttons = [b for b in self.ocr(.65, .18, .99, .55, frame=frame) if compact(b.name) == '前往']
             return match_travel_button(title, buttons, self.height*.14) if title else None
         self.navigate_ui('进入再生海域', source, self._map, timeout=120, attempts=1, identity='sea_ruins')
-        for _ in range(12):
-            self.next_frame()
-            boxes = self.ocr(.15, .18, .83, .89, frame=self.frame)
-            seven, name = exact_ocr_box(boxes, '7'), exact_ocr_box(boxes, '险滩')
-            if seven and name and abs(seven.x-name.x) < self.width*.05 and 0 < name.y-seven.y < self.height*.12:
-                self.click_relative(min(.82, seven.x/self.width+.125), seven.y/self.height+.02)
-                self._wait(lambda f: self._detail(f, 7), '船体点击后未确认7层')
-                return
-            # Map's up control, not a blind click on another boat.
-            self.click_relative(.912, .368, after_sleep=.5)
-        raise RuntimeError('无法定位7/险滩船体')
+        boat = self._wait(lambda f: self._seven_boat(f) if self._map(f) else None,
+                          '无法定位7/险滩船体，已停止，未翻动地图')
+        self.click_relative(*boat)
+        self._wait(lambda f: self._detail(f, 7), '船体点击后未确认7层')
 
     def _open_presets(self, half):
         self._wait(lambda f: self._detail(f, self._floor), '不是当前海墟详情页')

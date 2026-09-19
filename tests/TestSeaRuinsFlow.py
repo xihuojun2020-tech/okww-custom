@@ -6,6 +6,21 @@ from src.task.BaseCombatTask import NotInCombatException
 
 
 class TestSeaRuinsFlow(unittest.TestCase):
+    def test_open_unknown_map_never_clicks_arrow(self):
+        t = self.task()
+        t._wait.side_effect = [object(), RuntimeError('无法定位')]
+        with self.assertRaisesRegex(RuntimeError, '无法定位'):
+            AutoSeaRuinsTask._open(t)
+        t.click_relative.assert_not_called()
+
+    def test_open_clicks_verified_boat_then_checks_floor(self):
+        t = self.task()
+        t._wait.side_effect = [object(), (.72, .51), True]
+        AutoSeaRuinsTask._open(t)
+        t.click_relative.assert_called_once_with(.72, .51)
+        t._wait.call_args.args[0](t.frame)
+        t._detail.assert_called_once_with(t.frame, 7)
+
     def task(self):
         t = Mock()
         t.frame = object()

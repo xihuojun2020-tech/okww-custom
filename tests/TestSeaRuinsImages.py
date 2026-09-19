@@ -30,6 +30,19 @@ class TestSeaRuinsImages(TaskTestCase):
         self.assertTrue(task._result(self.image('result')))
         self.assertTrue(task._token_page(self.image('tokens')))
 
+    def test_map_seven(self):
+        for name in ('map', 'map_completed'):
+            frame = self.image(name)
+            for width, height in ((1280, 720), (1920, 1080), (2560, 1440)):
+                with self.subTest(name=name, width=width):
+                    boat = self.task._seven_boat(cv2.resize(frame, (width, height)))
+                    self.assertIsNotNone(boat)
+                    self.assertAlmostEqual(boat[0], .72, delta=.02)
+                    self.assertAlmostEqual(boat[1], .51, delta=.03)
+            frame = cv2.resize(frame, (1280, 720))
+            frame[330:375, 740:795] = 0
+            self.assertIsNone(self.task._seven_boat(frame))
+
     def test_actual_preset_identities_and_applied_team(self):
         task = self.task
         records = task._page_presets(self.image('presets'))
