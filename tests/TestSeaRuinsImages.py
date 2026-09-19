@@ -29,6 +29,8 @@ class TestSeaRuinsImages(TaskTestCase):
         self.assertFalse(task._prompt(self.image('exit_front'), '进入下半海域'))
         self.assertTrue(task._result(self.image('result')))
         self.assertTrue(task._token_page(self.image('tokens')))
+        self.assertTrue(task._token_page(self.image('tokens_unavailable')))
+        self.assertFalse(task._token_page(self.image('detail')))
 
     def test_map_seven(self):
         for name in ('map', 'map_completed'):
@@ -42,6 +44,15 @@ class TestSeaRuinsImages(TaskTestCase):
             frame = cv2.resize(frame, (1280, 720))
             frame[330:375, 740:795] = 0
             self.assertIsNone(self.task._seven_boat(frame))
+
+    def test_completed_detail(self):
+        frame = self.image('detail_completed')
+        self.task._floor = 7
+        for size in ((1280, 720), (1920, 1080), (2560, 1440)):
+            resized = cv2.resize(frame, size)
+            self.assertTrue(self.task._detail(resized, 7))
+            self.assertFalse(self.task._detail(resized, 8))
+            self.assertIsNotNone(self.task._challenge_button(resized))
 
     def test_actual_preset_identities_and_applied_team(self):
         task = self.task

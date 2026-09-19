@@ -3,9 +3,6 @@ import re
 import time
 import cv2
 import numpy as np
-import win32api
-import win32con
-import win32gui
 
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.BaseCombatTask import BaseCombatTask, CombatStateUnknown, NotInCombatException, CharDeadException
@@ -108,7 +105,24 @@ class AutoSeaRuinsTask(WWOneTimeTask, BaseCombatTask):
             return False
         if floor is None:
             return True
-        return str(floor) in self._small_text(frame, (.157, .12, .186, .168))
+        if str(floor) in self._small_text(frame, (.157, .12, .186, .168)):
+            return True
+        if floor == 7:
+            region = vision.crop(cv2.resize(frame, (1280, 720)), (.145, .105, .20, .19))
+            template = vision.reference('detail_seven')
+            score = cv2.minMaxLoc(cv2.matchTemplate(cv2.cvtColor(region, cv2.COLOR_BGR2GRAY),
+                cv2.cvtColor(template, cv2.COLOR_BGR2GRAY), cv2.TM_CCOEFF_NORMED))[1]
+            return score >= .85 and bool(self._button(frame, (.12, .18, .23, .24), '险滩'))
+        return False
+
+    def _challenge_button(self, frame):
+        if not self._detail(frame, self._floor):
+            return None
+        for label in ('开启挑战', '开始挑战', '再次挑战'):
+            button = self._button(frame, (.72, .88, .93, .95), label)
+            if button is not None:
+                return button
+        return None
 
     def _small_text(self, frame, region):
         im = vision.crop(frame, region)
@@ -243,7 +257,7 @@ class AutoSeaRuinsTask(WWOneTimeTask, BaseCombatTask):
 
     def _token_page(self, frame):
         return bool(self._button(frame, (.015, .025, .20, .10), '信物一览')
-                    and self._button(frame, (.68, .88, .97, .95), '携带'))
+                    and vision.token_cards(frame))
 
     def _open_tokens(self, half):
         self._wait(lambda f: self._detail(f, self._floor), '信物入口不在详情页')
@@ -408,42 +422,39 @@ class AutoSeaRuinsTask(WWOneTimeTask, BaseCombatTask):
             self.skip_combat_check = True
             self._release()
 
-    def _turn(self, delta):
-        # UE camera consumes relative mouse input; WM_MOUSEMOVE is only a UI move.
-        # Never send physical input to another application.
-        self.executor.check_enabled()
-        if not self.hwnd or win32gui.GetForegroundWindow() != self.hwnd.hwnd:
-            raise RuntimeError('出口转镜头需要鸣潮处于前台，已停止输入')
-        pixels = round(self.width * max(-.12, min(.12, delta)))
-        win32api.mouse_event(win32con.MOUSEEVENTF_MOVE, pixels, 0, 0, 0)
-        self.sleep(.2)
-
     def _enter_lower(self):
         self._wait(self._upper_end, '未确认前往下半海域')
         self._release()
         self.middle_click(after_sleep=.3)
-        self._status('回正视角并寻找下半海域出口')
-        deadline = time.monotonic()+60
+        self._status('后台寻路前往下半海域出口')
+
+        def arrived():
+            if self._prompt(self.frame, '进入下半海域'):
+                return True
+            if not self._upper_end(self.frame):
+                raise RuntimeError('寻找出口时上半结束提示消失')
+            return False
+
+        def target():
+            marker = vision.exit_marker(self.frame)
+            if marker is None:
+                # The shared walker retains its last target. Stop keys before
+                # raising, never walk using a stale marker.
+                self._release()
+                raise RuntimeError('出口标记丢失，已停止移动')
+            x, y, _ = marker
+            return self.box_of_screen(x-.005, y-.005, x+.005, y+.005)
+
         try:
-            while time.monotonic() < deadline:
-                self.next_frame()
-                if self._prompt(self.frame, '进入下半海域'):
-                    self._release()
-                    self.send_key('f')
-                    self._wait(lambda f: self.in_team_and_world(frame=f) and not self._upper_end(f)
-                               and not self._prompt(f, '进入下半海域'), '进入下半海域后加载未确认', timeout=120)
-                    return
-                if not self._upper_end(self.frame):
-                    raise RuntimeError('寻找出口时上半结束提示消失')
-                marker = vision.exit_marker(self.frame)
-                if marker is None:
-                    self._turn(.10)
-                elif abs(marker[0]-.5) > .045:
-                    self._turn((marker[0]-.5)*.35)
-                else:
-                    self.send_key('w', down_time=.25)
-                    self.sleep(.1)
-            raise RuntimeError('60秒内未找到F进入下半海域')
+            if not self.walk_to_box(target, time_out=60, end_condition=arrived):
+                raise RuntimeError('60秒内未找到F进入下半海域')
+            self._release()
+            self.next_frame()
+            if not self._prompt(self.frame, '进入下半海域'):
+                raise RuntimeError('进入下半海域提示消失，未按F')
+            self.send_key('f')
+            self._wait(lambda f: self.in_team_and_world(frame=f) and not self._upper_end(f)
+                       and not self._prompt(f, '进入下半海域'), '进入下半海域后加载未确认', timeout=120)
         finally:
             self._release()
 
@@ -513,7 +524,7 @@ class AutoSeaRuinsTask(WWOneTimeTask, BaseCombatTask):
                 for half in (0, 1):
                     self._equip_token(half, plan.tokens[half])
                 self.navigate_ui('海墟进入战斗地图',
-                    lambda f: self._button(f, (.72, .88, .93, .95), '开启挑战') if self._detail(f, floor) else None,
+                    self._challenge_button,
                     lambda f: self.in_team_and_world(frame=f) and not self._detail(f),
                     attempts=1, timeout=120, identity=('sea_start', floor))
                 self._check_world_team(plan.upper)

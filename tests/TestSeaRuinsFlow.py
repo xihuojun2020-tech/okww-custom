@@ -54,38 +54,50 @@ class TestSeaRuinsFlow(unittest.TestCase):
         self.assertIsNone(t._observing_half)
         self.assertTrue(t.skip_combat_check)
 
-    def test_lower_transition_recenters_once_aligns_then_walks(self):
+    def test_lower_transition_reuses_background_walker(self):
         t = self.task()
-        t._prompt.side_effect = [False, False, True]
+        t._prompt.return_value = True
         t._upper_end.return_value = True
-        with patch('src.task.AutoSeaRuinsTask.vision.exit_marker', side_effect=[(.8,.3,.9),(.5,.3,.9)]):
+        def walk(find, **kwargs):
+            self.assertEqual(kwargs['time_out'], 60)
+            find()
+            return kwargs['end_condition']()
+        t.walk_to_box.side_effect = walk
+        with patch('src.task.AutoSeaRuinsTask.vision.exit_marker', return_value=(.8,.3,.9)):
             AutoSeaRuinsTask._enter_lower(t)
+        t.ensure_in_front.assert_not_called()
         t.middle_click.assert_called_once()
-        t._turn.assert_called_once()
-        self.assertEqual([c.args[0] for c in t.send_key.call_args_list], ['w', 'f'])
+        t.box_of_screen.assert_called_once_with(.795, .295, .805, .305)
+        self.assertEqual([c.args[0] for c in t.send_key.call_args_list], ['f'])
         self.assertGreaterEqual(t._release.call_count, 3)
 
     def test_lost_upper_state_stops_without_f(self):
         t = self.task()
         t._prompt.return_value = False
         t._upper_end.return_value = False
+        t.walk_to_box.side_effect = lambda find, **kw: kw['end_condition']()
         with self.assertRaisesRegex(RuntimeError, '提示消失'):
             AutoSeaRuinsTask._enter_lower(t)
         t.send_key.assert_not_called()
         self.assertGreaterEqual(t._release.call_count, 2)
 
-    def test_turn_relative_input_is_foreground_only_and_clamped(self):
+    def test_missing_marker_stops_and_releases_without_f(self):
         t = self.task()
-        t.hwnd.hwnd = 123
-        t.width = 1000
-        with patch('src.task.AutoSeaRuinsTask.win32gui.GetForegroundWindow', return_value=123) as foreground, \
-                patch('src.task.AutoSeaRuinsTask.win32api.mouse_event') as move:
-            AutoSeaRuinsTask._turn(t, .8)
-            self.assertEqual(move.call_args.args[1], 120)
-            foreground.return_value = 456
-            with self.assertRaisesRegex(RuntimeError, '前台'):
-                AutoSeaRuinsTask._turn(t, .8)
-            move.assert_called_once()
+        t.walk_to_box.side_effect = lambda find, **kw: find()
+        with patch('src.task.AutoSeaRuinsTask.vision.exit_marker', return_value=None):
+            with self.assertRaisesRegex(RuntimeError, '标记丢失'):
+                AutoSeaRuinsTask._enter_lower(t)
+        t.send_key.assert_not_called()
+        self.assertGreaterEqual(t._release.call_count, 2)
+
+    def test_walking_timeout_and_disappeared_prompt_do_not_press_f(self):
+        for result in (False, True):
+            t = self.task()
+            t.walk_to_box.return_value = result
+            t._prompt.return_value = False
+            with self.assertRaises(RuntimeError):
+                AutoSeaRuinsTask._enter_lower(t)
+            t.send_key.assert_not_called()
 
     def test_continue_checks_announced_destination_before_click(self):
         t = self.task()

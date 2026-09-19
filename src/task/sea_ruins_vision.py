@@ -68,7 +68,7 @@ def exit_marker(frame):
     roi = image[150:850, 400:1800]
     mask = cv2.GaussianBlur(cv2.inRange(roi, (200, 200, 200), (255, 255, 255)), (3, 3), 0)
     best = None
-    for name in ('exit', 'exit_side', 'exit_close'):
+    for name in ('exit_core', 'exit', 'exit_side', 'exit_close'):
         template = cv2.GaussianBlur(cv2.inRange(reference(name), (200, 200, 200), (255, 255, 255)), (3, 3), 0)
         for scale in (.8, 1., 1.2):
             needle = cv2.resize(template, None, fx=scale, fy=scale, interpolation=cv2.INTER_NEAREST)

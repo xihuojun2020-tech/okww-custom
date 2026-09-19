@@ -84,3 +84,14 @@ class TestSeaRuins(unittest.TestCase):
             label.y -= 200*scale
             self.assertFalse(v.interaction_prompt(frame, [label], '进入下半海域'))
         self.assertIsNone(v.exit_marker(np.zeros((720, 1280, 3), np.uint8)))
+
+    def test_user_exit_backgrounds(self):
+        for i in range(4):
+            sample = cv2.imread(str(ROOT/f'exit_sample_{i}.png'))
+            frame = np.zeros((1152, 2048, 3), np.uint8)
+            h, w = sample.shape[:2]
+            frame[400:400+h, 1000:1000+w] = sample
+            self.assertIsNotNone(v.exit_marker(frame), i)
+            frame[:] = 0
+            frame[300:300+h, 20:20+w] = sample
+            self.assertIsNone(v.exit_marker(frame), i)
