@@ -163,6 +163,16 @@ def process_capture(executor):
     requests = getattr(executor, '_completion_capture_requests', None)
     if requests is None:
         return
+    task = getattr(executor, 'current_task', None)
+    if (getattr(task, 'running', False)
+            and any(task is trigger for trigger in getattr(executor, 'trigger_tasks', ()))):
+        # Keep the request queued until this poll unwinds. Never read identity
+        # from a nested combat sleep; expired requests still get a timely error.
+        with requests.mutex:
+            if requests.queue:
+                pending, expires, _ = requests.queue[0]
+                if getattr(pending, 'feature_code', False) and time.monotonic() <= expires:
+                    return
     try:
         future, deadline, profile_id = requests.get_nowait()
     except queue.Empty:

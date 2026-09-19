@@ -167,6 +167,26 @@ class TestEchoesRemainTask(unittest.TestCase):
 
 
 class TestQuickFormationRetry(unittest.TestCase):
+    def test_support_and_retry_navigation_recover_lost_click_and_stop_at_target(self):
+        for label, delay in (('选中支援声骸',3),('重新挑战若梦副本',5)):
+            for enter_on in (0,1,2,4):
+                with self.subTest(label=label,enter_on=enter_on):
+                    task,clock,frames=self.make_task(enter_on=enter_on)
+                    times=[]
+                    task._click.side_effect=lambda *args: times.append(clock[0])
+                    def navigate():
+                        return task.navigate_ui(label,task._formation_page,task._roster_page,
+                            action=lambda _:task._click(.3,.4), attempts=3,retry_after=delay)
+                    with patch('src.task.EchoesRemainTask.time.monotonic',side_effect=lambda:clock[0]):
+                        if enter_on==4:
+                            with self.assertRaisesRegex(RuntimeError,'上限'):
+                                navigate()
+                        else:
+                            self.assertIs(navigate(),frames[2])
+                    self.assertEqual(task._click.call_count,min(enter_on,3))
+                    for previous,current in zip(times,times[1:]):
+                        self.assertGreaterEqual(current-previous,delay)
+
     def test_navigation_transitions_use_requested_target_and_retry(self):
         for label, key in (('前往','event_enter'), ('单人挑战','single')):
             for height in (1080,1440):

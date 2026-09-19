@@ -7,6 +7,12 @@ import numpy as np
 CHESTS = ((20, .392), (40, .526), (60, .660), (80, .794), (100, .927))
 
 
+def activity_digits_image(image):
+    """Isolate bright score digits from the textured guidebook background."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    return cv2.cvtColor(cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY_INV)[1], cv2.COLOR_GRAY2BGR)
+
+
 def resource_values(boxes, width):
     current, reserve = set(), set()
     for box in boxes:

@@ -352,6 +352,10 @@ class TaskExecutor:
         return self._frame
 
     def check_enabled(self, check_pause=True):
+        # Yield a paused background poll without disabling its user's toggle.
+        # Foreground tasks retain their paused stack and still block binding.
+        if self.paused and any(self.current_task is task for task in getattr(self, 'trigger_tasks', ())):
+            raise TaskDisabledException()
         if getattr(self, '_completion_capture_requests', None) is not None:
             from src.evidence.service import process_capture
             process_capture(self)
@@ -709,6 +713,10 @@ class TaskExecutor:
                     communicate.screenshot.emit(self.frame, name, True, None)
                 self.current_task = None
                 communicate.task.emit(None)
+            finally:
+                task.running = False
+                if self.current_task is task:
+                    self.current_task = None
         self.destroy()
 
     def stop(self):

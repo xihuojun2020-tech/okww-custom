@@ -7,6 +7,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2] / 'assets/images/activities/echoes_remain/support'
 KINDS = ('攻击型', '控制型', '生存型', '控制型', '支援型', '支援型', '生存型', '攻击型', '攻击型')
 PREFERENCES = {'输出': (7, 8, 0), '治疗': (6, 2), '辅助': (1, 3, 4, 5)}
+PREFERRED_SUPPORT = 5  # Gold mask: first choice for every role when available.
 SLOTS = ((.1915, .755), (.484, .755), (.776, .755))
 
 
@@ -37,7 +38,7 @@ def challenge_prompt_state(frame, boxes):
     return state
 
 
-@lru_cache(maxsize=10)
+@lru_cache(maxsize=12)
 def reference(index):
     return cv2.imdecode(np.frombuffer((ROOT / f'{index}.png').read_bytes(), np.uint8), 1)
 
@@ -52,7 +53,11 @@ def icon_score(image, index):
     # Exclude selection border and corner badges; compare the same inner artwork.
     a = cv2.resize(image, (80, 80))[10:70, 10:70]
     b = cv2.resize(reference(index), (80, 80))[10:70, 10:70]
-    return float(cv2.matchTemplate(a, b, cv2.TM_CCOEFF_NORMED)[0, 0])
+    # Reference cards can carry a central lock; equipped/unlocked artwork does not.
+    # Lock detection remains separate in unlocked(), never part of identity scoring.
+    mask = np.ones((60, 60), np.uint8)
+    mask[18:43, 18:43] = 0
+    return float(cv2.matchTemplate(a, b, cv2.TM_CCOEFF_NORMED, mask=mask)[0, 0])
 
 
 def unlocked(frame, index):
@@ -65,7 +70,8 @@ def unlocked(frame, index):
 def choose_support(frame, role):
     if role not in PREFERENCES:
         raise RuntimeError('角色活动定位未知，不能选择声骸')
-    return next((i for i in PREFERENCES[role] if unlocked(frame, i)), None)
+    order = (PREFERRED_SUPPORT,) + tuple(i for i in PREFERENCES[role] if i != PREFERRED_SUPPORT)
+    return next((i for i in order if unlocked(frame, i)), None)
 
 
 def support_point(index):
@@ -79,11 +85,19 @@ def selected_support(frame, index):
     return selection_marker_present(image[y:y+168, x:x+168])
 
 
-def equipped(frame, slot, index):
+def support_slot_state(frame, slot):
+    """Occupancy only; callers must first verify the formation page and team."""
     image = normalized(frame)
     x = (351, 950, 1548)[slot]
-    icon = image[830:912, x:x+82]
-    return icon_score(icon, index) >= .60
+    gray = cv2.cvtColor(image[830:912, x:x+82], cv2.COLOR_BGR2GRAY)
+    plus = cv2.cvtColor(reference('slot_plus'), cv2.COLOR_BGR2GRAY)
+    if cv2.matchTemplate(gray[15:67, 15:67], plus, cv2.TM_CCOEFF_NORMED).max() >= .80:
+        return 'empty'
+    # Absence of '+' alone is not success: require visible artwork, not a blank/fade.
+    inner = gray[12:70, 12:70]
+    if inner.std() >= 20 and np.mean(cv2.Canny(inner, 40, 100) > 0) >= .08:
+        return 'occupied'
+    return 'unknown'
 
 
 def enabled_start(frame):

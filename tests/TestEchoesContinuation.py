@@ -6,8 +6,8 @@ from types import SimpleNamespace
 from ok import TaskDisabledException
 import cv2
 
-from src.task.echoes_support import choose_support, unlocked, equipped, enabled_start, challenge_prompt_state
-from src.task.echoes_continuation import activity_role, event_echo
+from src.task.echoes_support import choose_support, unlocked, support_slot_state, enabled_start, challenge_prompt_state
+from src.task.echoes_continuation import activity_role, event_echo, character_name_key
 from src.task.EchoesRemainTask import EchoesRemainTask, canonical_stage
 from src.char.BaseChar import CharType
 
@@ -15,6 +15,49 @@ ROOT = Path('tests/fixtures/echoes_remain/continuation')
 
 
 class TestEchoesContinuation(unittest.TestCase):
+    def test_support_selection_retries_through_navigation(self):
+        task=Mock(spec=EchoesRemainTask)
+        task.last_result={'stage':'test','members':[{'name':'a','role':'治疗'}]}
+        task._wait_support_choice.return_value=2
+        task._support_page.return_value=True
+        task._support_selection_state.return_value=dict(page=True,category=True,selected=True)
+        EchoesRemainTask._equip_supports(task)
+        selections=[c for c in task.navigate_ui.call_args_list if c.args[0]=='选中支援声骸']
+        self.assertEqual(len(selections),1)
+        self.assertEqual(selections[0].kwargs['attempts'],3)
+        self.assertTrue(selections[0].args[2](None))
+
+    def test_retry_button_has_separate_click_budget(self):
+        task=self.retry_task(['failed','success'])
+        EchoesRemainTask._challenge_event(task)
+        retry=task.navigate_ui.call_args_list[0]
+        self.assertEqual(retry.kwargs['attempts'],3)
+        self.assertGreaterEqual(retry.kwargs['retry_after'],5)
+
+    def test_settlement_signal_is_not_logged_as_combat_error(self):
+        from src.combat.CombatCheck import CombatCheck
+        from src.task.echoes_continuation import EventSettlement
+        task=Mock();task.do_check_in_combat.side_effect=EventSettlement()
+        with patch('src.combat.CombatCheck.logger') as logger:
+            with self.assertRaises(EventSettlement):
+                CombatCheck.in_combat(task)
+            logger.error.assert_not_called()
+
+    def test_lucilla_alias_is_exact_and_preserves_name_guards(self):
+        import gettext
+        self.assertEqual(character_name_key('洛瑟拉'), '洛瑟菈')
+        for text in ('洛瑟', '洛瑟菈未知', '洛可可'):
+            self.assertEqual(character_name_key(text), text)
+        task = Mock(spec=EchoesRemainTask)
+        task.tr = gettext.translation('ok', 'i18n', ['zh_CN']).gettext
+        task.last_result = {'stage': '燃核兽形·浅梦'}
+        task._formation_for_stage.return_value = True
+        for names, confidence in ((('洛瑟拉', '绯雪', '千咲'), .79),
+                                  (('洛瑟拉', '洛瑟菈', '千咲'), .99),
+                                  (('未知角色', '绯雪', '千咲'), .99)):
+            task.ocr.side_effect = [[SimpleNamespace(name=n, confidence=confidence)] for n in names]
+            self.assertIsNone(EchoesRemainTask._read_formation_members(task, None))
+
     def test_confirm_names_requires_consecutive_matching_reads(self):
         task=Mock(spec=EchoesRemainTask)
         task.last_result={}
@@ -158,9 +201,22 @@ class TestEchoesContinuation(unittest.TestCase):
         for height in (720, 1080, 1440, 2160):
             frame = cv2.resize(cv2.imread(str(ROOT/'support.png')), (height*16//9, height))
             self.assertEqual([unlocked(frame,i) for i in range(9)], [True]*7+[False]*2)
-            self.assertEqual(choose_support(frame, '输出'), 0)
-            self.assertEqual(choose_support(frame, '治疗'), 6)
-            self.assertEqual(choose_support(frame, '辅助'), 1)
+            for role in ('输出', '治疗', '辅助'):
+                self.assertEqual(choose_support(frame, role), 5)
+
+    def test_gold_mask_priority_and_original_role_fallbacks(self):
+        for role, order in {'输出': (7,8,0), '治疗': (6,2), '辅助': (1,3,4,5)}.items():
+            with self.subTest(role=role):
+                with patch('src.task.echoes_support.unlocked', return_value=True) as available:
+                    self.assertEqual(choose_support(None, role), 5)
+                    available.assert_called_once_with(None, 5)
+                fallback = [i for i in order if i != 5]
+                for offset, expected in enumerate(fallback):
+                    with patch('src.task.echoes_support.unlocked',
+                               side_effect=lambda f,i,allowed=fallback[offset:]: i in allowed):
+                        self.assertEqual(choose_support(None, role), expected)
+                with patch('src.task.echoes_support.unlocked', return_value=False):
+                    self.assertIsNone(choose_support(None, role))
 
     def test_actual_equipment_and_disabled_button(self):
         for height in (720,1080,1440,2160):
@@ -169,8 +225,66 @@ class TestEchoesContinuation(unittest.TestCase):
             self.assertTrue(enabled_start(full))
             self.assertFalse(enabled_start(empty))
             for slot, echo in enumerate((6,0,1)):
-                self.assertTrue(equipped(full,slot,echo), (height,slot))
-                self.assertFalse(equipped(empty,slot,echo))
+                self.assertEqual(support_slot_state(full,slot), 'occupied', (height,slot))
+                self.assertEqual(support_slot_state(empty,slot), 'empty')
+
+    def test_actual_second_equipment_and_empty_third_slot(self):
+        for name in ('equipment_failure_1', 'equipment_failure_2', 'equipment_failure_3'):
+            original = cv2.imread(str(ROOT / f'{name}.png'))
+            for height in (720, 1080, 1440, 2160):
+                frame = cv2.resize(original, (height*16//9, height))
+                with self.subTest(image=name, height=height):
+                    self.assertEqual([support_slot_state(frame, slot) for slot in range(3)],
+                                     ['occupied', 'occupied', 'empty'])
+                    self.assertFalse(enabled_start(frame))
+
+    def test_actual_second_equipment_verification_reaches_third_slot(self):
+        task = Mock(spec=EchoesRemainTask)
+        frame = cv2.imread(str(ROOT / 'equipment_failure_3.png'))
+        # Synthetic final frame: copy the already verified first support into slot 3.
+        from src.task.echoes_support import normalized
+        final = normalized(frame).copy()
+        final[830:912,1548:1630] = final[830:912,351:433]
+        final[1040:1075,1660:1850] = 255
+        task.last_result = {'stage':'test', 'members':[
+            {'name':'洛瑟菈','role':'辅助'}, {'name':'绯雪','role':'输出'}, {'name':'千咲','role':'辅助'}]}
+        task._verify_team_names.return_value = True
+        task._equipped_slots.side_effect = lambda f, slots: EchoesRemainTask._equipped_slots(task, f, slots)
+        task._wait_support_choice.side_effect = [1, 7, 1]
+        task._support_selection_state.return_value = dict(page=True, category=True, selected=True)
+        task._wait.side_effect = lambda probe, reason: probe(final)
+        visited = []
+        def navigate(label, source, target, **kwargs):
+            if label == '装配支援声骸':
+                slot = kwargs['identity'][1]
+                self.assertTrue(target(final if slot == 2 else frame))
+                visited.append(slot)
+            return frame
+        task.navigate_ui.side_effect = navigate
+        EchoesRemainTask._equip_supports(task)
+        self.assertEqual(visited, [0, 1, 2])
+        self.assertEqual(task.last_result['supports'], [1, 7, 1])
+
+    def test_missing_plus_without_visible_artwork_is_unknown(self):
+        import numpy as np
+        for value in (0, 80, 255):
+            frame = np.full((1152, 2048, 3), value, np.uint8)
+            self.assertEqual([support_slot_state(frame, i) for i in range(3)], ['unknown']*3)
+        frame = cv2.imread(str(ROOT/'empty.png'))
+        frame[845:900,365:420] = frame[845,365]
+        self.assertEqual(support_slot_state(frame, 0), 'unknown')
+
+    def test_wrong_page_and_empty_previous_slot_block_confirmation(self):
+        task = Mock(spec=EchoesRemainTask)
+        task.last_result = {}
+        frame = cv2.imread(str(ROOT/'equipment_failure_3.png'))
+        task._verify_team_names.return_value = False
+        self.assertFalse(EchoesRemainTask._equipped_slots(task, frame, range(2)))
+        task._verify_team_names.return_value = True
+        self.assertTrue(EchoesRemainTask._equipped_slots(task, frame, range(2)))
+        self.assertFalse(EchoesRemainTask._equipped_slots(task, frame, range(3)))
+        self.assertEqual(task.last_result['support_slot_observation']['slots'],
+                         ['occupied', 'occupied', 'empty'])
 
     def test_role_override_is_activity_only(self):
         self.assertEqual(activity_role('char_suisui'), '治疗')
@@ -249,7 +363,7 @@ class TestEchoesContinuation(unittest.TestCase):
         with patch('src.task.echoes_continuation.choose_support',side_effect=[1,0,1]):
             EchoesRemainTask._equip_supports(task)
         self.assertEqual(task.last_result['supports'],[1,0,1])
-        self.assertEqual(task.navigate_ui.call_count,6)
+        self.assertEqual(task.navigate_ui.call_count,9)
 
     def test_support_choice_waits_for_repeated_valid_frame(self):
         task=Mock(spec=EchoesRemainTask)
@@ -273,7 +387,7 @@ class TestEchoesContinuation(unittest.TestCase):
             self.assertIsNone(probe(normal))
             return probe(normal)
         task._wait.side_effect=wait
-        self.assertEqual(EchoesRemainTask._wait_support_choice(task,{'name':'达妮娅','role':'辅助'}),1)
+        self.assertEqual(EchoesRemainTask._wait_support_choice(task,{'name':'达妮娅','role':'辅助'}),5)
 
     def test_combat_slot_identity_uses_verified_order(self):
         task=Mock(spec=EchoesRemainTask)
@@ -289,25 +403,107 @@ class TestEchoesContinuation(unittest.TestCase):
         self.assertEqual([c.call_args.args[1] for c in classes],[0,1,2])
         self.assertEqual([c.is_current_char for c in task.chars],[False,True,False])
 
-    def test_complete_requires_all_eight_game_counts(self):
+    def final_card(self, text='最高分数：1234'):
+        return [SimpleNamespace(name='终梦之渊', x=190, y=740),
+                SimpleNamespace(name=text, x=190, y=780)]
+
+    def test_final_stage_uses_score_without_left_difficulty_label(self):
         task=Mock(spec=EchoesRemainTask);task.last_result={};task.height=1000
-        roman=('I','II','III','IV','V','VI','VII','VIII')
-        boxes=[]
-        for i,n in enumerate(roman):
-            boxes += [SimpleNamespace(name=n,x=50,y=100+i*80),
-                      SimpleNamespace(name='2/2',x=100,y=110+i*80)]
+        for text, expected in [('最高分数：0',True),('最高分数：1,234',False)]:
+            task.ocr.return_value=self.final_card(text)
+            self.assertEqual(EchoesRemainTask._selected_stage_pending(task,None,'终梦之渊·深梦'),expected)
+        for boxes in ([],self.final_card('最高分数：'),self.final_card('最高分数：1x'),
+                      self.final_card()+self.final_card()):
+            task.ocr.return_value=boxes
+            with self.assertRaisesRegex(RuntimeError,'最终关卡.*无法读取'):
+                EchoesRemainTask._selected_stage_pending(task,None,'终梦之渊·深梦')
+
+    def test_final_score_does_not_bypass_other_stage_difficulty(self):
+        task=Mock(spec=EchoesRemainTask);task.last_result={};task.height=1000
+        task.ocr.return_value=self.final_card()
+        with self.assertRaisesRegex(RuntimeError,'通关状态无法确认'):
+            EchoesRemainTask._selected_stage_pending(task,None,'寂空星视·深梦')
+
+    def test_final_score_is_bound_to_its_card_and_accepts_split_ocr(self):
+        task=Mock(spec=EchoesRemainTask);task.last_result={};task.height=1000
+        boxes=self.final_card('最高分数：')
+        boxes.append(SimpleNamespace(name='1，234',x=290,y=780))
         task.ocr.return_value=boxes
+        self.assertFalse(EchoesRemainTask._selected_stage_pending(task,None,'终梦之渊·深梦'))
+        self.assertEqual(task.last_result['final_stage_score'],1234)
+        for y in (680,840):
+            task.ocr.return_value=[boxes[0],SimpleNamespace(name='最高分数：9999',x=190,y=y)]
+            with self.assertRaisesRegex(RuntimeError,'最终关卡.*无法读取'):
+                EchoesRemainTask._selected_stage_pending(task,None,'终梦之渊·深梦')
+
+    def test_complete_requires_seven_counts_and_final_score(self):
+        task=Mock(spec=EchoesRemainTask);task.last_result={};task.height=1000
+        titles=('终世王骸','荣城武神','溺梦魔影','堕梦神躯','孤寂遗魂','燃核兽形','寂空星视')
+        boxes=[]
+        for i,n in enumerate(titles):
+            boxes += [SimpleNamespace(name=n,x=190,y=100+i*80),
+                      SimpleNamespace(name='2/2',x=190,y=135+i*80)]
+        task.ocr.return_value=boxes+self.final_card()
         EchoesRemainTask._audit_completion(task)
         self.assertTrue(task.last_result['activity_complete'])
-        task.last_result={};boxes[-1].name='1/2'
+        self.assertEqual(task.last_result['final_stage_score'],1234)
+        task.last_result={'rounds':[{'stage':'终梦之渊·深梦','outcome':'failed'}]}
         EchoesRemainTask._audit_completion(task)
         self.assertFalse(task.last_result['activity_complete'])
+        # Progress is collected across scrolling pages, not required in one frame.
+        task.last_result={};task.ocr.side_effect=[boxes[:8],boxes[8:]+self.final_card()]
+        EchoesRemainTask._audit_completion(task)
+        self.assertTrue(task.last_result['activity_complete'])
+        task.ocr.side_effect=None
+        for incomplete in (boxes+self.final_card('最高分数：0'), boxes,
+                           boxes[2:]+self.final_card(),boxes+self.final_card('最高分数：')):
+            task.last_result={};task.ocr.return_value=incomplete
+            EchoesRemainTask._audit_completion(task)
+            self.assertFalse(task.last_result['activity_complete'])
+        boxes[-1].name='1/2'
+        task.last_result={};task.ocr.return_value=boxes+self.final_card()
+        EchoesRemainTask._audit_completion(task)
+        self.assertFalse(task.last_result['activity_complete'])
+
+    def test_final_transition_and_completed_final_do_not_repeat(self):
+        task=Mock(spec=EchoesRemainTask);task.height=1000
+        task.last_result={'stage':'寂空星视·深梦'}
+        task._challenge_event.return_value='success'
+        task._stage_page.return_value='终梦之渊·深梦'
+        task.ocr.side_effect=[self.final_card('最高分数：0'),self.final_card()]
+        task._selected_stage_pending.side_effect=lambda f,s: EchoesRemainTask._selected_stage_pending(task,f,s)
+        EchoesRemainTask._continue_event(task)
+        self.assertEqual(task._challenge_event.call_count,2)
+        self.assertEqual(task.last_result['stage'],'终梦之渊·深梦')
+        self.assertEqual(task.last_result['phase'],'available_stages_finished')
+        task._open_quick.assert_called_once()
+        task._audit_completion.assert_called_once()
+
+    def test_pending_error_records_actual_next_stage(self):
+        task=Mock(spec=EchoesRemainTask);task.last_result={'stage':'寂空星视·深梦'}
+        task._challenge_event.return_value='success'
+        task._stage_page.return_value='终梦之渊·深梦'
+        task._selected_stage_pending.side_effect=RuntimeError('score unreadable')
+        with self.assertRaisesRegex(RuntimeError,'score unreadable'):
+            EchoesRemainTask._continue_event(task)
+        self.assertEqual(task.last_result['stage'],'终梦之渊·深梦')
+        self.assertEqual(task.last_result['rounds'],[{'stage':'寂空星视·深梦','outcome':'success'}])
+
+    def test_resume_final_stage_uses_shared_pending_check(self):
+        for score, enters in (('0',True),('1234',False)):
+            task=Mock(spec=EchoesRemainTask);task.height=1000;task.last_result={}
+            task._stage_page.return_value='终梦之渊·深梦'
+            task.ocr.return_value=self.final_card('最高分数：'+score)
+            task._selected_stage_pending.side_effect=lambda f,s: EchoesRemainTask._selected_stage_pending(task,f,s)
+            EchoesRemainTask._navigate(task)
+            self.assertEqual(task._open_quick.called,enters)
+            self.assertEqual(task._audit_completion.called,not enters)
 
     def test_partial_equipment_never_allows_start(self):
         frame=cv2.imread(str(ROOT/'equipped.png'))
         empty=cv2.imread(str(ROOT/'empty.png'))
         frame[830:912,950:1032]=empty[830:912,950:1032]
-        self.assertFalse(all(equipped(frame,i,e) for i,e in enumerate((6,0,1))))
+        self.assertFalse(all(support_slot_state(frame,i) == 'occupied' for i in range(3)))
 
 
 if __name__=='__main__':unittest.main()

@@ -3455,9 +3455,14 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             failure_text = '；周本待补检：' + '、'.join(pending)
         if failures:
             failure_text += '；失败账号：' + '、'.join(item['account'] for item in failures)
+            for item in failures:
+                detail = ' / '.join(str(item[key]) for key in ('stage', 'reason') if item.get(key))
+                if detail:
+                    failure_text += f'；{item["account"]}：{detail}'
         location = (f'停留在账号 {profile_status_label(current_account)}'
                     if current_account else '保持当前界面，不再切换账号')
-        message = f'序列本轮已处理完成，{location}{failure_text}。'
+        outcome = '本轮结束，仍有账号未完成' if failures else '序列本轮已处理完成'
+        message = f'{outcome}，{location}{failure_text}。'
         if failures and not current_account:
             message += '请检查游戏状态，必要时手动登录。'
         self.log_info(message, notify=False)

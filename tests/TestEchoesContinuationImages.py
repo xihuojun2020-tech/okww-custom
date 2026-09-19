@@ -1,5 +1,10 @@
 import unittest
 import gettext
+import tempfile
+from unittest.mock import Mock, patch
+from contextlib import ExitStack
+from types import SimpleNamespace
+import cv2
 from pathlib import Path
 from config import config
 from ok.test.TaskTestCase import TaskTestCase
@@ -16,12 +21,79 @@ class TestEchoesContinuationImages(TaskTestCase):
         self.set_image(f'tests/fixtures/echoes_remain/continuation/{name}.png')
         return self.task.frame
 
+    def test_real_selected_support_reaches_assembly_through_production_navigation(self):
+        selected=self.page('support_already_selected').copy()
+        unselected=cv2.resize(self.page('control_selected'),(selected.shape[1],selected.shape[0]))
+        task=self.task
+        real_executor=task.executor
+        class OfflineExecutor(SimpleNamespace):
+            def __getattr__(self,name):
+                return getattr(real_executor,name)
+        # Surrounding formation/equipment transitions are stubbed; selection OCR,
+        # _equip_supports and selection navigate_ui use production implementations.
+        for click_threshold in (0,2,99,-1):
+            with self.subTest(click_threshold=click_threshold), ExitStack() as stack:
+                clock=[0.]; clicks=Mock(); assembled=[]
+                blank=selected*0
+                frame=lambda: blank if click_threshold==-1 else (
+                    selected if clicks.call_count>=click_threshold else unselected)
+                executor=OfflineExecutor(check_enabled=Mock(),current_task=task,paused=False,
+                    device_manager=SimpleNamespace(hwnd_window=SimpleNamespace(hwnd=1,exists=True)),
+                    method=SimpleNamespace(width=selected.shape[1],height=selected.shape[0]),
+                    _last_frame_time=0)
+                def capture():
+                    executor._last_frame_time+=1
+                    return frame()
+                original_navigate=task.navigate_ui
+                def navigate(label,source,target,**kwargs):
+                    if label=='选中支援声骸':
+                        return original_navigate(label,source,target,**kwargs)
+                    if label=='装配支援声骸':
+                        self.assertIsNotNone(source(frame()))
+                        assembled.append(kwargs['identity'][1])
+                    return frame()
+                replacements={'_executor':executor,'_guard':Mock(),'_guard_account_input':Mock(),
+                    'next_frame':capture,'require_game_frame':frame,'_click':clicks,
+                    'sleep':lambda dt:clock.__setitem__(0,clock[0]+dt),
+                    '_wait':Mock(return_value=selected),'_wait_support_choice':Mock(return_value=0),
+                    'navigate_ui':navigate,'_quick_capture':Mock(),'screenshot':Mock(),
+                    'info_set':Mock(),'log_info':Mock(),'log_warning':Mock()}
+                for name,value in replacements.items():
+                    stack.enter_context(patch.object(task,name,value))
+                stack.enter_context(patch('src.task.EchoesRemainTask.time.monotonic',side_effect=lambda:clock[0]))
+                task.last_result={'stage':'终世王骸·浅梦','members':[{'name':'test','role':'输出'}]*3}
+                if click_threshold in (99,-1):
+                    with self.assertRaisesRegex(RuntimeError,'上限|耗尽|超时'):
+                        task._equip_supports()
+                    self.assertEqual(assembled,[])
+                    self.assertEqual(clicks.call_count,3 if click_threshold==99 else 0)
+                else:
+                    task._equip_supports()
+                    self.assertEqual(assembled,[0,1,2])
+                    self.assertEqual(clicks.call_count,click_threshold)
+                    self.assertEqual(task.last_result['supports'],[0,0,0])
+
     def test_support_selection_and_type(self):
         f=self.page('support')
         self.assertTrue(self.task._support_page(f))
         self.assertTrue(selected_support(f,0))
         self.assertFalse(selected_support(f,1))
         self.assertIsNotNone(self.task._button(f,(.86,.10,.97,.18),'攻击型'))
+
+    def test_actual_missed_support_click_is_not_mistaken_for_selection(self):
+        from src.task.echoes_support import choose_support
+        f=self.page('support_click_missed')
+        self.assertEqual(choose_support(f,'治疗'),2)
+        state=self.task._support_selection_state(f,2)
+        self.assertTrue(state['page'])
+        self.assertFalse(state['selected'])
+        self.assertFalse(state['category'])
+        self.assertTrue(self.task._support_selection_state(f,0)['selected'])
+
+    def test_actual_retry_click_failure_still_has_retry_button(self):
+        f=self.page('retry_click_missed')
+        self.assertEqual(self.task._settlement(f),'failed')
+        self.assertIsNotNone(self.task._button(f,(.54,.79,.73,.90),'重新挑战'))
 
     def test_start_with_ocr_missing_f(self):
         f=self.page('start_f_icon')
@@ -44,6 +116,32 @@ class TestEchoesContinuationImages(TaskTestCase):
         self.assertTrue(stage and stage.endswith('浅梦'),stage)
         self.assertTrue(self.task._selected_stage_pending(f,stage))
 
+    def test_final_stage_zero_score_without_difficulty_label(self):
+        original=self.page('final_stage_zero')
+        with tempfile.TemporaryDirectory() as folder:
+            for height in (720,1080,1440,2160):
+                with self.subTest(height=height):
+                    path=Path(folder)/'final.png'
+                    cv2.imwrite(str(path),cv2.resize(original,(height*16//9,height)))
+                    self.set_image(str(path))
+                    f=self.task.frame
+                    self.task.last_result={}
+                    stage=self.task._stage_page(f)
+                    self.assertEqual(stage,'终梦之渊·深梦')
+                    self.assertTrue(self.task._selected_stage_pending(f,stage))
+
+    def test_final_screenshot_audit_reads_names_not_roman_numerals(self):
+        f=self.page('final_stage_zero')
+        self.task.last_result={}
+        # Fixed offline frame: no scrolling, sleeps or live game input.
+        with patch.object(self.task,'next_frame',return_value=f), \
+             patch.object(self.task,'_guard'), patch.object(self.task,'scroll_relative'), \
+             patch.object(self.task,'sleep'):
+            self.task._audit_completion()
+        self.assertEqual(self.task.last_result['stage_counts'],dict.fromkeys(range(2,8),2))
+        self.assertEqual(self.task.last_result['final_stage_score'],0)
+        self.assertFalse(self.task.last_result['activity_complete'])
+
     def test_lynae_identity_translates_and_matches_formation(self):
         self.task.tr=gettext.translation('ok',localedir='i18n',languages=['zh_CN']).gettext
         self.task.last_result={'stage':'堕梦神躯·浅梦'}
@@ -63,6 +161,36 @@ class TestEchoesContinuationImages(TaskTestCase):
             members=self.task._read_formation_members(self.page(image))
             self.assertIsNotNone(members,image)
             self.assertEqual([m['name'] for m in members],names)
+
+    def test_actual_lucilla_ocr_failures_read_and_reverify_same_team(self):
+        self.task.tr = gettext.translation('ok', localedir='i18n', languages=['zh_CN']).gettext
+        for image in ('lucilla_name_failure_1', 'lucilla_name_failure_2'):
+            with self.subTest(image=image):
+                self.task.last_result = {'stage': '燃核兽形·浅梦'}
+                frame = self.page(image)
+                members = self.task._read_formation_members(frame)
+                self.assertIsNotNone(members)
+                self.assertEqual([m['name'] for m in members], ['洛瑟菈', '绯雪', '千咲'])
+                self.assertEqual([m['identity'] for m in members],
+                                 ['char_lucilla', 'char_hiyuki', 'char_chisa'])
+                self.task.last_result['members'] = members
+                self.assertTrue(self.task._verify_team_names(frame))
+                self.task.last_result['members'] = list(reversed(members))
+                self.assertFalse(self.task._verify_team_names(frame))
+
+    def test_actual_equipment_frames_pass_page_names_and_first_two_slots(self):
+        self.task.tr = gettext.translation('ok', localedir='i18n', languages=['zh_CN']).gettext
+        for image in ('equipment_failure_1', 'equipment_failure_2', 'equipment_failure_3'):
+            with self.subTest(image=image):
+                self.task.last_result = {'stage': '燃核兽形·浅梦'}
+                frame = self.page(image)
+                members = self.task._read_formation_members(frame)
+                self.assertIsNotNone(members)
+                self.task.last_result['members'] = members
+                self.assertTrue(self.task._equipped_slots(frame, range(2)))
+                self.assertFalse(self.task._equipped_slots(frame, range(3)))
+                self.assertEqual(self.task.last_result['support_slot_observation']['slots'],
+                                 ['occupied', 'occupied', 'empty'])
 
     def test_control_support_failure_screenshot(self):
         f=self.page('control_selected')

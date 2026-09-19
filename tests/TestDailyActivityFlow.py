@@ -1,5 +1,5 @@
 import unittest
-from types import SimpleNamespace
+from types import SimpleNamespace, MethodType
 from unittest.mock import Mock, patch
 import numpy as np
 
@@ -149,6 +149,7 @@ class TestDailyActivityFlow(unittest.TestCase):
         task = Mock(spec=DailyTask)
         task.require_game_frame.return_value = np.zeros((90,160,3),np.uint8)
         task._daily_page_ready.return_value = True
+        task._restore_daily_claim_page.return_value = task.require_game_frame.return_value
         return task
 
     def test_claim_lost_first_click_retries_same_chest_only(self):
@@ -175,13 +176,54 @@ class TestDailyActivityFlow(unittest.TestCase):
 
     def test_reward_overlay_is_closed_before_verification(self):
         task = self.claim_task()
-        task._daily_page_ready.side_effect=[False,True]
-        task.ocr.return_value=[SimpleNamespace(name='获得奖励')]
+        task._restore_daily_claim_page = MethodType(DailyTask._restore_daily_claim_page, task)
+        task._daily_reward_overlay.side_effect = lambda f: (
+            'ready' if task.click_relative.call_count == 1 else None)
         with patch('src.task.daily_observation.claimable_tiers',
                    side_effect=lambda f:[20] if not task.click_relative.called else []):
             DailyTask.claim_daily(task)
         self.assertEqual([c.args for c in task.click_relative.call_args_list],[(.392,.887),(.50,.78)])
-        self.assertEqual(task._open_daily_page.call_count,2)
+        task._open_daily_page.assert_called_once()
+
+    def test_delayed_animation_takes_priority_over_background_anchors(self):
+        task = self.claim_task()
+        task._daily_reward_overlay.side_effect = [None, 'opening', 'ready', None, None, None]
+        result = DailyTask._restore_daily_claim_page(task)
+        self.assertIs(result, task.require_game_frame.return_value)
+        task.click_relative.assert_called_once_with(.50, .78, after_sleep=.5)
+        self.assertEqual(task.next_frame.call_count, 6)
+        task._open_daily_page.assert_not_called()
+
+    def test_stuck_overlay_is_bounded_and_cannot_become_success(self):
+        task = self.claim_task()
+        task._daily_reward_overlay.return_value = 'ready'
+        with self.assertRaises(DailyActivityIncomplete):
+            DailyTask._restore_daily_claim_page(task)
+        self.assertEqual(task.click_relative.call_count, 3)
+        self.assertLessEqual(task.next_frame.call_count, 16)
+        task._open_daily_page.assert_not_called()
+
+    def test_animation_without_continue_prompt_gets_bounded_blank_click(self):
+        task = self.claim_task()
+        task._daily_reward_overlay.side_effect = lambda f: None if task.click_relative.called else 'opening'
+        DailyTask._restore_daily_claim_page(task)
+        task.click_relative.assert_called_once()
+
+    def test_unknown_page_never_counts_as_claimed(self):
+        task = self.claim_task()
+        task._daily_reward_overlay.return_value = None
+        task._daily_page_ready.return_value = False
+        with self.assertRaises(DailyActivityIncomplete):
+            DailyTask._restore_daily_claim_page(task)
+        task.click_relative.assert_not_called()
+
+    def test_one_click_awarding_all_tiers_does_not_click_stale_chests(self):
+        task = self.claim_task()
+        with patch('src.task.daily_observation.claimable_tiers',
+                   side_effect=lambda f: [] if task.click_relative.called else [20,40,60,80,100]):
+            DailyTask.claim_daily(task)
+        task.click_relative.assert_called_once_with(.392, .887, after_sleep=.7)
+        task.ensure_main.assert_called_once()
 
 
 if __name__ == '__main__':

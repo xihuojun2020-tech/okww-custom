@@ -985,7 +985,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
     def test_finish_reports_failure_without_login(self):
         class FakeTask:
             _finish_sequence = MultiAccountDailyTask._finish_sequence
-            failed_accounts = {'A4': {'account': 'A4'}}
+            failed_accounts = {'A4': {'account': 'A4', 'stage': 'claim daily', 'reason': '奖励遮罩未关闭'}}
 
             def __init__(self):
                 self.notifications = []
@@ -1006,6 +1006,9 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         task._finish_sequence()
         self.assertEqual(len(task.notifications), 1)
         self.assertIn('部分失败', task.notifications[0][0])
+        self.assertIn('本轮结束，仍有账号未完成', task.notifications[0][1])
+        self.assertIn('claim daily / 奖励遮罩未关闭', task.notifications[0][1])
+        self.assertNotIn('已处理完成', task.notifications[0][1])
         self.assertIn('必要时手动登录', task.notifications[0][1])
         self.assertNotIn('已登录回 profile-a1', task.notifications[0][1])
 
