@@ -95,3 +95,13 @@ class TestSeaRuins(unittest.TestCase):
             frame[:] = 0
             frame[300:300+h, 20:20+w] = sample
             self.assertIsNone(v.exit_marker(frame), i)
+
+    def test_low_exit_marker_from_failed_run(self):
+        for height in (720, 1080, 1440):
+            frame = cv2.resize(cv2.imread(str(ROOT/'exit_low.png')), (height*16//9, height))
+            marker = v.exit_marker(frame)
+            self.assertIsNotNone(marker, height)
+            self.assertAlmostEqual(marker[0], .595, delta=.018)
+            self.assertAlmostEqual(marker[1], .769, delta=.018)
+            frame[:, round(frame.shape[1]*.18):] = 0
+            self.assertIsNone(v.exit_marker(frame))

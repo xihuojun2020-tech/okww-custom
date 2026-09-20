@@ -65,7 +65,8 @@ def token_art(frame, rect):
 def exit_marker(frame):
     image = normalized(frame)
     # HUD's identical quest icon at x≈35 must never be accepted as a target.
-    roi = image[150:850, 400:1800]
+    # Include low world markers, while excluding left quest and bottom HUD.
+    roi = image[150:1000, 400:1800]
     mask = cv2.GaussianBlur(cv2.inRange(roi, (200, 200, 200), (255, 255, 255)), (3, 3), 0)
     best = None
     for name in ('exit_core', 'exit', 'exit_side', 'exit_close'):

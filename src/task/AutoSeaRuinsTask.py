@@ -15,6 +15,10 @@ class SeaPhaseEnded(Exception):
     pass
 
 
+class SeaExitMarkerLost(Exception):
+    pass
+
+
 class AutoSeaRuinsTask(WWOneTimeTask, BaseCombatTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -441,12 +445,36 @@ class AutoSeaRuinsTask(WWOneTimeTask, BaseCombatTask):
                 # The shared walker retains its last target. Stop keys before
                 # raising, never walk using a stale marker.
                 self._release()
-                raise RuntimeError('出口标记丢失，已停止移动')
+                raise SeaExitMarkerLost()
             x, y, _ = marker
             return self.box_of_screen(x-.005, y-.005, x+.005, y+.005)
 
         try:
-            if not self.walk_to_box(target, time_out=60, end_condition=arrived):
+            deadline = time.monotonic() + 60
+            reached = False
+            while (remaining := deadline - time.monotonic()) > 0:
+                try:
+                    reached = self.walk_to_box(target, time_out=remaining, end_condition=arrived)
+                    break
+                except SeaExitMarkerLost:
+                    self._release()
+                    self._status('出口标记暂时丢失，停步重新识别')
+                    # Restart the walker after recovery: its last_direction and
+                    # cached target are invalid once movement keys are released.
+                    for _ in range(10):
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            break
+                        self.sleep(min(.3, remaining))
+                        self.next_frame()
+                        reached = arrived()
+                        if reached or vision.exit_marker(self.frame) is not None:
+                            break
+                    else:
+                        raise RuntimeError('出口标记丢失，停步重试后仍未识别')
+                    if reached:
+                        break
+            if not reached:
                 raise RuntimeError('60秒内未找到F进入下半海域')
             self._release()
             self.next_frame()
