@@ -1459,6 +1459,9 @@ msgstr "Revisión del domingo"
 msgid "自动冥歌海墟"
 msgstr "Desafío automático de las ruinas marinas"
 
+msgid "请从再生海域7至11层的海墟详情页启动；识别当前层后使用原有预设和适配信物挑战至11层，出错暂停接管。"
+msgstr "Inicia desde la pantalla de detalles de los pisos 7–11 de Aguas Renacientes. Detecta el piso actual y usa equipos guardados y objetos adecuados hasta el piso 11. Si hay un error, pausa para permitir el control manual."
+
 msgid "使用完整预设编队，按周期属性与可用信物自动挑战再生海域7至11层；不含无尽、凹分和领奖。"
 msgstr "Usa equipos predefinidos completos y elige insignias según los atributos del ciclo para los pisos 7–11. No incluye modo infinito, repetición por puntuación ni recompensas."
 

@@ -32,6 +32,38 @@ class TestSeaRuinsImages(TaskTestCase):
         self.assertTrue(task._token_page(self.image('tokens_unavailable')))
         self.assertFalse(task._token_page(self.image('detail')))
 
+    def test_detail_start_floor(self):
+        for name, expected in (('detail', 7), ('start_eight', 8), ('next_floor', 8)):
+            frame = self.image(name)
+            for height in (720, 1080, 1440):
+                self.assertEqual(self.task._detail_floor(cv2.resize(frame, (height*16//9, height))), expected)
+        for name in ('map', 'tokens', 'presets_september20'):
+            self.assertIsNone(self.task._detail_floor(self.image(name)))
+
+    def test_failed_run_preset_and_team_identities(self):
+        frame = self.image('presets_september20')
+        expected = [('char_cartethyia', 'char_ciaccona', 'char_rover'),
+                    ('char_phrolova', 'char_cantarella', 'char_douling'),
+                    ('Augusta', 'char_iuno', 'char_shorekeeper')]
+        from src.task.sea_ruins import Preset
+        for height in (720, 1080, 1440):
+            resized = cv2.resize(frame, (height*16//9, height))
+            with self.subTest(height=height):
+                records = self.task._page_presets(resized)
+                self.assertEqual([p.members for p, _ in records[:3]], expected)
+                self.assertTrue(all(p.valid for p, _ in records[:3]))
+                self.assertTrue(self.task._members_match(resized, 0, Preset(1, expected[0])))
+                self.assertTrue(self.task._members_match(resized, 1, Preset(3, expected[2])))
+
+    def test_zani_reference_is_not_remapped_to_shorekeeper(self):
+        import numpy as np
+        from ok.feature.FeatureSet import FeatureSet
+        features = FeatureSet(False, 'assets/coco_annotations.json', 0, 0)
+        reference = features.get_feature_by_name(np.zeros((1440, 2560, 3), np.uint8), 'char_zani').mat
+        for height in (64, 90, 130):
+            avatar = cv2.resize(reference, None, fx=height/reference.shape[0], fy=height/reference.shape[0])
+            self.assertEqual(self.task._identify_character(avatar)[0], 'char_zani')
+
     def test_map_seven(self):
         for name in ('map', 'map_completed'):
             frame = self.image(name)

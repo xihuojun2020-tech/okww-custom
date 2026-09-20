@@ -3,6 +3,7 @@ import re
 import time
 import cv2
 import numpy as np
+from ok.feature.FeatureSet import FeatureSet
 
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.BaseCombatTask import BaseCombatTask, CombatStateUnknown, NotInCombatException, CharDeadException
@@ -25,7 +26,7 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = '自动冥歌海墟'
-        self.description = '使用完整预设编队，按周期属性与可用信物自动挑战再生海域7至11层；不含无尽、凹分和领奖。'
+        self.description = '请从再生海域7至11层的海墟详情页启动；识别当前层后使用原有预设和适配信物挑战至11层，出错暂停接管。'
         self.supported_languages = ['zh_CN']
         self.support_schedule_task = False
         self.default_config = {}
@@ -44,12 +45,16 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
     def _character_template_descriptors(self):
         if self._character_descriptors is None:
             self._character_descriptors = []
+            # Do not upscale the shared 720p HUD thumbnail: its lost detail can
+            # turn Shorekeeper into Zani. Keep this reference cache sea-local.
+            features = FeatureSet(False, 'assets/coco_annotations.json', 0, 0)
+            reference_frame = np.zeros((1440, 2560, 3), np.uint8)
             for name in char_names:
-                feature = self.get_feature_by_name(name)
+                feature = features.get_feature_by_name(reference_frame, name)
                 if feature is None or feature.mat is None:
                     continue
                 im = feature.mat
-                scale = 76 / max(1, im.shape[0])
+                scale = 130 / max(1, im.shape[0])
                 _, descriptor = self._avatar_orb.detectAndCompute(
                     cv2.resize(im, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC), None)
                 if descriptor is not None:
@@ -132,19 +137,24 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
             self._handling_unlock = False
 
     def _detail(self, frame, floor=None):
+        if floor is not None:
+            return self._detail_floor(frame) == floor
+        return bool(self._button(frame, (.025, .035, .15, .095), '海墟详情'))
+
+    def _detail_floor(self, frame):
         if not self._button(frame, (.025, .035, .15, .095), '海墟详情'):
-            return False
-        if floor is None:
-            return True
-        if str(floor) in self._small_text(frame, (.157, .12, .186, .168)):
-            return True
-        if floor == 7:
+            return None
+        numbers = [text for text in self._small_text(frame, (.150, .12, .195, .168)) if text.isdigit()]
+        if len(numbers) == 1 and numbers[0] in ('7', '8', '9', '10', '11'):
+            return int(numbers[0])
+        if self._button(frame, (.12, .18, .23, .24), '险滩'):
             region = vision.crop(cv2.resize(frame, (1280, 720)), (.145, .105, .20, .19))
             template = vision.reference('detail_seven')
             score = cv2.minMaxLoc(cv2.matchTemplate(cv2.cvtColor(region, cv2.COLOR_BGR2GRAY),
                 cv2.cvtColor(template, cv2.COLOR_BGR2GRAY), cv2.TM_CCOEFF_NORMED))[1]
-            return score >= .85 and bool(self._button(frame, (.12, .18, .23, .24), '险滩'))
-        return False
+            if score >= .85:
+                return 7
+        return None
 
     def _challenge_button(self, frame):
         if not self._detail(frame, self._floor):
@@ -215,7 +225,7 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
     def _page_presets(self, frame):
         records = []
         for top in vision.preset_card_tops(frame):
-            numbers = self._small_text(frame, (.042, top, .059, top+.029))
+            numbers = self._small_text(frame, (.042, top, .063, top+.036))
             if len(numbers) != 1 or not numbers[0].isdigit():
                 continue
             number = int(numbers[0])
@@ -241,7 +251,7 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
                         raise RuntimeError(f'预设{preset.number}跨页识别不一致')
                     collected[preset.number] = preset
                 else:
-                    self.log_warning(f'跳过空位或未知机制预设{preset.number}: {preset.members}')
+                    self.log_warning(f'跳过空位、重复或未识别角色预设{preset.number}: {preset.members}')
             image = cv2.resize(vision.crop(frame, (.035, .18, .275, .85)), (80, 120))
             repeats = repeats+1 if previous is not None and np.mean(cv2.absdiff(previous, image)) < 1.5 else 0
             if repeats >= 2:

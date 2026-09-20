@@ -16,6 +16,7 @@ class TestSeaRuinsRecovery(unittest.TestCase):
         t._floor, t._sea_stage = 7, stage
         t._sea_replan = False
         t._token_artwork = {}
+        t._wait.return_value = 7
         t.key_config = {'Resonance Key': 'e'}
         t.sleep_check_interval = .4
         t._sea_plan = SimpleNamespace(upper=Preset(1, ('a', 'b', 'c')),
@@ -95,6 +96,61 @@ class TestSeaRuinsRecovery(unittest.TestCase):
             SeaRuinsRecovery._run_sea_stages(t)
         t._pause_for_sea_error.assert_not_called()
         t._release.assert_called_once()
+
+    def test_start_reads_current_floor_without_navigation(self):
+        t = self.task('open')
+        t._wait.return_value = 8
+        with patch('src.task.sea_ruins_recovery.vision.normalized'):
+            self.assertEqual(SeaRuinsRecovery._sea_step(t), 'presets')
+        self.assertEqual((t._floor, t._start_floor), (8, 8))
+        t._open.assert_not_called()
+        t.openF2Book.assert_not_called()
+        t.click_relative.assert_not_called()
+        t._wait.assert_called_once_with(t._detail_floor,
+            '请进入再生海域7至11层的海墟详情页后继续；未确认左上角层号')
+
+    def test_resume_start_never_chooses_floor_seven_on_map(self):
+        t = self.task('open')
+        t._floor = None
+        t._map.return_value = True
+        self.assertEqual(SeaRuinsRecovery._resume_sea_stage(t), 'open')
+        t._seven_boat.assert_not_called()
+        t.click_relative.assert_not_called()
+
+    def test_expired_start_does_not_advance_after_continue(self):
+        t = self.task('open')
+        t._wait.return_value = 8
+        with patch('src.task.sea_ruins_recovery.vision.normalized'), \
+             patch('src.task.sea_ruins_recovery.season_rule', side_effect=ValueError('失效')):
+            for _ in range(2):
+                self.assertEqual(SeaRuinsRecovery._resume_sea_stage(t), 'open')
+                with self.assertRaisesRegex(ValueError, '失效'):
+                    SeaRuinsRecovery._sea_step(t)
+        t._scan_presets.assert_not_called()
+
+    def test_floor_parser_rejects_unknown_and_ambiguous_digits(self):
+        t = self.task()
+        t._button.return_value = True
+        for numbers, expected in ((['10'], 10), (['11'], 11), (['CR', '8'], 8),
+                                  (['1', '1'], None), (['8', '9'], None), (['12'], None)):
+            t._small_text.return_value = numbers
+            # Header is present, name/template fallback is not.
+            t._button.side_effect = lambda frame, region, text: text == '海墟详情'
+            self.assertEqual(AutoSeaRuinsTask._detail_floor(t, t.frame), expected)
+
+    def test_start_from_eight_does_not_repeat_seven(self):
+        t = self.task('open')
+        t._wait.return_value = 8
+        plan = SimpleNamespace(upper=Preset(1, ('a','b','c')), lower=Preset(2, ('d','e','f')),
+                               tokens=(Token('a','',2), Token('b','',2)), reasons=())
+        t._sea_step.side_effect = lambda: SeaRuinsRecovery._sea_step(t)
+        with patch('src.task.sea_ruins_recovery.choose_loadout', return_value=plan), \
+             patch('src.task.sea_ruins_recovery.vision.normalized'):
+            SeaRuinsRecovery._run_sea_stages(t)
+        self.assertEqual(t._scan_presets.call_count, 4)
+        self.assertEqual(t._scan_tokens.call_count, 4)
+        self.assertEqual(t._continue.call_count, 3)
+        t._status.assert_called_with('8—11层挑战完成；未挑战无尽，未领取奖励')
 
     def test_error_preserves_stage_and_retries_after_resume(self):
         t = self.task()

@@ -8,7 +8,7 @@ from src.task.WWOneTimeTask import WWOneTimeTask
 STAGES = ('open', 'presets', 'tokens', 'plan', 'team_upper', 'team_lower',
           'token_upper', 'token_lower', 'enter', 'start_upper', 'fight_upper',
           'enter_lower', 'start_lower', 'fight_lower', 'result', 'next', 'finish', 'done')
-LABELS = ('进入再生海域', '扫描预设', '扫描信物库存', '选择编队与信物', '应用上半编队', '应用下半编队',
+LABELS = ('识别当前海墟详情', '扫描预设', '扫描信物库存', '选择编队与信物', '应用上半编队', '应用下半编队',
           '携带上半信物', '携带下半信物', '进入战斗地图', '开启上半挑战', '上半战斗',
           '进入下半海域', '开启下半挑战', '下半战斗', '读取结算', '进入下一层', '返回选关', '完成')
 
@@ -35,7 +35,8 @@ class SeaRuinsRecovery:
                     self.executor.interaction.send_key_up(self.validate_key(key))
             except Exception as release_error:
                 self.log_warning(f'暂停时释放{name}失败：{release_error}')
-        self.info_set('海墟待接管', f'第{self._floor}层 / {LABELS[STAGES.index(self._sea_stage)]}：{error}')
+        location = f'第{self._floor}层' if self._floor is not None else '当前层待识别'
+        self.info_set('海墟待接管', f'{location} / {LABELS[STAGES.index(self._sea_stage)]}：{error}')
         self.log_error(f'海墟已暂停：{error}。请处理当前界面后点击继续；停止按钮仍可终止任务。', notify=True)
         try:
             self.screenshot('sea_ruins_paused')
@@ -60,6 +61,9 @@ class SeaRuinsRecovery:
         self.next_frame()
         f = self.frame
         stage = self._sea_stage
+        if stage == 'open':
+            # Re-enter the same read-only start check, including season expiry.
+            return 'open'
         if self._token_page(f):
             self.send_key('esc')
             self._wait(lambda frame: self._detail(frame, self._floor), '请返回当前层编队页后继续')
@@ -90,13 +94,6 @@ class SeaRuinsRecovery:
             return 'presets'
         if stage == 'finish' and self._map(f):
             return 'done'
-        if stage == 'open' and self._map(f):
-            boat = self._seven_boat(f)
-            if boat is None:
-                raise RuntimeError('请回到第7层详情页后继续')
-            self.click_relative(*boat)
-            self._wait(lambda frame: self._detail(frame, 7), '未确认第7层')
-            return 'presets'
         if self._sea_plan is not None and STAGES.index(stage) >= STAGES.index('enter'):
             if self._result(f):
                 return 'result'
@@ -118,11 +115,10 @@ class SeaRuinsRecovery:
         stage, plan = self._sea_stage, self._sea_plan
         if stage == 'open':
             WWOneTimeTask.run(self)
-            season_rule(7, 0)
             vision.normalized(self.require_game_frame())
-            self.next_frame()
-            if not self._detail(self.frame, 7):
-                self._open()
+            floor = self._wait(self._detail_floor, '请进入再生海域7至11层的海墟详情页后继续；未确认左上角层号')
+            season_rule(floor, 0)
+            self._floor = self._start_floor = floor
         elif stage == 'presets':
             self._wait(lambda f: self._detail(f, self._floor), '当前层号未确认')
             self._sea_presets = self._scan_presets()
@@ -176,7 +172,8 @@ class SeaRuinsRecovery:
         return STAGES[STAGES.index(stage)+1]
 
     def _run_sea_stages(self):
-        self._floor, self._sea_stage, self._sea_plan = 7, 'open', None
+        self._floor, self._start_floor = None, None
+        self._sea_stage, self._sea_plan = 'open', None
         self._sea_replan = False
         self._token_artwork.clear()
         recovering = False
@@ -189,7 +186,8 @@ class SeaRuinsRecovery:
                         recovering = False
                         if self._sea_stage == 'done':
                             break
-                    self._status(f'第{self._floor}层：{LABELS[STAGES.index(self._sea_stage)]}')
+                    location = f'第{self._floor}层' if self._floor is not None else '当前层待识别'
+                    self._status(f'{location}：{LABELS[STAGES.index(self._sea_stage)]}')
                     self._sea_stage = self._sea_step()
                 except TaskDisabledException:
                     raise
@@ -199,7 +197,7 @@ class SeaRuinsRecovery:
                     self._pause_for_sea_error(error)
                     recovering = True
             self.info_set('海墟待接管', '')
-            self._status('7—11层挑战完成；未挑战无尽，未领取奖励')
+            self._status(f'{self._start_floor}—11层挑战完成；未挑战无尽，未领取奖励')
         finally:
             self._observing_half = None
             self._deadline = None

@@ -27,6 +27,30 @@ class TestSeaRuins(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '不重人'):
             choose_loadout([self.wind, duplicate], [self.generic], 7, TODAY)
 
+    def test_registered_characters_without_special_rules_remain_usable(self):
+        from unittest.mock import patch
+        from src.char.CharFactory import char_dict
+        from src.task.sea_ruins import PROFILES, character_profile
+        with patch.dict(PROFILES, {}, clear=True):
+            for identity, data in char_dict.items():
+                self.assertIsNotNone(character_profile(identity), identity)
+            self.assertIsNone(character_profile('unknown'))
+        team = Preset(3, ('char_phrolova', 'char_cantarella', 'char_douling'))
+        self.assertTrue(team.valid)
+        self.assertGreater(token_score(team, Token('编造者', '', 2), 11), 15)
+        self.assertEqual(character_profile('char_douling').element, '导电')
+        self.assertFalse(character_profile('char_douling').triggers)
+        self.assertIsNotNone(choose_loadout([team, self.wind], [self.generic], 8, TODAY))
+        self.assertFalse(Preset(4, ('char_phrolova', '', 'char_douling')).valid)
+
+    def test_floor_eight_avoids_fire_upper_and_spectro_lower(self):
+        self.assertEqual(season_rule(8, 0, TODAY), ((), ('热熔',)))
+        self.assertEqual(season_rule(8, 1, TODAY), ((), ('衍射',)))
+        fire = Preset(3, ('char_encore', 'char_sanhua', 'char_baizhi'))
+        spectro = Preset(4, ('char_jinhsi', 'char_zhezhi', 'char_douling'))
+        plan = choose_loadout([fire, spectro], [self.generic], 8, TODAY)
+        self.assertEqual((plan.upper, plan.lower), (spectro, fire))
+
     def test_locked_infinite_empty_unknown_and_single_use(self):
         for token in (Token('狂欢者', '', -1, True), Token('狂欢者', '', 0), Token('狂欢者', '', None), Token('狂欢者', '', 1)):
             with self.subTest(token=token):

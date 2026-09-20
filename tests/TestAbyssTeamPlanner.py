@@ -30,6 +30,16 @@ def record(character_id, energy=10, level=90, confidence=0.9, rover_form=None):
 
 
 class TestAbyssTeamPlanner(unittest.TestCase):
+    def test_non_meta_four_stars_preserve_teammate_attribute_benefit(self):
+        members = (Labels.char_jiyan, Labels.char_yuanwu, Labels.char_douling)
+        candidates = candidate_teams([record(c) for c in members])
+        self.assertTrue(candidates)
+        for plan in candidates:
+            self.assertEqual(set(plan.members), set(members))
+            self.assertEqual(team_preference(plan, ElementRule(('气动',))), (0, 0, -1))
+            self.assertEqual(team_preference(plan, ElementRule(('气动',), soft='导电')), (0, 1, -1))
+            self.assertIsNone(team_preference(plan, ElementRule(hard='导电', center=True)))
+
     def test_second_queue_complete_beats_first_queue_two_member_core(self):
         plan = plan_team([
             record(Labels.char_qingxiao), record(Labels.char_denia),

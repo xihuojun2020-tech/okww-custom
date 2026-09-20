@@ -11,11 +11,11 @@ import re
 SEASON_START = date(2026, 8, 31)
 SEASON_END = date(2026, 9, 28)  # exclusive; AI must review a new cycle
 FLOORS = {7: '险滩', 8: '涡流'}  # names verified in supplied screenshots
-# 7/8: user client screenshots. 9–11: Game8 499663, 2026-09-10;
+# 8: user-confirmed enemy resistances, 2026-09-20. 9–11: Game8 499663, 2026-09-10;
 # keep enemy innate resistances separate from stage-wide modifiers.
 SEASON_RULES = {
     (7, 0): ((), ()), (7, 1): ((), ()),
-    (8, 0): ((), ()), (8, 1): ((), ()),
+    (8, 0): ((), ('热熔',)), (8, 1): ((), ('衍射',)),
     (9, 0): ((), ('气动',)), (9, 1): ((), ('气动', '热熔')),
     (10, 0): ((), ('导电',)), (10, 1): ((), ('导电', '冷凝')),
     (11, 0): ((), ('衍射',)), (11, 1): ((), ('衍射', '湮灭')),
@@ -98,6 +98,23 @@ PROFILES = {
 }
 
 
+def character_profile(identity):
+    """Missing specialization is not an unknown portrait or an unusable teammate."""
+    if identity in PROFILES:
+        return PROFILES[identity]
+    from src.char.CharFactory import char_dict
+    from src.char.BaseChar import CharType
+    from src.task.abyss_allocation import element_for_character
+    data = char_dict.get(identity)
+    if data is None:
+        return None
+    canonical = data['canonical_name']
+    if canonical in PROFILES:
+        return PROFILES[canonical]
+    weight = {CharType.MAIN_DPS: 1., CharType.SUB_DPS: .35, CharType.HEALER: .1}
+    return profile(element_for_character(canonical) or '未知', weight.get(data.get('char_type'), .35))
+
+
 @dataclass(frozen=True)
 class Preset:
     number: int
@@ -106,7 +123,7 @@ class Preset:
     @property
     def valid(self):
         return (len(self.members) == 3 and len(set(self.members)) == 3
-                and all(m in PROFILES for m in self.members))
+                and all(character_profile(m) is not None for m in self.members))
 
 
 @dataclass(frozen=True)
@@ -139,7 +156,7 @@ def season_rule(floor, half, today=None):
 
 def team_score(team, rule, half):
     favored, resisted = rule
-    profiles = [PROFILES[m] for m in team.members]
+    profiles = [character_profile(m) for m in team.members]
     if max(p.weight for p in profiles) < .5:
         return -100.
     score = sum(p.weight * (25 * (p.element in favored) - 55 * (p.element in resisted)) for p in profiles)
@@ -154,7 +171,7 @@ def team_score(team, rule, half):
 def token_score(team, token, floor):
     if not token.available:
         return -10000.
-    ps = [PROFILES[m] for m in team.members]
+    ps = [character_profile(m) for m in team.members]
     total = sum(p.weight for p in ps)
     share = lambda label: sum(p.weight for p in ps if label in p.tags or label == p.element) / total
     triggers = frozenset().union(*(p.triggers for p in ps))
