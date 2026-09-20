@@ -1,0 +1,27 @@
+[
+  {
+    "source": "codex-clipboard-1ea6cd0d-f917-49be-978d-0906d4877f23.png",
+    "fixture": "reported_miss_1.png",
+    "sha256": "237bf5b818426998fb62ba234f7eb4591d3a6d52419f5b45952625b20efe630c"
+  },
+  {
+    "source": "codex-clipboard-fbb02cd3-c738-4d17-bc55-937570e2dd9d.png",
+    "fixture": "reported_miss_2.png",
+    "sha256": "0a702c33ee72cf79cf3efef2880e66057c966cefbdad8e821f095300d5f729b0"
+  },
+  {
+    "source": "codex-clipboard-5f1167a7-3e53-4e79-9770-3ff54dd01c06.png",
+    "fixture": "reported_miss_3.png",
+    "sha256": "ea57c37254918944dcfbe5160c8234a02c39d9372fe1eaaaa1d325a1df11c5f2"
+  },
+  {
+    "source": "codex-clipboard-1a5ed123-8e39-41ef-8870-b4f4e35ddb1d.png",
+    "fixture": "reported_miss_4.png",
+    "sha256": "ac109a94c6a141726e58d2198899de5e9b515a73770db4cacab0cc08f40793b9"
+  },
+  {
+    "source": "codex-clipboard-3f766bed-4118-445c-bd91-ba1dbb8d1dda.png",
+    "fixture": "reported_miss_5.png",
+    "sha256": "9dec082b035813198fdd8d35fd7bc4925f12ac03681d76ea7d46eff2e2e6693b"
+  }
+]

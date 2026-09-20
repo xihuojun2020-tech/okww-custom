@@ -1,3 +1,5 @@
+import time
+
 from ok import TriggerTask, Logger
 from src.task.SkipBaseTask import SkipBaseTask
 from src.task.trigger_navigation import advance
@@ -19,6 +21,7 @@ class AutoDialogTask(TriggerTask, SkipBaseTask):
         self._ui_tick_navigation = None
         self._skip_requested = False
         self._skip_blocked_step = None
+        self._skip_retry_at = 0
         self.trigger_interval = 0.5
         return super().disable()
 
@@ -28,11 +31,14 @@ class AutoDialogTask(TriggerTask, SkipBaseTask):
                            initial_delay=0 if step == '剧情跳过' else .25, **options)
         except TransitionTimeout as error:
             # A background watcher must survive an inconclusive page transition.
-            # Quarantine this stage instead of silently granting a new click budget.
+            # Only the positively identified entry may retry after a cooldown.
+            # Checkbox/confirmation stages still require a different visible stage.
             self._ui_tick_navigation = None
             self._skip_blocked_step = step
+            self._skip_retry_at = time.monotonic() + 15
             self.trigger_interval = .5
-            self.info_set('剧情跳过状态', f'{step}未确认，等待页面变化；不重复点击')
+            self.info_set('剧情跳过状态', f'{step}未确认，' + (
+                '入口冷却15秒后重新核验' if step == '剧情跳过' else '等待页面变化；不重复点击'))
             self.log_warning(f'story_skip waiting_after_timeout step={step}: {error}')
             return False
 
@@ -70,13 +76,15 @@ class AutoDialogTask(TriggerTask, SkipBaseTask):
                 self.trigger_interval = .5
                 self.info_set('剧情跳过状态', '已回到大世界，继续监听')
                 return False
-            if current_step is None or current_step == blocked:
+            retry_entry = (blocked == current_step == '剧情跳过'
+                           and time.monotonic() >= self._skip_retry_at)
+            if current_step is None or (current_step == blocked and not retry_entry):
                 self.trigger_interval = .5
                 return False
-            # A positively identified different stage, including a late-loading
-            # confirmation, can start its own fresh-frame verification.
+            # A late confirmation bypasses the entry cooldown; either recovery
+            # starts a new three-frame verification, never an immediate click.
             self._skip_blocked_step = None
-            self.info_set('剧情跳过状态', '已识别后续页面，恢复处理')
+            self.info_set('剧情跳过状态', '入口冷却结束，重新核验' if retry_entry else '已识别后续页面，恢复处理')
         pending = getattr(self, '_ui_tick_navigation', None)
         # Poll quickly only while a bounded skip operation is in progress.
         # Keep three fresh-frame confirmations; never replace them with a timed click.
@@ -93,8 +101,8 @@ class AutoDialogTask(TriggerTask, SkipBaseTask):
                     self._skip_requested = True
             handled = self._advance_dialog(step, lambda frame:None if reached else button,
                               lambda frame:reached, identity=step,
-                              action=click_pending, attempts=1 if step in ('剧情跳过', '剧情跳过勾选') else 3,
-                              timeout=60, retry_after=60 if step in ('剧情跳过', '剧情跳过勾选') else 3)
+                              action=click_pending, attempts=1 if step == '剧情跳过勾选' else 3,
+                              timeout=60, retry_after=60 if step == '剧情跳过勾选' else 3)
             if reached and (world or step in ('剧情跳过确认', '剧情跳过弹窗确认')):
                 self._skip_requested=False
             return handled
@@ -108,8 +116,8 @@ class AutoDialogTask(TriggerTask, SkipBaseTask):
                 if step == '剧情跳过':
                     self._skip_requested = True
             return self._advance_dialog(step, lambda frame:confirm or skip, lambda frame:False,
-                           identity=step, action=click, attempts=1 if step in ('剧情跳过', '剧情跳过勾选') else 3,
-                           timeout=60, retry_after=60 if step in ('剧情跳过', '剧情跳过勾选') else 3)
+                           identity=step, action=click, attempts=1 if step == '剧情跳过勾选' else 3,
+                           timeout=60, retry_after=60 if step == '剧情跳过勾选' else 3)
         if warning_unknown:
             return False  # Do not bypass an ambiguous checkbox through legacy confirmation.
         if self.check_skip(nonblocking=True):

@@ -63,11 +63,11 @@ class TestBackgroundNavigationTasks(unittest.TestCase):
         self.assertFalse(task._travel_requested)
         task.sleep.assert_not_called()
 
-    def test_skip_source_lingers_without_replaying(self):
+    def test_skip_source_lingers_with_bounded_retries(self):
         task=self.task(AutoDialogTask)
         task.find_skip=Mock(return_value=self.button)
         for _ in range(20):self.tick(task)
-        task.click_box.assert_called_once()
+        self.assertEqual(task.click_box.call_count, 3)
 
 
 if __name__=='__main__':unittest.main()

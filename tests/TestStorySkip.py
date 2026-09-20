@@ -14,6 +14,26 @@ FIXTURES = Path(__file__).parent / 'fixtures/story_skip'
 
 
 class TestStorySkip(unittest.TestCase):
+    def test_five_reported_misses_match_without_new_templates(self):
+        for index in range(1, 6):
+            crop = cv2.imread(str(FIXTURES / f'reported_miss_{index}.png'))
+            for scale in (.35, .4, .45, .5, .55, .6, .65, .7, .8, .9, 1):
+                patch = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+                h, w = patch.shape[:2]
+                for center_y in (50, 110):
+                    y = center_y - h // 2
+                    # Keep the complete symbol within the documented region.
+                    frame = np.full((720, 1280, 3), 20, np.uint8)
+                    frame[y:y+h, 35:35+w] = patch
+                    for height in (720, 1080, 1440, 2160):
+                        with self.subTest(index=index, scale=scale, y=y, height=height):
+                            resized = cv2.resize(frame, (height*16//9, height))
+                            button = find_hex_skip(resized)
+                            self.assertIsNotNone(button)
+                            x, by = button.center()
+                            self.assertTrue(35 <= x*720/height <= 35+w)
+                            self.assertTrue(y <= by*720/height <= y+h)
+
     def test_active_polling_is_fast_but_keeps_three_fresh_frames(self):
         task, harness = self.task()
         task.require_game_frame.return_value = cv2.resize(self.summary(), (1920, 1080))

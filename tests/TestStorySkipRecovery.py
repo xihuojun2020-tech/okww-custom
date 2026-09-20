@@ -19,7 +19,7 @@ class TestStorySkipRecovery(unittest.TestCase):
         task.skip_message = Mock(return_value=False)
         return task, harness
 
-    def test_timeout_keeps_watching_without_refunding_click_budget(self):
+    def test_entry_timeout_cools_down_then_requires_fresh_verification(self):
         task, harness = self.task()
         for _ in range(3):
             harness.tick(task)
@@ -29,12 +29,53 @@ class TestStorySkipRecovery(unittest.TestCase):
         self.assertEqual(task._skip_blocked_step, '剧情跳过')
         self.assertIsNone(task._ui_tick_navigation)
         self.assertEqual(task.trigger_interval, .5)
-        for second in (62, 125, 190):
+        for second in (62, 70, 75):
             harness.clock[0] = second
             harness.tick(task)
         task.click_box.assert_called_once()
+        harness.clock[0] = 76
+        harness.tick(task)
+        task.run()  # Same capture cannot advance the new verification.
+        task.click_box.assert_called_once()
+        harness.tick(task)
+        task.click_box.assert_called_once()
+        harness.tick(task)
+        self.assertEqual(task.click_box.call_count, 2)
         task.disable.assert_not_called()
         task.check_skip.assert_not_called()
+
+    def test_ignored_entry_click_retries_with_spacing_and_bounded_burst(self):
+        task, harness = self.task()
+        times = []
+        task.click_box.side_effect = lambda *a, **kw: times.append(harness.clock[0])
+        for _ in range(24):
+            harness.tick(task)
+        self.assertEqual(times, [1, 4, 7])
+        self.assertEqual(task._skip_blocked_step, '剧情跳过')
+        self.assertGreaterEqual(task._skip_retry_at, 25)
+
+    def test_unknown_page_after_cooldown_never_receives_input(self):
+        task, harness = self.task()
+        for _ in range(3):
+            harness.tick(task)
+        task.find_skip.return_value = None
+        harness.clock[0] = 61
+        harness.tick(task)
+        for second in (80, 120, 180):
+            harness.clock[0] = second
+            harness.tick(task)
+        task.click_box.assert_called_once()
+
+    def test_ignored_entry_then_late_confirmation_stops_entry_retries(self):
+        task, harness = self.task()
+        for _ in range(10):
+            harness.tick(task)
+        self.assertEqual(task.click_box.call_count, 2)
+        task._skip_confirmation.return_value = harness.button
+        for _ in range(4):
+            harness.tick(task)
+        self.assertEqual(task.click_box.call_count, 3)
+        self.assertEqual(task._ui_tick_navigation['step'], '剧情跳过确认')
 
     def test_late_confirmation_resumes_after_entry_timeout(self):
         task, harness = self.task()
