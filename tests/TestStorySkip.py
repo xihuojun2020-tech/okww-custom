@@ -14,6 +14,21 @@ FIXTURES = Path(__file__).parent / 'fixtures/story_skip'
 
 
 class TestStorySkip(unittest.TestCase):
+    def test_green_scene_targets_left_and_rejects_eye_even_if_moved_left(self):
+        original = cv2.imread(str(FIXTURES / 'choices_green.png'))
+        for height in (720, 1080, 1440, 2160):
+            frame = cv2.resize(original, (height*16//9, height))
+            button = find_hex_skip(frame)
+            self.assertIsNotNone(button)
+            self.assertAlmostEqual(button.center()[0]/frame.shape[1], .041, delta=.006)
+        # Move each actual right-side control into the skip region: the internal
+        # symbol check must still reject it, independent of the spatial exclusion.
+        for x in (1109, 1157, 1206):
+            frame = original.copy()
+            frame[:160, :200] = 0
+            frame[108:137, 39:66] = original[108:137, x:x+27]
+            self.assertIsNone(find_hex_skip(frame), x)
+
     def warning(self, checked=False):
         frame = cv2.imread(str(FIXTURES / 'warning.png'))
         if checked:
@@ -149,7 +164,7 @@ class TestStorySkip(unittest.TestCase):
         self.assertIsNone(find_summary_skip(frame), 'continue watching is not skip')
 
     def test_icon_crop_in_hud_and_not_in_central_content(self):
-        for x in (60, 1140):
+        for x in (60,):
             for scale in (.4, .5, .7, 1):
                 frame = self.icon_scene(x=x, scale=scale)
                 self.assertIsNotNone(find_hex_skip(frame), (x, scale))
@@ -159,6 +174,7 @@ class TestStorySkip(unittest.TestCase):
             self.assertIsNotNone(button)
             self.assertAlmostEqual(button.center()[0]/frame.shape[1], .091, delta=.01)
         self.assertIsNone(find_hex_skip(self.icon_scene(x=600, y=320)))
+        self.assertIsNone(find_hex_skip(self.icon_scene(x=1140)))
         self.assertIsNone(find_hex_skip(np.zeros((720, 1280, 3), np.uint8)))
 
     def test_other_activity_screens_are_not_story_skip(self):

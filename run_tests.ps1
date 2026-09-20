@@ -78,6 +78,7 @@ $groups = @{
     "TestSkipDialogWideMode.py", "TestTaskStatusWindow.py", "TestUsabilityUI.py"
   )
   image = @(
+    "TestStorySkipImages.py",
     "TestDailyClaimStabilityImages.py", "TestSeaRuinsImages.py",
     "TestResonanceSimulationImages.py",
     "TestDailyFollowupImages.py", "TestDailyRegressionImages.py",

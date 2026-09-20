@@ -10,7 +10,7 @@ from ok import Box
 ASSETS = Path(__file__).resolve().parents[2] / 'assets/images/story_skip'
 
 
-@lru_cache(maxsize=7)
+@lru_cache(maxsize=8)
 def _template(name):
     image = cv2.imread(str(ASSETS / f'{name}.png'), cv2.IMREAD_GRAYSCALE)
     if image is None:
@@ -24,7 +24,7 @@ def _image(frame):
                                   interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2GRAY)
 
 
-def _match(image, name, region, scales=(1.0,), threshold=.85):
+def _match(image, name, region, scales=(1.0,), threshold=.85, inner_threshold=None):
     height, width = image.shape
     x1, y1, x2, y2 = (round(region[0] * width), round(region[1] * height),
                       round(region[2] * width), round(region[3] * height))
@@ -37,6 +37,14 @@ def _match(image, name, region, scales=(1.0,), threshold=.85):
         if h > crop.shape[0] or w > crop.shape[1]:
             continue
         _, score, _, point = cv2.minMaxLoc(cv2.matchTemplate(crop, patch, cv2.TM_CCOEFF_NORMED))
+        if score >= threshold and inner_threshold is not None:
+            # The shared hexagonal outline is not evidence of the skip symbol.
+            mx, my = round(w * .27), round(h * .27)
+            center = patch[my:h-my, mx:w-mx]
+            observed = crop[point[1]+my:point[1]+h-my, point[0]+mx:point[0]+w-mx]
+            inner_score = float(cv2.matchTemplate(observed, center, cv2.TM_CCOEFF_NORMED)[0, 0])
+            if inner_score < inner_threshold:
+                continue
         if score >= threshold and (best is None or score > best[0]):
             best = (score, (x1 + point[0], y1 + point[1], w, h))
     return best[1] if best else None
@@ -51,17 +59,18 @@ def _box(rect, frame, name):
 
 def find_hex_skip(frame):
     image = _image(frame)
-    # The source is a crop, so allow a bounded size range in the upper HUD corners.
-    # Do not treat a similar emblem in dialogue text or the central scene as a button.
-    for region in ((0, 0, .25, .22), (.75, 0, 1, .22)):
-        rect = _match(image, 'hex_letterbox', region, scales=(.9, 1., 1.1), threshold=.85)
+    # Both observed skip positions are on the left. The right controls include an
+    # eye, log and auto-play icon with the same border: never search them for skip.
+    region = (0, 0, .15, .22)
+    for name in ('hex_letterbox', 'hex_green'):
+        rect = _match(image, name, region, scales=(.9, 1., 1.1),
+                      threshold=.85, inner_threshold=.75)
         if rect:
             return _box(rect, frame, 'skip_dialog_hex')
-        rect = _match(image, 'hex_icon', region,
-                      scales=(.35, .4, .45, .5, .55, .6, .65, .7, .8, .9, 1.0), threshold=.85)
-        if rect:
-            return _box(rect, frame, 'skip_dialog_hex')
-    return None
+    rect = _match(image, 'hex_icon', region,
+                  scales=(.35, .4, .45, .5, .55, .6, .65, .7, .8, .9, 1.0),
+                  threshold=.85, inner_threshold=.75)
+    return _box(rect, frame, 'skip_dialog_hex')
 
 
 def find_summary_skip(frame):
