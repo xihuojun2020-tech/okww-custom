@@ -1,6 +1,7 @@
 """Localized template matching for the hexagonal story-summary skip flow."""
 from functools import lru_cache
 from pathlib import Path
+from dataclasses import dataclass
 
 import cv2
 from ok import Box
@@ -9,7 +10,7 @@ from ok import Box
 ASSETS = Path(__file__).resolve().parents[2] / 'assets/images/story_skip'
 
 
-@lru_cache(maxsize=3)
+@lru_cache(maxsize=7)
 def _template(name):
     image = cv2.imread(str(ASSETS / f'{name}.png'), cv2.IMREAD_GRAYSCALE)
     if image is None:
@@ -53,6 +54,9 @@ def find_hex_skip(frame):
     # The source is a crop, so allow a bounded size range in the upper HUD corners.
     # Do not treat a similar emblem in dialogue text or the central scene as a button.
     for region in ((0, 0, .25, .22), (.75, 0, 1, .22)):
+        rect = _match(image, 'hex_letterbox', region, scales=(.9, 1., 1.1), threshold=.85)
+        if rect:
+            return _box(rect, frame, 'skip_dialog_hex')
         rect = _match(image, 'hex_icon', region,
                       scales=(.35, .4, .45, .5, .55, .6, .65, .7, .8, .9, 1.0), threshold=.85)
         if rect:
@@ -67,3 +71,33 @@ def find_summary_skip(frame):
     # The left "continue watching" button must never become a skip candidate.
     rect = _match(image, 'skip_story', (.57, .64, .80, .77), threshold=.88)
     return _box(rect, frame, 'skip_story_summary')
+
+
+@dataclass
+class WarningDialog:
+    checkbox: Box
+    confirm: Box
+    checked: bool | None
+
+
+def find_skip_warning(frame):
+    image = _image(frame)
+    if not _match(image, 'warning_text', (.27, .38, .73, .51), threshold=.88):
+        return None
+    label = _match(image, 'session_label', (.40, .51, .63, .59), threshold=.88)
+    confirm = _match(image, 'warning_confirm', (.57, .59, .76, .69), threshold=.88)
+    if not label or not confirm:
+        return None
+    # Position relative to the verified label, not an unconditional screen click.
+    cx, cy = label[0] - 18, label[1] + 11
+    center = image[cy-5:cy+6, cx-5:cx+6]
+    circle = image[cy-9:cy+10, cx-9:cx+10]
+    # A filled white center is unchecked; a dark tick inside a white circle is checked.
+    # An ambiguous animation must not enable confirmation.
+    checked = None
+    if (center > 245).mean() > .95:
+        checked = False
+    elif (center < 170).mean() > .10 and (circle > 240).mean() > .40:
+        checked = True
+    return WarningDialog(_box((cx-10, cy-10, 20, 20), frame, 'skip_story_checkbox'),
+                         _box(confirm, frame, 'skip_story_warning_confirm'), checked)

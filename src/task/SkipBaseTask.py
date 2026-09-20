@@ -19,6 +19,18 @@ class SkipBaseTask(BaseWWTask):
         pass
 
     def skip_confirm(self):
+        warning = self.find_story_skip_warning()
+        if warning:
+            if warning.checked is False and not getattr(self, '_story_checkbox_pending', False):
+                self.click_box(warning.checkbox)
+                self._story_checkbox_pending = True
+                return False  # The next invocation must observe the checked state first.
+            if warning.checked is True:
+                self.click_box(warning.confirm)
+                self._story_checkbox_pending = False
+                return True
+            return False
+        self._story_checkbox_pending = False
         if skip_button := self.find_story_skip_confirmation():
             self.click_box(skip_button)
             return True
@@ -51,6 +63,10 @@ class SkipBaseTask(BaseWWTask):
     def find_story_skip_confirmation(self):
         from src.task.story_skip import find_summary_skip
         return find_summary_skip(self.require_game_frame())
+
+    def find_story_skip_warning(self):
+        from src.task.story_skip import find_skip_warning
+        return find_skip_warning(self.require_game_frame())
 
     def try_click_skip(self):
         skipped = False
