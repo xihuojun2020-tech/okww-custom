@@ -19,6 +19,9 @@ class AutoDialogTask(TriggerTask, SkipBaseTask):
         return super().disable()
 
     def _skip_confirmation(self):
+        button = self.find_story_skip_confirmation()
+        if button:
+            return button
         button = self.find_one(['skip_quest_confirm','skip_quest_confirm_new'], threshold=.8)
         if button:
             return button

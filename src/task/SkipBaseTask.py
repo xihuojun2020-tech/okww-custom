@@ -19,6 +19,9 @@ class SkipBaseTask(BaseWWTask):
         pass
 
     def skip_confirm(self):
+        if skip_button := self.find_story_skip_confirmation():
+            self.click_box(skip_button)
+            return True
         if self.click_skip_dialog_confirm():
             self.confirm_dialog_checked = True
             return True
@@ -39,7 +42,15 @@ class SkipBaseTask(BaseWWTask):
                              frame_processor=convert_dialog_icon) or self.find_one('skip_dialog_new',
                                                                                    horizontal_variance=0.02,
                                                                                    threshold=0.75,
-                                                                                   frame_processor=convert_dialog_icon)
+                                                                                   frame_processor=convert_dialog_icon) or self.find_hex_skip()
+
+    def find_hex_skip(self):
+        from src.task.story_skip import find_hex_skip
+        return find_hex_skip(self.require_game_frame())
+
+    def find_story_skip_confirmation(self):
+        from src.task.story_skip import find_summary_skip
+        return find_summary_skip(self.require_game_frame())
 
     def try_click_skip(self):
         skipped = False
