@@ -1,5 +1,7 @@
 from ok import TriggerTask, Logger
 from src.task.SkipBaseTask import SkipBaseTask
+from src.task.trigger_navigation import advance
+from src.task.ui_transition import TransitionTimeout
 
 logger = Logger.get_logger(__name__)
 
@@ -16,8 +18,23 @@ class AutoDialogTask(TriggerTask, SkipBaseTask):
     def disable(self):
         self._ui_tick_navigation = None
         self._skip_requested = False
+        self._skip_blocked_step = None
         self.trigger_interval = 0.5
         return super().disable()
+
+    def _advance_dialog(self, step, source, target, **options):
+        try:
+            return advance(self, step, source, target,
+                           initial_delay=0 if step == '剧情跳过' else .25, **options)
+        except TransitionTimeout as error:
+            # A background watcher must survive an inconclusive page transition.
+            # Quarantine this stage instead of silently granting a new click budget.
+            self._ui_tick_navigation = None
+            self._skip_blocked_step = step
+            self.trigger_interval = .5
+            self.info_set('剧情跳过状态', f'{step}未确认，等待页面变化；不重复点击')
+            self.log_warning(f'story_skip waiting_after_timeout step={step}: {error}')
+            return False
 
     def _skip_confirmation(self):
         warning = self.find_story_skip_warning()
@@ -37,7 +54,6 @@ class AutoDialogTask(TriggerTask, SkipBaseTask):
         return None
 
     def run(self):
-        from src.task.trigger_navigation import advance
         world = self.in_team_and_world()
         confirm = None if world else self._skip_confirmation()
         warning_unknown = not world and not confirm and getattr(self, '_skip_warning_visible', False)
@@ -45,6 +61,22 @@ class AutoDialogTask(TriggerTask, SkipBaseTask):
                         'skip_story_warning_confirm': '剧情跳过弹窗确认'}.get(
                             getattr(confirm, 'name', None), '剧情跳过确认')
         skip = None if world or confirm or warning_unknown else self.find_skip()
+        blocked = getattr(self, '_skip_blocked_step', None)
+        if blocked:
+            current_step = confirm_step if confirm else '剧情跳过' if skip else None
+            if world:
+                self._skip_blocked_step = None
+                self._skip_requested = False
+                self.trigger_interval = .5
+                self.info_set('剧情跳过状态', '已回到大世界，继续监听')
+                return False
+            if current_step is None or current_step == blocked:
+                self.trigger_interval = .5
+                return False
+            # A positively identified different stage, including a late-loading
+            # confirmation, can start its own fresh-frame verification.
+            self._skip_blocked_step = None
+            self.info_set('剧情跳过状态', '已识别后续页面，恢复处理')
         pending = getattr(self, '_ui_tick_navigation', None)
         # Poll quickly only while a bounded skip operation is in progress.
         # Keep three fresh-frame confirmations; never replace them with a timed click.
@@ -59,7 +91,7 @@ class AutoDialogTask(TriggerTask, SkipBaseTask):
                 self.click_box(box, after_sleep=0)
                 if step == '剧情跳过':
                     self._skip_requested = True
-            handled = advance(self, step, lambda frame:None if reached else button,
+            handled = self._advance_dialog(step, lambda frame:None if reached else button,
                               lambda frame:reached, identity=step,
                               action=click_pending, attempts=1 if step in ('剧情跳过', '剧情跳过勾选') else 3,
                               timeout=60, retry_after=60 if step in ('剧情跳过', '剧情跳过勾选') else 3)
@@ -75,7 +107,7 @@ class AutoDialogTask(TriggerTask, SkipBaseTask):
                 self.click_box(button, after_sleep=0)
                 if step == '剧情跳过':
                     self._skip_requested = True
-            return advance(self, step, lambda frame:confirm or skip, lambda frame:False,
+            return self._advance_dialog(step, lambda frame:confirm or skip, lambda frame:False,
                            identity=step, action=click, attempts=1 if step in ('剧情跳过', '剧情跳过勾选') else 3,
                            timeout=60, retry_after=60 if step in ('剧情跳过', '剧情跳过勾选') else 3)
         if warning_unknown:
