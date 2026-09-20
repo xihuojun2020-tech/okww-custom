@@ -1,0 +1,86 @@
+[
+  {
+    "fixture": "background_1.png",
+    "source": "codex-clipboard-ceb63ebb-a59a-4e81-9cae-008605a2f74c.png",
+    "source_sha256": "dea86f82cb94cd4a56f49e78977660c71185403bd7145123220790e8fd540258",
+    "template_box": [
+      19,
+      9,
+      88,
+      86
+    ]
+  },
+  {
+    "fixture": "background_2.png",
+    "source": "codex-clipboard-2ae7b5d6-5272-4f90-88d9-f809de8cd6c1.png",
+    "source_sha256": "83b1b8e170cab9a2ce2e8477e6e034479c264b4c9e2ba370aa2e2aae08811ad4",
+    "template_box": [
+      30,
+      11,
+      86,
+      73
+    ]
+  },
+  {
+    "fixture": "background_3.png",
+    "source": "codex-clipboard-bac488a4-a13b-4e1b-9fbe-905b57024c9f.png",
+    "source_sha256": "9b96248e16f7b111da97b8990ebe7a176a4981e1aac819c79e62e2b25590acee",
+    "template_box": [
+      33,
+      14,
+      89,
+      77
+    ]
+  },
+  {
+    "fixture": "background_4.png",
+    "source": "codex-clipboard-9caf09c6-9081-4a95-8676-22cc7832b9fc.png",
+    "source_sha256": "deb89fd902737ddd4a943bec800b461707c258a9ea08b1c50c6d901e70a3eaa5",
+    "template_box": [
+      36,
+      24,
+      106,
+      104
+    ]
+  },
+  {
+    "fixture": "background_5.png",
+    "source": "codex-clipboard-92a7830e-6646-4312-ad5d-440e7806c6dc.png",
+    "source_sha256": "172dda96c9b17dd2fb1eda0f940a4d10c7c590b9c5d8dbcaf8accd24e7273b98",
+    "template_box": [
+      25,
+      1,
+      99,
+      83
+    ]
+  },
+  {
+    "fixture": "background_6.png",
+    "source": "codex-clipboard-51be22a2-0ab2-426d-9e77-19e5ba04a97b.png",
+    "source_sha256": "d70e41db09ef266f00326aa10da5391ed3944b5d1f37e310349fd47277be521e",
+    "template_box": [
+      45,
+      26,
+      119,
+      109
+    ]
+  },
+  {
+    "fixture": "background_7.png",
+    "source": "codex-clipboard-cfac4343-e493-4a01-a2cf-0ac6efc42de9.png",
+    "source_sha256": "d5accf8298806e929b64488091e6cfcaa0cef51ffc6f0a57c489a49bc3f0dbd5",
+    "template_box": null
+  },
+  {
+    "fixture": "background_8.png",
+    "source": "codex-clipboard-b829738f-cd04-4753-87e9-348dd8a1b556.png",
+    "source_sha256": "5d3987884de2436500c013265abf3634ab0d985f044afe4391c25060bab99b9c",
+    "template_box": null
+  },
+  {
+    "fixture": "background_9.png",
+    "source": "codex-clipboard-7a20fc07-27cb-43dd-abc1-0d0598a000b4.png",
+    "source_sha256": "7de437b701ba62335e85601191f0509062f8b557876805a90fb231a90e48cd1b",
+    "template_box": null
+  }
+]

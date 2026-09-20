@@ -14,6 +14,37 @@ FIXTURES = Path(__file__).parent / 'fixtures/story_skip'
 
 
 class TestStorySkip(unittest.TestCase):
+    def test_nine_backgrounds_at_two_positions_and_four_resolutions(self):
+        centers = ((53.5, 47.5), (58, 42), (61, 45.5), (71, 64), (62, 42),
+                   (82, 67.5), (68, 66.5), (53, 50), (53, 47))
+        for index, (cx, cy) in enumerate(centers, 1):
+            original = cv2.imread(str(FIXTURES / f'background_{index}.png'))
+            for scale in (.4, .5, .7):
+                patch = cv2.resize(original, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+                h, w = patch.shape[:2]
+                for target_y in (44, 122):
+                    x, y = round(80-cx*scale), round(target_y-cy*scale)
+                    frame = np.full((720, 1280, 3), 20, np.uint8)
+                    top = max(0, y)
+                    frame[top:y+h, x:x+w] = patch[top-y:]
+                    for height in (720, 1080, 1440, 2160):
+                        with self.subTest(background=index, scale=scale, y=target_y, height=height):
+                            scaled = cv2.resize(frame, (height*16//9, height), interpolation=cv2.INTER_AREA)
+                            button = find_hex_skip(scaled)
+                            self.assertIsNotNone(button)
+                            bx, by = button.center()
+                            self.assertAlmostEqual(bx/scaled.shape[1], 80/1280, delta=.01)
+                            self.assertAlmostEqual(by/height, target_y/720, delta=.012)
+
+    def test_background_variants_do_not_expand_search_to_right_side(self):
+        for index in range(1, 10):
+            crop = cv2.imread(str(FIXTURES / f'background_{index}.png'))
+            crop = cv2.resize(crop, None, fx=.5, fy=.5, interpolation=cv2.INTER_AREA)
+            h, w = crop.shape[:2]
+            frame = np.zeros((720, 1280, 3), np.uint8)
+            frame[100:100+h, 1150:1150+w] = crop
+            self.assertIsNone(find_hex_skip(frame), index)
+
     def test_green_scene_targets_left_and_rejects_eye_even_if_moved_left(self):
         original = cv2.imread(str(FIXTURES / 'choices_green.png'))
         for height in (720, 1080, 1440, 2160):

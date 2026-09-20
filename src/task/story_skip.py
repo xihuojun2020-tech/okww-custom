@@ -10,12 +10,17 @@ from ok import Box
 ASSETS = Path(__file__).resolve().parents[2] / 'assets/images/story_skip'
 
 
-@lru_cache(maxsize=8)
+@lru_cache(maxsize=14)
 def _template(name):
     image = cv2.imread(str(ASSETS / f'{name}.png'), cv2.IMREAD_GRAYSCALE)
     if image is None:
         raise RuntimeError(f'Missing story skip template: {name}')
     return image
+
+
+@lru_cache(maxsize=192)
+def _scaled_template(name, scale):
+    return cv2.resize(_template(name), None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
 
 
 def _image(frame):
@@ -29,10 +34,9 @@ def _match(image, name, region, scales=(1.0,), threshold=.85, inner_threshold=No
     x1, y1, x2, y2 = (round(region[0] * width), round(region[1] * height),
                       round(region[2] * width), round(region[3] * height))
     crop = image[y1:y2, x1:x2]
-    template = _template(name)
     best = None
     for scale in scales:
-        patch = cv2.resize(template, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+        patch = _scaled_template(name, scale)
         h, w = patch.shape
         if h > crop.shape[0] or w > crop.shape[1]:
             continue
@@ -70,6 +74,16 @@ def find_hex_skip(frame):
     rect = _match(image, 'hex_icon', region,
                   scales=(.35, .4, .45, .5, .55, .6, .65, .7, .8, .9, 1.0),
                   threshold=.85, inner_threshold=.75)
+    if rect:
+        return _box(rect, frame, 'skip_dialog_hex')
+    # Known transparent-background variants are fallback-only. Cache the scaled
+    # patches so every trigger tick does not rebuild this reference bank.
+    for index in range(1, 7):
+        rect = _match(image, f'hex_background_{index}', region,
+                      scales=(.35, .4, .45, .5, .55, .6, .65, .7, .8, .9, 1.0),
+                      threshold=.85, inner_threshold=.75)
+        if rect:
+            return _box(rect, frame, 'skip_dialog_hex')
     return _box(rect, frame, 'skip_dialog_hex')
 
 
