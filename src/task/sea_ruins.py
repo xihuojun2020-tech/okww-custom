@@ -171,13 +171,19 @@ def token_score(team, token, floor):
     elif '镌刻者' in name:
         score = 15  # universal part only; preset portraits cannot prove rupture mode
     elif '希冀者' in name:
-        score = 35 * share('集谐') if '集谐' in triggers else 0
+        score = 15 + (15 if '集谐' in triggers else 0)
     elif '编造者' in name:
         score = 15 + 25 * share('声骸技能')
     elif '慰藉者' in name:
         score = 15 + (15 if '异常' in triggers else 0)
     elif '狂欢者' in name:
-        score = 22
+        score = 25
+    elif '眷属' in name:
+        score = 5  # independent summon: conservative fallback, not a damage simulation
+    elif '布道' in name:
+        score = 20 * share('普攻')
+    elif '游猎' in name:
+        score = 20 * share('重击')
     elif '审判' in name and '暴击伤害' in desc:
         score = 12
     else:
@@ -188,7 +194,10 @@ def token_score(team, token, floor):
                 if tag in desc and '提升' in desc:
                     score = max(score, 10 * share(tag))
     if score and token.remaining != -1:
-        score = max(1., score - {7: 24, 8: 20, 9: 8, 10: 0, 11: 0}[floor])
+        reserve = {7: 24, 8: 20, 9: 8, 10: 0, 11: 0}[floor]
+        # Protect the last use more strongly than a two-use stock; late floors
+        # may spend it. Availability and the joint two-team limit still apply.
+        score = max(1., score - reserve * 2 / token.remaining)
     return max(0., score)
 
 
@@ -209,8 +218,8 @@ def choose_loadout(presets, tokens, floor, today=None):
                 continue
             score = team_score(a, rules[0], 0) + team_score(b, rules[1], 1) + sa + sb
             candidate = Loadout(a, b, (ta, tb), score, (
-                f'上半预设{a.number} 顺{rules[0][0]} 逆{rules[0][1]}；{ta.name}适配分{sa:.1f}',
-                f'下半预设{b.number} 顺{rules[1][0]} 逆{rules[1][1]}；{tb.name}适配分{sb:.1f}',
+                f'上半预设{a.number} 顺{rules[0][0]} 逆{rules[0][1]}；{ta.name}库存{ta.remaining}适配分{sa:.1f}',
+                f'下半预设{b.number} 顺{rules[1][0]} 逆{rules[1][1]}；{tb.name}库存{tb.remaining}适配分{sb:.1f}',
             ))
             if best is None or score > best.score:
                 best = candidate

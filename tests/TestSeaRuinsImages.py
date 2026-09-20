@@ -75,6 +75,29 @@ class TestSeaRuinsImages(TaskTestCase):
         self.assertEqual(values[5:9], [2, 1, 2, 2])
         self.assertEqual(values[9:], [-1, -1, -1])
 
+    def test_inventory_without_clicks(self):
+        from unittest.mock import patch
+        frame = self.image('tokens')
+        for height in (720, 1080, 1440):
+            with patch.object(self.task, 'click_relative') as click:
+                records = self.task._page_tokens(cv2.resize(frame, (height*16//9, height)))
+                self.assertEqual([t.name for t, _ in records], [
+                    '镌刻者-长夜孤灯', '希冀者-长夜孤灯', '编造者-长夜孤灯', '慰藉者-长夜孤灯',
+                    '审判-遗落令旗', '布道-遗落令旗', '游猎-遗落令旗'])
+                self.assertEqual([t.remaining for t, _ in records], [2, 1, 2, 2, -1, -1, -1])
+                click.assert_not_called()
+
+    def test_unlock_and_sea_identity(self):
+        frame = cv2.imread(str(ROOT/'unlock.png'))
+        for height in (720, 1080, 1440):
+            self.assertTrue(self.task._unlock_popup(cv2.resize(frame, (height*16//9, height))))
+        for name in ('detail', 'tokens', 'result'):
+            frame = self.image(name)
+            self.assertFalse(self.task._unlock_popup(frame))
+            self.assertFalse(v.sea_world(frame))
+        for name in ('exit_front', 'exit_side', 'exit_low', 'exit_prompt'):
+            self.assertTrue(v.sea_world(self.image(name)), name)
+
     def test_result_numbers(self):
         from unittest.mock import patch
         task = self.task

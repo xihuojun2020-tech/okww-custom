@@ -7,8 +7,10 @@ import numpy as np
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.BaseCombatTask import BaseCombatTask, CombatStateUnknown, NotInCombatException, CharDeadException
 from src.task.AutoAbyssTask import AutoAbyssTask, exact_ocr_box, match_travel_button, char_names, char_dict
-from src.task.sea_ruins import Preset, Token, choose_loadout, compact, parse_count, season_rule, scores_valid
+from src.task.sea_ruins import Preset, Token, compact, parse_count, scores_valid
 from src.task import sea_ruins_vision as vision
+from src.task.sea_ruins_tokens import identify_token
+from src.task.sea_ruins_recovery import SeaRuinsRecovery, SeaLoadoutChanged
 
 
 class SeaPhaseEnded(Exception):
@@ -19,7 +21,7 @@ class SeaExitMarkerLost(Exception):
     pass
 
 
-class AutoSeaRuinsTask(WWOneTimeTask, BaseCombatTask):
+class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = '自动冥歌海墟'
@@ -35,6 +37,8 @@ class AutoSeaRuinsTask(WWOneTimeTask, BaseCombatTask):
         self._next_observation = 0.
         self._phase_seen = 0
         self._deadline = None
+        self._token_artwork = {}
+        self._handling_unlock = False
 
     # Reuse the proven F2 template and avatar descriptor implementation only.
     def _character_template_descriptors(self):
@@ -92,17 +96,40 @@ class AutoSeaRuinsTask(WWOneTimeTask, BaseCombatTask):
 
     def next_frame(self):
         super().next_frame()
+        if not self._handling_unlock and self._observing_half is None:
+            self._dismiss_unlock()
         if self._observing_half is not None:
             now = time.monotonic()
             if now > self._deadline:
                 raise CombatStateUnknown('海墟单半场超过10分钟')
             if now >= self._next_observation:
                 self._next_observation = now+.65
+                if not self._handling_unlock:
+                    self._dismiss_unlock()
                 ended = self._upper_end(self.frame) if self._observing_half == 0 else self._result(self.frame)
                 self._phase_seen = self._phase_seen+1 if ended else 0
                 if self._phase_seen >= 2:
                     raise SeaPhaseEnded()
         return self.frame
+
+    def _unlock_popup(self, frame):
+        return bool(self._button(frame, (.40, .33, .60, .42), '解锁信物')
+                    and self._button(frame, (.38, .79, .62, .88), '点击空白处关闭'))
+
+    def _dismiss_unlock(self):
+        if not self._unlock_popup(self.frame):
+            return False
+        self._handling_unlock = True
+        try:
+            for _ in range(3):
+                self.click_relative(.5, .84, after_sleep=.4)
+                super().next_frame()
+                if not self._unlock_popup(self.frame):
+                    # The inventory is scanned afresh before every floor plan.
+                    return True
+            raise RuntimeError('解锁信物弹窗未能关闭，请手动关闭后继续')
+        finally:
+            self._handling_unlock = False
 
     def _detail(self, frame, floor=None):
         if not self._button(frame, (.025, .035, .15, .095), '海墟详情'):
@@ -250,14 +277,14 @@ class AutoSeaRuinsTask(WWOneTimeTask, BaseCombatTask):
             for candidate, top in rows:
                 if candidate.number == preset.number:
                     if candidate.members != preset.members:
-                        raise RuntimeError('预设回位后成员变化，未点击')
+                        raise SeaLoadoutChanged('预设回位后成员变化，未点击；继续后重新规划')
                     self.click_relative(.16, top+.065)
                     self._wait(lambda f: self._members_match(f, half, preset), '预设应用后头像顺序未确认')
                     self._close_presets()
                     return
             self.scroll_relative(.20, .50, -2)
             self.sleep(.3)
-        raise RuntimeError(f'未找回预设{preset.number}')
+        raise SeaLoadoutChanged(f'未找回预设{preset.number}，继续后重新规划')
 
     def _token_page(self, frame):
         return bool(self._button(frame, (.015, .025, .20, .10), '信物一览')
@@ -270,17 +297,36 @@ class AutoSeaRuinsTask(WWOneTimeTask, BaseCombatTask):
         self.scroll_relative(.40, .50, 30)
         self.sleep(.4)
 
-    def _read_token(self, rect):
-        x, y, w, h = rect
-        self.click_relative((x+w/2)/2048, (y+h/2)/1152, after_sleep=.25)
-        def title(frame):
-            return ''.join(b.name for b in self.ocr(.69, .125, .965, .185, frame=frame))
-        name = self._wait(title, '信物详细名称未稳定', timeout=5)
-        frame = self.frame
-        # Description area excludes the flavour text below the divider.
-        description = ''.join(b.name for b in self.ocr(.69, .40, .963, .565, frame=frame))
-        count = self._token_count(frame, rect)
-        return Token(compact(name), description, count, vision.token_locked(frame, rect))
+    def _page_tokens(self, frame):
+        records = []
+        for rect in vision.token_cards(frame):
+            rarity = vision.token_rarity(frame, rect)
+            if rarity == 'green' or vision.token_locked(frame, rect):
+                continue
+            x, y, w, h = rect
+            caption = ''.join(self._small_text(frame, ((x+5)/2048, (y+h*.79)/1152,
+                                                       (x+w-5)/2048, (y+h*.99)/1152)))
+            rule = identify_token(caption, rarity)
+            if rule is None:
+                raise RuntimeError(f'信物名称/品质未确认：{caption} / {rarity}，请调整列表后继续')
+            count = self._token_count(frame, rect)
+            if count is None:
+                raise RuntimeError(f'{rule.name}数量未确认，请调整列表后继续')
+            records.append((Token(rule.name, rule.effect, count), rect))
+        return records
+
+    def _inventory_page(self):
+        error = RuntimeError('未确认信物列表')
+        for attempt in range(3):
+            self.next_frame()
+            if self._token_page(self.frame):
+                try:
+                    return self._page_tokens(self.frame)
+                except RuntimeError as read_error:
+                    error = read_error
+            if attempt < 2:
+                self.sleep(.2)
+        raise error
 
     def _token_count(self, frame, rect):
         x, y, w, h = rect
@@ -298,13 +344,12 @@ class AutoSeaRuinsTask(WWOneTimeTask, BaseCombatTask):
         self._open_tokens(0)
         tokens, previous, repeats = {}, None, 0
         for _ in range(24):
-            self.next_frame()
-            for rect in vision.token_cards(self.frame):
-                if vision.token_locked(self.frame, rect):
-                    continue
-                token = self._read_token(rect)
-                if token:
-                    tokens[token.name] = token
+            for token, rect in self._inventory_page():
+                old = tokens.get(token.name)
+                if old is not None and old.remaining != token.remaining:
+                    raise RuntimeError(f'{token.name}跨页库存不一致，请重新扫描')
+                tokens[token.name] = token
+                self._token_artwork[token.name] = vision.token_art(self.frame, rect)
             self.next_frame()
             image = cv2.resize(vision.crop(self.frame, (.04, .17, .63, .86)), (120, 100))
             repeats = repeats+1 if previous is not None and np.mean(cv2.absdiff(previous, image)) < 2 else 0
@@ -321,17 +366,23 @@ class AutoSeaRuinsTask(WWOneTimeTask, BaseCombatTask):
         return list(tokens.values())
 
     def _equip_token(self, half, target):
+        if self._token_equipped(self.frame, half, target):
+            return
         self._open_tokens(half)
         for _ in range(24):
-            self.next_frame()
-            for rect in vision.token_cards(self.frame):
-                if vision.token_locked(self.frame, rect):
-                    continue
-                token = self._read_token(rect)
-                if token and token.name == target.name:
+            for token, rect in self._inventory_page():
+                if token.name == target.name:
                     if not token.available:
-                        raise RuntimeError(f'{target.name}已不可携带')
+                        raise SeaLoadoutChanged(f'{target.name}已不可携带，继续后重新扫描库存')
                     art = vision.token_art(self.frame, rect)
+                    x, y, w, h = rect
+                    self.click_relative((x+w/2)/2048, (y+h/2)/1152, after_sleep=.25)
+                    def selected(frame):
+                        title = ''.join(b.name for b in self.ocr(.69, .125, .965, .185, frame=frame))
+                        rule = identify_token(title)
+                        return rule is not None and rule.name == target.name
+                    self._wait(selected, f'{target.name}详细名称未确认', timeout=5)
+                    self._token_artwork[target.name] = art
                     button = self._button(self.frame, (.68, .88, .97, .95), '携带')
                     if not button:
                         raise RuntimeError('携带按钮未确认')
@@ -346,7 +397,14 @@ class AutoSeaRuinsTask(WWOneTimeTask, BaseCombatTask):
                     return
             self.scroll_relative(.40, .50, -2)
             self.sleep(.3)
-        raise RuntimeError(f'未找回信物：{target.name}')
+        raise SeaLoadoutChanged(f'未找回信物：{target.name}，继续后重新扫描库存')
+
+    def _token_equipped(self, frame, half, target):
+        art = self._token_artwork.get(target.name)
+        if art is None or not self._detail(frame, self._floor):
+            return False
+        y = (.34, .66)[half]
+        return self._same_art(art, vision.crop(frame, (.827, y, .88, y+.096)))
 
     def _same_art(self, a, b):
         # ORB tolerates card/slot rescaling and ignores the selection border.
@@ -528,53 +586,5 @@ class AutoSeaRuinsTask(WWOneTimeTask, BaseCombatTask):
                          attempts=1, timeout=120, identity=('sea', expected))
 
     def run(self):
-        WWOneTimeTask.run(self)
         self._observing_half = None
-        self._floor = 7
-        try:
-            season_rule(7, 0)
-            vision.normalized(self.require_game_frame())
-            self._status('进入再生海域')
-            self._open()
-            for floor in range(7, 12):
-                self._floor = floor
-                self._wait(lambda f: self._detail(f, floor), '当前层号未确认')
-                self._status(f'第{floor}层扫描预设与信物')
-                presets = self._scan_presets()
-                tokens = self._scan_tokens()
-                plan = choose_loadout(presets, tokens, floor)
-                for reason in plan.reasons:
-                    self.log_info(reason)
-                self._apply_preset(0, plan.upper)
-                self._apply_preset(1, plan.lower)
-                self._wait(lambda f: self._members_match(f, 0, plan.upper) and self._members_match(f, 1, plan.lower),
-                           '两队应用后成员冲突或顺序不符')
-                for half in (0, 1):
-                    self._equip_token(half, plan.tokens[half])
-                self.navigate_ui('海墟进入战斗地图',
-                    self._challenge_button,
-                    lambda f: self.in_team_and_world(frame=f) and not self._detail(f),
-                    attempts=1, timeout=120, identity=('sea_start', floor))
-                self._check_world_team(plan.upper)
-                self._start_combat()
-                self._fight(0)
-                self._enter_lower()
-                self._check_world_team(plan.lower)
-                self._start_combat()
-                self._fight(1)
-                self._read_result()
-                if floor < 11:
-                    self._continue()
-            self.navigate_ui('海墟返回选关',
-                lambda f: self._button(f, (.28, .84, .44, .91), '返回海墟') if self._result(f) else None,
-                self._map, attempts=1, timeout=120, identity='sea_finished')
-            self._status('7—11层挑战完成；未挑战无尽，未领取奖励')
-        except Exception as error:
-            self._observing_half = None
-            self.screenshot('sea_ruins_failed')
-            self._status(f'海墟停止：{error}')
-            raise
-        finally:
-            self._observing_half = None
-            self.skip_combat_check = True
-            self._release()
+        self._run_sea_stages()

@@ -44,6 +44,17 @@ def token_cards(frame):
             rect = (x+85, y+195, w, h)
             if not any(abs(rect[0]-a[0]) < 15 and abs(rect[1]-a[1]) < 15 for a in found):
                 found.append(rect)
+    # Resampling can leave card borders open. The solid rarity strip remains a
+    # second, independent anchor; do not infer missing cards from grid spacing.
+    colors = cv2.inRange(cv2.cvtColor(image, cv2.COLOR_BGR2HSV), (0, 80, 100), (179, 255, 255))
+    stripes = cv2.morphologyEx(colors, cv2.MORPH_OPEN, np.ones((1, 110), np.uint8))
+    for c in cv2.findContours(stripes, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]:
+        x, y, w, h = cv2.boundingRect(c)
+        rect = (x-4, y-141, w+8, 196)
+        if (140 <= w <= 160 and 5 <= h <= 22 and 85 <= x < 1250
+                and 195 <= rect[1] and rect[1]+196 <= 1000
+                and not any(abs(rect[0]-a[0]) < 15 and abs(rect[1]-a[1]) < 15 for a in found)):
+            found.append(rect)
     return sorted(found, key=lambda r: (round(r[1]/40), r[0]))
 
 
@@ -60,6 +71,31 @@ def token_locked(frame, rect):
 def token_art(frame, rect):
     x, y, w, h = rect
     return normalized(frame)[y+12:y+round(h*.65), x+12:x+round(w*.72)].copy()
+
+
+def token_rarity(frame, rect):
+    x, y, w, h = rect
+    # Coloured strip immediately above the name, not the selected gold border.
+    strip = normalized(frame)[y+round(h*.72):y+round(h*.79), x+round(w*.15):x+round(w*.85)]
+    hsv = cv2.cvtColor(strip, cv2.COLOR_BGR2HSV)
+    hue = hsv[:, :, 0][(hsv[:, :, 1] > 80) & (hsv[:, :, 2] > 100)]
+    if len(hue) < 8:
+        return None
+    h = float(np.median(hue))
+    if 15 <= h <= 40:
+        return 'gold'
+    if 120 <= h <= 165:
+        return 'purple'
+    if 85 <= h < 120:
+        return 'blue'
+    if 40 < h < 85:
+        return 'green'
+    return None
+
+
+def sea_world(frame):
+    region = crop(normalized(frame), (.04, .115, .085, .20))
+    return icon_similarity(region, reference('sea_world')) >= .75
 
 
 def exit_marker(frame):
