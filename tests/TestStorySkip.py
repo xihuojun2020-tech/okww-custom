@@ -14,6 +14,42 @@ FIXTURES = Path(__file__).parent / 'fixtures/story_skip'
 
 
 class TestStorySkip(unittest.TestCase):
+    def test_active_polling_is_fast_but_keeps_three_fresh_frames(self):
+        task, harness = self.task()
+        task.require_game_frame.return_value = cv2.resize(self.summary(), (1920, 1080))
+        harness.tick(task)
+        self.assertEqual(task.trigger_interval, .15)
+        task.click_box.assert_not_called()
+        # Replaying the exact capture cannot count as another stable sample.
+        task.run()
+        task.click_box.assert_not_called()
+        harness.tick(task)
+        task.click_box.assert_not_called()
+        harness.tick(task)
+        task.click_box.assert_called_once()
+        self.assertEqual(task.click_box.call_args.kwargs, {'after_sleep': 0})
+        task.in_team_and_world.return_value = True
+        harness.tick(task)
+        self.assertEqual(task.trigger_interval, .5)
+        self.assertIsNone(task._ui_tick_navigation)
+
+    def test_icon_to_confirmation_has_no_fixed_click_sleep(self):
+        task, harness = self.task()
+        clicks = []
+        def click(box, after_sleep=1):
+            clicks.append((box.name, harness.clock[0]))
+            harness.clock[0] += after_sleep
+        task.click_box.side_effect = click
+        task.require_game_frame.side_effect = lambda: cv2.resize(
+            self.icon_scene() if not clicks else self.summary(), (1920, 1080))
+        for _ in range(7):
+            task.executor._last_frame_time += 1
+            task.run()
+            harness.clock[0] += task.trigger_interval
+        self.assertEqual([c[0] for c in clicks], ['skip_dialog_hex', 'skip_story_summary'])
+        self.assertAlmostEqual(clicks[1][1]-clicks[0][1], .6)
+        task.sleep.assert_not_called()
+
     def test_nine_backgrounds_at_two_positions_and_four_resolutions(self):
         centers = ((53.5, 47.5), (58, 42), (61, 45.5), (71, 64), (62, 42),
                    (82, 67.5), (68, 66.5), (53, 50), (53, 47))

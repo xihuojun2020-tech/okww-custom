@@ -16,6 +16,7 @@ class AutoDialogTask(TriggerTask, SkipBaseTask):
     def disable(self):
         self._ui_tick_navigation = None
         self._skip_requested = False
+        self.trigger_interval = 0.5
         return super().disable()
 
     def _skip_confirmation(self):
@@ -45,6 +46,9 @@ class AutoDialogTask(TriggerTask, SkipBaseTask):
                             getattr(confirm, 'name', None), '剧情跳过确认')
         skip = None if world or confirm or warning_unknown else self.find_skip()
         pending = getattr(self, '_ui_tick_navigation', None)
+        # Poll quickly only while a bounded skip operation is in progress.
+        # Keep three fresh-frame confirmations; never replace them with a timed click.
+        self.trigger_interval = 0.15 if not world and (confirm or skip or pending) else 0.5
         if pending:
             step = pending['step']
             reached = world or (step == '剧情跳过' and confirm is not None) or (
@@ -52,7 +56,7 @@ class AutoDialogTask(TriggerTask, SkipBaseTask):
                                       or (confirm is None and skip is not None)))
             button = skip if step == '剧情跳过' else confirm
             def click_pending(box):
-                self.click_box(box)
+                self.click_box(box, after_sleep=0)
                 if step == '剧情跳过':
                     self._skip_requested = True
             handled = advance(self, step, lambda frame:None if reached else button,
@@ -68,7 +72,7 @@ class AutoDialogTask(TriggerTask, SkipBaseTask):
         if confirm or skip:
             step = confirm_step if confirm else '剧情跳过'
             def click(button):
-                self.click_box(button)
+                self.click_box(button, after_sleep=0)
                 if step == '剧情跳过':
                     self._skip_requested = True
             return advance(self, step, lambda frame:confirm or skip, lambda frame:False,
