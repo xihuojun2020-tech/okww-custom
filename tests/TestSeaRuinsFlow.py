@@ -62,7 +62,7 @@ class TestSeaRuinsFlow(unittest.TestCase):
             self.assertTrue(0 < kwargs['time_out'] <= 60)
             find()
             return kwargs['end_condition']()
-        t.walk_to_box.side_effect = walk
+        t._walk_sea_exit.side_effect = walk
         with patch('src.task.AutoSeaRuinsTask.vision.exit_marker', return_value=(.8,.3,.9)):
             AutoSeaRuinsTask._enter_lower(t)
         t.ensure_in_front.assert_not_called()
@@ -75,7 +75,7 @@ class TestSeaRuinsFlow(unittest.TestCase):
         t = self.task()
         t._prompt.return_value = False
         t._upper_end.return_value = False
-        t.walk_to_box.side_effect = lambda find, **kw: kw['end_condition']()
+        t._walk_sea_exit.side_effect = lambda find, **kw: kw['end_condition']()
         with self.assertRaisesRegex(RuntimeError, '提示消失'):
             AutoSeaRuinsTask._enter_lower(t)
         t.send_key.assert_not_called()
@@ -85,7 +85,7 @@ class TestSeaRuinsFlow(unittest.TestCase):
         t = self.task()
         t._prompt.return_value = False
         t._upper_end.return_value = True
-        t.walk_to_box.side_effect = lambda find, **kw: find()
+        t._walk_sea_exit.side_effect = lambda find, **kw: find()
         with patch('src.task.AutoSeaRuinsTask.vision.exit_marker', return_value=None):
             with self.assertRaisesRegex(RuntimeError, '标记丢失'):
                 AutoSeaRuinsTask._enter_lower(t)
@@ -100,22 +100,22 @@ class TestSeaRuinsFlow(unittest.TestCase):
         def walk(find, **kw):
             find()
             return kw['end_condition']()
-        t.walk_to_box.side_effect = walk
+        t._walk_sea_exit.side_effect = walk
         with patch('src.task.AutoSeaRuinsTask.vision.exit_marker',
                    side_effect=[None, (.6, .7, .95), (.6, .7, .95)]):
             AutoSeaRuinsTask._enter_lower(t)
-        self.assertEqual(t.walk_to_box.call_count, 2)
-        self.assertLessEqual(t.walk_to_box.call_args.kwargs['time_out'],
-                             t.walk_to_box.call_args_list[0].kwargs['time_out'])
+        self.assertEqual(t._walk_sea_exit.call_count, 2)
+        self.assertLessEqual(t._walk_sea_exit.call_args.kwargs['time_out'],
+                             t._walk_sea_exit.call_args_list[0].kwargs['time_out'])
         t.send_key.assert_called_once_with('f')
 
     def test_prompt_during_recovery_does_not_restart_walker(self):
         t = self.task()
         t._prompt.return_value = True
-        t.walk_to_box.side_effect = lambda find, **kw: find()
+        t._walk_sea_exit.side_effect = lambda find, **kw: find()
         with patch('src.task.AutoSeaRuinsTask.vision.exit_marker', return_value=None):
             AutoSeaRuinsTask._enter_lower(t)
-        t.walk_to_box.assert_called_once()
+        t._walk_sea_exit.assert_called_once()
         t.send_key.assert_called_once_with('f')
 
     def test_recovery_state_loss_and_cancellation_release_keys(self):
@@ -123,7 +123,7 @@ class TestSeaRuinsFlow(unittest.TestCase):
             t = self.task()
             t._prompt.return_value = False
             t._upper_end.return_value = False
-            t.walk_to_box.side_effect = lambda find, **kw: find()
+            t._walk_sea_exit.side_effect = lambda find, **kw: find()
             if cancel:
                 t.sleep.side_effect = InterruptedError('cancelled')
             with patch('src.task.AutoSeaRuinsTask.vision.exit_marker', return_value=None):
@@ -134,7 +134,7 @@ class TestSeaRuinsFlow(unittest.TestCase):
 
     def test_recovery_respects_total_deadline(self):
         t = self.task()
-        t.walk_to_box.side_effect = lambda find, **kw: find()
+        t._walk_sea_exit.side_effect = lambda find, **kw: find()
         with patch('src.task.AutoSeaRuinsTask.vision.exit_marker', return_value=None), \
              patch('src.task.AutoSeaRuinsTask.time.monotonic', side_effect=[0, 0, 61, 61]):
             with self.assertRaisesRegex(RuntimeError, '60秒'):
@@ -145,7 +145,7 @@ class TestSeaRuinsFlow(unittest.TestCase):
     def test_walking_timeout_and_disappeared_prompt_do_not_press_f(self):
         for result in (False, True):
             t = self.task()
-            t.walk_to_box.return_value = result
+            t._walk_sea_exit.return_value = result
             t._prompt.return_value = False
             with self.assertRaises(RuntimeError):
                 AutoSeaRuinsTask._enter_lower(t)
@@ -157,6 +157,8 @@ class TestSeaRuinsFlow(unittest.TestCase):
         t.ocr.return_value = [Mock(name='unused')]
         t.ocr.return_value[0].name = '即将前往涡流-第9层'
         def navigate(label, source, target, **kwargs):
+            self.assertEqual(kwargs['attempts'], 3)
+            self.assertEqual(kwargs['retry_after'], 5)
             self.assertIsNone(source(t.frame))
             t.ocr.return_value[0].name = '即将前往涡流-第8层'
             self.assertIsNotNone(source(t.frame))

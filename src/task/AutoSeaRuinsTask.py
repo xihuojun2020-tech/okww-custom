@@ -494,11 +494,59 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
             self.skip_combat_check = True
             self._release()
 
+    def _walk_sea_exit(self, find, *, time_out, end_condition):
+        """Reacquire heading in short segments; bounded sea-only obstacle recovery."""
+        deadline = time.monotonic() + time_out
+        anchor, anchor_point, unchanged_since = None, None, time.monotonic()
+        try:
+            while time.monotonic() < deadline:
+                self.next_frame()
+                if end_condition():
+                    return True
+                point = find().center()  # missing marker raises before any input
+                # Exclude character animation, HUD and the pinned overhead marker.
+                scene = np.hstack([cv2.resize(vision.crop(self.frame, region), (64, 64))
+                    for region in ((.22, .35, .40, .70), (.62, .35, .80, .70))])
+                now = time.monotonic()
+                if (anchor is None or np.mean(cv2.absdiff(scene, anchor)) > 3
+                        or abs(point[0]-anchor_point[0]) > self.width*.01
+                        or abs(point[1]-anchor_point[1]) > self.height*.01):
+                    anchor, anchor_point, unchanged_since = scene, point, now
+                elif now - unchanged_since >= 4:
+                    if self._exit_detours >= 3:
+                        raise RuntimeError('出口寻路连续无进展，3轮有限脱困后仍未到达')
+                    self._exit_detours += 1
+                    side = 'a' if self._exit_detours % 2 else 'd'
+                    self._release()
+                    self._status(f'出口寻路无进展，有限脱困{self._exit_detours}/3')
+                    for key in ('s', side, side, side):
+                        self.next_frame()
+                        if end_condition():
+                            return True
+                        find()  # revalidate marker/phase before each short step
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            return False
+                        self.send_key(key, down_time=min(.25, remaining))
+                    anchor = None
+                    continue
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                # Restarting clears the shared walker's sticky centered flag.
+                if self.walk_to_box(find, time_out=min(1., remaining), end_condition=end_condition):
+                    return True
+                self._release()
+            return False
+        finally:
+            self._release()
+
     def _enter_lower(self):
         self._wait(self._upper_end, '未确认前往下半海域')
         self._release()
         self.middle_click(after_sleep=.3)
         self._status('后台寻路前往下半海域出口')
+        self._exit_detours = 0
 
         def arrived():
             if self._prompt(self.frame, '进入下半海域'):
@@ -522,7 +570,7 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
             reached = False
             while (remaining := deadline - time.monotonic()) > 0:
                 try:
-                    reached = self.walk_to_box(target, time_out=remaining, end_condition=arrived)
+                    reached = self._walk_sea_exit(target, time_out=remaining, end_condition=arrived)
                     break
                 except SeaExitMarkerLost:
                     self._release()
@@ -593,7 +641,7 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
                 return None
             return self._button(frame, (.56, .84, .73, .91), '继续挑战')
         self.navigate_ui('海墟继续下一层', source, lambda f: self._detail(f, expected),
-                         attempts=1, timeout=120, identity=('sea', expected))
+                         attempts=3, retry_after=5, timeout=120, identity=('sea', expected))
 
     def run(self):
         self._observing_half = None

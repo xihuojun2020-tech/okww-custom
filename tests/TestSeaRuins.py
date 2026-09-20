@@ -129,3 +129,15 @@ class TestSeaRuins(unittest.TestCase):
             self.assertAlmostEqual(marker[1], .769, delta=.018)
             frame[:, round(frame.shape[1]*.18):] = 0
             self.assertIsNone(v.exit_marker(frame))
+
+    def test_high_exit_marker_from_failed_run(self):
+        for height in (720, 1080, 1440):
+            frame = cv2.resize(cv2.imread(str(ROOT/'exit_high.png')), (height*16//9, height))
+            marker = v.exit_marker(frame)
+            self.assertIsNotNone(marker)
+            self.assertAlmostEqual(marker[0], .497, delta=.015)
+            self.assertAlmostEqual(marker[1], .128, delta=.015)
+            # Keep all HUD and left quest; remove only the world marker.
+            frame[round(.085*height):round(.16*height),
+                  round(.47*frame.shape[1]):round(.52*frame.shape[1])] = 0
+            self.assertIsNone(v.exit_marker(frame))
