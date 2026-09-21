@@ -22,6 +22,28 @@ from src.win32_login_input import ForegroundResult, LoginClickDelivery
 
 
 class TestPersistentDailyRetry(unittest.TestCase):
+    def test_weekly_summary_uses_current_shared_info_not_restored_child(self):
+        task = self.make_task()
+        task.get_task_by_class.return_value.info = {'周本检查结果': '待补检：体力不足'}
+        task.run_task_by_class.side_effect = lambda _: task.info.update({'周本检查结果': '待补检：找不到奖励'})
+        task._run_daily_account('A1')
+        self.assertEqual(task._weekly_pending['A1'], '待补检：找不到奖励')
+        task.run_task_by_class.side_effect = None
+        task._run_daily_account('A2')
+        self.assertNotIn('A2', task._weekly_pending)
+
+    def test_weekly_only_summary_reads_direct_child_and_clears_resolved(self):
+        from unittest.mock import Mock
+        task = self.make_task()
+        task.done_set.add('A3')
+        child = task.get_task_by_class.return_value
+        child.run_weekly_boss_only = Mock(side_effect=lambda: child.info.update({'周本检查结果': '待补检：找不到奖励'}))
+        task._run_daily_account('A3')
+        self.assertEqual(task._weekly_pending['A3'], '待补检：找不到奖励')
+        child.run_weekly_boss_only.side_effect = lambda: child.info.update({'周本检查结果': '已确认次数耗尽'})
+        task._run_daily_account('A3')
+        self.assertNotIn('A3', task._weekly_pending)
+
     def test_unavailable_target_stays_pending_without_same_run_retry(self):
         from src.task.ui_transition import TargetUnavailable
         task = self.make_task()

@@ -2029,8 +2029,17 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             daily_done = getattr(self, '_daily_is_done', None)
             if callable(daily_done) and daily_done(account):
                 self._attempt_scope = 'weekly'
-                self.get_task_by_class(DailyTask).run_weekly_boss_only()
+                child = self.get_task_by_class(DailyTask)
+                outcome_info = getattr(child, 'info', {})
+                if isinstance(outcome_info, dict):
+                    outcome_info.pop('周本检查结果', None)
+                child.run_weekly_boss_only()
             else:
+                # run_task_by_class shares our info during execution, then restores
+                # the child's old dictionary. Read this run, not the restored one.
+                outcome_info = getattr(self, 'info', {})
+                if isinstance(outcome_info, dict):
+                    outcome_info.pop('周本检查结果', None)
                 self.run_task_by_class(DailyTask)
         except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked):
             raise
@@ -2042,9 +2051,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             except Exception:
                 pass
             return False, error
-        child = getattr(self, 'get_task_by_class', lambda *_: None)(DailyTask)
-        child_info = getattr(child, 'info', {})
-        outcome = child_info.get('周本检查结果', '') if isinstance(child_info, dict) else ''
+        outcome = outcome_info.get('周本检查结果', '') if isinstance(outcome_info, dict) else ''
         if str(outcome).startswith('待补检'):
             if not hasattr(self, '_weekly_pending'):
                 self._weekly_pending = {}
@@ -2052,6 +2059,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             self.info_set('周本待补检', dict(self._weekly_pending))
             self.log_info(f'账号 {profile_status_label(account)} 每日任务完成；周本{outcome}', notify=True)
         else:
+            if hasattr(self, '_weekly_pending'):
+                self._weekly_pending.pop(profile_status_label(account), None)
+                self.info_set('周本待补检', dict(self._weekly_pending))
             self.log_info(f'账号 {profile_status_label(account)} 每日任务完成', notify=True)
         self._mark_done(account)
         self._save_today_progress()

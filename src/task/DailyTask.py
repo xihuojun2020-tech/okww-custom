@@ -1899,6 +1899,12 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self._publish_daily_stage('清理体力', '优先检查每周周本')
         try:
             result = self.get_task_by_class(WeeklyBossTask).run_for_target(target)
+            if result is not None and not result.complete and getattr(result, 'reason', '') == '当前体力不足':
+                status = f'待补检：当前体力不足，本周仍剩余 {result.remaining} 次；未记录完成'
+                self.info_set('周本检查结果', status)
+                self._record_weekly_outcome(target, status, result.remaining)
+                self.log_info(status)
+                return True
             if result is None or not result.complete:
                 raise RuntimeError('周本尚未确认剩余次数为零')
             if weekly_check_window() != window:
@@ -1914,11 +1920,12 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 GameProcessLost, FrameUnavailable):
             raise
         except Exception as error:
-            self.info_set('周本检查结果', f'待补检：{error}')
+            detail = str(error) or f'{type(error).__name__}（周本阶段未完成）'
+            self.info_set('周本检查结果', f'待补检：{detail}')
             weekly = self.get_task_by_class(WeeklyBossTask)
             last = getattr(weekly, 'last_result', None)
             remaining = getattr(last, 'remaining', None)
-            self._record_weekly_outcome(target, f'待补检：{error}', remaining if isinstance(remaining, int) else None)
+            self._record_weekly_outcome(target, f'待补检：{detail}', remaining if isinstance(remaining, int) else None)
             self.log_error('周本未完成，保留补检资格', error)
             self.screenshot('weekly_daily_pending')
             self.ensure_main(time_out=180)

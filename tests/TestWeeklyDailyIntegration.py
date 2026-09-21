@@ -11,6 +11,14 @@ from src.task.weekly_boss import (WEEKLY_TARGET, WEEKLY_MONDAY, WEEKLY_SUNDAY,
 
 
 class TestWeeklyDailyIntegration(unittest.TestCase):
+    def test_low_stamina_is_pending_without_error_or_completion(self):
+        task = self.daily(WeeklyBossResult(3, 2, 1, reason='当前体力不足'))
+        task.check_weekly_boss()
+        task.integrity_service.record_completion.assert_not_called()
+        task.log_error.assert_not_called()
+        task.screenshot.assert_not_called()
+        self.assertIn('体力不足', task.info_set.call_args.args[1])
+
     def test_monday_catchup_and_independent_sunday(self):
         target = WEEKLY_BOSSES[0].key
         for day in range(7, 13):

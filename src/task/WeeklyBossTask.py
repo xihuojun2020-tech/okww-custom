@@ -314,15 +314,71 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
             identity=boss.key, timeout=120, attempts=1, retry_after=120)
 
     def _reward_available(self):
+        return self._selected_reward_interaction('领取奖励')
+
+    def _selected_reward_interaction(self, text):
         # The quest label at the left is not an interaction: require the F icon
-        # and the text attached to it. No input from the combat end probe.
+        # and text on its selected row. Multiple nearby objects can move the row.
         frame = self.frame
         f = self.find_one('pick_up_f_hcenter_vcenter',
-                          box=self.box_of_screen(0.625, 0.49, 0.66, 0.545), threshold=0.8, frame=frame)
+                          box=self.f_search_box, threshold=0.8, frame=frame)
         if not f:
             return None
-        claim = self._button((0.69, 0.49, 0.80, 0.545), '领取奖励', frame)
+        claim = self._button((0.69, max(0, f.y / self.height - 0.015),
+                              0.80, min(1, (f.y + f.height) / self.height + 0.015)), text, frame)
         return claim if f and claim and abs(f.y - claim.y) <= self.height * 0.015 else None
+
+    def _seek_reward_interaction(self, timeout=45):
+        """Reuse echo interaction selection, never its spending-dialog canceller."""
+        deadline = time.monotonic() + timeout
+        absorbs = nudges = 0
+        try:
+            self._release_movement()
+            while time.monotonic() < deadline:
+                self.next_frame()
+                if not self.in_team_and_world():
+                    self.sleep(0.25)
+                    continue
+                if self._reward_available():
+                    self._release_movement()
+                    self.sleep(0.2)
+                    self.next_frame()
+                    if self._reward_available():
+                        return
+                    continue
+                if absorbs < 3 and self._selected_reward_interaction('吸收'):
+                    self._release_movement()
+                    self.send_key('f')
+                    absorbs += 1
+                    self.log_info(f'周本战后吸收声骸 {absorbs}/3，随后重新识别奖励')
+                    self.sleep(0.6)
+                    continue
+                # FarmEcho uses this helper to select an interaction below F.
+                # It may scroll: never trust its return as proof of selection.
+                if self.find_f_with_text(target_text=re.compile(r'^领取奖励$')):
+                    self.sleep(0.2)
+                    continue
+                marker = self.find_treasure_icon()
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                if marker:
+                    # Short segments discard stale heading/target positions.
+                    # Skip the generic initial static wait: we have this frame's marker.
+                    self.do_walk_to_box(lambda: self.find_treasure_icon() or marker,
+                                        time_out=min(1, remaining),
+                                        end_condition=lambda: self._reward_available() or
+                                        self._selected_reward_interaction('吸收'), y_offset=0.1)
+                elif nudges < 6 and self._task_hint_phase() == 'post':
+                    direction = ('s', 'a', 'd')[nudges % 3]
+                    self.send_key(direction, down_time=0.25)
+                    nudges += 1
+                    self.log_info(f'周本奖励标记被遮挡，短步重新定位 {nudges}/6')
+                self._release_movement()
+                self.sleep(0.2)
+        finally:
+            self._release_movement()
+        raise WeeklyPageTimeout('战后未找到领取奖励交互（已尝试吸收、交互选择及有限重新定位）')
 
     def _task_hint_phase(self, log=False):
         hints = [compact(box.name) for box in self._ocr(self.TASK_HINT)]
@@ -440,18 +496,34 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
             return int(match[1]), stamina, confirm
         return None
 
-    def _confirm_claim_if_needed(self, cost):
+    def _confirm_claim_if_needed(self, cost, retry_interaction=False):
         self._stage('检查领奖费用确认弹窗或结算页')
         previous = None
+        retries = 0
+        dialog_seen = False
+        last_input = time.monotonic() if retry_interaction else 0
 
         def read():
-            nonlocal previous
+            nonlocal previous, retries, dialog_seen, last_input
             if self._settlement():
                 return ('settled', None)
             dialog = self._claim_confirmation()
             resources = dialog[:2] if dialog else None
             stable = resources is not None and resources == previous
             previous = resources
+            if retry_interaction:
+                # Even a partially recognized dialog permanently forbids F retries.
+                dialog_seen = dialog_seen or bool(dialog) or compact(self._text(self.CLAIM_TITLE)) == '领取奖励'
+                if (not dialog_seen and retries < 2 and time.monotonic() - last_input >= 3
+                        and self.in_team_and_world() and self._reward_available()):
+                    self._release_movement()
+                    self.sleep(0.2)
+                    self.next_frame()
+                    if self.in_team_and_world() and self._reward_available():
+                        self.send_key('f')
+                        retries += 1
+                        last_input = time.monotonic()
+                        self.log_info(f'周本领奖交互仍在，重新触发 F {retries}/2；未重复费用确认')
             return ('confirm', dialog) if stable else None
 
         state, dialog = self._wait_for(read, '未确认领奖弹窗或结算页，未点击确认', 20)
@@ -468,17 +540,11 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
     def _fight_and_claim(self, cost):
         self._fight()
         self._stage('寻找领取奖励交互')
-        if not self._reward_available():
-            try:
-                self.walk_to_box(self.find_treasure_icon, time_out=30,
-                                 end_condition=self._reward_available, y_offset=0.1)
-            finally:
-                self._release_movement()
-        self._wait_for(self._reward_available, '战后未找到领取奖励交互')
+        self._seek_reward_interaction()
         self.send_key('f')
         # Only the verified current-stamina confirmation is supported. Never
         # use the generic cancellation handler or click replenishment dialogs.
-        self._confirm_claim_if_needed(cost)
+        self._confirm_claim_if_needed(cost, retry_interaction=True)
         self._stage('等待领奖结算，不重复确认')
         self._wait_for(self._settlement, '领奖结果未确认，停止再次挑战', 20)
         self._stage('已进入领奖结算页')
@@ -505,7 +571,7 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         self._stage('返回战歌重奏复核剩余次数')
         self._open_weekly_book()
         remaining = self._read_remaining()
-        self.last_result = WeeklyBossResult(initial, claimed, remaining)
+        self.last_result = WeeklyBossResult(initial, claimed, remaining, reason)
         self.info_set('复核剩余', remaining)
         from src.evidence.service import record_task_evidence
         record_task_evidence(self, 'weekly_boss', 'completed' if remaining == 0 else 'partial',
@@ -513,6 +579,9 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
                              progress=dict(initial=initial, claimed=claimed, remaining=remaining))
         self.ensure_main(time_out=60)
         if remaining:
+            if reason == '当前体力不足':
+                self._stage(f'当前体力不足，已领取 {claimed} 次，本周剩余 {remaining} 次，等待补检')
+                return self.last_result
             raise RuntimeError(f'{reason or "周本未完成"}，本周仍剩余 {remaining} 次；未记录完成')
         self._stage('已复核 0/3，本周奖励全部领取')
         return self.last_result

@@ -67,6 +67,7 @@ class WeeklyBossResult:
     initial: int
     claimed: int
     remaining: int
+    reason: str = ''
 
     @property
     def complete(self):

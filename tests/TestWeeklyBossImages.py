@@ -46,6 +46,15 @@ class TestWeeklyBossImages(TaskTestCase):
         self.assertTrue(self.task._reward_available())
         self.assertTrue(self.task._battle_finished())
 
+    def test_nas_absorb_is_not_reward_and_missing_f_is_not_claim(self):
+        for name in ('nas_b7_absorb', 'nas_b8_absorb'):
+            self.load(name)
+            self.assertTrue(self.task._selected_reward_interaction('吸收'), name)
+            self.assertFalse(self.task._reward_available(), name)
+        self.load('nas_b10_no_interaction')
+        self.assertFalse(self.task._reward_available())
+        self.assertFalse(self.task._claim_confirmation())
+
     def test_arena_victory_is_combat_end_not_reward_receipt(self):
         self.load('victory')
         self.assertTrue(self.task._battle_finished())

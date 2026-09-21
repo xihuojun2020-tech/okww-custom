@@ -98,14 +98,16 @@ class TestWeeklyBossFlow(unittest.TestCase):
     def test_insufficient_stamina_never_enters(self):
         task = self.task(3, stamina=5)
         task._read_remaining.side_effect = [3, 3, 3]
-        with self.assertRaisesRegex(RuntimeError, '体力不足'):
-            task.run_weekly()
+        result = task.run_weekly()
+        self.assertFalse(result.complete)
+        self.assertEqual(result.reason, '当前体力不足')
         task._enter_challenge.assert_not_called()
 
     def test_partial_claim_exits_before_next_fight(self):
         task = self.task(3, stamina=65, final=2)
-        with self.assertRaisesRegex(RuntimeError, '体力不足'):
-            task.run_weekly()
+        result = task.run_weekly()
+        self.assertEqual(result.remaining, 2)
+        self.assertEqual(result.reason, '当前体力不足')
         self.assertEqual(task._fight_and_claim.call_count, 1)
         task._leave_settlement.assert_called_once_with(False)
 
@@ -143,6 +145,8 @@ class TestWeeklyBossBoundaries(unittest.TestCase):
         task.confirm_button = box('确认')
         task._claim_confirmation = Mock(return_value=(cost, stamina, task.confirm_button))
         task.click_box = Mock()
+        task._seek_reward_interaction = Mock()
+        task._text = Mock(return_value='')
         return task
 
     def test_reward_confirmation_clicks_once_after_stable_resources(self):
@@ -359,6 +363,7 @@ class TestWeeklyBossBoundaries(unittest.TestCase):
         task.sleep = Mock()
         task._stage = Mock()
         task._open_weekly_target = Mock()
+        task._seek_reward_interaction = Mock()
         return task
 
     def test_stable_zero_and_flicker_use_new_frames(self):
@@ -401,7 +406,7 @@ class TestWeeklyBossBoundaries(unittest.TestCase):
         task = self.task()
         task._fight = Mock()
         task._reward_available = Mock(return_value=True)
-        task._wait_for = Mock(side_effect=[True, WeeklyPageTimeout('unknown')])
+        task._wait_for = Mock(side_effect=WeeklyPageTimeout('unknown'))
         task.send_key = Mock()
         task.get_settlement_stamina = Mock()
         with self.assertRaises(WeeklyPageTimeout):
