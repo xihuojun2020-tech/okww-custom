@@ -102,7 +102,8 @@ class TestCompletionEvidence(unittest.TestCase):
         task = object.__new__(DailyTask)
         task._verified_profile_id = ACCOUNT
         task._executor = SimpleNamespace(completion_evidence_service=service, current_task=SimpleNamespace(start_time=123))
-        flags = {'Screenshot After Daily Task': screenshot, 'Record After Daily Task': video, 'Record Duration': .2}
+        flags = {'Screenshot After Daily Task': screenshot, 'Record After Daily Task': video,
+                 'Record Duration': .2, 'Weekly Garden Check Day': 'Monday'}
         task._profile_get = lambda key, default=None: flags.get(key, default)
         task._publish_daily_stage = Mock()
         task._open_record_page = Mock(return_value=True)
@@ -222,7 +223,8 @@ class TestCompletionEvidence(unittest.TestCase):
         from src.task.DailyTask import DailyTask
         from src.recording_policy import RECORDING_PAGES
         with tempfile.TemporaryDirectory() as root:
-            task = SimpleNamespace(_profile_get=lambda key, default: {'Record Pages': ['任务页']}.get(key, default),
+            task = SimpleNamespace(_profile_get=lambda key, default: {
+                'Record Pages': ['任务页'], 'Weekly Garden Check Day': 'Monday'}.get(key, default),
                 get_active_profile_name=lambda: 'synthetic', _open_record_page=Mock(return_value=False),
                 ensure_main=Mock(), log_warning=Mock(), log_info=Mock(), log_error=Mock(), screenshot=Mock(),
                 _publish_daily_stage=Mock())
@@ -230,6 +232,19 @@ class TestCompletionEvidence(unittest.TestCase):
                 DailyTask.record_progress(task)
             self.assertEqual([call.args[0] for call in task._open_record_page.call_args_list], list(RECORDING_PAGES))
             self.assertEqual(task.log_warning.call_count, len(RECORDING_PAGES))
+
+    def test_disabled_garden_is_not_opened_for_completion_evidence(self):
+        from unittest.mock import Mock
+        from src.task.DailyTask import DailyTask
+        with tempfile.TemporaryDirectory() as root:
+            task = SimpleNamespace(_profile_get=lambda key, default: {
+                'Weekly Garden Check Day': '无'}.get(key, default),
+                get_active_profile_name=lambda: 'synthetic', _open_record_page=Mock(return_value=False),
+                ensure_main=Mock(), log_warning=Mock(), log_info=Mock(), log_error=Mock(), screenshot=Mock(),
+                _publish_daily_stage=Mock())
+            with patch('src.storage.get_warehouse_sub', return_value=root):
+                DailyTask.record_progress(task)
+            self.assertNotIn('每周乐园', [call.args[0] for call in task._open_record_page.call_args_list])
 
     def test_run_records_are_observations_not_completion_and_keep_account_binding(self):
         from src.evidence.service import EvidenceService, begin_daily_run, finish_daily_run

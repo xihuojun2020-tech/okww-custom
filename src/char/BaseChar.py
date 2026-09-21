@@ -719,7 +719,7 @@ class BaseChar:
         timestamp = getattr(executor, '_last_frame_time', None)
         age = max(0, time.time() - timestamp) if isinstance(timestamp, (int, float)) else None
         hwnd = getattr(self.task, 'hwnd', None)
-        self.logger.error(
+        self.logger.warning(
             f'clicked liberation but no effect; reason=animation_unconfirmed '
             f'send_attempts={send_attempts} confirmation_timeout=0.4 '
             f'elapsed={max(0, time.time() - started):.3f} frame_age={age} '

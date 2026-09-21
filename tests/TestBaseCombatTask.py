@@ -83,7 +83,7 @@ class TestBaseCombatTask(unittest.TestCase):
         char.logger = Mock()
         with patch('src.char.BaseChar.time.time', return_value=100):
             char._log_liberation_unconfirmed(98, 3)
-        message = char.logger.error.call_args.args[0]
+        message = char.logger.warning.call_args.args[0]
         for text in ('send_attempts=3', 'frame_age=1', 'visible=False', 'input_delivery=unverified'):
             self.assertIn(text, message)
 

@@ -62,7 +62,7 @@ MERGE_ECHO_ON_SUNDAY = 'Merge Echo on Sunday'
 # 备用识别名称（扫码登录 U 账号等）：可选无/使用，使用则输入（逗号分隔，输入即保存）
 ALIAS_ENABLE = '备用识别名称'
 ALIAS_TEXT = '备用识别名称内容'
-# 每周乐园检查日（单选一天：周一~周六 + 无；周日固定检查、不显示）
+# 每周乐园检查日；“无”表示该账号完全禁用，星期日必须显式选择。
 GARDEN_CHECK_DAY = 'Weekly Garden Check Day'
 # 旧版多选周几键，仅用于迁移旧配置
 WEEKLY_GARDEN_CHECK_DAYS = 'Weekly Garden Check Days'
@@ -88,7 +88,9 @@ def weekly_garden_check_due(check_day, last_completed, now=None):
     """Return whether this account still needs its weekly garden check."""
     now = now or datetime.now()
     selected_day = normalize_weekday(check_day)
-    scheduled_weekday = WEEKDAYS.index(selected_day) if selected_day in WEEKDAYS else 6
+    if selected_day not in WEEKDAYS:
+        return False
+    scheduled_weekday = WEEKDAYS.index(selected_day)
     if now.weekday() < scheduled_weekday:
         return False
     if not last_completed:
@@ -231,7 +233,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             AUTO_FARM_NIGHTMARE_NEST: '勾选 = 刷取全部选中的梦魇巢穴',
             'Nightmare Which to Farm': '勾选 = 刷',
             'Tacet Discord Nests to Farm': '勾选 = 刷，取消勾选 = 跳过',
-            GARDEN_CHECK_DAY: '周一~周六选一天检查（周日固定检查，不显示）',
+            GARDEN_CHECK_DAY: '无 = 此账号不检查、不执行；需要周日运行时请明确选择周日',
             ALIAS_ENABLE: '备用识别名称：无 = 不设置；使用 = 填写扫码登录显示的账号标识',
             ALIAS_TEXT: '多个用逗号分隔（如 UTEST1001A，识别登录界面账号时与手机号掩码同等有效）',
             MERGE_ECHO_ON_SUNDAY: '勾选 = 开启',
@@ -296,7 +298,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 'type': 'multi_selection',
                 'options': NEST_NAMES,
             },
-            # 每周乐园检查日：单选一天（周一~周六 + 无）；周日固定检查、不显示
+            # “无”是明确禁用；周日与其他日期一样必须显式选择。
             GARDEN_CHECK_DAY: {
                 'type': 'drop_down',
                 'options': ['无', *WEEKDAYS],
@@ -1061,7 +1063,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         """把旧版"附加任务列表"迁移为独立开关，并补齐各方案缺失的配置键。
 
         旧格式的 'Additional Tasks to Run After Daily Task' 列表会被转换：
-        - Check Weekly Garden        → 若未设置检查日，则默认全部勾选
+        - Check Weekly Garden        → 若未设置检查日，则迁移为星期日
         - Auto Farm all Nightmare Nest → AUTO_FARM_NIGHTMARE_NEST = True
         - Merge Echo If discarded > 1000 → MERGE_ECHO_ON_SUNDAY = True
         迁移完成后删除旧键，避免污染新方案。
@@ -1082,15 +1084,23 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 if isinstance(additional, list):
                     changed = True
                     if CHECK_WEEKLY_GARDEN in additional and not profile.get(GARDEN_CHECK_DAY):
-                        profile[GARDEN_CHECK_DAY] = '无'
+                        profile[GARDEN_CHECK_DAY] = WEEKDAYS[6]
                     if AUTO_FARM_NIGHTMARE_NEST in additional:
                         profile[AUTO_FARM_NIGHTMARE_NEST] = True
                     if old_merge in additional:
                         profile[MERGE_ECHO_ON_SUNDAY] = True
-                # 迁移旧版多选周几 → 单选一天（取第一个非周日；全为周日/空 → 无）
+                # 迁移旧版多选周几 → 单选一天；空列表表示禁用。
                 old_days = profile.get(WEEKLY_GARDEN_CHECK_DAYS)
                 if isinstance(old_days, list):
-                    day = next((d for d in old_days if d != WEEKDAYS[6]), '无')
+                    valid_days = []
+                    for old_day in old_days:
+                        try:
+                            normalized = normalize_weekday(old_day)
+                        except ValueError:
+                            continue
+                        if normalized in WEEKDAYS:
+                            valid_days.append(normalized)
+                    day = valid_days[0] if valid_days else '无'
                     profile[GARDEN_CHECK_DAY] = day
                     profile.pop(WEEKLY_GARDEN_CHECK_DAYS, None)
                     changed = True
@@ -1877,8 +1887,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         return True
 
     def run_weekly_tasks(self):
-        # 每周乐园：从所选日期开始补检；“无”则从周日开始。
-        self.check_weekly_garden()
+        # 每周乐园：明确选择日期才启用；“无”不会打开页面或执行任务。
+        if normalize_weekday(self._profile_get(GARDEN_CHECK_DAY, '无')) in WEEKDAYS:
+            self.check_weekly_garden()
         # 声骸融合：每周日运行一次
         if self._profile_get(MERGE_ECHO_ON_SUNDAY) and WEEKDAYS[datetime.now().weekday()] == WEEKDAYS[6]:
             self.check_discarded_echo()
@@ -1944,14 +1955,17 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def check_weekly_garden(self):
         self.info_set('current task', 'check weekly garden')
-        self.log_info('正在检查每周乐园...')
-        # 所选日期是本周最早检查日；之后会持续补检，直到账号写入本周完成记录。
-        # “无”保持旧行为，以周日作为最早检查日。
-        raw_day = self._profile_get(GARDEN_CHECK_DAY)
+        raw_day = self._profile_get(GARDEN_CHECK_DAY, '无')
         try:
             check_day = normalize_weekday(raw_day)
         except ValueError as error:
             raise ConfigIntegrityBlocked(str(error)) from error
+        if check_day not in WEEKDAYS:
+            self.log_info('每周乐园未启用，跳过检查和执行')
+            return
+        self.log_info('正在检查每周乐园...')
+        # 所选日期是本周最早检查日；之后会持续补检，直到账号写入本周完成记录。
+        expected_profile = getattr(self, '_verified_profile_id', None)
         now = datetime.now()
         today = WEEKDAYS[now.weekday()]
         last_completed = self.get_last_completed('Weekly Garden')
@@ -1967,6 +1981,11 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 self.log_info('每周乐园已完成，跳过')
                 self.record_last_completed('Weekly Garden', profile_id=getattr(self, '_verified_profile_id', None))
                 return
+            # 页面检查可能耗时；执行前重新读取受保护快照并核对账号。
+            current_day = normalize_weekday(self._profile_get(GARDEN_CHECK_DAY, '无'))
+            if (current_day not in WEEKDAYS
+                    or getattr(self, '_verified_profile_id', None) != expected_profile):
+                raise ConfigIntegrityBlocked('每周乐园账号或启用状态已变化，停止执行')
             self.log_info('每周乐园未完成，开始打每周乐园', notify=True)
             self.run_task_by_class(GardenTask)
             self.record_last_completed('Weekly Garden', profile_id=getattr(self, '_verified_profile_id', None))
@@ -2018,7 +2037,10 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         writer = None
         recorded_pages = []
         try:
-            for page in RECORDING_PAGES:
+            pages = [page for page in RECORDING_PAGES
+                     if page != '每周乐园'
+                     or normalize_weekday(self._profile_get(GARDEN_CHECK_DAY, '无')) in WEEKDAYS]
+            for page in pages:
                 try:
                     if not self._open_record_page(page):
                         self.log_warning(f'留档页面未打开：{page}；本页未保存')

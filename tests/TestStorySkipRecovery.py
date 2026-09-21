@@ -167,8 +167,19 @@ class TestStorySkipRecovery(unittest.TestCase):
             harness.tick(task)
         self.assertEqual(task.click_box.call_count, 2)
 
-    def test_cancel_and_context_errors_still_propagate(self):
-        for error in (TaskDisabledException(), TransitionContextChanged('window changed'), OSError('input failed')):
+    def test_context_change_discards_old_operation_and_reverifies(self):
+        task, harness = self.task()
+        with patch('src.task.SkipDialogTask.advance', side_effect=TransitionContextChanged('window changed')):
+            self.assertFalse(harness.tick(task))
+        self.assertIsNone(task._ui_tick_navigation)
+        self.assertIsNone(task._skip_blocked_step)
+        task.click_box.assert_not_called()
+        for _ in range(3):
+            harness.tick(task)
+        task.click_box.assert_called_once()
+
+    def test_cancel_and_input_errors_still_propagate(self):
+        for error in (TaskDisabledException(), OSError('input failed')):
             task, harness = self.task()
             with patch('src.task.SkipDialogTask.advance', side_effect=error):
                 with self.assertRaises(type(error)):

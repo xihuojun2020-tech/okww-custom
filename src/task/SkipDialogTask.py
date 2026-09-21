@@ -3,7 +3,7 @@ import time
 from ok import TriggerTask, Logger
 from src.task.SkipBaseTask import SkipBaseTask
 from src.task.trigger_navigation import advance
-from src.task.ui_transition import TransitionTimeout
+from src.task.ui_transition import TransitionContextChanged, TransitionTimeout
 
 logger = Logger.get_logger(__name__)
 
@@ -40,6 +40,16 @@ class AutoDialogTask(TriggerTask, SkipBaseTask):
             self.info_set('剧情跳过状态', f'{step}未确认，' + (
                 '入口冷却15秒后重新核验' if step == '剧情跳过' else '等待页面变化；不重复点击'))
             self.log_warning(f'story_skip waiting_after_timeout step={step}: {error}')
+            return False
+        except TransitionContextChanged as error:
+            # Discard every coordinate and click budget from the old context.
+            # A later run must rebuild three-frame evidence before any input.
+            self._ui_tick_navigation = None
+            self._skip_blocked_step = None
+            self._skip_requested = False
+            self.trigger_interval = .5
+            self.info_set('剧情跳过状态', '窗口或导航状态已变化，重新监听')
+            self.log_warning(f'story_skip context_changed step={step}: {error}')
             return False
 
     def _skip_confirmation(self):

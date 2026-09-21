@@ -7,6 +7,7 @@ from src.Labels import Labels
 from src.task.DailyTask import (
     ADDITIONAL_TASKS,
     AUTO_FARM_NIGHTMARE_NEST,
+    GARDEN_CHECK_DAY,
     MERGE_ECHO_ON_SUNDAY,
     DailyTask,
     weekly_garden_check_due,
@@ -179,12 +180,24 @@ class TestDailyMergeEchoTask(unittest.TestCase):
         self.assertTrue(weekly_garden_check_due(
             'Monday', '2026-08-30 20:00:00', wednesday))
 
-    def test_weekly_garden_without_selected_day_starts_on_sunday(self):
+    def test_weekly_garden_without_selected_day_is_disabled(self):
         saturday = datetime(2026, 9, 5, 12, 0, 0)
         sunday = datetime(2026, 9, 6, 12, 0, 0)
 
         self.assertFalse(weekly_garden_check_due('无', None, saturday))
-        self.assertTrue(weekly_garden_check_due('无', None, sunday))
+        self.assertFalse(weekly_garden_check_due('无', None, sunday))
+        self.assertTrue(weekly_garden_check_due('Sunday', None, sunday))
+
+    def test_disabled_weekly_garden_never_opens_or_runs(self):
+        daily_task = DailyTask.__new__(DailyTask)
+        daily_task._profile_get = Mock(return_value='无')
+        daily_task.get_task_by_class = Mock()
+        daily_task.run_task_by_class = Mock()
+        daily_task.info_set = Mock()
+        daily_task.log_info = Mock()
+        daily_task.check_weekly_garden()
+        daily_task.get_task_by_class.assert_not_called()
+        daily_task.run_task_by_class.assert_not_called()
 
     def test_weekly_garden_current_week_record_skips_opening_page(self):
         daily_task = DailyTask.__new__(DailyTask)
@@ -260,7 +273,7 @@ class TestDailyMergeEchoTask(unittest.TestCase):
 
     def test_daily_runs_selected_merge_echo_on_sunday(self):
         daily_task = DailyTask.__new__(DailyTask)
-        daily_task.config = {MERGE_ECHO_ON_SUNDAY: True}
+        daily_task.config = {MERGE_ECHO_ON_SUNDAY: True, GARDEN_CHECK_DAY: 'Sunday'}
         daily_task.check_weekly_garden = Mock()
         daily_task.check_discarded_echo = Mock()
 
@@ -273,7 +286,7 @@ class TestDailyMergeEchoTask(unittest.TestCase):
 
     def test_daily_skips_merge_echo_when_option_is_disabled(self):
         daily_task = DailyTask.__new__(DailyTask)
-        daily_task.config = {MERGE_ECHO_ON_SUNDAY: False}
+        daily_task.config = {MERGE_ECHO_ON_SUNDAY: False, GARDEN_CHECK_DAY: 'Sunday'}
         daily_task.check_weekly_garden = Mock()
         daily_task.check_discarded_echo = Mock()
 
@@ -282,6 +295,15 @@ class TestDailyMergeEchoTask(unittest.TestCase):
             daily_task.run_weekly_tasks()
 
         daily_task.check_weekly_garden.assert_called_once_with()
+        daily_task.check_discarded_echo.assert_not_called()
+
+    def test_daily_does_not_call_disabled_weekly_garden(self):
+        daily_task = DailyTask.__new__(DailyTask)
+        daily_task.config = {MERGE_ECHO_ON_SUNDAY: False, GARDEN_CHECK_DAY: '无'}
+        daily_task.check_weekly_garden = Mock()
+        daily_task.check_discarded_echo = Mock()
+        daily_task.run_weekly_tasks()
+        daily_task.check_weekly_garden.assert_not_called()
         daily_task.check_discarded_echo.assert_not_called()
 
     def test_daily_suppresses_and_restores_not_enough_echo_notification(self):
