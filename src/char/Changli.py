@@ -147,8 +147,11 @@ class Changli(BaseChar):
                 self.task.mouse_down()
                 hold = True
             if time.time() - start > 7:
-                self.task.in_liberation = False
-                self.task.raise_not_in_combat('too long a liberation, the boss was killed by the liberation')
+                if hold:
+                    self.task.mouse_up()
+                    hold = False
+                self.recheck_liberation_timeout()
+                break
             self.task.next_frame()
         duration = time.time() - start
         self.add_freeze_duration(start, duration)

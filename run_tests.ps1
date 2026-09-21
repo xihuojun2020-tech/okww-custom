@@ -34,7 +34,7 @@ $groups = @{
     "TestMaterialModel.py", "TestMaterialRepository.py", "TestMaterialCatalog.py", "TestNasLocation.py",
     "TestUpstreamIntegration.py",
     "TestAccountReminders.py",
-    "TestCharacterTrial.py",
+    "TestCharacterTrial.py", "TestCharacterIdentityRecovery.py", "TestWeeklyRewardRecovery.py",
     "TestAutoCombatRecovery.py",
     "TestWeeklyBossTask.py", "TestWeeklyNavigation.py", "TestPianoTeaching.py", "TestSecondSolTask.py",
     "TestWindowsGraphicsRecovery.py", "TestMultiStartState.py", "TestHotkeyRegistration.py",

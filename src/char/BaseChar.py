@@ -688,8 +688,8 @@ class BaseChar:
                 self.task.send_key('f')
                 last_f_click = now
             if now - start > 7:
-                self.task.in_liberation = False
-                self.task.raise_not_in_combat('too long a liberation, the boss was killed by the liberation')
+                self.recheck_liberation_timeout()
+                break
             self.task.next_frame()
         duration = time.time() - start
         self.add_freeze_duration(start, duration)
@@ -699,6 +699,19 @@ class BaseChar:
         if clicked:
             self.logger.info(f'click_liberation end {duration}')
         return clicked
+
+    def recheck_liberation_timeout(self):
+        """HUD loss alone cannot prove animation, enemy death, or combat end."""
+        self.task.in_liberation = False
+        for _ in range(2):
+            self.task.next_frame()
+            player = self.task.in_team()[0] or self.task.find_one(
+                'solo_player_health', threshold=.75, use_gray_scale=True,
+                horizontal_variance=.002, vertical_variance=.002)
+            if not player or not (self.task.has_target() or self.task.check_health_bar()):
+                self.task.raise_not_in_combat('liberation timeout: combat HUD not confirmed')
+                return
+        self.task.log_warning('liberation HUD timeout; player and enemy still visible, resume combat')
 
     def _log_liberation_unconfirmed(self, started, send_attempts):
         """Record existing state only: no extra OCR, input, or animation retries."""

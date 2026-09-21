@@ -1,3 +1,5 @@
+import time
+
 from src.Labels import Labels
 from src.char.Aemeath import Aemeath
 from src.char.Augusta import Augusta
@@ -187,6 +189,7 @@ def get_char_by_pos(task, box, index, old_char):
         info = char_dict.get(old_char.char_name)
         char = _find_registered_char(task, box, info)
         if char:
+            old_char.__dict__.pop('_replacement_evidence', None)
             cls = load_custom_char_class(info.get('cls'))
             if type(old_char) is not cls:
                 return _apply_char_config(task, cls(task, index, char_name=info['canonical_name'],
@@ -201,6 +204,37 @@ def get_char_by_pos(task, box, index, old_char):
         if char:
             info = char_dict.get(char.name)
             name = char.name
+            if old_char and old_char.char_name in char_names:
+                previous = char_dict[old_char.char_name]
+                if info['canonical_name'] != previous['canonical_name']:
+                    if char.confidence < .9:
+                        old_char.__dict__.pop('_replacement_evidence', None)
+                        return old_char
+                    # Compare candidates on this capture, not historical confidence.
+                    runner_names = [label for label in char_names
+                                    if char_dict[label]['canonical_name'] != info['canonical_name']]
+                    runner = task.find_best_match_in_box(box, runner_names, threshold=0.6)
+                    if runner and char.confidence - runner.confidence < .08:
+                        old_char.__dict__.pop('_replacement_evidence', None)
+                        return old_char
+                    frame = task.require_game_frame()
+                    context = (getattr(task.hwnd, 'hwnd', None),
+                               getattr(task, '_verified_profile_id', None), frame.shape[:2])
+                    token = getattr(task.executor, '_last_frame_time', None) or id(frame)
+                    key = (info['canonical_name'], context)
+                    evidence = old_char.__dict__.get('_replacement_evidence')
+                    now = time.monotonic()
+                    if evidence and now - evidence[3] > 2:
+                        evidence = None
+                    count = evidence[2] if evidence and evidence[0] == key else 0
+                    if not evidence or evidence[1] != token:
+                        count += 1
+                    old_char._replacement_evidence = (key, token, count, now)
+                    if count < 3:
+                        return old_char
+                    task.log_info(f'character replacement verified slot={index + 1} '
+                                  f'old={old_char.char_name} new={name} score={char.confidence:.3f}')
+                old_char.__dict__.pop('_replacement_evidence', None)
             cls = load_custom_char_class(info.get('cls'))
             return _apply_char_config(task, cls(task, index, char_name=info['canonical_name'],
                                                 confidence=char.confidence,
@@ -208,6 +242,7 @@ def get_char_by_pos(task, box, index, old_char):
                                                 char_type=_get_char_type(task, info),
                                                 buff_time=_get_buff_time(task, info)), info)
     if old_char:
+        old_char.__dict__.pop('_replacement_evidence', None)
         task.log_debug(f'could not refresh known char {index}; keeping {old_char}')
         return old_char
     task.log_info(f'could not find char {index} {info} {highest_confidence}')

@@ -219,6 +219,9 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
                 self.log_error(f'Characters dead', notify=True)
                 break
             except NotInCombatException as e:
+                if not self.is_expected_combat_end():
+                    combat_failed = True
+                    self.log_warning(f'combat interrupted; waiting for fresh detection: {e}')
                 logger.debug(f'auto_combat_task_out_of_combat {e}')
                 break
         if ret:
