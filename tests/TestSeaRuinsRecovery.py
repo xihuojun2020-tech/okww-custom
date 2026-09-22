@@ -29,6 +29,9 @@ class TestSeaRuinsRecovery(unittest.TestCase):
         for rule in CATALOG:
             self.assertEqual(identify_token(rule.name.replace('-', '一')), rule)
             self.assertEqual(identify_token(rule.name[:4]+'…', rule.rarity), rule)
+        lamp = next(rule for rule in CATALOG if rule.name == '那映照虚幻的燃灯')
+        self.assertEqual(identify_token('那映照虛', 'gold'), lamp)
+        self.assertIsNone(identify_token('那映照虛', 'purple'))
         self.assertIsNone(identify_token('那'))
         self.assertIsNone(identify_token('新信物'))
         self.assertIsNone(identify_token('狂欢者…', 'blue'))

@@ -33,7 +33,9 @@ CATALOG = (
 
 
 def name_key(text):
-    return re.sub(r'[\s—–一\-·.…。]', '', text or '')
+    # PaddleOCR may emit the traditional glyph for this simplified UI name.
+    text = (text or '').translate(str.maketrans({'虛': '虚'}))
+    return re.sub(r'[\s—–一\-·.…。]', '', text)
 
 
 def identify_token(caption, rarity=None):
