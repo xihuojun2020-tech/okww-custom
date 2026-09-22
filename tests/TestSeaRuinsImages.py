@@ -34,7 +34,8 @@ class TestSeaRuinsImages(TaskTestCase):
         self.assertFalse(task._token_page(self.image('detail')))
 
     def test_detail_start_floor(self):
-        for name, expected in (('detail', 7), ('start_eight', 8), ('next_floor', 8)):
+        for name, expected in (('detail', 7), ('start_eight', 8), ('next_floor', 8),
+                               ('detail_eleven', 11)):
             frame = self.image(name)
             for height in (720, 1080, 1440):
                 self.assertEqual(self.task._detail_floor(cv2.resize(frame, (height*16//9, height))), expected)

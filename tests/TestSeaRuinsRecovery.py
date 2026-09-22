@@ -131,11 +131,11 @@ class TestSeaRuinsRecovery(unittest.TestCase):
                     SeaRuinsRecovery._sea_step(t)
         t._scan_presets.assert_not_called()
 
-    def test_floor_parser_rejects_unknown_and_ambiguous_digits(self):
+    def test_floor_parser_joins_valid_split_digits_and_rejects_unknown_values(self):
         t = self.task()
         t._button.return_value = True
         for numbers, expected in ((['10'], 10), (['11'], 11), (['CR', '8'], 8),
-                                  (['1', '1'], None), (['8', '9'], None), (['12'], None)):
+                                  (['1', '1'], 11), (['8', '9'], None), (['12'], None)):
             t._small_text.return_value = numbers
             # Header is present, name/template fallback is not.
             t._button.side_effect = lambda frame, region, text: text == '海墟详情'

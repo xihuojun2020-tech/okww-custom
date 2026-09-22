@@ -145,8 +145,18 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
         if not self._button(frame, (.025, .035, .15, .095), '海墟详情'):
             return None
         numbers = [text for text in self._small_text(frame, (.150, .12, .195, .168)) if text.isdigit()]
-        if len(numbers) == 1 and numbers[0] in ('7', '8', '9', '10', '11'):
-            return int(numbers[0])
+        number = ''.join(numbers)
+        if number in ('7', '8', '9', '10', '11'):
+            return int(number)
+        challenge = any(self._button(frame, (.72, .88, .93, .95), label)
+                        for label in ('开启挑战', '开始挑战', '再次挑战'))
+        if challenge:
+            region = vision.crop(cv2.resize(frame, (1280, 720)), (.145, .105, .20, .19))
+            template = vision.reference('detail_eleven')
+            score = cv2.minMaxLoc(cv2.matchTemplate(cv2.cvtColor(region, cv2.COLOR_BGR2GRAY),
+                cv2.cvtColor(template, cv2.COLOR_BGR2GRAY), cv2.TM_CCOEFF_NORMED))[1]
+            if score >= .85:
+                return 11
         if self._button(frame, (.12, .18, .23, .24), '险滩'):
             region = vision.crop(cv2.resize(frame, (1280, 720)), (.145, .105, .20, .19))
             template = vision.reference('detail_seven')
@@ -156,8 +166,8 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
                 return 7
         return None
 
-    def _challenge_button(self, frame):
-        if not self._detail(frame, self._floor):
+    def _challenge_button(self, frame, floor=None):
+        if not self._detail(frame, self._floor if floor is None else floor):
             return None
         for label in ('开启挑战', '开始挑战', '再次挑战'):
             button = self._button(frame, (.72, .88, .93, .95), label)
@@ -624,7 +634,8 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
             if not re.search(rf'第{expected}层', text):
                 return None
             return self._button(frame, (.56, .84, .73, .91), '继续挑战')
-        self.navigate_ui('海墟继续下一层', source, lambda f: self._detail(f, expected),
+        self.navigate_ui('海墟继续下一层', source,
+                         lambda f: bool(self._challenge_button(f, expected)),
                          attempts=3, retry_after=5, timeout=120, identity=('sea', expected))
 
     def run(self):

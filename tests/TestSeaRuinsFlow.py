@@ -163,9 +163,15 @@ class TestSeaRuinsFlow(unittest.TestCase):
             t.ocr.return_value[0].name = '即将前往涡流-第8层'
             self.assertIsNotNone(source(t.frame))
             target(t.frame)
-            t._detail.assert_called_with(t.frame, 8)
+            t._challenge_button.assert_called_with(t.frame, 8)
         t.navigate_ui.side_effect = navigate
         AutoSeaRuinsTask._continue(t)
+
+    def test_detail_floor_accepts_split_two_digit_ocr(self):
+        t = self.task()
+        t._button.return_value = True
+        t._small_text.return_value = ['1', '1']
+        self.assertEqual(AutoSeaRuinsTask._detail_floor(t, t.frame), 11)
 
     def test_preset_sidebar_is_closed_before_requiring_floor_digit(self):
         t = self.task()
