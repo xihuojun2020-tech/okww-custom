@@ -1,6 +1,7 @@
 """Offline OCR integration over user-supplied, sanitized screenshots."""
 from pathlib import Path
 import cv2
+import numpy as np
 from config import config
 from ok.test.TaskTestCase import TaskTestCase
 from src.task.AutoSeaRuinsTask import AutoSeaRuinsTask
@@ -118,6 +119,11 @@ class TestSeaRuinsImages(TaskTestCase):
                     '审判-遗落令旗', '布道-遗落令旗', '游猎-遗落令旗'])
                 self.assertEqual([t.remaining for t, _ in records], [2, 1, 2, 2, -1, -1, -1])
                 click.assert_not_called()
+
+    def test_thin_category_highlight_is_not_a_token_card(self):
+        frame = np.zeros((1152, 2048, 3), np.uint8)
+        frame[424:431, 974:1116] = (255, 120, 30)
+        self.assertEqual(v.token_cards(frame), [])
 
     def test_unlock_and_sea_identity(self):
         frame = cv2.imread(str(ROOT/'unlock.png'))

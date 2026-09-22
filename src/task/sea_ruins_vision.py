@@ -51,7 +51,7 @@ def token_cards(frame):
     for c in cv2.findContours(stripes, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]:
         x, y, w, h = cv2.boundingRect(c)
         rect = (x-4, y-141, w+8, 196)
-        if (140 <= w <= 160 and 5 <= h <= 22 and 85 <= x < 1250
+        if (140 <= w <= 160 and 10 <= h <= 22 and 85 <= x < 1250
                 and 195 <= rect[1] and rect[1]+196 <= 1000
                 and not any(abs(rect[0]-a[0]) < 15 and abs(rect[1]-a[1]) < 15 for a in found)):
             found.append(rect)
