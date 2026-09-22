@@ -352,24 +352,10 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
 
     def _scan_tokens(self):
         self._open_tokens(0)
-        tokens, previous, repeats = {}, None, 0
-        for _ in range(24):
-            for token, rect in self._inventory_page():
-                old = tokens.get(token.name)
-                if old is not None and old.remaining != token.remaining:
-                    raise RuntimeError(f'{token.name}跨页库存不一致，请重新扫描')
-                tokens[token.name] = token
-                self._token_artwork[token.name] = vision.token_art(self.frame, rect)
-            self.next_frame()
-            image = cv2.resize(vision.crop(self.frame, (.04, .17, .63, .86)), (120, 100))
-            repeats = repeats+1 if previous is not None and np.mean(cv2.absdiff(previous, image)) < 2 else 0
-            if repeats >= 2:
-                break
-            previous = image
-            self.scroll_relative(.40, .50, -2)
-            self.sleep(.35)
-        else:
-            raise RuntimeError('信物列表扫描超过24屏，未确认到底')
+        tokens = {}
+        for token, rect in self._inventory_page():
+            tokens[token.name] = token
+            self._token_artwork[token.name] = vision.token_art(self.frame, rect)
         self.send_key('esc')
         self._wait(lambda f: self._detail(f, self._floor), '信物扫描后未返回详情')
         self.log_info(f'信物扫描：{[(t.name, t.remaining, t.locked) for t in tokens.values()]}')
@@ -379,34 +365,32 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
         if self._token_equipped(self.frame, half, target):
             return
         self._open_tokens(half)
-        for _ in range(24):
-            for token, rect in self._inventory_page():
-                if token.name == target.name:
-                    if not token.available:
-                        raise SeaLoadoutChanged(f'{target.name}已不可携带，继续后重新扫描库存')
-                    art = vision.token_art(self.frame, rect)
-                    x, y, w, h = rect
-                    self.click_relative((x+w/2)/2048, (y+h/2)/1152, after_sleep=.25)
-                    def selected(frame):
-                        title = ''.join(b.name for b in self.ocr(.69, .125, .965, .185, frame=frame))
-                        rule = identify_token(title)
-                        return rule is not None and rule.name == target.name
-                    self._wait(selected, f'{target.name}详细名称未确认', timeout=5)
-                    self._token_artwork[target.name] = art
-                    button = self._button(self.frame, (.68, .88, .97, .95), '携带')
-                    if not button:
-                        raise RuntimeError('携带按钮未确认')
-                    self.click_box(button)
-                    self._wait(lambda f: self._detail(f, self._floor), '携带后未返回详情')
-                    # Full artwork differs in aspect ratio, so use local feature matching.
-                    def equipped(frame):
-                        y = (.34, .66)[half]
-                        slot = vision.crop(frame, (.827, y, .88, y+.096))
-                        return self._same_art(art, slot)
-                    self._wait(equipped, f'{target.name}携带后槽图标未确认')
-                    return
-            self.scroll_relative(.40, .50, -2)
-            self.sleep(.3)
+        for token, rect in self._inventory_page():
+            if token.name != target.name:
+                continue
+            if not token.available:
+                raise SeaLoadoutChanged(f'{target.name}已不可携带，继续后重新扫描库存')
+            art = vision.token_art(self.frame, rect)
+            x, y, w, h = rect
+            self.click_relative((x+w/2)/2048, (y+h/2)/1152, after_sleep=.25)
+            def selected(frame):
+                title = ''.join(b.name for b in self.ocr(.69, .125, .965, .185, frame=frame))
+                rule = identify_token(title)
+                return rule is not None and rule.name == target.name
+            self._wait(selected, f'{target.name}详细名称未确认', timeout=5)
+            self._token_artwork[target.name] = art
+            button = self._button(self.frame, (.68, .88, .97, .95), '携带')
+            if not button:
+                raise RuntimeError('携带按钮未确认')
+            self.click_box(button)
+            self._wait(lambda f: self._detail(f, self._floor), '携带后未返回详情')
+            # Full artwork differs in aspect ratio, so use local feature matching.
+            def equipped(frame):
+                y = (.34, .66)[half]
+                slot = vision.crop(frame, (.827, y, .88, y+.096))
+                return self._same_art(art, slot)
+            self._wait(equipped, f'{target.name}携带后槽图标未确认')
+            return
         raise SeaLoadoutChanged(f'未找回信物：{target.name}，继续后重新扫描库存')
 
     def _token_equipped(self, frame, half, target):

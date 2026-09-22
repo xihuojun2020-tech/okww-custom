@@ -284,6 +284,22 @@ class TestSeaRuinsRecovery(unittest.TestCase):
         t.click_relative.assert_called_once_with(180/2048, 298/1152, after_sleep=.25)
         self.assertIn('详细名称', t._wait.call_args_list[0].args[1])
         t.click_box.assert_called_once()
+        t.scroll_relative.assert_not_called()
+
+    def test_inventory_scan_and_missing_target_do_not_scroll_into_green_tokens(self):
+        t = self.task()
+        token = Token('审判-遗落令旗', '', -1)
+        t._inventory_page.return_value = [(token, (100, 200, 160, 196))]
+        with patch('src.task.AutoSeaRuinsTask.vision.token_art', return_value='art'):
+            self.assertEqual(AutoSeaRuinsTask._scan_tokens(t), [token])
+        t.scroll_relative.assert_not_called()
+
+        t = self.task()
+        t._token_equipped.return_value = False
+        t._inventory_page.return_value = []
+        with self.assertRaisesRegex(SeaLoadoutChanged, '未找回信物'):
+            AutoSeaRuinsTask._equip_token(t, 0, token)
+        t.scroll_relative.assert_not_called()
 
     def test_unavailable_target_never_clicked(self):
         t = self.task()
