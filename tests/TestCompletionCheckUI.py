@@ -76,9 +76,7 @@ class TestCompletionCheckUI(unittest.TestCase):
                 text = '\n'.join(label.text() for label in page._run_panel.findChildren(QLabel))
                 self.assertIn('正常返回（不代表全部完成）', text)
                 self.assertIn('最近开始时间：无记录', text)
-                page._reminders[ACCOUNT] = ['weekly_boss']
-                page.reminders_only.setChecked(True)
-                self.assertEqual(len(page._cards), 1)
+                self.assertFalse(hasattr(page, 'reminders_only'))
                 other = '00000000-0000-4000-8000-000000000002'
                 page._profiles[other] = 'A2-测试-19910000002'
                 page._rows = [{'profile_id': ACCOUNT}]
@@ -169,7 +167,7 @@ class TestCompletionCheckUI(unittest.TestCase):
                 page.service.close()
                 page.close()
 
-    def test_reminder_legacy_preservation_and_compact_header_scope(self):
+    def test_reminder_legacy_migration_note_and_compact_header_scope(self):
         from src.gui.AccountReminderPanel import AccountReminderPanel
         from src.gui.compact_settings import compact_settings
         from src.gui.SectionPanel import SectionPanel
@@ -180,18 +178,31 @@ class TestCompletionCheckUI(unittest.TestCase):
         layout.addWidget(panel)
         account = {'extensions': {'completion_reminders': ['activity_1', 'piano_activity']}}
         panel.load_account(account)
-        self.assertEqual(set(panel.apply_account(account)['extensions']['completion_reminders']),
-                         set(account['extensions']['completion_reminders']))
-        self.assertFalse(panel.choices['activity_1'].isHidden())
-        self.assertTrue(panel.choices['activity_2'].isHidden())
+        self.assertTrue(panel.choices['activities'].isChecked())
+        panel.note.setPlainText('仅供人工查看')
+        applied = panel.apply_account(account)
+        self.assertEqual(applied['extensions']['completion_reminders'], ['activities'])
+        self.assertEqual(applied['extensions']['account_reminder_note'], '仅供人工查看')
         panel.load_account({})
-        self.assertTrue(panel.choices['activity_1'].isHidden())
+        self.assertFalse(any(control.isChecked() for control in panel.choices.values()))
         compact_settings(root, account=True)
         self.assertEqual(panel.header.minimumHeight(), 40)
         other = SectionPanel('other', collapsible=True)
         self.assertEqual(other.header.minimumHeight(), 40)
         root.close()
         other.close()
+
+    def test_completion_check_has_no_reminder_filter_or_summary(self):
+        with tempfile.TemporaryDirectory() as root:
+            page = CompletionCheckTab(SimpleNamespace(), repository=EvidenceRepository(root),
+                                      account_provider=lambda: None)
+            try:
+                self.assertFalse(hasattr(page, 'reminders_only'))
+                self.assertFalse(hasattr(page, 'reminder_summary'))
+            finally:
+                page.timer.stop()
+                page.service.close()
+                page.close()
 
 
 if __name__ == '__main__':

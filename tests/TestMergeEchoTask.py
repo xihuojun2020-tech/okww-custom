@@ -330,11 +330,12 @@ class TestDailyMergeEchoTask(unittest.TestCase):
         daily_task = DailyTask.__new__(DailyTask)
         daily_task.config = {
             AUTO_FARM_NIGHTMARE_NEST: True,
-            'Nightmare Which to Farm': [],
+            'Tacet Discord Nests to Farm': [],
+            'Nightmare Settlements to Farm': [],
         }
         daily_task.tr = lambda message: message
 
-        message = 'Auto Farm all Nightmare Nest requires at least one "Which to Farm" option.'
+        message = '自动刷取所选目标至少需要勾选一个残象聚落或梦魇聚落。'
         with self.assertRaisesRegex(Exception, message):
             daily_task.validate_daily_tasks()
 
@@ -342,7 +343,8 @@ class TestDailyMergeEchoTask(unittest.TestCase):
         daily_task = DailyTask.__new__(DailyTask)
         daily_task.config = {
             AUTO_FARM_NIGHTMARE_NEST: True,
-            'Nightmare Which to Farm': ['Nightmare Purification'],
+            'Tacet Discord Nests to Farm': [],
+            'Nightmare Settlements to Farm': ['穗波市梦魇聚落'],
         }
 
         self.assertTrue(daily_task.validate_daily_tasks())

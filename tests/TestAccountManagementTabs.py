@@ -25,17 +25,22 @@ from tests.fixture_support import make_account_environment
 class TestAccountManagementTabs(unittest.TestCase):
     def test_nest_checkboxes_preserve_selection_and_empty_template(self):
         from src.gui.AccountConfigTab import NestSelection, AccountTemplateDialog
-        from src.nightmare_nests import NEST_NAMES
+        from src.nightmare_nests import NEST_NAMES, NIGHTMARE_NAMES
         widget=NestSelection([NEST_NAMES[1],NEST_NAMES[3]])
         self.assertEqual(widget.values(),[NEST_NAMES[1],NEST_NAMES[3]])
         widget.boxes[NEST_NAMES[0]].setChecked(True)
         self.assertEqual(widget.values(),[NEST_NAMES[0],NEST_NAMES[1],NEST_NAMES[3]])
         widget.set_values(None)
         self.assertEqual(widget.values(),NEST_NAMES)
-        dialog=AccountTemplateDialog({'Tacet Discord Nests to Farm':[NEST_NAMES[2]]})
+        self.assertEqual(widget.nightmare_values(), [])
+        widget.nightmare_boxes[NIGHTMARE_NAMES[0]].setChecked(True)
+        self.assertEqual(widget.nightmare_values(), [NIGHTMARE_NAMES[0]])
+        dialog=AccountTemplateDialog({'Tacet Discord Nests to Farm':[NEST_NAMES[2]],
+                                      'Nightmare Settlements to Farm': []})
         control=dialog._widgets['Tacet Discord Nests to Farm']
         self.assertIsInstance(control,NestSelection)
         self.assertEqual(dialog.tasks()['Tacet Discord Nests to Farm'],[NEST_NAMES[2]])
+        self.assertEqual(dialog.tasks()['Nightmare Settlements to Farm'], [])
         control.set_values([])
         self.assertEqual(dialog.tasks()['Tacet Discord Nests to Farm'],[])
         dialog.deleteLater()
@@ -98,7 +103,7 @@ class TestAccountManagementTabs(unittest.TestCase):
                     tab.deleteLater()
 
     def test_reminders_are_dirty_and_persist_without_changing_tasks_or_sequence_order(self):
-        from src.account_reminders import get_reminders
+        from src.account_reminders import get_reminder_note, get_reminders
         from src.recording_policy import RECORDING_PAGES
         from PySide6.QtWidgets import QCheckBox
         with tempfile.TemporaryDirectory() as temp:
@@ -109,6 +114,7 @@ class TestAccountManagementTabs(unittest.TestCase):
                 tasks = dict(tab.draft.tasks)
                 self.assertFalse(tab.dirty)
                 tab.reminder_panel.choices['weekly_boss'].setChecked(True)
+                tab.reminder_panel.note.setPlainText('周日再看')
                 self.assertTrue(tab.dirty)
                 tab.refresh(preserve_draft=True)
                 self.assertTrue(tab.reminder_panel.choices['weekly_boss'].isChecked())
@@ -120,6 +126,7 @@ class TestAccountManagementTabs(unittest.TestCase):
                     self._drain_until(lambda: not tab.operation.busy)
                 saved = env.repository.load_profile(tab.selected_profile_id)
                 self.assertEqual(get_reminders(saved.account), ['weekly_boss'])
+                self.assertEqual(get_reminder_note(saved.account), '周日再看')
                 self.assertEqual(saved.tasks, tasks)
                 self.assertEqual(env.repository.get_detached_projection()['sequences'], before['sequences'])
                 self.assertFalse(tab.dirty)

@@ -7,7 +7,7 @@ from time import perf_counter
 from functools import partial
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QCheckBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
+from PySide6.QtWidgets import (QCheckBox, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout, QLabel,
                                QMessageBox, QPlainTextEdit, QPushButton, QInputDialog, QDialog,
                                QDialogButtonBox,
                                QVBoxLayout, QWidget, QLineEdit, QSizePolicy, QScrollArea)
@@ -42,19 +42,51 @@ def recording_defaults():
 class NestSelection(QWidget):
     changed = Signal()
 
-    def __init__(self, value, parent=None):
+    def __init__(self, value, nightmare_value=None, parent=None):
         super().__init__(parent)
-        from src.nightmare_nests import NEST_NAMES
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
+        from src.nightmare_nests import NEST_NAMES, NIGHTMARE_NAMES
+        self.grid = QGridLayout(self)
+        self.grid.setContentsMargins(0, 0, 0, 0)
+        self.grid.setHorizontalSpacing(16)
+        self.grid.setVerticalSpacing(4)
+        self.residual_heading = QLabel('残象聚落', self)
+        self.nightmare_heading = QLabel('梦魇聚落（补充）', self)
         self.boxes = {}
-        for name in NEST_NAMES:
+        self.nightmare_boxes = {}
+        for row, name in enumerate(NEST_NAMES, 1):
             box = QCheckBox(name, self)
-            layout.addWidget(box)
-            box.toggled.connect(self.changed.emit)
+            box.toggled.connect(lambda *_: self.changed.emit())
             self.boxes[name] = box
+        for row, name in enumerate(NIGHTMARE_NAMES, 1):
+            box = QCheckBox(name, self)
+            box.toggled.connect(lambda *_: self.changed.emit())
+            self.nightmare_boxes[name] = box
         self.set_values(value)
+        self.set_nightmare_values(nightmare_value or [])
+        self._arrange()
+
+    def _arrange(self):
+        while self.grid.count():
+            self.grid.takeAt(0)
+        if self.width() >= 620:
+            self.grid.addWidget(self.residual_heading, 0, 0)
+            self.grid.addWidget(self.nightmare_heading, 0, 1)
+            for row, box in enumerate(self.boxes.values(), 1):
+                self.grid.addWidget(box, row, 0)
+            for row, box in enumerate(self.nightmare_boxes.values(), 1):
+                self.grid.addWidget(box, row, 1)
+        else:
+            self.grid.addWidget(self.residual_heading, 0, 0)
+            for row, box in enumerate(self.boxes.values(), 1):
+                self.grid.addWidget(box, row, 0)
+            start = len(self.boxes) + 1
+            self.grid.addWidget(self.nightmare_heading, start, 0)
+            for row, box in enumerate(self.nightmare_boxes.values(), start + 1):
+                self.grid.addWidget(box, row, 0)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._arrange()
 
     def set_values(self, value):
         selected = set(self.boxes if value is None else value)
@@ -65,6 +97,16 @@ class NestSelection(QWidget):
 
     def values(self):
         return [name for name, box in self.boxes.items() if box.isChecked()]
+
+    def set_nightmare_values(self, value):
+        selected = set(value or [])
+        for name, box in self.nightmare_boxes.items():
+            box.blockSignals(True)
+            box.setChecked(name in selected)
+            box.blockSignals(False)
+
+    def nightmare_values(self):
+        return [name for name, box in self.nightmare_boxes.items() if box.isChecked()]
 
 
 class FixedRecordingPages(QWidget):
@@ -121,13 +163,15 @@ class AccountTemplateDialog(QDialog):
         content = QWidget(scroll)
         form = QVBoxLayout(content)
         for field in account_field_metadata(self._tasks):
+            if field.key in ('Nightmare Which to Farm', 'Nightmare Settlements to Farm'):
+                continue
             if field.affects_identity or field.key in ("备用识别名称", "备用识别名称内容"):
                 continue
             value = self._tasks.get(field.key)
             if field.key == 'Record Pages':
                 widget = FixedRecordingPages(self)
             elif field.key == "Tacet Discord Nests to Farm":
-                widget = NestSelection(value, self)
+                widget = NestSelection(value, self._tasks.get('Nightmare Settlements to Farm', []), self)
             elif field.editor_type == "bool":
                 widget = QCheckBox(self)
                 widget.setChecked(bool(value))
@@ -161,6 +205,7 @@ class AccountTemplateDialog(QDialog):
                 continue
             if isinstance(widget, NestSelection):
                 result[key] = widget.values()
+                result['Nightmare Settlements to Farm'] = widget.nightmare_values()
             elif isinstance(widget, QCheckBox):
                 result[key] = widget.isChecked()
             elif isinstance(widget, QComboBox):
@@ -268,7 +313,7 @@ class AccountConfigTab(CustomTab):
         self.draft_status = QLabel('尚未编辑', root)
         self.draft_status.setProperty('role', 'description')
         from src.gui.SectionPanel import SectionPanel
-        self.identity_group = SectionPanel("账号识别信息", "登录身份只读；普通保存不会修改身份。", root, collapsible=True)
+        self.identity_group = SectionPanel("账号识别信息", "登录身份只读；所属序列可勾选调整，保存后生效。", root, collapsible=True)
         self.identity_layout = QFormLayout()
         self.identity_group.content_layout.addLayout(self.identity_layout)
         self.identity_widgets = {}
@@ -297,10 +342,10 @@ class AccountConfigTab(CustomTab):
         self.reminder_panel = AccountReminderPanel(root)
         self.reminder_panel.edited.connect(self._mark_draft_edited)
         layout.addWidget(self.reminder_panel)
-        self.sequence_group = QGroupBox("所属序列（勾选后保存即可调整当前账号归属）", root)
+        self.sequence_group = QGroupBox("所属序列（勾选后保存即可调整当前账号归属）", self.identity_group)
         self.sequence_layout = QVBoxLayout(self.sequence_group)
         self.sequence_widgets = {}
-        layout.addWidget(self.sequence_group)
+        self.identity_group.add_widget(self.sequence_group)
         self.form_host = QWidget(root)
         self.form_layout = QFormLayout(self.form_host)
         self.form_layout.setContentsMargins(0, 0, 0, 0)
@@ -502,6 +547,9 @@ class AccountConfigTab(CustomTab):
                 continue
             if isinstance(widget, NestSelection):
                 self.draft.tasks[key] = widget.values()
+                nightmare_values = widget.nightmare_values()
+                if nightmare_values or 'Nightmare Settlements to Farm' in self.draft.tasks:
+                    self.draft.tasks['Nightmare Settlements to Farm'] = nightmare_values
             elif isinstance(widget, QCheckBox):
                 self.draft.tasks[key] = widget.isChecked()
             elif isinstance(widget, QComboBox):
@@ -574,23 +622,25 @@ class AccountConfigTab(CustomTab):
         stamina = {'Material Planner Enabled', 'Which to Farm', 'Which Tacet Suppression to Farm', 'Which Forgery Challenge to Farm',
                    'Material Selection'}
         daily = {'Farm Nightmare Nest for Daily Echo', 'Nightmare Which to Farm', 'Tacet Discord Nests to Farm',
-                 'Auto Farm all Nightmare Nest'}
+                 'Nightmare Settlements to Farm', 'Auto Farm all Nightmare Nest'}
         weekly = {'Weekly Garden Check Day', 'Merge Echo on Sunday'}
         def group(field):
-            if field.key in ('Record Pages', 'Screenshot After Daily Task', 'Record After Daily Task', 'Record Duration'): return 6
-            if field.key == 'Weekly Boss Target': return 2
-            if field.key in stamina: return 1
+            if field.key in ('Record Pages', 'Screenshot After Daily Task', 'Record After Daily Task', 'Record Duration'): return 4
+            if field.key == 'Weekly Boss Target': return 1
+            if field.key in stamina: return 0
             if field.key in daily: return 0
-            if field.key in weekly: return 3
-            if field.key == 'Logout After Daily Task': return 4
-            return 5
+            if field.key in weekly: return 1
+            if field.key == 'Logout After Daily Task': return 2
+            return 3
         last_group = None
         fields = sorted(account_field_metadata(self.draft.tasks), key=group)
         for field in fields:
+            if field.key in ('Nightmare Which to Farm', 'Nightmare Settlements to Farm'):
+                continue
             identity_field = field.key in ('备用识别名称', '备用识别名称内容')
             if not identity_field and group(field) != last_group:
                 last_group = group(field)
-                heading = SectionPanel(('日常与声骸', '清理体力', '周本挑战', '周常安排', '收尾行为', '高级任务参数', '截图与录像')[last_group],
+                heading = SectionPanel(('日常与声骸', '周常安排', '收尾行为', '高级任务参数', '截图与录像')[last_group],
                                        parent=self.form_host, collapsible=True,
                                        expanded=states.get(last_group, False))
                 self.form_sections[last_group] = heading
@@ -599,7 +649,7 @@ class AccountConfigTab(CustomTab):
             if field.key == 'Record Pages':
                 widget = FixedRecordingPages(self.form_host)
             elif field.key == "Tacet Discord Nests to Farm":
-                widget = NestSelection(value, self.form_host)
+                widget = NestSelection(value, self.draft.tasks.get('Nightmare Settlements to Farm', []), self.form_host)
             elif field.editor_type == "bool":
                 widget = QCheckBox(self.form_host)
                 widget.setChecked(bool(value))
@@ -633,13 +683,13 @@ class AccountConfigTab(CustomTab):
             if field.key == 'Weekly Boss Target':
                 self._render_weekly_status()
         target = self.form_widgets.get('Weekly Boss Target')
-        if target is not None and 2 in self.form_sections:
+        if target is not None and 1 in self.form_sections:
             def update_summary(*_):
                 value = target.currentText()
-                self.form_sections[2].set_summary('已关闭' if target.currentData() == '无' else f'目标：{value}；周一检查，周二至周六补检，周日复检')
+                self.form_sections[1].set_summary('已关闭' if target.currentData() == '无' else f'{value} · 本周状态见详情')
             target.currentTextChanged.connect(update_summary)
             update_summary()
-        for key, field_key in ((3, 'Weekly Garden Check Day'), (1, 'Which to Farm')):
+        for key, field_key in ((0, 'Which to Farm'),):
             widget = self.form_widgets.get(field_key)
             if key in self.form_sections and isinstance(widget, QComboBox):
                 def update_group_summary(*_, key=key, widget=widget):
@@ -653,6 +703,7 @@ class AccountConfigTab(CustomTab):
         from src.config_integrity import get_default_service
         from src.task.weekly_boss import WEEKLY_MONDAY, WEEKLY_SUNDAY, weekly_check_window
         from datetime import datetime
+        rows = []
         service = get_default_service()
         if service is not None:
             try:
@@ -665,13 +716,25 @@ class AccountConfigTab(CustomTab):
                         except ValueError:
                             pass
                     text = '本周已完成' if done else '待检查'
-                    self.form_sections[2].add_row(title, QLabel(f'{text}；最近：{stamp or "无"}', self.form_host))
+                    rows.append((title, text, stamp or '无'))
                 outcome = service.get_progress(f'weekly_boss:{self.draft.profile_id}', {})
-                self.form_sections[2].add_row('最近周本结果', QLabel(str(outcome.get('status', '尚未执行')), self.form_host))
+                rows.append(('最近结果', str(outcome.get('status', '尚未执行')), ''))
             except Exception:
-                self.form_sections[2].add_row('周本记录', QLabel('记录暂不可读取', self.form_host))
+                rows = [('周本记录', '暂不可读取', '')]
         else:
-            self.form_sections[2].add_row('周本记录', QLabel('记录服务未就绪', self.form_host))
+            rows = [('周本记录', '服务未就绪', '')]
+        host = QWidget(self.form_host)
+        grid = QGridLayout(host)
+        grid.setContentsMargins(8, 6, 8, 6)
+        grid.setHorizontalSpacing(16)
+        grid.setVerticalSpacing(5)
+        for row, values in enumerate(rows):
+            for column, value in enumerate(values):
+                label = QLabel(value, host)
+                label.setWordWrap(column == 2)
+                grid.addWidget(label, row, column)
+        grid.setColumnStretch(2, 1)
+        self.form_sections[1].add_widget(host)
 
     def edit_template(self):
         if self.operation.busy:
@@ -887,6 +950,7 @@ class AccountConfigTab(CustomTab):
             value = self.draft.tasks.get(key)
             if isinstance(widget, NestSelection):
                 widget.set_values(value)
+                widget.set_nightmare_values(self.draft.tasks.get('Nightmare Settlements to Farm', []))
             elif isinstance(widget, QCheckBox):
                 widget.setChecked(bool(value))
             elif isinstance(widget, QComboBox):

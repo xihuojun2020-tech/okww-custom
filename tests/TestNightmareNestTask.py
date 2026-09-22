@@ -271,6 +271,25 @@ class TestNightmareNestTask(unittest.TestCase):
         self.assertEqual(1800, target.box.x)
         self.assertEqual(1, len(ocr_calls))
 
+    def test_nightmare_settlements_are_empty_by_default_and_use_game_names(self):
+        from src.nightmare_nests import NIGHTMARE_NAMES
+        from src.task.NightmareNestTask import FARM_NIGHTMARE_SETTLEMENTS
+        task = NightmareNestTask.__new__(NightmareNestTask)
+        task.config = {FARM_NIGHTMARE_SETTLEMENTS: [NIGHTMARE_NAMES[1]]}
+        task.count_re = re.compile(r"(\d{1,2})/(\d{1,2})")
+        task.queues = [task.go_nightmare]
+        task._unreachable_nests = set()
+        task.log_info = lambda *args, **kwargs: None
+        task.height_of_screen = lambda value: 1000 * value
+        task.width_of_screen = lambda value: 2000 * value
+        boxes = [FakeBox('0/36', y=200), FakeBox('0/36', y=300)]
+        task.ocr = lambda *args, **kwargs: boxes
+
+        target = task.find_nest()
+
+        self.assertEqual(target.display_name, '三王峰梦魇聚落')
+        self.assertIs(target.box, boxes[1])
+
     def test_find_nest_keeps_partially_completed_row(self):
         task = NightmareNestTask.__new__(NightmareNestTask)
         task.config = {}

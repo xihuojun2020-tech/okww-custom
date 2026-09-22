@@ -13,13 +13,14 @@ TRAVEL_FEATURES = ['fast_travel_custom', 'gray_teleport']
 CONFIRM_FEATURES = ['confirm_btn_hcenter_vcenter', 'confirm_btn_highlight_hcenter_vcenter']
 
 # 残象聚落（Tacet Discord Nest）名称，按游戏内 F2 残象页面从上到下的顺序
-from src.nightmare_nests import NEST_NAMES
+from src.nightmare_nests import NEST_NAMES, NIGHTMARE_NAMES
 # 每个位置的聚落怪物总数（用于校验行位置是否对应正确，48 出现两次所以不能单独用总数定位）
 NEST_TOTAL_BY_POSITION = [41, 48, 48, 24]
 # 可识别的聚落总数（保留 36 以兼容旧版本/历史数据）
 NEST_TOTALS = {'24', '36', '41', '48'}
 # 要刷的残象聚落（勾选 = 刷，不勾选 = 不打）
 FARM_TACET_DISCORD_NESTS = 'Tacet Discord Nests to Farm'
+FARM_NIGHTMARE_SETTLEMENTS = 'Nightmare Settlements to Farm'
 
 
 @dataclass
@@ -58,9 +59,14 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
                                              'options': ['Nightmare Purification', 'Tacet Discord Nest']}
         # 要刷的残象聚落：勾选 = 刷，不勾选 = 不打（默认全刷）
         self.default_config.update({FARM_TACET_DISCORD_NESTS: list(NEST_NAMES)})
+        self.default_config.update({FARM_NIGHTMARE_SETTLEMENTS: []})
         self.config_type[FARM_TACET_DISCORD_NESTS] = {
             'type': 'multi_selection',
             'options': NEST_NAMES,
+        }
+        self.config_type[FARM_NIGHTMARE_SETTLEMENTS] = {
+            'type': 'multi_selection',
+            'options': NIGHTMARE_NAMES,
         }
         self.config_description = {
             FARM_TACET_DISCORD_NESTS: 'Tacet Discord Nests to farm (checked = farm, unchecked = skip).',
@@ -295,63 +301,56 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
 
     def find_nest(self):
         counts = self.ocr(0.35, 0.13, 1, 0.96, match=self.count_re)
-        farm_nests = self.config.get(FARM_TACET_DISCORD_NESTS)
-        # None（从未配置过）时默认全刷；显式空列表表示什么都不刷
-        farm_nests = set(NEST_NAMES) if farm_nests is None else set(farm_nests)
-        # 先按行位置排序，再用位置映射聚落名称（不能用总数定位，因为 48 出现两次）
-        sorted_counts = sorted(counts, key=lambda box: box.y)
-        nest_index = 0
-        for count_box in sorted_counts:
-            for match in re.finditer(self.count_re, count_box.name):
-                numerator = match.group(1)
-                denominator = match.group(2)
-                if denominator not in NEST_TOTALS:
+        candidates = [(box, match) for box in sorted(counts, key=lambda item: item.y)
+                      for match in re.finditer(self.count_re, box.name)
+                      if match.group(2) in NEST_TOTALS]
+        action_name = self.queues[0].__name__ if self.queues else 'unknown'
+        is_residual = action_name not in ('go_nightmare', 'go_nightmare_scroll')
+        names = NEST_NAMES if is_residual else NIGHTMARE_NAMES
+        selected = self.config.get(FARM_TACET_DISCORD_NESTS if is_residual else FARM_NIGHTMARE_SETTLEMENTS)
+        selected = set(names if selected is None and is_residual else selected or [])
+        offset = max(0, len(names) - len(candidates)) if action_name == 'go_nightmare_scroll' else 0
+        for visible_index, (count_box, match) in enumerate(candidates):
+            target_index = offset + visible_index
+            if target_index >= len(names):
+                continue
+            nest_name = names[target_index]
+            numerator, denominator = match.groups()
+            expected_total = NEST_TOTAL_BY_POSITION[target_index] if is_residual else 36
+            if int(denominator) != expected_total:
+                self.log_info(f'warning: {nest_name} expected {expected_total} monsters but got {denominator}')
+            current = int(numerator)
+            total = int(denominator)
+            display_name = nest_name
+            cache_key = self._make_nest_cache_key(count_box, denominator)
+            if current < total:
+                if nest_name not in selected:
+                    self._clear_target_progress(cache_key)
+                    self.log_info(f'skip settlement {nest_name} (not selected to farm)')
                     continue
-                # 行位置 → 聚落名称；超过已知聚落数量则忽略
-                if nest_index >= len(NEST_NAMES):
+                self._record_target_progress(cache_key, display_name, current, total)
+                if cache_key in self._unreachable_nests:
+                    self.log_info(f'skip cached unreachable nightmare nest: {cache_key}')
                     continue
-                nest_name = NEST_NAMES[nest_index]
-                nest_index += 1
-                expected_total = NEST_TOTAL_BY_POSITION[nest_index - 1]
-                if int(denominator) != expected_total:
-                    self.log_info(f'warning: {nest_name} expected {expected_total} monsters but got {denominator}')
-                current = int(numerator)
-                total = int(denominator)
-                action_name = self.queues[0].__name__ if self.queues else 'unknown'
-                display_name = (
-                    nest_name
-                    if action_name == 'go_nest'
-                    else f'梦魇拔除第 {nest_index} 项'
+                self.log_info(f'{count_box} is not complete ({current}/{total})')
+                count_box.x = self.width_of_screen(0.9)
+                count_box.y -= count_box.height * 0.9
+                count_box.height = 1
+                count_box.width = 1
+                publish_task_status(
+                    self,
+                    stage='刷梦魇巢穴',
+                    detail=f'当前目标：{display_name}',
                 )
-                cache_key = self._make_nest_cache_key(count_box, denominator)
-                if current < total:
-                    if nest_name not in farm_nests:
-                        self._clear_target_progress(cache_key)
-                        self.log_info(f'skip tacet discord nest {nest_name} (not selected to farm)')
-                        continue
-                    self._record_target_progress(cache_key, display_name, current, total)
-                    if cache_key in self._unreachable_nests:
-                        self.log_info(f'skip cached unreachable nightmare nest: {cache_key}')
-                        continue
-                    self.log_info(f'{count_box} is not complete ({current}/{total})')
-                    count_box.x = self.width_of_screen(0.9)
-                    count_box.y -= count_box.height * 0.9
-                    count_box.height = 1
-                    count_box.width = 1
-                    publish_task_status(
-                        self,
-                        stage='刷梦魇巢穴',
-                        detail=f'当前目标：{display_name}',
-                    )
-                    return NestTarget(
-                        count_box,
-                        cache_key,
-                        display_name=display_name,
-                        ordinal=nest_index,
-                        current=current,
-                        total=total,
-                    )
-                self._clear_target_progress(cache_key)
+                return NestTarget(
+                    count_box,
+                    cache_key,
+                    display_name=display_name,
+                    ordinal=target_index + 1,
+                    current=current,
+                    total=total,
+                )
+            self._clear_target_progress(cache_key)
 
     def _reset_progress_tracking(self):
         self._nest_progress = {}

@@ -34,7 +34,7 @@ class TestAccountFieldMetadata(unittest.TestCase):
     def test_english_storage_values_round_trip_through_chinese_display(self):
         stored = ["Nightmare Purification", "Tacet Discord Nest"]
         displayed = localize_account_value(stored)
-        self.assertEqual(displayed, ["梦魇拔除", "残像聚落"])
+        self.assertEqual(displayed, ["梦魇聚落", "残像聚落"])
         self.assertEqual(restore_account_value(displayed), stored)
         self.assertEqual(localize_account_value("Shell Credit"), "贝币")
 

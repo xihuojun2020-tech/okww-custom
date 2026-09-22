@@ -231,10 +231,6 @@ class CompletionCheckTab(QWidget):
         self.account_title = QLabel('请选择账号', right)
         self.account_title.setWordWrap(True)
         content.addWidget(self.account_title)
-        self.reminder_summary = QLabel('待办提醒：未设置', right)
-        self.reminder_summary.setWordWrap(True)
-        content.addWidget(self.reminder_summary)
-        self._reminders = {}
         tools = QHBoxLayout()
         self.mode = QtComboBox(right)
         for title, key in [('当前检查', 'current'), ('历史记录', 'history'), ('回收区', 'trash')]:
@@ -248,10 +244,8 @@ class CompletionCheckTab(QWidget):
         content.addLayout(tools)
         actions = QHBoxLayout()
         self.pending_only = QCheckBox('仅待检查', right)
-        self.reminders_only = QCheckBox('仅看提醒项目', right)
         self.capture_button = PrimaryPushButton('保存当前画面', right)
         actions.addWidget(self.pending_only)
-        actions.addWidget(self.reminders_only)
         actions.addStretch()
         actions.addWidget(self.capture_button)
         content.addLayout(actions)
@@ -288,7 +282,6 @@ class CompletionCheckTab(QWidget):
         self.mode.currentIndexChanged.connect(self.reload_records)
         self.project_filter.currentIndexChanged.connect(self.reload_records)
         self.pending_only.toggled.connect(self._display_records)
-        self.reminders_only.toggled.connect(self._display_records)
         self.capture_button.clicked.connect(lambda: self.capture_evidence())
         self.more.clicked.connect(self.next_page)
         self.previous.clicked.connect(self.previous_page)
@@ -319,13 +312,6 @@ class CompletionCheckTab(QWidget):
     def _accounts_loaded(self, result):
         projection, archived, preferred = result
         profiles = projection.get('profiles', {})
-        from src.account_reminders import get_reminders
-        self._reminders = {}
-        for profile in profiles.values():
-            try:
-                self._reminders[profile['profile_id']] = get_reminders(profile)
-            except ValueError:
-                self.notice.setText('部分账号的待办提醒格式无效，请检查账号配置；原有证据仍可查看。')
         self._profiles = {p['profile_id']: account_display_label(p) for p in profiles.values()}
         names = {name: p['profile_id'] for name, p in profiles.items()}
         self._sequences = {key: [names[n] for n in values if n in names]
@@ -369,7 +355,6 @@ class CompletionCheckTab(QWidget):
         if not self.accounts.count():
             self._selected = None
             self.account_title.setText('没有匹配的账号')
-            self.reminder_summary.setText('待办提醒：未设置')
             self._rows = []
             self._display_records()
 
@@ -378,9 +363,6 @@ class CompletionCheckTab(QWidget):
             self._run_record, self._completions, self._history_error = None, {}, ''
             self._selected = current.data(Qt.UserRole)
             self.account_title.setText(self._profiles[self._selected])
-            from src.account_reminders import REMINDERS
-            values = self._reminders.get(self._selected, [])
-            self.reminder_summary.setText('待办提醒：' + ('、'.join(REMINDERS[key] for key in values) or '未设置'))
             self._rows = []
             self._display_records()
             self.reload_records()
@@ -473,8 +455,6 @@ class CompletionCheckTab(QWidget):
             for project in projects:
                 if project not in CURRENT_PROJECTS and not any(r['project_id'] == project for r in self._rows):
                     continue
-                if self.reminders_only.isChecked() and project not in self._reminders.get(self._selected, []):
-                    continue
                 period = period_for(project)
                 rows = [r for r in self._rows if r['project_id'] == project and r['period_id'] == period]
                 record, conflict = summarize(rows)
@@ -483,8 +463,6 @@ class CompletionCheckTab(QWidget):
                 self._add_card(project, record, conflict)
         else:
             for record in self._rows:
-                if self.reminders_only.isChecked() and record['project_id'] not in self._reminders.get(self._selected, []):
-                    continue
                 if self.pending_only.isChecked() and record['completion_status'] == 'completed':
                     continue
                 self._add_card(record['project_id'], record)

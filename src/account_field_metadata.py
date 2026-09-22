@@ -47,7 +47,8 @@ _LABELS = {
     "Farm Nightmare Nest for Daily Echo": ("每日刷取梦魇声骸", "开启后每日任务会尝试刷取梦魇声骸。"),
     "Nightmare Which to Farm": ("梦魇刷取目标", "选择梦魇巢穴目标；多个值保留为列表。"),
     "Tacet Discord Nests to Farm": ("残象聚落目标", "勾选哪些聚落就刷取哪些；全部取消则跳过残象聚落。"),
-    "Auto Farm all Nightmare Nest": ("自动刷取全部梦魇", "开启后按现有任务规则遍历全部梦魇目标。"),
+    "Nightmare Settlements to Farm": ("梦魇聚落目标", "补充刷取目标，默认全部不选。"),
+    "Auto Farm all Nightmare Nest": ("自动刷取所选目标", "开启后依次刷取勾选的残象聚落和梦魇聚落。"),
     "Weekly Garden Check Day": ("周常乐园检查日", "无表示完全禁用；需要周日运行时请明确选择星期日。"),
     "Merge Echo on Sunday": ("周日合成声骸", "开启后在周日执行声骸合成。"),
     "Logout After Daily Task": ("每日任务后自动退登", "单账号运行结束后的退登行为；多账号任务会临时接管。"),
@@ -70,7 +71,7 @@ _VALUE_LABELS = {
     "Resonator EXP": "共鸣者经验",
     "Weapon EXP": "武器经验",
     "Shell Credit": "贝币",
-    "Nightmare Purification": "梦魇拔除",
+    "Nightmare Purification": "梦魇聚落",
     "Tacet Discord Nest": "残像聚落",
 }
 _STORAGE_VALUES = {label: value for value, label in _VALUE_LABELS.items()}

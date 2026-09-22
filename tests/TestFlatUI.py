@@ -654,10 +654,10 @@ class TestFlatUI(unittest.TestCase):
             env = make_account_environment(Path(temp))
             tab = AccountConfigTab(AccountConfigEditor(env.repository))
             self.assertTrue(all(not section.toggle_button.isChecked() for section in tab.form_sections.values()))
-            self.assertEqual(tab.form_sections[1].title, '清理体力')
-            self.assertEqual(tab.form_sections[2].title, '周本挑战')
-            self.assertTrue(tab.form_sections[2].isAncestorOf(tab.form_widgets['Weekly Boss Target']))
-            self.assertFalse(tab.form_sections[1].isAncestorOf(tab.form_widgets['Weekly Boss Target']))
+            self.assertEqual(tab.form_sections[0].title, '日常与声骸')
+            self.assertEqual(tab.form_sections[1].title, '周常安排')
+            self.assertTrue(tab.form_sections[1].isAncestorOf(tab.form_widgets['Weekly Boss Target']))
+            self.assertTrue(tab.identity_group.isAncestorOf(tab.sequence_group))
             tab.deleteLater()
 
     def test_connection_summary_keeps_hotkey_failure_visible(self):
@@ -728,13 +728,13 @@ class TestFlatUI(unittest.TestCase):
                                     '备用识别名称': True, '备用识别名称内容': 'fixture'})
             before = dict(tab.draft.tasks)
             tab._render_form()
-            for index, title in ((1, '清理体力'), (2, '周本挑战'), (3, '周常安排'), (4, '收尾行为')):
+            for index, title in ((0, '日常与声骸'), (1, '周常安排'), (2, '收尾行为')):
                 section = tab.form_sections[index]
                 self.assertEqual(section.title_label.text(), title)
                 self.assertFalse(section.toggle_button.isChecked())
             for key in ('Weekly Garden Check Day', 'Merge Echo on Sunday'):
-                self.assertTrue(tab.form_sections[3].isAncestorOf(tab.form_widgets[key]))
-            self.assertTrue(tab.form_sections[4].isAncestorOf(tab.form_widgets['Logout After Daily Task']))
+                self.assertTrue(tab.form_sections[1].isAncestorOf(tab.form_widgets[key]))
+            self.assertTrue(tab.form_sections[2].isAncestorOf(tab.form_widgets['Logout After Daily Task']))
             self.assertTrue(tab.identity_group.isAncestorOf(tab.form_widgets['备用识别名称内容']))
             self.assertEqual(tab.draft.tasks, before)
             tab.deleteLater()

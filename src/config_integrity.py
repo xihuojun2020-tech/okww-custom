@@ -66,6 +66,7 @@ PROTECTED_TASK_KEYS = (
     "Farm Nightmare Nest for Daily Echo",
     "Nightmare Which to Farm",
     "Tacet Discord Nests to Farm",
+    "Nightmare Settlements to Farm",
     "Auto Farm all Nightmare Nest",
     "Weekly Garden Check Day",
     "Weekly Boss Target",
@@ -82,6 +83,7 @@ _TASK_KEY_TYPES = {
     "Farm Nightmare Nest for Daily Echo": bool,
     "Nightmare Which to Farm": list,
     "Tacet Discord Nests to Farm": list,
+    "Nightmare Settlements to Farm": list,
     "Auto Farm all Nightmare Nest": bool,
     "Weekly Garden Check Day": str,
     "Weekly Boss Target": str,
@@ -102,6 +104,7 @@ _BOOTSTRAP_TASK_DEFAULTS = {
     "Farm Nightmare Nest for Daily Echo": False,
     "Nightmare Which to Farm": [],
     "Tacet Discord Nests to Farm": [],
+    "Nightmare Settlements to Farm": [],
     "Auto Farm all Nightmare Nest": False,
     "Weekly Garden Check Day": "无",
     "Weekly Boss Target": "自动（列表首项）",
@@ -327,7 +330,9 @@ def validate_master(data: Any) -> list[str]:
             # Additive fields do not invalidate old anchors. Runtime defaults do
             # not rewrite stored account intent; explicit disabled remains disabled.
             missing_keys = [key for key in PROTECTED_TASK_KEYS
-                            if key not in task_config and key not in ('Weekly Boss Target', 'Material Planner Enabled')]
+                            if key not in task_config and key not in (
+                                'Weekly Boss Target', 'Material Planner Enabled',
+                                'Nightmare Settlements to Farm')]
             from src.task.weekly_boss import WEEKLY_BOSSES
             if task_config.get('Weekly Boss Target', '无') not in ('无', '自动（列表首项）', *(b.key for b in WEEKLY_BOSSES)):
                 errors.append(f'{path}.task_config weekly boss target is invalid')

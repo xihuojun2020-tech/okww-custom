@@ -20,7 +20,8 @@ from src.task.WeeklyBossTask import WeeklyBossTask
 from src.task.weekly_boss import (WEEKLY_TARGET, WEEKLY_DISABLED, WEEKLY_BOSSES, WEEKLY_AUTO,
                                 WEEKLY_MONDAY, WEEKLY_SUNDAY, weekly_check_window, weekly_check_due)
 from src.task.MergeEchoTask import MergeEchoTask
-from src.task.NightmareNestTask import NightmareNestTask
+from src.task.NightmareNestTask import (FARM_NIGHTMARE_SETTLEMENTS, FARM_TACET_DISCORD_NESTS,
+                                        NightmareNestTask)
 from src.task.TacetTask import TacetTask
 from src.task.SimulationTask import SimulationTask
 from src.task.WWOneTimeTask import WWOneTimeTask
@@ -146,7 +147,7 @@ PROFILE_EXTRA_FIELDS = ('last_completed', 'account_aliases')
 NIGHTMARE_OPTIONS = ['Nightmare Purification', 'Tacet Discord Nest']
 
 # 残象聚落名称（合并进每日任务模块，随方案切换）
-from src.nightmare_nests import NEST_NAMES
+from src.nightmare_nests import NEST_NAMES, NIGHTMARE_NAMES
 
 # 凝素领域显示名。持久化值仍为 F2 列表中的整数序号，便于兼容旧账号。
 # 第 5～20 项暂保留序号占位，后续按游戏内实际名称继续补全。
@@ -199,6 +200,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             AUTO_FARM_NIGHTMARE_NEST: False,
             'Nightmare Which to Farm': ['Tacet Discord Nest'],
             'Tacet Discord Nests to Farm': list(NEST_NAMES),
+            FARM_NIGHTMARE_SETTLEMENTS: [],
             GARDEN_CHECK_DAY: '无',
             WEEKLY_TARGET: WEEKLY_AUTO,
             'Last Completed - Weekly Boss Monday': '',
@@ -233,6 +235,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             AUTO_FARM_NIGHTMARE_NEST: '勾选 = 刷取全部选中的梦魇巢穴',
             'Nightmare Which to Farm': '勾选 = 刷',
             'Tacet Discord Nests to Farm': '勾选 = 刷，取消勾选 = 跳过',
+            FARM_NIGHTMARE_SETTLEMENTS: '补充目标；勾选 = 刷，默认全部不选',
             GARDEN_CHECK_DAY: '无 = 此账号不检查、不执行；需要周日运行时请明确选择周日',
             ALIAS_ENABLE: '备用识别名称：无 = 不设置；使用 = 填写扫码登录显示的账号标识',
             ALIAS_TEXT: '多个用逗号分隔（如 UTEST1001A，识别登录界面账号时与手机号掩码同等有效）',
@@ -286,7 +289,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             },
             AUTO_FARM_NIGHTMARE_NEST: {
                 'sub_configs': {
-                    True: [LC_AUTO_NIGHTMARE, 'Nightmare Which to Farm', 'Tacet Discord Nests to Farm', LC_NEST],
+                    True: [LC_AUTO_NIGHTMARE, FARM_TACET_DISCORD_NESTS,
+                           FARM_NIGHTMARE_SETTLEMENTS, LC_NEST],
                     False: [],
                 },
             },
@@ -297,6 +301,10 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             'Tacet Discord Nests to Farm': {
                 'type': 'multi_selection',
                 'options': NEST_NAMES,
+            },
+            FARM_NIGHTMARE_SETTLEMENTS: {
+                'type': 'multi_selection',
+                'options': NIGHTMARE_NAMES,
             },
             # “无”是明确禁用；周日与其他日期一样必须显式选择。
             GARDEN_CHECK_DAY: {
@@ -497,10 +505,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             try:
                 # 把合并到每日任务模块的梦魇配置同步给 NightmareNestTask
                 nightmare_task = self.get_task_by_class(NightmareNestTask)
-                nightmare_task.config['Which to Farm'] = list(
-                    self._profile_get('Nightmare Which to Farm', ['Tacet Discord Nest']))
-                nightmare_task.config['Tacet Discord Nests to Farm'] = list(
-                    self._profile_get('Tacet Discord Nests to Farm', NEST_NAMES))
+                self._configure_nightmare_task(nightmare_task)
                 if auto_farm:
                     self._publish_daily_stage('刷梦魇巢穴', '正在打开梦魇页面')
                     self.log_info('开始刷梦魇巢穴（打梦魇聚落）', notify=True)
@@ -562,10 +567,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             self.log_info('体力刷取后活跃度仍未满，尝试每日声骸任务', notify=True)
             try:
                 nightmare_task = self.get_task_by_class(NightmareNestTask)
-                nightmare_task.config['Which to Farm'] = list(
-                    self._profile_get('Nightmare Which to Farm', ['Tacet Discord Nest']))
-                nightmare_task.config['Tacet Discord Nests to Farm'] = list(
-                    self._profile_get('Tacet Discord Nests to Farm', NEST_NAMES))
+                self._configure_nightmare_task(nightmare_task)
                 nightmare_task.run_capture_mode(verify_capture=lambda: self._daily_objective('echo') == (1, 1))
                 self._verify_daily_echo()
                 nightmare_attempted = True
@@ -627,12 +629,20 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
     def _notify_incomplete_daily_activity(self, message):
         self.log_warning(message, notify=True)
 
+    def _configure_nightmare_task(self, task):
+        residual = list(self._profile_get(FARM_TACET_DISCORD_NESTS, NEST_NAMES))
+        nightmare = list(self._profile_get(FARM_NIGHTMARE_SETTLEMENTS, []))
+        task.config['Which to Farm'] = (["Tacet Discord Nest"] if residual else []) + (
+            ["Nightmare Purification"] if nightmare else [])
+        task.config[FARM_TACET_DISCORD_NESTS] = residual
+        task.config[FARM_NIGHTMARE_SETTLEMENTS] = nightmare
+
     def _nightmare_checkpoint_key(self, auto_farm):
         # Reuse the validated profile's completion store. Legacy generic
         # completion stamps cannot prove capture vs full-clear or target scope.
         intent = [bool(auto_farm),
-                  sorted(self._profile_get('Nightmare Which to Farm', ['Tacet Discord Nest'])),
-                  sorted(self._profile_get('Tacet Discord Nests to Farm', NEST_NAMES))]
+                  sorted(self._profile_get(FARM_TACET_DISCORD_NESTS, NEST_NAMES)),
+                  sorted(self._profile_get(FARM_NIGHTMARE_SETTLEMENTS, []))]
         digest = hashlib.sha256(json.dumps(intent, ensure_ascii=False).encode()).hexdigest()[:20]
         return f'daily_step_v2:nightmare:{digest}'
 
@@ -663,8 +673,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             return ready
         self._publish_daily_stage('补充活跃度', '声骸任务仍为 0/1，补做并核验一次')
         task = self.get_task_by_class(NightmareNestTask)
-        task.config['Which to Farm'] = list(self._profile_get('Nightmare Which to Farm', ['Tacet Discord Nest']))
-        task.config['Tacet Discord Nests to Farm'] = list(self._profile_get('Tacet Discord Nests to Farm', NEST_NAMES))
+        self._configure_nightmare_task(task)
         task.run_capture_mode(verify_capture=lambda: self._daily_objective('echo') == (1, 1))
         self._verify_daily_echo()
         self.record_last_completed(self._nightmare_checkpoint_key(False),
@@ -1877,11 +1886,13 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         return None
 
     def validate_daily_tasks(self):
-        if self._profile_get(AUTO_FARM_NIGHTMARE_NEST) and not self._profile_get('Nightmare Which to Farm'):
+        if self._profile_get(AUTO_FARM_NIGHTMARE_NEST) and not (
+                self._profile_get(FARM_TACET_DISCORD_NESTS, NEST_NAMES)
+                or self._profile_get(FARM_NIGHTMARE_SETTLEMENTS, [])):
             # NightmareNestTask 已整合进每日任务模块，校验基于每日任务里的可见配置
             raise Exception(
                 self.tr(
-                    'Auto Farm all Nightmare Nest requires at least one "Which to Farm" option.'
+                    '自动刷取所选目标至少需要勾选一个残象聚落或梦魇聚落。'
                 )
             )
         return True

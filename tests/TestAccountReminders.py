@@ -1,43 +1,42 @@
 import unittest
 
-from src.account_reminders import get_reminders, set_reminders
+from src.account_reminders import (REMINDERS, get_reminder_note, get_reminders,
+                                   set_reminder_note, set_reminders)
 
 
 class TestAccountReminders(unittest.TestCase):
-    def test_all_current_projects_and_legacy_reminders_roundtrip(self):
-        from src.evidence.model import CURRENT_PROJECTS
-        from src.account_reminders import REMINDERS
-        from src.activity_catalog import ACTIVITIES
-        self.assertEqual(set(CURRENT_PROJECTS), {
-            'daily_activity', 'nightmare_nest', 'battle_pass', 'weekly_boss', 'weekly_garden',
-            'adversity_tower', 'sea_ruins', 'matrix', 'character_trial', *ACTIVITIES,
+    def test_fixed_display_only_catalog_and_legacy_migration(self):
+        self.assertEqual(REMINDERS, {
+            'daily_activity': '活跃度', 'weekly_boss': '周本', 'weekly_garden': '每周乐园',
+            'abyss': '深渊', 'activities': '活动', 'other': '其他',
         })
-        self.assertEqual({key: REMINDERS[key] for key in ACTIVITIES}, ACTIVITIES)
-        account = {'extensions': {'completion_reminders': ['activity_1', 'activity_3']}}
-        self.assertEqual(get_reminders(set_reminders(account, get_reminders(account))), ['activity_1', 'activity_3'])
-        self.assertEqual(get_reminders(set_reminders(account, list(CURRENT_PROJECTS))), list(CURRENT_PROJECTS))
+        account = {'extensions': {'completion_reminders': [
+            'adversity_tower', 'sea_ruins', 'activity_1', 'piano_activity', 'battle_pass']}}
+        self.assertEqual(get_reminders(account), ['abyss', 'activities', 'other'])
+        self.assertEqual(get_reminders(set_reminders(account, get_reminders(account))),
+                         ['abyss', 'activities', 'other'])
 
-    def test_reminders_are_empty_by_default(self):
+    def test_reminders_and_note_are_empty_by_default(self):
         self.assertEqual(get_reminders({}), [])
+        self.assertEqual(get_reminder_note({}), '')
 
-    def test_reminders_do_not_mutate_execution_config_or_other_extensions(self):
+    def test_reminders_and_note_preserve_tasks_and_other_extensions(self):
         account = {'profile_id': 'synthetic-account', 'task_config': {'enabled': False},
                    'extensions': {'unrelated': {'value': 1}}}
-        result = set_reminders(account, ['weekly_boss', 'daily_activity', 'weekly_boss'])
+        result = set_reminder_note(
+            set_reminders(account, ['weekly_boss', 'daily_activity', 'weekly_boss']), '下周检查')
         self.assertEqual(get_reminders(result), ['daily_activity', 'weekly_boss'])
+        self.assertEqual(get_reminder_note(result), '下周检查')
         self.assertEqual(result['task_config'], account['task_config'])
-        self.assertEqual(result['profile_id'], account['profile_id'])
         self.assertEqual(result['extensions']['unrelated'], account['extensions']['unrelated'])
         self.assertNotIn('completion_reminders', account['extensions'])
-        self.assertEqual(get_reminders(set_reminders(result, [])), [])
 
-    def test_invalid_ids_are_not_silently_converted_to_tasks(self):
+    def test_invalid_ids_and_oversized_note_are_rejected(self):
         for values in (['unknown'], 'weekly_boss', [None], None, False, ''):
             with self.assertRaises(ValueError):
                 set_reminders({}, values)
-        for invalid in (None, [], False):
-            with self.assertRaises(ValueError):
-                set_reminders({'extensions': invalid}, [])
+        with self.assertRaises(ValueError):
+            set_reminder_note({}, 'x' * 2001)
 
 
 if __name__ == '__main__':
