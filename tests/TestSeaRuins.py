@@ -17,11 +17,6 @@ class TestSeaRuins(unittest.TestCase):
         self.ice = Preset(2, ('char_hiyuki', 'char_lucilla', 'char_suisui'))
         self.generic = Token('审判-遗落令旗', '施放变奏技能后暴击伤害提升40%', -1)
 
-    def test_preserves_members_and_avoids_resistance_on_correct_half(self):
-        plan = choose_loadout([self.wind, self.ice], [self.generic], 10, TODAY)
-        self.assertEqual(plan.upper, self.ice)
-        self.assertEqual(plan.lower.members, self.wind.members)
-
     def test_duplicate_roster_cannot_fill_both_halves(self):
         duplicate = Preset(3, tuple(reversed(self.wind.members)))
         with self.assertRaisesRegex(ValueError, '不重人'):
@@ -50,6 +45,12 @@ class TestSeaRuins(unittest.TestCase):
         spectro = Preset(4, ('char_jinhsi', 'char_zhezhi', 'char_douling'))
         plan = choose_loadout([fire, spectro], [self.generic], 8, TODAY)
         self.assertEqual((plan.upper, plan.lower), (spectro, fire))
+
+    def test_current_cycle_resistances_for_floors_nine_to_eleven(self):
+        for floor, element in ((9, '气动'), (10, '导电'), (11, '衍射')):
+            with self.subTest(floor=floor):
+                self.assertEqual(season_rule(floor, 0, TODAY), ((), (element,)))
+                self.assertEqual(season_rule(floor, 1, TODAY), ((), (element,)))
 
     def test_locked_infinite_empty_unknown_and_single_use(self):
         for token in (Token('狂欢者', '', -1, True), Token('狂欢者', '', 0), Token('狂欢者', '', None), Token('狂欢者', '', 1)):

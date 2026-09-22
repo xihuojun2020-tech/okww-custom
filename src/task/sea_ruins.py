@@ -11,14 +11,13 @@ import re
 SEASON_START = date(2026, 8, 31)
 SEASON_END = date(2026, 9, 28)  # exclusive; AI must review a new cycle
 FLOORS = {7: '险滩', 8: '涡流'}  # names verified in supplied screenshots
-# 8: user-confirmed enemy resistances, 2026-09-20. 9–11: Game8 499663, 2026-09-10;
-# keep enemy innate resistances separate from stage-wide modifiers.
+# User-confirmed current-cycle enemy resistances, 2026-09-22.
 SEASON_RULES = {
     (7, 0): ((), ()), (7, 1): ((), ()),
     (8, 0): ((), ('热熔',)), (8, 1): ((), ('衍射',)),
-    (9, 0): ((), ('气动',)), (9, 1): ((), ('气动', '热熔')),
-    (10, 0): ((), ('导电',)), (10, 1): ((), ('导电', '冷凝')),
-    (11, 0): ((), ('衍射',)), (11, 1): ((), ('衍射', '湮灭')),
+    (9, 0): ((), ('气动',)), (9, 1): ((), ('气动',)),
+    (10, 0): ((), ('导电',)), (10, 1): ((), ('导电',)),
+    (11, 0): ((), ('衍射',)), (11, 1): ((), ('衍射',)),
 }
 
 
