@@ -2,6 +2,13 @@
 
 日期：2026-08-25
 
+## 2026-09-23 / 1.84.00 账号规划补充
+
+- 所属序列移入“账号识别信息”，但仍与账号草稿在同一次 `publish_profile` 原子事务中保存；CAS 修订检查、备份、序列成员校验和原顺序保护不变。
+- 六类待办保存在账号扩展 `completion_reminders`，多行备注保存在 `account_reminder_note`。两者仅作展示，不在任务配置中，也不参与完成检查。
+- `Tacet Discord Nests to Farm` 保存 4 个残象聚落选择；`Nightmare Settlements to Farm` 保存 4 个梦魇聚落选择。梦魇字段缺失或为空时全部不刷，新账号模板默认空列表。
+- 旧 `Nightmare Which to Farm` 继续供导入兼容，现行账号界面隐藏该类型选择。完整字段与验收见 [1.84.00 账号规划说明](account-planning-1.84.md)。
+
 ## 2026-08-26 UI 重构补充
 
 - `src/gui/CodexTheme.py`：固定浅色 palette/QSS，颜色值来自 `docs/superpowers/specs/2026-08-26-codex-light-ui-redesign.md`；主题初始化不订阅系统深色模式。

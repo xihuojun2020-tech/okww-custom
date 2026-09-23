@@ -1,4 +1,4 @@
-# 账号总配置运行端 AI 详细说明（v1.08.00）
+# 账号总配置运行端 AI 详细说明（适用于 v1.84.00）
 
 本文供运行端的 AI 工具、维护脚本和人工维护者理解账号总配置的安全边界。普通任务和普通配置保存不会创建或修改总配置；只有用户明确确认的旧版本首次锚定、遗漏序列恢复、账号配置包导入或完整备份恢复可以进入受控写事务。AI 在操作前必须先向用户说明影响并备份文件，不能替用户点击确认。
 
@@ -38,13 +38,20 @@
   - `Farm Nightmare Nest for Daily Echo`
   - `Nightmare Which to Farm`
   - `Tacet Discord Nests to Farm`
+  - `Nightmare Settlements to Farm`
   - `Auto Farm all Nightmare Nest`
+  - `Weekly Boss Target`
+  - `Material Planner Enabled`
   - `Weekly Garden Check Day`
   - `Merge Echo on Sunday`
   - `备用识别名称`
   - `备用识别名称内容`
 - `schedule`：账号时间安排对象。`mode` 可为 `""`、`disabled`、`daily`、`weekly`、`once`；`local_time` 使用 `HH:MM`；`weekdays` 是数组；未来字段放在 `schedule.extensions`。
 - `extensions`：账号级预留扩展对象。
+
+`Nightmare Which to Farm` 是旧版类型选择的兼容字段，现行账号 UI 不再展示。`Tacet Discord Nests to Farm` 保存 4 个残象聚落选择；`Nightmare Settlements to Farm` 保存穗波市、三王峰、潮痕岩滩和受蚀地 4 个梦魇聚落选择。梦魇字段缺失或为空列表表示全部不刷，新账号模板默认空列表。
+
+账号扩展中的 `completion_reminders` 只保存活跃度、周本、每周乐园、深渊、活动和其他六类展示提醒；`account_reminder_note` 保存最多 2000 字符的人工备注。两者不参与任务调度、完成检查、失败补跑或证据筛选。完整现行规则见 [1.84.00 账号规划说明](docs/references/account-planning-1.84.md)。
 
 `Record After Daily Task`、`Record Pages`、`Record Duration`、`Logout PC After Daily Task` 和 `Last Completed - ...` 不属于账号稳定任务意图，不应手工加入受保护字段。完成记录和多账号断点属于运行状态。
 
@@ -148,7 +155,9 @@
         "Farm Nightmare Nest for Daily Echo": true,
         "Nightmare Which to Farm": ["Tacet Discord Nest"],
         "Tacet Discord Nests to Farm": [],
+        "Nightmare Settlements to Farm": [],
         "Auto Farm all Nightmare Nest": false,
+        "Weekly Boss Target": "自动（列表首项）",
         "Weekly Garden Check Day": "无",
         "Merge Echo on Sunday": false,
         "备用识别名称": "使用",
@@ -160,7 +169,10 @@
         "weekdays": [],
         "extensions": {}
       },
-      "extensions": {}
+      "extensions": {
+        "completion_reminders": ["daily_activity", "weekly_boss"],
+        "account_reminder_note": "示例备注"
+      }
     }
   },
   "sequences": {
@@ -173,6 +185,8 @@
 示例 UUID 和账号名仅用于展示，不能复制到多个真实账号。
 
 ## 9. v1.08.00 序列恢复、配置包和备份
+
+本节记录 `1.08.00` 引入并延续至当前版本的安全机制；版本标题是功能来源，不表示本文仅适用于旧版。
 
 ### 9.1 遗漏序列恢复
 

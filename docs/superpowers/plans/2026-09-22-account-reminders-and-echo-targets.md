@@ -10,6 +10,8 @@
 
 **Spec:** User-approved requirements in the 2026-09-22 Codex thread.
 
+**Implementation result:** Completed and released as `1.84.00`, commit `b87b4ee0`, annotated tag `v1.84.00`. The branch and tag were published to GitHub and the update package was published to the approved NAS path. 152 focused tests passed. The repository runner initially stopped on the isolated worktree's shared `.venv` path-ownership check; after removing that junction, the check passed independently. No game session was started, so live first-page/scrolled nightmare-settlement clicking remains user acceptance work.
+
 ## Global Constraints
 
 - New nightmare settlements default to an empty selection.
@@ -27,10 +29,10 @@
 
 **Interfaces:** Produce `get_reminders`, `set_reminders`, `get_reminder_note`, and `set_reminder_note`; completion evidence consumes none of them.
 
-- [ ] Replace project-derived reminders with six stable display-only values.
-- [ ] Add a bounded multiline per-account note and preserve unrelated extensions.
-- [ ] Remove reminder summaries and reminder filtering from Completion Check.
-- [ ] Run focused reminder and completion-check tests.
+- [x] Replace project-derived reminders with six stable display-only values.
+- [x] Add a bounded multiline per-account note and preserve unrelated extensions.
+- [x] Remove reminder summaries and reminder filtering from Completion Check.
+- [x] Run focused reminder and completion-check tests.
 
 ### Task 2: Optional nightmare settlements
 
@@ -38,11 +40,11 @@
 
 **Interfaces:** Add `NIGHTMARE_NAMES` and `FARM_NIGHTMARE_SETTLEMENTS`; missing/new values resolve to `[]` while residual targets retain their existing values.
 
-- [ ] Add the four ordered in-game names with an empty default.
-- [ ] Filter residual and nightmare pages against their own selected lists.
-- [ ] Pass the new selection through daily, capture, recovery, and checkpoint signatures.
-- [ ] Preserve legacy fields for import compatibility while hiding the obsolete type selector.
-- [ ] Run focused task, integrity, and migration tests.
+- [x] Add the four ordered in-game names with an empty default.
+- [x] Filter residual and nightmare pages against their own selected lists.
+- [x] Pass the new selection through daily, capture, recovery, and checkpoint signatures.
+- [x] Preserve legacy fields for import compatibility while hiding the obsolete type selector.
+- [x] Run focused task, integrity, and migration tests.
 
 ### Task 3: Account layout
 
@@ -50,11 +52,11 @@
 
 **Interfaces:** Produce one target-selection control for residual and nightmare settlements and one compact weekly-status widget.
 
-- [ ] Place sequence membership inside “账号识别信息”.
-- [ ] Merge stamina fields into “日常与声骸”.
-- [ ] Merge weekly boss fields into “周常安排”.
-- [ ] Replace three weekly status setting rows with a compact grid.
-- [ ] Verify wide and narrow layouts with focused UI tests.
+- [x] Place sequence membership inside “账号识别信息”.
+- [x] Merge stamina fields into “日常与声骸”.
+- [x] Merge weekly boss fields into “周常安排”.
+- [x] Replace three weekly status setting rows with a compact grid.
+- [x] Verify wide and narrow layouts with focused UI tests.
 
 ### Task 4: Release validation
 
@@ -62,7 +64,7 @@
 
 **Interfaces:** Release version `1.84.00` and matching annotated tag `v1.84.00`.
 
-- [ ] Update version and user-facing documentation.
-- [ ] Run focused tests, then the repository test command.
-- [ ] Commit the verified change and create the annotated tag.
-- [ ] Push the branch and tag to GitHub and publish the update to the approved NAS path.
+- [x] Update version and user-facing documentation.
+- [x] Run focused tests and the repository test command, recording the isolated-worktree path limitation described above.
+- [x] Commit the verified change and create the annotated tag.
+- [x] Push the branch and tag to GitHub and publish the update to the approved NAS path.

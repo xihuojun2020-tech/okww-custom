@@ -1,5 +1,5 @@
 <div align="center">
-  <p>当前版本：<a href="更新日志.md">1.74.00 深塔与材料入口稳定等待</a> · <a href="docs/references/solo-combat.md">单人输出支持清单</a> · <a href="docs/references/completion-evidence.md">完成检查分组与图片复制</a> · <a href="docs/references/material-planner-1.59.md">养成材料规划</a></p>
+  <p>当前版本：<a href="更新日志.md">1.84.00 账号计划与声骸目标精简</a> · <a href="docs/references/account-planning-1.84.md">账号规划说明</a> · <a href="docs/references/solo-combat.md">单人输出支持清单</a> · <a href="docs/references/completion-evidence.md">完成检查分组与图片复制</a> · <a href="docs/references/material-planner-1.59.md">养成材料规划</a></p>
   <h1 align="center">
     <img src="icons/icon.png" width="200" alt="ok-ww logo"/>
     <br/>
