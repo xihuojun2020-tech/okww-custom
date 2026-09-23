@@ -254,6 +254,23 @@ def selected_floor_index(frame):
     height, width = frame.shape[:2]
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     thickness = max(2, round(height / 288))
+    # The live selected border can sit several pixels below the nominal row
+    # geometry. Require both long horizontal white edges before the older
+    # partial-highlight fallback; the permanent first-row outline is darker.
+    strong = []
+    for y1, y2 in FLOOR_ROWS:
+        left, right = int(0.043 * width), int(0.305 * width)
+        edges = []
+        for y in (y1 + 0.009, y2 - 0.004):
+            center = int(y * height)
+            edges.append(max(
+                float(np.mean(gray[center + offset, left:right] > 210))
+                for offset in range(-12, 13)
+                if 0 <= center + offset < height
+            ))
+        strong.append(min(edges))
+    if max(strong) > 0.6:
+        return int(np.argmax(strong))
     scores = []
     for y1, y2 in FLOOR_ROWS:
         left, right = int(0.043 * width), int(0.305 * width)
@@ -1029,7 +1046,12 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         for index in range(last + 1):
             star_text = f"{star_total}/12" if star_total is not None else "未识别"
             if locked[index]:
-                state = classify_floor_evidence(True, avatar_counts[index], False, False, False)
+                # A selected empty fourth floor can resemble the lock icon.
+                # Verify it only after a completed prefix, and never infer
+                # availability from a button belonging to another row.
+                state = (self._verify_locked_floor(tower_name, index)
+                         if index and all(value == COMPLETED for value in states)
+                         else LOCKED)
                 self.log_info(
                     f"{tower_name}第 {index + 1} 层证据：存在=True，锁定=True，"
                     f"头像槽={avatar_counts[index]}，总星数={star_text}，最终状态={state}"
@@ -1055,6 +1077,22 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
 
         self.log_info(f"当前塔扫描结果：{', '.join(states)}")
         return states
+
+    def _verify_locked_floor(self, tower_name, floor_index):
+        row = FLOOR_ROWS[floor_index]
+        self.click_relative(0.18, (row[0] + row[1]) / 2,
+                            after_sleep=0.35, name=f'复核{tower_name}第{floor_index + 1}层锁定')
+        selected = self.wait_until(lambda: selected_floor_index(self.frame) == floor_index,
+                                   time_out=1.2, raise_if_not_found=False)
+        reset, challenge = self._read_floor_action_buttons(self.frame)
+        self.log_info(f'{tower_name}第{floor_index+1}层锁定复核：选中={bool(selected)}，'
+                      f'重置={reset}，挑战开始={challenge}')
+        if selected and challenge and not reset:
+            return AVAILABLE
+        if selected:
+            self.screenshot('abyss_locked_floor_conflict')
+            return UNKNOWN
+        return LOCKED
 
     def _verify_floor_state(self, tower_name, floor_index, initial_avatar_count, star_total):
         row = FLOOR_ROWS[floor_index]

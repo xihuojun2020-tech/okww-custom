@@ -441,6 +441,39 @@ class TestAutoAbyssTask(unittest.TestCase):
 
         self.assertEqual(selected_floor_index(frame), row_index)
 
+    def test_selected_fourth_border_shifted_below_nominal_geometry(self):
+        frame = np.full((1440, 2560, 3), 48, dtype=np.uint8)
+        row = FLOOR_ROWS[3]
+        left, right = int(.043 * 2560), int(.305 * 2560)
+        for edge in (row[0] + .009, row[1] - .004):
+            y = int(edge * 1440) + 8
+            cv2.line(frame, (left, y), (right, y), (240, 240, 240), 3)
+        self.assertEqual(selected_floor_index(frame), 3)
+
+    def test_false_lock_on_completed_prefix_requires_selected_challenge(self):
+        task = Mock()
+        task.frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
+        task.wait_until.side_effect = lambda probe, **kwargs: probe()
+        task._read_floor_action_buttons.return_value = (False, True)
+        with patch('src.task.AutoAbyssTask.selected_floor_index', return_value=3):
+            self.assertEqual(AutoAbyssTask._verify_locked_floor(task, '残响之塔', 3), AVAILABLE)
+        task.click_relative.assert_called_once()
+        with patch('src.task.AutoAbyssTask.selected_floor_index', return_value=0):
+            self.assertEqual(AutoAbyssTask._verify_locked_floor(task, '残响之塔', 3), LOCKED)
+
+    def test_scan_probes_false_lock_after_three_completed_floors(self):
+        task = Mock()
+        task.frame = np.zeros((1440, 2560, 3), dtype=np.uint8)
+        task._row_matches.side_effect = lambda frame, row, name, threshold: row == FLOOR_ROWS[3]
+        task._row_has_floor_number.return_value = True
+        task._verify_floor_state.return_value = COMPLETED
+        task._verify_locked_floor.return_value = AVAILABLE
+        with patch('src.task.AutoAbyssTask.count_occupied_tower_slots', return_value=0), \
+             patch('src.task.AutoAbyssTask.selected_floor_index', return_value=None):
+            self.assertEqual(AutoAbyssTask._scan_tower_floors(task, '残响之塔', 9),
+                             (COMPLETED, COMPLETED, COMPLETED, AVAILABLE))
+        task._verify_locked_floor.assert_called_once_with('残响之塔', 3)
+
     def test_tower_scan_logs_and_recovers_missing_earlier_presence(self):
         class OfflineAbyssTask(AutoAbyssTask):
             @property
