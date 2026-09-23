@@ -13,13 +13,14 @@ Navigation and theme settings live in `mkdocs.yml` at the repository root.
 
 ## Architecture and code review
 
-- [自动冥歌海墟：信物库存与暂停恢复（1.81.00）](references/sea-ruins.md)
+- [自动冥歌海墟：使用、信物与暂停恢复（1.84.01）](references/sea-ruins.md)
+- [海墟第11层详情识别修复记录（1.84.01）](reviews/2026-09-23-sea-floor11-detail.md)
 
 - [框架升级说明与验收方案](references/framework-upgrade-assessment-2026-09-11.md)
 
 - [原版更新检查与融合方案（2026-09-11）](references/upstream-integration-assessment-2026-09-11.md)
 - [账号提醒、任务入口与录像设置（1.56.00）](references/account-ui-1.56.md)
-- [项目交接与发布状态（1.60.00）](项目交接与新对话上下文.md)
+- [项目交接与发布状态（1.84.01）](项目交接与新对话上下文.md)
 - [角色试用方案与实施记录（1.55.00）](superpowers/plans/2026-09-10-character-trial.md)
 
 - [局域网自动日志与错误截图（1.54.00）](references/lan-diagnostics.md)
