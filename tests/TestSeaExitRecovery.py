@@ -90,6 +90,37 @@ class TestSeaExitRecovery(unittest.TestCase):
         t.walk_to_box.assert_not_called()
         t.send_key.assert_not_called()
 
+    def test_animated_scene_still_recenters_off_center_marker(self):
+        t, now, find = self.setup_walk()
+        find.return_value.center.return_value = (1000, 400)
+        def walk(probe, **kw):
+            now[0] += kw['time_out']
+            t.frame[:] += 10  # moving water defeats the static-scene stall check
+            return t.walk_to_box.call_count == 19
+        t.walk_to_box.side_effect = walk
+        with patch('src.task.AutoSeaRuinsTask.time.monotonic', side_effect=lambda: now[0]):
+            self.assertTrue(AutoSeaRuinsTask._walk_sea_exit(t, find, time_out=60,
+                end_condition=lambda: False))
+        self.assertEqual(t.middle_click.call_count, 2)
+        self.assertEqual(t._exit_recenters, 2)
+        t.send_key.assert_not_called()
+
+    def test_brief_off_center_marker_does_not_recenter(self):
+        t, now, find = self.setup_walk()
+        def probe():
+            target = Mock()
+            target.center.return_value = (1000 if 8 <= now[0] < 11 else 640, 400)
+            return target
+        def walk(target, **kw):
+            now[0] += kw['time_out']
+            t.frame[:] += 10
+            return t.walk_to_box.call_count == 14
+        t.walk_to_box.side_effect = walk
+        with patch('src.task.AutoSeaRuinsTask.time.monotonic', side_effect=lambda: now[0]):
+            self.assertTrue(AutoSeaRuinsTask._walk_sea_exit(t, probe, time_out=60,
+                end_condition=lambda: False))
+        t.middle_click.assert_not_called()
+
     def test_recenter_rechecks_marker_before_moving(self):
         t, now, find = self.setup_walk()
         def probe():

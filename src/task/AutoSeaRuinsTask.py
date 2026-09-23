@@ -494,6 +494,8 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
         """Reacquire heading in short segments; bounded sea-only obstacle recovery."""
         deadline = time.monotonic() + time_out
         anchor, anchor_point, unchanged_since = None, None, time.monotonic()
+        last_recenter = unchanged_since
+        off_center_since = None
         try:
             while time.monotonic() < deadline:
                 self.next_frame()
@@ -504,6 +506,26 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
                 scene = np.hstack([cv2.resize(vision.crop(self.frame, region), (64, 64))
                     for region in ((.22, .35, .40, .70), (.62, .35, .80, .70))])
                 now = time.monotonic()
+                if abs(point[0] - self.width*.5) > self.width*.15:
+                    off_center_since = now if off_center_since is None else off_center_since
+                else:
+                    off_center_since = None
+                # Animated water can change every frame even while we circle
+                # away from an off-centre marker; elapsed time must also recover.
+                if (self._exit_recenters < 2 and off_center_since is not None
+                        and now - off_center_since >= 8 and now - last_recenter >= 8):
+                    self._exit_recenters += 1
+                    self._release()
+                    self._status(f'出口标记持续偏离视角，中键回正{self._exit_recenters}/2')
+                    self.middle_click(after_sleep=.3)
+                    last_recenter = time.monotonic()
+                    off_center_since = last_recenter
+                    self.next_frame()
+                    if end_condition():
+                        return True
+                    find()
+                    anchor = None
+                    continue
                 if (anchor is None or np.mean(cv2.absdiff(scene, anchor)) > 3
                         or abs(point[0]-anchor_point[0]) > self.width*.01
                         or abs(point[1]-anchor_point[1]) > self.height*.01):
@@ -514,6 +536,8 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
                         self._release()
                         self._status(f'出口寻路无进展，中键回正视角{self._exit_recenters}/2')
                         self.middle_click(after_sleep=.3)
+                        last_recenter = time.monotonic()
+                        off_center_since = last_recenter if off_center_since is not None else None
                         self.next_frame()
                         if end_condition():
                             return True
