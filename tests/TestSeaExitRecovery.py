@@ -9,7 +9,7 @@ class TestSeaExitRecovery(unittest.TestCase):
     def setup_walk(self):
         t = Mock()
         t.frame = np.zeros((720, 1280, 3), np.uint8)
-        t.width, t.height, t._exit_detours = 1280, 720, 0
+        t.width, t.height, t._exit_detours, t._exit_recenters = 1280, 720, 0, 0
         now = [0.]
         def walk(find, **kw):
             self.assertLessEqual(kw['time_out'], 1.)
@@ -30,6 +30,7 @@ class TestSeaExitRecovery(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, '3轮'):
                 AutoSeaRuinsTask._walk_sea_exit(t, find, time_out=60, end_condition=lambda: False)
         self.assertEqual(t._exit_detours, 3)
+        self.assertEqual(t.middle_click.call_count, 2)
         self.assertEqual([c.args[0] for c in t.send_key.call_args_list],
                          ['s','a','a','a','s','d','d','d','s','a','a','a'])
         self.assertLess(now[0], 60)
@@ -43,13 +44,14 @@ class TestSeaExitRecovery(unittest.TestCase):
                 end_condition=lambda: t.send_key.call_count == 1))
         self.assertEqual(t.send_key.call_count, 1)
 
-    def test_deadline_in_detour_never_extends_budget(self):
+    def test_deadline_during_recenter_never_extends_budget(self):
         t, now, find = self.setup_walk()
         with patch('src.task.AutoSeaRuinsTask.time.monotonic', side_effect=lambda: now[0]):
-            self.assertFalse(AutoSeaRuinsTask._walk_sea_exit(t, find, time_out=4.1,
+            self.assertFalse(AutoSeaRuinsTask._walk_sea_exit(t, find, time_out=10.1,
                 end_condition=lambda: False))
-        self.assertAlmostEqual(now[0], 4.1)
-        self.assertEqual(t.send_key.call_count, 1)
+        self.assertAlmostEqual(now[0], 10.1)
+        self.assertEqual(t.middle_click.call_count, 2)
+        t.send_key.assert_not_called()
 
     def test_marker_loss_and_cancel_during_detour_release(self):
         for error in (SeaExitMarkerLost(), TaskDisabledException()):
@@ -87,6 +89,18 @@ class TestSeaExitRecovery(unittest.TestCase):
         find.assert_not_called()
         t.walk_to_box.assert_not_called()
         t.send_key.assert_not_called()
+
+    def test_recenter_rechecks_marker_before_moving(self):
+        t, now, find = self.setup_walk()
+        def probe():
+            if t.middle_click.call_count:
+                raise SeaExitMarkerLost()
+            return find.return_value
+        with patch('src.task.AutoSeaRuinsTask.time.monotonic', side_effect=lambda: now[0]):
+            with self.assertRaises(SeaExitMarkerLost):
+                AutoSeaRuinsTask._walk_sea_exit(t, probe, time_out=60, end_condition=lambda: False)
+        t.middle_click.assert_called_once_with(after_sleep=.3)
+        t._release.assert_called()
 
     def test_detour_budget_survives_marker_recovery_restart(self):
         t, now, find = self.setup_walk()

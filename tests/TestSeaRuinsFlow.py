@@ -95,7 +95,7 @@ class TestSeaRuinsFlow(unittest.TestCase):
 
     def test_transient_marker_loss_restarts_walker(self):
         t = self.task()
-        t._prompt.side_effect = [False, True, True]
+        t._prompt.side_effect = [False, False, True, True]
         t._upper_end.return_value = True
         def walk(find, **kw):
             find()
@@ -105,6 +105,7 @@ class TestSeaRuinsFlow(unittest.TestCase):
                    side_effect=[None, (.6, .7, .95), (.6, .7, .95)]):
             AutoSeaRuinsTask._enter_lower(t)
         self.assertEqual(t._walk_sea_exit.call_count, 2)
+        self.assertEqual(t.middle_click.call_count, 2)
         self.assertLessEqual(t._walk_sea_exit.call_args.kwargs['time_out'],
                              t._walk_sea_exit.call_args_list[0].kwargs['time_out'])
         t.send_key.assert_called_once_with('f')
@@ -122,7 +123,7 @@ class TestSeaRuinsFlow(unittest.TestCase):
         for cancel in (False, True):
             t = self.task()
             t._prompt.return_value = False
-            t._upper_end.return_value = False
+            t._upper_end.return_value = cancel
             t._walk_sea_exit.side_effect = lambda find, **kw: find()
             if cancel:
                 t.sleep.side_effect = InterruptedError('cancelled')

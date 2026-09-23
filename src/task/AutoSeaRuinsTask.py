@@ -509,6 +509,17 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
                         or abs(point[1]-anchor_point[1]) > self.height*.01):
                     anchor, anchor_point, unchanged_since = scene, point, now
                 elif now - unchanged_since >= 4:
+                    if self._exit_recenters < 2:
+                        self._exit_recenters += 1
+                        self._release()
+                        self._status(f'出口寻路无进展，中键回正视角{self._exit_recenters}/2')
+                        self.middle_click(after_sleep=.3)
+                        self.next_frame()
+                        if end_condition():
+                            return True
+                        find()
+                        anchor = None
+                        continue
                     if self._exit_detours >= 3:
                         raise RuntimeError('出口寻路连续无进展，3轮有限脱困后仍未到达')
                     self._exit_detours += 1
@@ -543,6 +554,7 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
         self.middle_click(after_sleep=.3)
         self._status('后台寻路前往下半海域出口')
         self._exit_detours = 0
+        self._exit_recenters = 0
 
         def arrived():
             if self._prompt(self.frame, '进入下半海域'):
@@ -571,6 +583,10 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
                 except SeaExitMarkerLost:
                     self._release()
                     self._status('出口标记暂时丢失，停步重新识别')
+                    if not arrived() and self._exit_recenters < 2:
+                        self._exit_recenters += 1
+                        self._status(f'出口标记丢失，中键回正视角{self._exit_recenters}/2')
+                        self.middle_click(after_sleep=.3)
                     # Restart the walker after recovery: its last_direction and
                     # cached target are invalid once movement keys are released.
                     for _ in range(10):
