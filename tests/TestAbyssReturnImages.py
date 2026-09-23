@@ -12,10 +12,10 @@ class TestAbyssReturnImages(TaskTestCase):
     def test_real_pages_and_low_levels(self):
         folder = Path('tests/fixtures/abyss_return')
         for height in (720, 1080, 1440, 2160):
-            for name in ('failed','overview','roster'):
+            for name in ('failed','overview','roster','floor_detail'):
                 frame = cv2.resize(cv2.imread(str(folder/(name+'.png'))), (height*16//9,height))
                 self.assertEqual(self.task._formation_back_page(frame),
-                                 {'failed': None, 'overview': 3, 'roster': 0}[name],
+                                 {'failed': None, 'overview': 3, 'roster': 0, 'floor_detail': 2}[name],
                                  (name, height))
                 if name == 'failed':
                     boxes = self.task.ocr(.20,.06,.82,.96,frame=frame)
@@ -24,7 +24,7 @@ class TestAbyssReturnImages(TaskTestCase):
                 elif name == 'overview':
                     boxes = self.task.ocr(.02,.03,.95,.20,frame=frame)
                     self.assertTrue(all(exact_ocr_box(boxes,n) is not None for n in TOWER_NAMES))
-                else:
+                elif name == 'roster':
                     slots = detect_character_slots(frame)
                     for slot in slots:
                         if slot[0] == 1 and slot[1] == 6: continue

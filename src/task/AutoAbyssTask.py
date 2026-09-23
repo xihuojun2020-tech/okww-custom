@@ -1275,8 +1275,11 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         if (exact_ocr_box(titles, '编辑队伍') is not None and
                 exact_ocr_box(self.ocr(.75,.82,.98,.98,frame=frame), '开启挑战') is not None):
             return 1
-        if any(exact_ocr_box(titles,name) is not None for name in TOWER_NAMES):
-            if exact_ocr_box(self.ocr(frame=frame,match='挑战目标'), '挑战目标') is not None:
+        # The floor detail title may be one OCR box, e.g. "深境区·回音之塔".
+        if any(_normalized_ocr_text(box.name).endswith(name)
+               for box in titles for name in TOWER_NAMES):
+            if (exact_ocr_box(self.ocr(frame=frame,match='挑战目标'), '挑战目标') is not None or
+                    exact_ocr_box(self.ocr(.70,.84,.96,.98,frame=frame), '挑战开始') is not None):
                 return 2
         return None
 
