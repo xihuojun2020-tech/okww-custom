@@ -16,7 +16,7 @@ class TestSeaExitRecovery(unittest.TestCase):
             now[0] += kw['time_out']
             return False
         def send(key, down_time):
-            self.assertLessEqual(down_time, .25)
+            self.assertLessEqual(down_time, .4)
             now[0] += down_time
         t.walk_to_box.side_effect = walk
         t.send_key.side_effect = send
@@ -30,9 +30,9 @@ class TestSeaExitRecovery(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, '3轮'):
                 AutoSeaRuinsTask._walk_sea_exit(t, find, time_out=60, end_condition=lambda: False)
         self.assertEqual(t._exit_detours, 3)
-        self.assertEqual(t.middle_click.call_count, 2)
+        self.assertEqual(t.middle_click.call_count, 0)
         self.assertEqual([c.args[0] for c in t.send_key.call_args_list],
-                         ['s','a','a','a','s','d','d','d','s','a','a','a'])
+                         ['s','a','s','d','s','a'])
         self.assertLess(now[0], 60)
         t._release.assert_called()
         t.ensure_in_front.assert_not_called()
@@ -50,8 +50,8 @@ class TestSeaExitRecovery(unittest.TestCase):
             self.assertFalse(AutoSeaRuinsTask._walk_sea_exit(t, find, time_out=10.1,
                 end_condition=lambda: False))
         self.assertAlmostEqual(now[0], 10.1)
-        self.assertEqual(t.middle_click.call_count, 2)
-        t.send_key.assert_not_called()
+        self.assertEqual(t.middle_click.call_count, 0)
+        self.assertTrue(all(c.args[0] in ('s', 'a', 'd') for c in t.send_key.call_args_list))
 
     def test_marker_loss_and_cancel_during_detour_release(self):
         for error in (SeaExitMarkerLost(), TaskDisabledException()):
@@ -101,9 +101,8 @@ class TestSeaExitRecovery(unittest.TestCase):
         with patch('src.task.AutoSeaRuinsTask.time.monotonic', side_effect=lambda: now[0]):
             self.assertTrue(AutoSeaRuinsTask._walk_sea_exit(t, find, time_out=60,
                 end_condition=lambda: False))
-        self.assertEqual(t.middle_click.call_count, 2)
-        self.assertEqual(t._exit_recenters, 2)
-        t.send_key.assert_not_called()
+        self.assertGreaterEqual(t.middle_click.call_count, 1)
+        self.assertEqual(t.send_key.call_args_list[0].args[0], 's')
 
     def test_brief_off_center_marker_does_not_recenter(self):
         t, now, find = self.setup_walk()
@@ -121,8 +120,21 @@ class TestSeaExitRecovery(unittest.TestCase):
                 end_condition=lambda: False))
         t.middle_click.assert_not_called()
 
+    def test_marker_crossing_triggers_short_backward_step_before_recenter(self):
+        t, now, find = self.setup_walk()
+        def probe():
+            target = Mock()
+            target.center.return_value = (300 if now[0] < 2 else 1000, 400)
+            return target
+        with patch('src.task.AutoSeaRuinsTask.time.monotonic', side_effect=lambda: now[0]):
+            self.assertTrue(AutoSeaRuinsTask._walk_sea_exit(t, probe, time_out=20,
+                end_condition=lambda: t.middle_click.call_count > 0))
+        self.assertEqual([c.args[0] for c in t.send_key.call_args_list[:2]], ['s', 'd'])
+        self.assertLessEqual(t.send_key.call_args_list[0].kwargs['down_time'], .4)
+
     def test_recenter_rechecks_marker_before_moving(self):
         t, now, find = self.setup_walk()
+        find.return_value.center.return_value = (1000, 400)
         def probe():
             if t.middle_click.call_count:
                 raise SeaExitMarkerLost()

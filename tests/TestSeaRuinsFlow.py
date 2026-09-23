@@ -1,7 +1,7 @@
 """No game input: state-machine safety checks with controlled observations."""
 import unittest
 from unittest.mock import Mock, patch
-from src.task.AutoSeaRuinsTask import AutoSeaRuinsTask, SeaPhaseEnded
+from src.task.AutoSeaRuinsTask import AutoSeaRuinsTask, SeaPhaseEnded, SeaExitMarkerLost
 from src.task.BaseCombatTask import NotInCombatException
 
 
@@ -105,10 +105,25 @@ class TestSeaRuinsFlow(unittest.TestCase):
                    side_effect=[None, (.6, .7, .95), (.6, .7, .95)]):
             AutoSeaRuinsTask._enter_lower(t)
         self.assertEqual(t._walk_sea_exit.call_count, 2)
-        self.assertEqual(t.middle_click.call_count, 2)
+        self.assertEqual(t.middle_click.call_count, 1)
         self.assertLessEqual(t._walk_sea_exit.call_args.kwargs['time_out'],
                              t._walk_sea_exit.call_args_list[0].kwargs['time_out'])
         t.send_key.assert_called_once_with('f')
+
+    def test_repeated_loss_after_known_marker_tries_bounded_backward_step(self):
+        t = self.task()
+        t._prompt.return_value = False
+        t._upper_end.return_value = True
+        def walk(find, **kw):
+            if t._walk_sea_exit.call_count == 1:
+                find()
+            raise SeaExitMarkerLost()
+        t._walk_sea_exit.side_effect = walk
+        with patch('src.task.AutoSeaRuinsTask.vision.exit_marker',
+                   side_effect=[(.2, .5, .9)] + [None]*20):
+            with self.assertRaisesRegex(RuntimeError, '标记丢失'):
+                AutoSeaRuinsTask._enter_lower(t)
+        self.assertEqual([c.args[0] for c in t.send_key.call_args_list], ['s'])
 
     def test_prompt_during_recovery_does_not_restart_walker(self):
         t = self.task()
@@ -135,6 +150,8 @@ class TestSeaRuinsFlow(unittest.TestCase):
 
     def test_recovery_respects_total_deadline(self):
         t = self.task()
+        t._prompt.return_value = False
+        t._upper_end.return_value = True
         t._walk_sea_exit.side_effect = lambda find, **kw: find()
         with patch('src.task.AutoSeaRuinsTask.vision.exit_marker', return_value=None), \
              patch('src.task.AutoSeaRuinsTask.time.monotonic', side_effect=[0, 0, 61, 61]):
