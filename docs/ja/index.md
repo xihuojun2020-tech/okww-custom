@@ -15,14 +15,18 @@
 <!-- Badges -->
 <div class="badge-row">
   <img src="https://img.shields.io/badge/platform-Windows-blue" alt="Platform" />
-  <a href="https://github.com/ok-oldking/ok-wuthering-waves/releases"><img src="https://img.shields.io/github/v/release/ok-oldking/ok-wuthering-waves" alt="GitHub release" /></a>
-  <a href="https://github.com/ok-oldking/ok-wuthering-waves/releases"><img src="https://img.shields.io/github/downloads/ok-oldking/ok-wuthering-waves/total" alt="Total Downloads" /></a>
+  <a href="https://github.com/xihuojun2020-tech/okww-custom/releases"><img src="https://img.shields.io/github/v/release/xihuojun2020-tech/okww-custom" alt="Personal fork release" /></a>
+  <a href="https://github.com/xihuojun2020-tech/okww-custom/releases"><img src="https://img.shields.io/github/downloads/xihuojun2020-tech/okww-custom/total" alt="Personal fork downloads" /></a>
   <a href="https://discord.gg/vVyCatEBgA"><img src="https://img.shields.io/discord/296598043787132928?color=5865f2&amp;label=%20Discord" alt="Discord" /></a>
 </div>
 
 <p align="center"><strong>公式サイト:</strong> <a href="https://ok-script.com/ok-ww">https://ok-script.com/ok-ww</a></p>
 
 ### [English](../en/index.md) | [简体中文](../zh-CN/index.md) | [繁體中文](../zh-TW/index.md) | 日本語
+
+**個人メンテナンス版のソースコードバージョン：1.84.01。** この文書は [xihuojun2020-tech/okww-custom](https://github.com/xihuojun2020-tech/okww-custom) に対応し、[上流プロジェクト](https://github.com/ok-oldking/ok-wuthering-waves)とは別に管理されています。この版のインストーラーは[本リポジトリのリリース](https://github.com/xihuojun2020-tech/okww-custom/releases)に掲載された場合のみ入手できます。上流版のバージョンやインストーラーは本版のリリースを示しません。
+
+海墟タスクは、すでに開いている第7～11層の詳細画面から現在の階層を読み取り、第11層まで挑戦します。1.84.01では第11層の認識を修正しましたが、オフライン回帰テストは第7～11層の全行程を実機確認したことを意味しません。群声共鳴シミュレーション領域は、プレイヤーが手動で入場・進行し、プログラムは自動戦闘のみを担当します。アカウントのToDoは手動確認用で、完了チェックとは別機能です。タスクは起動しません。[変更履歴](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/更新日志.md)と[海墟の説明](../references/sea-ruins.md)を参照してください。
 
 **デモ＆チュートリアル:** [![YouTube](https://img.shields.io/badge/YouTube-%23FF0000.svg?style=for-the-badge&logo=YouTube&logoColor=white)](https://youtu.be/h6P1KWjdnB4)
 
@@ -49,7 +53,8 @@
 
 ## 📥 ダウンロード
 
-*   **[GitHub](https://github.com/ok-oldking/ok-wuthering-waves/releases)**: 公式リリースページ。世界中から高速にアクセスできます。（**`Source Code` のアーカイブではなく、`setup.exe` インストーラーをダウンロードしてください**）。
+*   **[個人メンテナンス版のリリース](https://github.com/xihuojun2020-tech/okww-custom/releases)**: 本リポジトリのビルドはこちらを確認してください。インストーラー資産が公開されている場合のみダウンロードできます。
+*   **[上流プロジェクトのリリース](https://github.com/ok-oldking/ok-wuthering-waves/releases)**: 上流が独立して管理しており、そのバージョンやインストーラーは本版のリリースではありません。
 
 ## ✨ 主な機能
 <img width="1778" height="1186" alt="QQ_1762961412161" src="https://github.com/user-attachments/assets/0109c68e-d714-4c34-b016-b4b45f9861fd" />

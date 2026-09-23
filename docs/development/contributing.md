@@ -58,10 +58,10 @@ Direct runtime pins live in `requirements.in`; `requirements.txt` and `requireme
 ```powershell
 .\.venv\Scripts\python.exe -m pip check
 .\.venv\Scripts\python.exe 打包更新.py dist
-.\.venv\Scripts\python.exe -m scripts.verify_update_package dist\okww_update_v1.33.01.zip --previous-ref v1.33.00
+.\.venv\Scripts\python.exe -m scripts.verify_update_package dist\okww_update_vX.YY.ZZ.zip --previous-ref vX.YY.ZZ
 ```
 
-增量包验证使用临时旧版源码与合成配置；示例版本在后续发布时替换。EXE/MSI 解包检查和实际安装/打开/卸载是分开的验收项。About 与发布说明共用 `更新日志.md`，不要再复制版本历史到界面源码。
+将 `X.YY.ZZ` 替换为待验证版本，将 `--previous-ref` 替换为对应的前一版本标签。增量包验证使用临时旧版源码与合成配置；EXE/MSI 解包检查和实际安装/打开/卸载是分开的验收项。About 与发布说明共用 `更新日志.md`，不要再复制版本历史到界面源码。
 
 ## 测试 / Testing
 

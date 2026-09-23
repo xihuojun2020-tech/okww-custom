@@ -2,16 +2,16 @@
 
 ## 角色与边界
 
-开发设备构建并通过 UNC/SMB 写入 NAS；个人客户端直接复用“AI诊断”的 Windows SMB 凭据读取；交换机只转发流量。客户端不需要 NAS 写权限或 GitHub 网络。HTTPS 仍可作为可选读取方式。
+开发设备构建并通过 UNC/SMB 写入唯一 NAS 路径 `\\192.168.3.173\羲火君 共享给我\AI诊断`；个人客户端复用“AI诊断”的 Windows SMB 凭据读取。客户端不需要 NAS 写权限或 GitHub 网络。代码支持 HTTPS 自定义源，但本项目当前未配置该地址；以下 HTTPS 与 `nas.lan` 是能力说明，不是本项目的备用发布或读取目的地。
 
 局域网产品更新、`config.py` 中的 `update_pyappify` 启动框架升级、`src/upstream_check.py` 的上游提醒是三套独立机制。
 
 ## NAS 配置
 
 1. 在 `AI诊断` 下建立 `OKWW-Updates`，发布设备可写，客户端复用既有账户只读访问。
-2. 若同时使用 NAS Web 服务，只允许 HTTPS，禁止目录写入、脚本执行和 HTTP 降级。
-3. 为 NAS 配置稳定主机名，例如 `nas.lan`。证书的 SAN 必须包含该主机名。
-4. 公有或内网 CA 证书使用系统信任库；自签名 CA 导出为 PEM，放到客户端 `configs/lan-update-ca.pem`。
+2. 如果未来单独授权 HTTPS 自定义源，只允许 HTTPS，禁止目录写入、脚本执行和 HTTP 降级；当前仍使用上面的 `.173` SMB 路径。
+3. HTTPS 能力示例主机名为 `nas.lan`；若未来启用，证书的 SAN 必须包含实际主机名。
+4. HTTPS 使用的公有或内网 CA 证书走系统信任库；自签名 CA 可导出为 PEM，放到客户端 `configs/lan-update-ca.pem`。
 5. 在 Windows PowerShell 读取叶证书指纹：
 
 ```powershell
@@ -25,22 +25,22 @@ $tls.Dispose(); $tcp.Dispose()
 
 只允许在可信管理网络中执行这次初始取值，并与 NAS 管理界面显示的证书核对。
 
-## 1.59.00 地址迁移
+## 当前地址与旧版迁移
 
-2026-09-12 已验证 `\\192.168.3.172\羲火君 共享给我\AI诊断` 可访问。172/173 为用户指定的同一 NAS 候选地址；当前172为首选，173为备用，备用路径尚未完成实际下载验收。
+本项目诊断、读取、交接与更新发布统一使用 `\\192.168.3.173\羲火君 共享给我\AI诊断`。`192.168.3.172`、`.161`、`.170` 仅用于识别和迁移旧配置、查找已保存的 Windows 凭据，不作为网络备用目标。
 
-`http://192.168.3.172:5666/` 是飞牛管理页面，不是更新包源。已知旧默认161/170和旧共享名会映射到新共享；自定义服务器、共享和HTTPS配置保持原样。更新清单成功读取后，下载绑定该地址。SMB读取/下载在有超时的独立进程执行；诊断上传也在既有超时内尝试候选地址。Windows凭据从本NAS的已知旧/新别名读取，不写入明文配置。
+旧官方 IP 与共享名会迁移到 `.173` 当前共享；自定义服务器、共享和 HTTPS 配置保持原样。`5666` 是飞牛管理端口，不是更新包源。SMB 读取和下载在有超时的独立进程执行；Windows 凭据可从本 NAS 的旧别名读取，不写入明文配置。
 
-另一台设备需要先取得1.59.00代码才具备回退能力：旧版若连不上原默认地址，先按下例修改本机`configs/lan_update.json`至172的新共享，或手动安装NAS上的更新包。升级后不再需要跟随172/173变动反复改地址。保留该设备账号配置、运行环境和本地材料资料。
+仍运行 1.59.00 以前版本的设备若无法连接旧默认地址，可在本机把 `configs/lan_update.json` 改为以下 `.173` 路径，或使用已校验的更新包升级。保留该设备的账号配置、运行环境和本地资料。
 
 ## 客户端配置
 
-个人环境不创建配置时，程序默认读取 `\\192.168.3.172\羲火君 共享给我\AI诊断\OKWW-Updates\stable\latest.json`。需要改用其他共享或 HTTPS 时再创建 `configs/lan_update.json`：
+个人环境不创建配置时，程序默认读取 `\\192.168.3.173\羲火君 共享给我\AI诊断\OKWW-Updates\stable\latest.json`。只有明确需要自定义源或 HTTPS 时才创建 `configs/lan_update.json`：
 
 ```json
 {
   "enabled": true,
-  "manifest_url": "\\\\192.168.3.172\\羲火君 共享给我\\AI诊断\\OKWW-Updates\\stable\\latest.json",
+  "manifest_url": "\\\\192.168.3.173\\羲火君 共享给我\\AI诊断\\OKWW-Updates\\stable\\latest.json",
   "certificate_sha256": "",
   "ca_file": "",
   "channel": "stable"
@@ -51,15 +51,15 @@ UNC 模式依赖 Windows SMB 身份认证和共享权限；HTTPS 模式要求有
 
 ## 构建、验证与发布
 
-以 `1.40.02` 更新到 `1.41.00` 为例：
+以目标版本 `1.84.01`、上一个版本 `1.84.00` 为命令示例；实际发布时按 `config.py`、现有标签和 NAS 清单替换这两个版本，发布目标必须位于唯一的 `.173` 共享下：
 
 ```powershell
 .\.venv\Scripts\python.exe .\打包更新.py .\dist\lan
-.\.venv\Scripts\python.exe .\scripts\verify_update_package.py .\dist\lan\okww_update_v1.41.00.zip --previous-ref v1.40.02
-.\.venv\Scripts\python.exe .\scripts\publish_lan_update.py .\dist\lan\okww_update_v1.41.00.zip --destination "\\NAS\OKWW-Updates" --previous-ref v1.40.02
+.\.venv\Scripts\python.exe .\scripts\verify_update_package.py .\dist\lan\okww_update_v1.84.01.zip --previous-ref v1.84.00
+.\.venv\Scripts\python.exe .\scripts\publish_lan_update.py .\dist\lan\okww_update_v1.84.01.zip --destination "\\192.168.3.173\羲火君 共享给我\AI诊断\OKWW-Updates" --previous-ref v1.84.00
 ```
 
-发布器写入 `stable/releases/v1.41.00/`，最后才替换 `stable/latest.json`。不得手工提前复制 `latest.json`。重复发布完全相同的包安全；同版本不同内容会被拒绝。
+发布器写入目标版本对应的 `stable/releases/vX.YY.ZZ/`，最后才替换 `stable/latest.json`。不得手工提前复制 `latest.json`。重复发布完全相同的包安全；同版本不同内容会被拒绝。
 
 推送 GitHub 标签不更新 NAS，软件内“检查局域网更新”也不会读取 GitHub Release。每个版本必须单独执行上述 NAS 构建、验证和发布命令；发布后重新读取 `stable/latest.json`，核对版本、大小与 SHA-256，再推送或核对同版本 GitHub 标签。`1.42.03` 曾因只推 GitHub 而遗漏 NAS，已在 `1.42.04` 发布流程中纠正。
 

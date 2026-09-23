@@ -2,16 +2,18 @@
 
 适用仓库：<https://github.com/xihuojun2020-tech/okww-custom>
 
-当前仓库目前为 **Public**，可匿名克隆和更新。若未来重新改为 Private，必须先由设备使用者完成 GitHub 身份认证；文档后面的认证流程仍保留备用。
+更新方式由设备安装形态决定：打包版优先使用程序内“设置 → 检查局域网更新”读取 `\\192.168.3.173\羲火君 共享给我\AI诊断\OKWW-Updates\stable\latest.json`；本页 Git 命令只适用于源码检出目录。仓库公开状态以实际 GitHub 页面为准；私有仓库需要设备使用者自行完成身份认证。
+
+本文核对基线为 `config.py` 1.84.01。每次更新仍以 NAS stable 清单或 GitHub 正式 Release 中实际可用且经过校验的版本为准，不能仅凭标签、本文版本号或本机源码判断另一台设备已经更新。
 
 ## 给 AI 的安全规则
 
 1. 不要要求用户把 PAT、密码或 SSH 私钥粘贴到聊天窗口、日志、代码或批处理文件中。
 2. 认证信息只允许由用户在 Git Credential Manager、系统凭据管理器或 SSH 客户端提示中输入。
 3. 不要执行 `git reset --hard`、`git clean -fd`、删除配置目录或覆盖账号数据。
-4. 更新前先停止 okww，检查工作区状态，并备份用户配置。
+4. 源码检出目录更新前先停止 okww、检查工作区状态并备份用户配置；打包版先确认已退出任务，按程序内更新流程操作。
 5. 遇到冲突、凭据失败、未知远程地址或版本回退时停止操作，向用户报告，不要猜测处理。
-6. `configs/`、`账号备份/`、运行状态和日志属于本机数据，不要提交或上传。
+6. `configs/`、`账号备份/`、运行状态和日志属于本机数据，不要提交到 GitHub。诊断资料仅按程序功能上传到本项目指定 NAS。
 
 ## 一、首次部署
 
@@ -67,6 +69,8 @@ if (Test-Path .\.venv\Scripts\python.exe) {
 
 ## 二、已有安装的安全更新流程
 
+本节 Git 更新命令只用于 `git clone` 的源码目录。PyAppify 打包版在程序设置中检查局域网更新；它读取 NAS 清单、校验 ZIP 和包内文件后安装。若版本涉及依赖或框架变化且源码更新被拒绝，应使用同版本完整安装包。NAS 更新与 GitHub Release 是两条独立发布渠道，不能用一条渠道的状态推断另一条已发布。
+
 ### 1. 停止程序
 
 先关闭 okww UI、任务进程和启动脚本；确认没有任务仍在运行。
@@ -115,11 +119,11 @@ git ls-remote origin refs/heads/master
 Select-String -Path .\config.py -Pattern 'version\s*='
 ```
 
-本地 HEAD 应与远程 `master` 的提交一致，`config.py` 中的产品版本应与 `更新日志.md` 和 About 页面一致。
+本地 HEAD 应与远程 `master` 的提交一致，`config.py` 中的产品版本应与 `更新日志.md` 和程序显示版本一致。打包版则核对实际 `working\config.py` 与已安装版本，不用源码目录 HEAD 代替。
 
 ## 三、更新后测试
 
-优先使用项目本地 Python：
+源码开发或排错时优先使用项目本地 Python，做与更新相关的定向检查：
 
 ```powershell
 & .\.venv\Scripts\python.exe -m unittest tests.TestReleaseReadiness
@@ -127,7 +131,7 @@ Select-String -Path .\config.py -Pattern 'version\s*='
 & .\.venv\Scripts\python.exe -m unittest tests.TestConfigBackup tests.TestSecureBackup tests.TestConfigIntegrity
 ```
 
-再运行确定性测试分组：
+需要完整回归时再运行确定性测试分组：
 
 ```powershell
 & .\run_tests.ps1 -Group unit
@@ -153,7 +157,7 @@ Select-String -Path .\config.py -Pattern 'version\s*='
 1. 确认 UI 能正常打开。
 2. 检查账号配置页身份字段仍为只读。
 3. 检查账号/序列列表和当前任务选项可以正常读取。
-4. 先做预检，再启动真实任务。
+4. 核对 NAS 诊断设置、当天手动上传入口及进度；此前未手动上传的日期会在再次启动时按天补传。
 5. 首次更新后不要立即进行不可逆的批量账号操作。
 
 ## 五、私有仓库认证故障（仅在仓库重新设为 Private 时适用）

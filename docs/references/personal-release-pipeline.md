@@ -2,15 +2,15 @@
 
 ## 触发规则
 
-- 普通 `master` 推送、拉取请求和手动运行只执行版本校验与全部测试。
-- 只有与 `config.py` 完全一致的 `vX.YY.ZZ` 标签才会打包并创建 GitHub Release。
-- 正式标签必须等待本地候选包与 A3/A4 实机验收完成后再创建。
+- 普通 `master` 推送、拉取请求和未勾选 `build_candidate` 的手动运行执行版本校验与全部测试。
+- 与 `config.py` 完全一致的 `vX.YY.ZZ` 标签会在测试通过后打包并创建 GitHub Release。手动运行勾选 `build_candidate` 时也会打包候选构件，但不发布 GitHub Release。
+- 正式标签与 `config.py`、更新日志和发布说明保持一致；涉及账号切换的版本在发布前做与改动相关的实机验收。
 
 ## 发布阶段
 
-1. `validate-version`：校验 `config.py`、About、更新日志和可选标签。
+1. `validate-version`：校验 `config.py`、更新日志、发布说明和可选标签。
 2. `tests`：通过 `run_tests.ps1 -Group all` 逐文件隔离运行。
-3. `package`：使用固定提交版本的公开 PyAppify Action 生成未签名安装包。
+3. `package`：仅标签或手动 `build_candidate` 触发，使用固定提交版本的公开 PyAppify Action 生成未签名安装包。
 4. `package-smoke`：确认发布文件存在，并检查 ZIP 中不含本机运行配置。
 5. `checksums`：生成 `SHA256SUMS.txt`。
 6. `github-release`：只向当前 GitHub 仓库发布已验证构件。
@@ -35,7 +35,7 @@ powershell -ExecutionPolicy Bypass -File .\run_tests.ps1 -Group all
 
 PyAppify 1.2.3 离线 setup 的安装阶段会克隆仓库并检出最新正式标签。候选提交只有 artifact、尚未创建匹配正式标签时，安装器可能安装上一个正式版本，而不是候选提交。候选验收必须核对安装后 `config.py`、窗口标题和实际 Git 提交；不得为绕过该限制提前创建、移动或临时重写正式标签。
 
-当前候选的安全做法是：保留安装器生成的旧版本 working 基线，在隔离槽中显式检出候选 commit，再用隔离 Python 启动。1.20.02 已完成 A3/A4 两轮实机门禁，并通过 GitHub 候选 Run `33326613512`、构件下载、5 项本地 SHA-256、包烟测和全新槽位隔离启动复验。
+历史候选 1.20.02 的做法是保留安装器生成的旧版 working 基线，在隔离槽中显式检出候选 commit，再用隔离 Python 启动。下列记录仅说明 2026-08-31 的该次候选验收，不是当前版本 1.84.01 的发布状态。
 
 1.20.02 实机门禁记录：2026-08-31 01:31:25 至 01:41:34，在隔离槽执行 A3→A4 完整序列 2 轮；只验证生产账号切换链路，不执行每日任务、不写完成进度。实测后按候选前清单复核打包版 326 项账号配置，缺失、变化、额外均为 0。日志引用必须脱敏，运行证据目录不计入账号配置清单。
 
@@ -50,6 +50,6 @@ PyAppify 1.2.3 离线 setup 的安装阶段会克隆仓库并检出最新正式�
 - PyAppify 1.2.3 候选安装行为：本项目候选流水线 `33320437066`、`33326613512` 与隔离安装记录（2026-08-31）。
 
 访问日期：2026-08-31。
-# 局域网 NAS 更新补充
+## 局域网 NAS 更新补充
 
-GitHub Release 继续提供完整安装器；同一版本可另外生成 LAN 源码更新包，客户端通过 NAS HTTPS 获取，不调用 GitHub。LAN 发布命令和证书、权限、回滚步骤见 [局域网 NAS 更新运维手册](lan-nas-update-runbook.md)。发布顺序固定为版本 ZIP、`SHA256SUMS.txt`、最后 `latest.json`。
+GitHub Release 提供完整安装器；同一版本另行生成 LAN 源码更新包，客户端默认通过 `.173` NAS SMB 共享获取，无需 GitHub。配置了受信任 HTTPS 时也可使用 HTTPS。LAN 发布命令和证书、权限、回滚步骤见 [局域网 NAS 更新运维手册](lan-nas-update-runbook.md)。发布顺序固定为版本 ZIP、`SHA256SUMS.txt`、最后 `latest.json`。GitHub 推送不会自动更新 NAS stable；两处版本、包与校验分别核实。

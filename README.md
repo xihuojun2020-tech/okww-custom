@@ -1,5 +1,5 @@
 <div align="center">
-  <p>当前版本：<a href="更新日志.md">1.74.00 深塔与材料入口稳定等待</a> · <a href="docs/references/solo-combat.md">单人输出支持清单</a> · <a href="docs/references/completion-evidence.md">完成检查分组与图片复制</a> · <a href="docs/references/material-planner-1.59.md">养成材料规划</a></p>
+  <p>当前源码版本：<a href="更新日志.md">1.84.01 海墟第11层识别修复</a>（个人维护分支；不代表上游版本或全部实机验收） · <a href="docs/references/solo-combat.md">单人输出支持清单</a> · <a href="docs/references/completion-evidence.md">完成检查分组与图片复制</a> · <a href="docs/references/material-planner-1.59.md">养成材料规划</a></p>
   <h1 align="center">
     <img src="icons/icon.png" width="200" alt="ok-ww logo"/>
     <br/>
@@ -19,8 +19,8 @@
 <div align="center">
 
 ![平台](https://img.shields.io/badge/platform-Windows-blue)
-[![GitHub release](https://img.shields.io/github/v/release/ok-oldking/ok-wuthering-waves)](https://github.com/ok-oldking/ok-wuthering-waves/releases)
-[![总下载量](https://img.shields.io/github/downloads/ok-oldking/ok-wuthering-waves/total)](https://github.com/ok-oldking/ok-wuthering-waves/releases)
+[![个人分支版本](https://img.shields.io/github/v/release/xihuojun2020-tech/okww-custom)](https://github.com/xihuojun2020-tech/okww-custom/releases)
+[![个人分支下载量](https://img.shields.io/github/downloads/xihuojun2020-tech/okww-custom/total)](https://github.com/xihuojun2020-tech/okww-custom/releases)
 [![Discord](https://img.shields.io/discord/296598043787132928?color=5865f2&label=%20Discord)](https://discord.gg/vVyCatEBgA)
 
 </div>
@@ -54,13 +54,16 @@
 
 ## 📥 下载渠道
 
-*   **[GitHub](https://github.com/ok-oldking/ok-wuthering-waves/releases)**: 官方发布页，全球访问速度快。（**请下载 `setup.exe` 安装包，而不是 `Source Code` 源码压缩包**）
-*   **[Mirror酱](https://mirrorchyan.com/zh/projects?rid=okww&source=ok-ww-readme)**: 国内镜像，下载可能需要购买其平台的 CD-KEY。
-*   **[百度网盘](https://pan.baidu.com/s/102Mh1djq2B1T-cIJhct9Gg?pwd=okww)**: 免费下载
-*   **[夸克网盘](https://pan.quark.cn/s/418018ddf7a0)**: 免费下载
+*   **[本项目个人维护分支](https://github.com/xihuojun2020-tech/okww-custom/releases)**：此仓库的版本、安装包与更新以其发布页为准；只有发布页存在安装资产时才可下载。不要把上游仓库的版本号或安装包视为本分支版本。
+*   **[上游项目](https://github.com/ok-oldking/ok-wuthering-waves/releases)**：上游独立维护，下载与更新不代表本个人分支的发布。
+*   **Mirror酱、百度网盘、夸克网盘**：这些是上游项目遗留的下载入口，不是本个人维护分支的版本或更新来源；请先核对安装包版本与来源。
 
 ## ✨ 主要功能
 <img width="1774" height="1182" alt="QQ_1762960844719" src="https://github.com/user-attachments/assets/c5eb0145-0d45-44f9-85b3-184de0ef20bf" />
+
+*   **自动冥歌海墟**：从已打开的第7—11层海墟详情页读取当前层，向后挑战至第11层；第11层两位数识别与页面确认已修复。该功能仍需实际游戏中验收完整流程，版本说明和离线验证不等于7—11层整轮实机通过。
+*   **群声共振模拟域**：手动进入活动并操作阶段流程，由程序提供纯自动战斗；不自动导航、识别目标或领取奖励。
+*   **账号待办与完成检查分开**：账号待办用于人工查看和记录备注，不会启动任务或影响任务开关；完成检查独立按周期与截图证据核对。
 
 *   **高分辨率支持**: 流畅运行于 4K 及以下所有 16:9 分辨率（最低 1280x720）。部分功能兼容 21:9 等超宽屏。
 *   **后台模式**: 支持游戏窗口最小化或被遮挡时在后台运行，不影响您使用电脑。
@@ -147,11 +150,11 @@ ok-ww.exe -t 1 -e
 *   [zhiyiYo/PyQt-Fluent-Widgets](https://github.com/zhiyiYo/PyQt-Fluent-Widgets)
 *   [Toufool/AutoSplit](https://github.com/Toufool/AutoSplit)
 
-## 任务稳定性推广方案
+## 任务导航稳定性资料
 
 - [全任务适用清单与设计](docs/references/task-navigation-reliability.md)
 - [分批实施、测试与验收计划](docs/superpowers/plans/2026-09-14-task-navigation-reliability.md)
 
-以上为待实施方案，不代表全部任务已经接入稳定等待和重试。
+上述为 2026-09-14 的历史方案与当时覆盖记录，不是当前版本状态。请以对应功能文档和[最新更新日志](更新日志.md)为准；任务稳定性机制并不表示所有任务都已完成实机验收。
 
 - [稳定导航 1.71.00：实际覆盖、限制与使用端验收](docs/reviews/2026-09-14-navigation-rollout-1.71.00.md)

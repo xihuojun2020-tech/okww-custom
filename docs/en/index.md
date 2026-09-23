@@ -15,14 +15,18 @@
 <!-- Badges -->
 <div class="badge-row">
   <img src="https://img.shields.io/badge/platform-Windows-blue" alt="Platform" />
-  <a href="https://github.com/ok-oldking/ok-wuthering-waves/releases"><img src="https://img.shields.io/github/v/release/ok-oldking/ok-wuthering-waves" alt="GitHub release" /></a>
-  <a href="https://github.com/ok-oldking/ok-wuthering-waves/releases"><img src="https://img.shields.io/github/downloads/ok-oldking/ok-wuthering-waves/total" alt="Total Downloads" /></a>
+  <a href="https://github.com/xihuojun2020-tech/okww-custom/releases"><img src="https://img.shields.io/github/v/release/xihuojun2020-tech/okww-custom" alt="Personal fork release" /></a>
+  <a href="https://github.com/xihuojun2020-tech/okww-custom/releases"><img src="https://img.shields.io/github/downloads/xihuojun2020-tech/okww-custom/total" alt="Personal fork downloads" /></a>
   <a href="https://discord.gg/vVyCatEBgA"><img src="https://img.shields.io/discord/296598043787132928?color=5865f2&amp;label=%20Discord" alt="Discord" /></a>
 </div>
 
 <p align="center"><strong>Official site:</strong> <a href="https://ok-script.com/ok-ww">https://ok-script.com/ok-ww</a></p>
 
 ### English | [简体中文](../zh-CN/index.md) | [繁體中文](../zh-TW/index.md) | [日本語](../ja/index.md)
+
+**Personal-maintained branch: 1.84.01.** This documentation describes [xihuojun2020-tech/okww-custom](https://github.com/xihuojun2020-tech/okww-custom), which is separate from the [upstream project](https://github.com/ok-oldking/ok-wuthering-waves). Download this branch only from [its releases page](https://github.com/xihuojun2020-tech/okww-custom/releases); upstream releases are maintained separately.
+
+This version recognizes Sea of Ruins floors 7–11 when started from an already open floor detail page and challenges up to floor 11. The 1.84.01 floor 11 recognition fix has offline regression coverage; a complete live 7–11 run has not been verified. Resonant Sonic Simulation is combat-only after the player manually enters and navigates the activity. Account to-do items are for display and manual tracking; they are separate from completion checks and do not start tasks. See the [changelog](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/更新日志.md) and [feature documentation](../references/sea-ruins.md).
 
 **Demo & Tutorial:** [![YouTube](https://img.shields.io/badge/YouTube-%23FF0000.svg?style=for-the-badge&logo=YouTube&logoColor=white)](https://youtu.be/h6P1KWjdnB4)
 
@@ -49,7 +53,8 @@ Please note, according to Kuro Games' official Fair Play Declaration for Wutheri
 
 ## 📥 Downloads
 
-*   **[GitHub](https://github.com/ok-oldking/ok-wuthering-waves/releases)**: Official release page, fast access worldwide. (**Please download the `setup.exe` installer, not the `Source Code` archive**).
+*   **[Personal-maintained branch releases](https://github.com/xihuojun2020-tech/okww-custom/releases)**: use this page for builds from this repository, if an installer asset is published.
+*   **[Upstream releases](https://github.com/ok-oldking/ok-wuthering-waves/releases)**: a separate project; its versions and installers are not releases of this personal branch.
 
 ## ✨ Main Features
 <img width="1778" height="1186" alt="QQ_1762961412161" src="https://github.com/user-attachments/assets/0109c68e-d714-4c34-b016-b4b45f9861fd" />

@@ -12,7 +12,7 @@
 
 ### AutoAbyssTask.py（一次性）
 
-[源码](../../src/task/AutoAbyssTask.py)；注册类 `AutoAbyssTask`。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/AutoAbyssTask.py)；注册类 `AutoAbyssTask`。
 
 - `AutoAbyssTask._open_period_challenge`，基线行 899：`wait_ocr`, `wait_until`。
 - `AutoAbyssTask._open_adversity_tower`，基线行 906：`_wait_content_deep_area`, `_wait_for_tower_screen`, `click_box`, `wait_ocr`。
@@ -49,7 +49,7 @@
 
 ### AutoCombatTask.py（后台）
 
-[源码](../../src/task/AutoCombatTask.py)；注册类 `AutoCombatTask`。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/AutoCombatTask.py)；注册类 `AutoCombatTask`。
 
 - `AutoCombatTask.send_key_down`，基线行 111：`send_key_down`。
 - `AutoCombatTask.send_key_up`，基线行 116：`send_key_up`。
@@ -57,19 +57,19 @@
 
 ### AutoLoginTask.py（后台）
 
-[源码](../../src/task/AutoLoginTask.py)；注册类 `AutoLoginTask`。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/AutoLoginTask.py)；注册类 `AutoLoginTask`。
 
 - `AutoLoginTask.run`，基线行 17：`wait_login`。
 
 ### AutoPickTask.py（后台）
 
-[源码](../../src/task/AutoPickTask.py)；注册类 `AutoPickTask`。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/AutoPickTask.py)；注册类 `AutoPickTask`。
 
 - `AutoPickTask.send_fs`，基线行 23：`send_key`。
 
 ### BaseCombatTask.py（公共基类）
 
-[源码](../../src/task/BaseCombatTask.py)。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/BaseCombatTask.py)。
 
 - `BaseCombatTask.send_key_and_wait_animation`，基线行 143：`send_key`。
 - `BaseCombatTask.close_revive_popup`，基线行 220：`click`, `send_key`, `wait_click_feature`。
@@ -84,7 +84,7 @@
 
 ### BaseWWTask.py（公共基类）
 
-[源码](../../src/task/BaseWWTask.py)。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/BaseWWTask.py)。
 
 - `BaseWWTask.zoom_map`，基线行 141：`click_relative`, `send_key`。
 - `BaseWWTask.find_f_with_text`，基线行 200：`scroll_relative`。
@@ -136,14 +136,14 @@
 
 ### ChangeEchoTask.py（未注册/隐藏）
 
-[源码](../../src/task/ChangeEchoTask.py)。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/ChangeEchoTask.py)。
 
 - `ChangeEchoTask.run`，基线行 44：`click`, `wait_click_ocr`, `wait_ocr`。
 - `ChangeEchoTask.esc`，基线行 92：`send_key`。
 
 ### CharacterTrialTask.py（一次性）
 
-[源码](../../src/task/CharacterTrialTask.py)；注册类 `CharacterTrialTask`。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/CharacterTrialTask.py)；注册类 `CharacterTrialTask`。
 
 - `CharacterTrialTask.click`，基线行 82：`click`。
 - `CharacterTrialTask.send_key`，基线行 86：`send_key`。
@@ -163,7 +163,7 @@
 
 ### DailyTask.py（一次性）
 
-[源码](../../src/task/DailyTask.py)；注册类 `DailyTask`。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/DailyTask.py)；注册类 `DailyTask`。
 
 - `DailyTask._open_record_page`，基线行 1979：`click`, `click_relative`, `send_key`, `send_key_down`, `send_key_up`, `wait_ocr`。
 - `DailyTask.claim_battle_pass`，基线行 2009：`click`, `click_relative`, `send_key_down`, `send_key_up`, `wait_ocr`。
@@ -173,13 +173,13 @@
 
 ### DiagnosisTask.py（未注册/隐藏）
 
-[源码](../../src/task/DiagnosisTask.py)。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/DiagnosisTask.py)。
 
 - `DiagnosisTask.choose_level`，基线行 54：`click_relative`, `wait_click_feature`。
 
 ### DomainTask.py（公共基类）
 
-[源码](../../src/task/DomainTask.py)。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/DomainTask.py)。
 
 - `DomainTask.revive_action`，基线行 21：`send_key`, `wait_click_feature`, `wait_in_team_and_world`。
 - `DomainTask.make_sure_in_world`，基线行 43：`send_key`, `wait_click_feature`, `wait_in_team_and_world`。
@@ -187,7 +187,7 @@
 
 ### EchoesRemainTask.py（一次性）
 
-[源码](../../src/task/EchoesRemainTask.py)；注册类 `EchoesRemainTask`。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/EchoesRemainTask.py)；注册类 `EchoesRemainTask`。
 
 - `EchoesRemainTask._click`，基线行 59：`click_relative`。
 - `EchoesRemainTask._click_transition`，基线行 82：`_click`。
@@ -199,7 +199,7 @@
 
 ### EnhanceEchoTask.py（未注册/隐藏）
 
-[源码](../../src/task/EnhanceEchoTask.py)。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/EnhanceEchoTask.py)。
 
 - `EnhanceEchoTask.run`，基线行 59：`click`, `click_skip_dialog_confirm`, `wait_click_ocr`, `wait_ocr`。
 - `EnhanceEchoTask.find_add_mat`，基线行 267：`wait_ocr`。
@@ -209,7 +209,7 @@
 
 ### EventTask.py（一次性）
 
-[源码](../../src/task/EventTask.py)；注册类 `EventTask`。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/EventTask.py)；注册类 `EventTask`。
 
 - `EventTask.run`，基线行 145：`_click_restart`, `_wait_for_any`。
 - `EventTask._handle_reward_screen`，基线行 346：`send_key`。
@@ -226,7 +226,7 @@
 
 ### FarmEchoTask.py（一次性）
 
-[源码](../../src/task/FarmEchoTask.py)；注册类 `FarmEchoTask`。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/FarmEchoTask.py)；注册类 `FarmEchoTask`。
 
 - `FarmEchoTask.do_run`，基线行 113：`scroll_and_click_buttons`, `send_key`, `wait_click_feature`, `wait_in_team_and_world`, `wait_until`。
 - `FarmEchoTask.teleport_to_configured_boss`，基线行 242：`click`, `click_configured_boss_level`, `click_on_book_target`, `click_team_challenge`, `wait_click_travel`, `wait_in_team_and_world`。
@@ -244,34 +244,34 @@
 
 ### FarmMapTask.py（未注册/隐藏）
 
-[源码](../../src/task/FarmMapTask.py)。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/FarmMapTask.py)。
 
 - `BigMap.load_stars`，基线行 30：`click_relative`, `send_key`, `wait_in_team_and_world`。
 - `FarmMapTask.go_to_star`，基线行 176：`middle_click`, `send_key`。
 
 ### FastTravelTask.py（后台）
 
-[源码](../../src/task/FastTravelTask.py)；注册类 `FastTravelTask`。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/FastTravelTask.py)；注册类 `FastTravelTask`。
 
 - `FastTravelTask.run`，基线行 17：`click_traval_button`。
 
 ### FiveToOneTask.py（未注册/隐藏）
 
-[源码](../../src/task/FiveToOneTask.py)。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/FiveToOneTask.py)。
 
 - `FiveToOneTask.run`，基线行 50：`click_relative`, `wait_click_ocr`, `wait_ocr`。
 - `FiveToOneTask.merge_set`，基线行 75：`click_box`, `click_relative`, `wait_click_ocr`, `wait_feature`, `wait_ocr`。
 
 ### ForgeryTask.py（一次性）
 
-[源码](../../src/task/ForgeryTask.py)；注册类 `ForgeryTask`。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/ForgeryTask.py)；注册类 `ForgeryTask`。
 
 - `ForgeryTask.purification_material`，基线行 50：`click_box`, `click_relative`, `send_key`, `wait_book`, `wait_until`。
 - `ForgeryTask.teleport_into_domain`，基线行 64：`click`, `click_on_book_target`, `click_team_challenge`, `wait_in_team_and_world`。
 
 ### GardenTask.py（一次性）
 
-[源码](../../src/task/GardenTask.py)；注册类 `GardenTask`。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/GardenTask.py)；注册类 `GardenTask`。
 
 - `GardenTask.run`，基线行 29：`click`, `wait_book`, `wait_feature`。
 - `GardenTask.open_garden_weekly_page`，基线行 85：`click`。
@@ -279,14 +279,14 @@
 
 ### KRLauncherSwitchTask.py（未注册/隐藏）
 
-[源码](../../src/task/KRLauncherSwitchTask.py)。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/KRLauncherSwitchTask.py)。
 
 - `KRLauncherSwitchTask._ensure_pc_login_screen`，基线行 628：`_mouse_click`, `send_key`。
 - `KRLauncherSwitchTask._screen_tap_text`，基线行 734：`_mouse_click`。
 
 ### MaterialPlannerTask.py（一次性）
 
-[源码](../../src/task/MaterialPlannerTask.py)；注册类 `MaterialPlannerTask`。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/MaterialPlannerTask.py)；注册类 `MaterialPlannerTask`。
 
 - `MaterialPlannerTask._pages`，基线行 70：`scroll_relative`。
 - `MaterialPlannerTask.scan_target`，基线行 143：`click`, `wait_ocr`。
@@ -295,7 +295,7 @@
 
 ### MergeEchoTask.py（一次性）
 
-[源码](../../src/task/MergeEchoTask.py)；注册类 `MergeEchoTask`。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/MergeEchoTask.py)；注册类 `MergeEchoTask`。
 
 - `MergeEchoTask.run`，基线行 20：`send_key`, `wait_click_skip_dialog_confirm`, `wait_until`。
 - `MergeEchoTask.open_merge_page`，基线行 56：`click_relative`。
@@ -303,13 +303,13 @@
 
 ### MouseResetTask.py（后台）
 
-[源码](../../src/task/MouseResetTask.py)；注册类 `MouseResetTask`。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/MouseResetTask.py)；注册类 `MouseResetTask`。
 
 - 此扫描未发现直接匹配的输入方法；仍需按设计方案检查生产委托链或回调（如切号测试、鼠标复位）。
 
 ### MultiAccountDailyTask.py（一次性）
 
-[源码](../../src/task/MultiAccountDailyTask.py)；注册类 `MultiAccountDailyTask`。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/MultiAccountDailyTask.py)；注册类 `MultiAccountDailyTask`。
 
 - `MultiAccountDailyTask._evidence_click`，基线行 1228：`record_click`。
 - `MultiAccountDailyTask._switch_to_login`，基线行 1280：`_click_main_login_box`, `send_key`。
@@ -332,7 +332,7 @@
 
 ### NightmareNestTask.py（一次性）
 
-[源码](../../src/task/NightmareNestTask.py)；注册类 `NightmareNestTask`。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/NightmareNestTask.py)；注册类 `NightmareNestTask`。
 
 - `NightmareNestTask.combat_nest`，基线行 114：`click`, `click_team_challenge`, `send_key`, `wait_feature`, `wait_in_team_and_world`, `wait_until`。
 - `NightmareNestTask._should_continue_combat_after_pickup`，基线行 211：`wait_combat`。
@@ -341,7 +341,7 @@
 
 ### PianoTeachingTask.py（一次性）
 
-[源码](../../src/task/PianoTeachingTask.py)；注册类 `PianoTeachingTask`。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/PianoTeachingTask.py)；注册类 `PianoTeachingTask`。
 
 - `PianoTeachingTask._release_pressed`，基线行 43：`send_key_up`。
 - `PianoTeachingTask._press_event`，基线行 52：`send_key_down`。
@@ -349,19 +349,19 @@
 
 ### SecondSolTask.py（一次性）
 
-[源码](../../src/task/SecondSolTask.py)；注册类 `SecondSolTask`。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/SecondSolTask.py)；注册类 `SecondSolTask`。
 
 - `SecondSolTask.run`，基线行 28：`send_key`, `send_key_up`。
 
 ### SimulationTask.py（一次性）
 
-[源码](../../src/task/SimulationTask.py)；注册类 `SimulationTask`。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/SimulationTask.py)；注册类 `SimulationTask`。
 
 - `SimulationTask.teleport_into_domain`，基线行 49：`click`, `click_relative`, `click_team_challenge`, `wait_in_team_and_world`。
 
 ### SkipBaseTask.py（公共基类）
 
-[源码](../../src/task/SkipBaseTask.py)。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/SkipBaseTask.py)。
 
 - `SkipBaseTask.skip_confirm`，基线行 21：`click`, `click_skip_dialog_confirm`。
 - `SkipBaseTask.try_click_skip`，基线行 44：`click_box`。
@@ -369,13 +369,13 @@
 
 ### SkipDialogTask.py（后台）
 
-[源码](../../src/task/SkipDialogTask.py)；注册类 `AutoDialogTask`。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/SkipDialogTask.py)；注册类 `AutoDialogTask`。
 
 - `AutoDialogTask.skip_message`，基线行 24：`click`。
 
 ### TacetTask.py（一次性）
 
-[源码](../../src/task/TacetTask.py)；注册类 `TacetTask`。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/TacetTask.py)；注册类 `TacetTask`。
 
 - `TacetTask.run`，基线行 43：`wait_in_team_and_world`。
 - `TacetTask.farm_tacet`，基线行 49：`click_relative`, `click_team_challenge`, `wait_click_skip_dialog_confirm`, `wait_in_team_and_world`。
@@ -383,13 +383,13 @@
 
 ### TestAccountSwitchTask.py（一次性）
 
-[源码](../../src/task/TestAccountSwitchTask.py)；注册类 `TestAccountSwitchTask`。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/TestAccountSwitchTask.py)；注册类 `TestAccountSwitchTask`。
 
 - 此扫描未发现直接匹配的输入方法；仍需按设计方案检查生产委托链或回调（如切号测试、鼠标复位）。
 
 ### WeeklyBossTask.py（一次性）
 
-[源码](../../src/task/WeeklyBossTask.py)；注册类 `WeeklyBossTask`。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/WeeklyBossTask.py)；注册类 `WeeklyBossTask`。
 
 - `WeeklyBossTask._stable_value`，基线行 88：`_wait_for`。
 - `WeeklyBossTask._open_weekly_book`，基线行 103：`_wait_for`。
@@ -405,7 +405,7 @@
 
 ### WWOneTimeTask.py（公共基类）
 
-[源码](../../src/task/WWOneTimeTask.py)。
+[源码](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/src/task/WWOneTimeTask.py)。
 
 - 此扫描未发现直接匹配的输入方法；仍需按设计方案检查生产委托链或回调（如切号测试、鼠标复位）。
 

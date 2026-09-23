@@ -17,14 +17,18 @@
 <!-- Badges -->
 <div class="badge-row">
   <img src="https://img.shields.io/badge/platform-Windows-blue" alt="平台" />
-  <a href="https://github.com/ok-oldking/ok-wuthering-waves/releases"><img src="https://img.shields.io/github/v/release/ok-oldking/ok-wuthering-waves" alt="GitHub release" /></a>
-  <a href="https://github.com/ok-oldking/ok-wuthering-waves/releases"><img src="https://img.shields.io/github/downloads/ok-oldking/ok-wuthering-waves/total" alt="总下载量" /></a>
+  <a href="https://github.com/xihuojun2020-tech/okww-custom/releases"><img src="https://img.shields.io/github/v/release/xihuojun2020-tech/okww-custom" alt="个人分支版本" /></a>
+  <a href="https://github.com/xihuojun2020-tech/okww-custom/releases"><img src="https://img.shields.io/github/downloads/xihuojun2020-tech/okww-custom/total" alt="个人分支下载量" /></a>
   <a href="https://discord.gg/vVyCatEBgA"><img src="https://img.shields.io/discord/296598043787132928?color=5865f2&amp;label=%20Discord" alt="Discord" /></a>
 </div>
 
 <p align="center"><strong>官方网站：</strong> <a href="https://ok-script.com/ok-ww">https://ok-script.com/ok-ww</a></p>
 
 ### [English](../en/index.md) | 简体中文 | [繁體中文](../zh-TW/index.md) | [日本語](../ja/index.md)
+
+**个人维护分支当前源码版本：1.84.01。** 本文档对应 [xihuojun2020-tech/okww-custom](https://github.com/xihuojun2020-tech/okww-custom)，与[上游项目](https://github.com/ok-oldking/ok-wuthering-waves)分别维护；本分支安装包仅以[本分支发布页](https://github.com/xihuojun2020-tech/okww-custom/releases)为准，上游版本和安装包不代表本分支发布。
+
+本版海墟从已打开的第7—11层详情页识别当前层，并挑战至第11层；1.84.01修复第11层识别，离线回归覆盖不等同完整7—11层实机验收。群声共振模拟域需玩家手动进入并操作活动流程，程序仅负责自动战斗。账号待办仅供人工查看和记录，与完成检查分离，不会启动任务。详见[更新日志](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/更新日志.md)、[海墟说明](../references/sea-ruins.md)和[完成检查说明](../references/completion-evidence.md)。
 
 **演示与教程:** [![YouTube](https://img.shields.io/badge/YouTube-%23FF0000.svg?style=for-the-badge&logo=YouTube&logoColor=white)](https://youtu.be/h6P1KWjdnB4)
 
@@ -51,10 +55,9 @@
 
 ## 📥 下载渠道
 
-*   **[GitHub](https://github.com/ok-oldking/ok-wuthering-waves/releases)**: 官方发布页，全球访问速度快。（**请下载 `setup.exe` 安装包，而不是 `Source Code` 源码压缩包**）
-*   **[Mirror酱](https://mirrorchyan.com/zh/projects?rid=okww&source=ok-ww-readme)**: 国内镜像，下载可能需要购买其平台的 CD-KEY。
-*   **[百度网盘](https://pan.baidu.com/s/102Mh1djq2B1T-cIJhct9Gg?pwd=okww)**: 免费下载
-*   **[夸克网盘](https://pan.quark.cn/s/418018ddf7a0)**: 免费下载
+*   **[个人维护分支发布页](https://github.com/xihuojun2020-tech/okww-custom/releases)**：本仓库构建仅以此发布页为准；仅在发布页提供安装资产时下载。
+*   **[上游项目发布页](https://github.com/ok-oldking/ok-wuthering-waves/releases)**：由上游独立维护，其版本与安装包不代表本个人分支。
+*   **Mirror酱、百度网盘、夸克网盘**：这些是上游项目遗留的下载入口，不是本个人维护分支的版本或更新来源；请先核对安装包版本与来源。
 
 ## ✨ 主要功能
 <img width="1774" height="1182" alt="QQ_1762960844719" src="https://github.com/user-attachments/assets/c5eb0145-0d45-44f9-85b3-184de0ef20bf" />

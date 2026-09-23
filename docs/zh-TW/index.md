@@ -15,14 +15,18 @@
 <!-- Badges -->
 <div class="badge-row">
   <img src="https://img.shields.io/badge/platform-Windows-blue" alt="平台" />
-  <a href="https://github.com/ok-oldking/ok-wuthering-waves/releases"><img src="https://img.shields.io/github/v/release/ok-oldking/ok-wuthering-waves" alt="GitHub release" /></a>
-  <a href="https://github.com/ok-oldking/ok-wuthering-waves/releases"><img src="https://img.shields.io/github/downloads/ok-oldking/ok-wuthering-waves/total" alt="總下載量" /></a>
+  <a href="https://github.com/xihuojun2020-tech/okww-custom/releases"><img src="https://img.shields.io/github/v/release/xihuojun2020-tech/okww-custom" alt="個人分支版本" /></a>
+  <a href="https://github.com/xihuojun2020-tech/okww-custom/releases"><img src="https://img.shields.io/github/downloads/xihuojun2020-tech/okww-custom/total" alt="個人分支下載量" /></a>
   <a href="https://discord.gg/vVyCatEBgA"><img src="https://img.shields.io/discord/296598043787132928?color=5865f2&amp;label=%20Discord" alt="Discord" /></a>
 </div>
 
 <p align="center"><strong>官方網站：</strong> <a href="https://ok-script.com/ok-ww">https://ok-script.com/ok-ww</a></p>
 
 ### [English](../en/index.md) | [简体中文](../zh-CN/index.md) | 繁體中文 | [日本語](../ja/index.md)
+
+**個人維護分支目前原始碼版本：1.84.01。** 本文件對應 [xihuojun2020-tech/okww-custom](https://github.com/xihuojun2020-tech/okww-custom)，與[上游專案](https://github.com/ok-oldking/ok-wuthering-waves)分別維護；本分支安裝檔以[本分支發布頁](https://github.com/xihuojun2020-tech/okww-custom/releases)為準，上游版本和安裝檔不代表本分支發布。
+
+本版海墟從已開啟的第7—11層詳情頁辨識目前樓層，並挑戰至第11層；1.84.01 修復第11層辨識，離線回歸覆蓋不等於完整7—11層實機驗收。群聲共振模擬域須由玩家手動進入並操作活動流程，程式只負責自動戰鬥。帳號待辦僅供人工查看和記錄，與完成檢查分開，不會啟動任務。詳見[更新日誌](https://github.com/xihuojun2020-tech/okww-custom/blob/v1.84.01/更新日志.md)、[海墟說明](../references/sea-ruins.md)與[完成檢查說明](../references/completion-evidence.md)。
 
 **示範與教學:** [![YouTube](https://img.shields.io/badge/YouTube-%23FF0000.svg?style=for-the-badge&logo=YouTube&logoColor=white)](https://youtu.be/h6P1KWjdnB4)
 
@@ -49,7 +53,8 @@
 
 ## 📥 下載管道
 
-*   **[GitHub](https://github.com/ok-oldking/ok-wuthering-waves/releases)**: 官方發布頁，全球存取速度快。（**請下載 `setup.exe` 安裝檔，而不是 `Source Code` 原始碼壓縮檔**）
+*   **[個人維護分支發布頁](https://github.com/xihuojun2020-tech/okww-custom/releases)**：本倉庫構建以此頁為準；僅於發布頁提供安裝資產時下載。
+*   **[上游專案發布頁](https://github.com/ok-oldking/ok-wuthering-waves/releases)**：由上游獨立維護，其版本與安裝檔不代表本個人分支。
 
 ## ✨ 主要功能
 <img width="1774" height="1182" alt="QQ_1762960844719" src="https://github.com/user-attachments/assets/c5eb0145-0d45-44f9-85b3-184de0ef20bf" />
