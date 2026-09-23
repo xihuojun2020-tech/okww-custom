@@ -1,6 +1,6 @@
 """In-process checkpoints for sea ruins, using the framework's existing pause UI."""
 from ok import TaskDisabledException
-from src.task.sea_ruins import choose_loadout, season_rule
+from src.task.sea_ruins import ENDLESS, choose_loadout, floor_label, next_floor, season_rule
 from src.task import sea_ruins_vision as vision
 from src.task.WWOneTimeTask import WWOneTimeTask
 
@@ -35,7 +35,7 @@ class SeaRuinsRecovery:
                     self.executor.interaction.send_key_up(self.validate_key(key))
             except Exception as release_error:
                 self.log_warning(f'暂停时释放{name}失败：{release_error}')
-        location = f'第{self._floor}层' if self._floor is not None else '当前层待识别'
+        location = floor_label(self._floor) if self._floor is not None else '当前层待识别'
         self.info_set('海墟待接管', f'{location} / {LABELS[STAGES.index(self._sea_stage)]}：{error}')
         self.log_error(f'海墟已暂停：{error}。请处理当前界面后点击继续；停止按钮仍可终止任务。', notify=True)
         try:
@@ -87,8 +87,8 @@ class SeaRuinsRecovery:
                 self._token_artwork.clear()
                 return 'presets'
             return stage  # each application checks whether it is already done
-        if stage == 'next' and self._detail(f, self._floor+1):
-            self._floor += 1
+        if stage == 'next' and self._detail(f, next_floor(self._floor)):
+            self._floor = next_floor(self._floor)
             self._sea_plan = None
             self._token_artwork.clear()
             return 'presets'
@@ -116,7 +116,7 @@ class SeaRuinsRecovery:
         if stage == 'open':
             WWOneTimeTask.run(self)
             vision.normalized(self.require_game_frame())
-            floor = self._wait(self._detail_floor, '请进入再生海域7至11层的海墟详情页后继续；未确认左上角层号')
+            floor = self._wait(self._detail_floor, '请进入再生海域7至11层或无尽深渊的海墟详情页后继续；未确认关卡名称')
             season_rule(floor, 0)
             self._floor = self._start_floor = floor
         elif stage == 'presets':
@@ -158,10 +158,10 @@ class SeaRuinsRecovery:
             self._enter_lower()
         elif stage == 'result':
             self._read_result()
-            return 'next' if self._floor < 11 else 'finish'
+            return 'finish' if self._floor == ENDLESS else 'next'
         elif stage == 'next':
             self._continue()
-            self._floor += 1
+            self._floor = next_floor(self._floor)
             self._sea_plan = None
             self._token_artwork.clear()
             return 'presets'
@@ -186,7 +186,7 @@ class SeaRuinsRecovery:
                         recovering = False
                         if self._sea_stage == 'done':
                             break
-                    location = f'第{self._floor}层' if self._floor is not None else '当前层待识别'
+                    location = floor_label(self._floor) if self._floor is not None else '当前层待识别'
                     self._status(f'{location}：{LABELS[STAGES.index(self._sea_stage)]}')
                     self._sea_stage = self._sea_step()
                 except TaskDisabledException:
@@ -197,7 +197,7 @@ class SeaRuinsRecovery:
                     self._pause_for_sea_error(error)
                     recovering = True
             self.info_set('海墟待接管', '')
-            self._status(f'{self._start_floor}—11层挑战完成；未挑战无尽，未领取奖励')
+            self._status(f'{floor_label(self._start_floor)}至无尽深渊挑战完成；未领取奖励')
         finally:
             self._observing_half = None
             self._deadline = None

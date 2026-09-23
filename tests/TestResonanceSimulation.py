@@ -1,7 +1,9 @@
 import unittest
+import queue
+import os
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import cv2
 import numpy as np
@@ -17,7 +19,6 @@ class TestResonanceSimulation(unittest.TestCase):
         task._held_keys = set()
         task._held_mouse = set()
         task._manual_paused = False
-        task._slash_down = False
         task._executor = SimpleNamespace(interaction=Mock())
         task._input_ready = Mock(return_value=True)
         return task
@@ -30,6 +31,11 @@ class TestResonanceSimulation(unittest.TestCase):
                 with self.subTest(path=path.name, height=height):
                     frame = cv2.resize(source, (height * 16 // 9, height))
                     self.assertTrue(skill_bar_visible(frame))
+
+    def test_skill_bar_does_not_require_hp_bar(self):
+        frame = cv2.imread('tests/fixtures/resonance_simulation/combat.png')
+        frame[681:699, 525:742] = 0
+        self.assertTrue(skill_bar_visible(frame))
 
     def test_menus_and_blank_images_are_not_skill_bars(self):
         for name in ('initial', 'event', 'formation'):
@@ -44,15 +50,37 @@ class TestResonanceSimulation(unittest.TestCase):
         for name in ('combat', 'marker', 'portal', 'reward_far', 'treasure'):
             self.assertFalse(liberation_ready(cv2.imread(str(root / f'{name}.png'))), name)
 
-    def test_slash_question_key_toggles_once_per_press(self):
+    def test_short_slash_taps_are_queued_once_per_press(self):
         task = self.task()
-        task._foreground = Mock(return_value=True)
-        self.assertTrue(task._toggle_requested(True))
+        task._slash_pressed = Mock(side_effect=[False, True, True, False, True])
+        task._hotkey_context = Mock(side_effect=[True, True])
+        stop = Mock()
+        stop.wait.side_effect = [False, False, False, False, True]
+        events = queue.SimpleQueue()
+        task._watch_hotkey(stop, events)
+        self.assertEqual([events.get_nowait(), events.get_nowait()], [True, True])
+        self.assertTrue(events.empty())
+        task._release = Mock()
+        task.log_info = Mock()
+        events.put(True)
+        task._apply_hotkeys(events)
         self.assertTrue(task._manual_paused)
-        self.assertFalse(task._toggle_requested(True))
-        self.assertFalse(task._toggle_requested(False))
-        self.assertTrue(task._toggle_requested(True))
+        events.put(True)
+        task._apply_hotkeys(events)
         self.assertFalse(task._manual_paused)
+        self.assertEqual(task._release.call_count, 2)
+
+    def test_hotkey_accepts_own_window_and_rejects_other_apps(self):
+        task = self.task()
+        task._foreground = Mock(return_value=False)
+        with patch('src.task.ResonanceSimulationTask.win32gui.GetForegroundWindow', return_value=123), \
+                patch('src.task.ResonanceSimulationTask.win32process.GetWindowThreadProcessId',
+                      return_value=(1, os.getpid())):
+            self.assertTrue(task._hotkey_context())
+        with patch('src.task.ResonanceSimulationTask.win32gui.GetForegroundWindow', return_value=123), \
+                patch('src.task.ResonanceSimulationTask.win32process.GetWindowThreadProcessId',
+                      return_value=(1, os.getpid() + 1)):
+            self.assertFalse(task._hotkey_context())
 
     def test_short_attack_and_skill_are_always_released(self):
         task = self.task()

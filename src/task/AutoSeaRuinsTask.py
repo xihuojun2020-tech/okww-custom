@@ -1,4 +1,4 @@
-"""Preset-only, evidence-checked Respawning Waters (7–11) automation."""
+"""Preset-only, evidence-checked Respawning Waters automation."""
 import re
 import time
 import cv2
@@ -8,7 +8,7 @@ from ok.feature.FeatureSet import FeatureSet
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.BaseCombatTask import BaseCombatTask, CombatStateUnknown, NotInCombatException, CharDeadException
 from src.task.AutoAbyssTask import AutoAbyssTask, exact_ocr_box, match_travel_button, char_names, char_dict
-from src.task.sea_ruins import Preset, Token, compact, parse_count, scores_valid
+from src.task.sea_ruins import ENDLESS, Preset, Token, compact, next_floor, parse_count, scores_valid, floor_label
 from src.task import sea_ruins_vision as vision
 from src.task.sea_ruins_tokens import identify_token
 from src.task.sea_ruins_recovery import SeaRuinsRecovery, SeaLoadoutChanged
@@ -26,7 +26,7 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = '自动冥歌海墟'
-        self.description = '请从再生海域7至11层的海墟详情页启动；识别当前层后使用原有预设和适配信物挑战至11层，出错暂停接管。'
+        self.description = '请从再生海域7至11层或无尽深渊的海墟详情页启动；识别当前关卡后使用原有预设和适配信物挑战至无尽深渊，出错暂停接管。'
         self.supported_languages = ['zh_CN']
         self.support_schedule_task = False
         self.default_config = {}
@@ -148,6 +148,8 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
         number = ''.join(numbers)
         if number in ('7', '8', '9', '10', '11'):
             return int(number)
+        if any('无尽深渊' in text for text in self._small_text(frame, (.10, .15, .32, .27))):
+            return ENDLESS
         challenge = any(self._button(frame, (.72, .88, .93, .95), label)
                         for label in ('开启挑战', '开始挑战', '再次挑战'))
         if challenge:
@@ -459,7 +461,7 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
         return False
 
     def _fight(self, half):
-        self._status(f'第{self._floor}层{"上" if half == 0 else "下"}半自动战斗')
+        self._status(f'{floor_label(self._floor)}{"上" if half == 0 else "下"}半自动战斗')
         self._observing_half = half
         self._phase_seen = 0
         self._next_observation = 0
@@ -622,16 +624,20 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
             return (upper, lower, total) if scores_valid(upper, lower, total) else None
         values = self._wait(read, '上下半分数与总分未能一致确认')
         self.screenshot(f'sea_ruins_floor_{self._floor}_result')
-        self.info_set(f'第{self._floor}层', f'上半{values[0]} 下半{values[1]} 总分{values[2]}')
+        self.info_set(floor_label(self._floor), f'上半{values[0]} 下半{values[1]} 总分{values[2]}')
         return values
 
     def _continue(self):
-        expected = self._floor+1
+        expected = next_floor(self._floor)
         def source(frame):
             if not self._result(frame):
                 return None
             text = ''.join(compact(b.name) for b in self.ocr(.55, .91, .76, .95, frame=frame))
-            if not re.search(rf'第{expected}层', text):
+            if expected == ENDLESS:
+                announced = '无尽' in text
+            else:
+                announced = bool(re.search(rf'第{expected}层', text))
+            if not announced:
                 return None
             return self._button(frame, (.56, .84, .73, .91), '继续挑战')
         self.navigate_ui('海墟继续下一层', source,

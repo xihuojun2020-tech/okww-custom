@@ -24,6 +24,7 @@
 - Major changes increment the first component and reset both later components to `00`; do this only when the user explicitly requests a major version change.
 - Keep product-facing version text and release notes synchronized with `config.py`.
 - After a verified version change, commit it, create the matching annotated `vX.YY.ZZ` tag, and push both the branch and tag to GitHub unless the user explicitly asks to keep the change local.
+- Commit, tag, and push ordinary project changes immediately after verification. The Beijing-time 01:00–06:00 window applies only to intermediary-system operations and restarts, switches, or deployments that may interrupt GPT availability; it does not delay ordinary project GitHub publishing.
 
 ## Account-switch testing
 

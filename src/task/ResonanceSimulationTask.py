@@ -1,9 +1,13 @@
 """Manual-navigation, automatic-combat controller for 群声共振模拟域."""
 import ctypes
 import math
+import os
+import queue
+import threading
 import time
 
 import win32gui
+import win32process
 
 from src.activity_catalog import ACTIVITIES
 from src.runtime.game_runtime_errors import GameProcessLost
@@ -30,7 +34,6 @@ class ResonanceSimulationTask(BaseWWTask):
         self._held_keys = set()
         self._held_mouse = set()
         self._manual_paused = False
-        self._slash_down = False
 
     def _settings(self):
         self._skill_interval = float(self.config['Skill Interval'])
@@ -50,15 +53,44 @@ class ResonanceSimulationTask(BaseWWTask):
         return (not executor.paused and not executor.exit_event.is_set()
                 and not self._manual_paused and self._foreground())
 
-    def _toggle_requested(self, pressed=None):
-        if pressed is None:
-            pressed = bool(ctypes.windll.user32.GetAsyncKeyState(self.VK_OEM_2) & 0x8000)
-        toggled = pressed and not self._slash_down
-        self._slash_down = pressed
-        if toggled and self._foreground():
-            self._manual_paused = not self._manual_paused
-            return True
-        return False
+    def _hotkey_context(self):
+        try:
+            if self._foreground():
+                return True
+        except GameProcessLost:
+            return False
+        foreground = win32gui.GetForegroundWindow()
+        return bool(foreground and win32process.GetWindowThreadProcessId(foreground)[1] == os.getpid())
+
+    def _slash_pressed(self):
+        return bool(ctypes.windll.user32.GetAsyncKeyState(self.VK_OEM_2) & 0x8000)
+
+    def _watch_hotkey(self, stop, events):
+        # Capture short taps even while the task thread is reading a game frame.
+        down = self._slash_pressed()
+        while not stop.wait(.02):
+            pressed = self._slash_pressed()
+            if pressed and not down:
+                events.put(self._hotkey_context())
+            down = pressed
+
+    def _apply_hotkeys(self, events):
+        while True:
+            try:
+                accepted = events.get_nowait()
+            except queue.Empty:
+                return
+            if accepted:
+                self._manual_paused = not self._manual_paused
+                self._release()
+                self.log_info('群声共振快捷键：' + ('暂停' if self._manual_paused else '继续'))
+            else:
+                self.log_info('群声共振快捷键已忽略：焦点不在游戏或OK-WW')
+
+    def _activity_status(self, status):
+        if getattr(self, '_last_activity_status', None) != status:
+            self._last_activity_status = status
+            self.info_set('活动状态', status)
 
     def _release(self):
         errors = []
@@ -96,26 +128,29 @@ class ResonanceSimulationTask(BaseWWTask):
 
     def run(self):
         self._settings()
+        hotkey_stop = threading.Event()
+        hotkey_events = queue.SimpleQueue()
+        hotkey_thread = threading.Thread(target=self._watch_hotkey, args=(hotkey_stop, hotkey_events), daemon=True)
+        hotkey_thread.start()
         visible_frames = 0
         ready_frames = 0
         next_skill = 0
         next_liberation = 0
-        self.info_set('活动状态', '等待技能栏；移动和奖励选择由玩家操作')
         try:
+            self._activity_status('等待技能栏；移动和奖励选择由玩家操作')
             while True:
                 self.executor.check_enabled(check_pause=False)
-                if self._toggle_requested():
-                    self._release()
+                self._apply_hotkeys(hotkey_events)
                 if self.executor.paused or self._manual_paused:
                     self._release()
                     status = '程序已暂停' if self.executor.paused else '已手动暂停；按 /? 键继续'
-                    self.info_set('活动状态', status)
+                    self._activity_status(status)
                     time.sleep(.08)
                     continue
                 if not self._foreground():
                     self._release()
                     visible_frames = ready_frames = 0
-                    self.info_set('活动状态', '等待游戏回到前台')
+                    self._activity_status('等待游戏回到前台')
                     time.sleep(.15)
                     continue
                 self.next_frame()
@@ -124,7 +159,7 @@ class ResonanceSimulationTask(BaseWWTask):
                 visible_frames = min(2, visible_frames + 1) if visible else 0
                 if visible_frames < 2:
                     ready_frames = 0
-                    self.info_set('活动状态', '等待技能栏；不会操作移动或界面')
+                    self._activity_status('等待技能栏；不会操作移动或界面')
                     self.sleep(.08)
                     continue
                 now = time.monotonic()
@@ -136,8 +171,10 @@ class ResonanceSimulationTask(BaseWWTask):
                 elif now >= next_skill:
                     skill = 'e'
                     next_skill = now + self._skill_interval
-                self.info_set('活动状态', '自动战斗中；按 /? 键暂停')
+                self._activity_status('自动战斗中；按 /? 键暂停')
                 self._pulse(attack=True, skill=skill)
                 self.sleep(.04)
         finally:
+            hotkey_stop.set()
+            hotkey_thread.join(timeout=.5)
             self._release()

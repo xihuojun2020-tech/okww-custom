@@ -6,7 +6,7 @@ from ok import BaseTask, TaskDisabledException
 from src.task.AutoSeaRuinsTask import AutoSeaRuinsTask
 from src.task.sea_ruins_recovery import SeaRuinsRecovery, SeaLoadoutChanged, STAGES
 from src.task.sea_ruins_tokens import CATALOG, identify_token
-from src.task.sea_ruins import Preset, Token, choose_loadout, token_score
+from src.task.sea_ruins import ENDLESS, Preset, Token, choose_loadout, token_score
 from datetime import date
 
 
@@ -110,7 +110,15 @@ class TestSeaRuinsRecovery(unittest.TestCase):
         t.openF2Book.assert_not_called()
         t.click_relative.assert_not_called()
         t._wait.assert_called_once_with(t._detail_floor,
-            '请进入再生海域7至11层的海墟详情页后继续；未确认左上角层号')
+            '请进入再生海域7至11层或无尽深渊的海墟详情页后继续；未确认关卡名称')
+
+    def test_start_directly_from_endless(self):
+        t = self.task('open')
+        t._wait.return_value = ENDLESS
+        with patch('src.task.sea_ruins_recovery.vision.normalized'):
+            self.assertEqual(SeaRuinsRecovery._sea_step(t), 'presets')
+        self.assertEqual((t._floor, t._start_floor), (ENDLESS, ENDLESS))
+        t.click_relative.assert_not_called()
 
     def test_resume_start_never_chooses_floor_seven_on_map(self):
         t = self.task('open')
@@ -141,6 +149,15 @@ class TestSeaRuinsRecovery(unittest.TestCase):
             t._button.side_effect = lambda frame, region, text: text == '海墟详情'
             self.assertEqual(AutoSeaRuinsTask._detail_floor(t, t.frame), expected)
 
+    def test_endless_name_requires_detail_header(self):
+        t = self.task()
+        t._small_text.side_effect = lambda frame, region: [] if region == (.150, .12, .195, .168) else ['无尽深渊']
+        t._button.side_effect = lambda frame, region, text: text == '海墟详情'
+        self.assertEqual(AutoSeaRuinsTask._detail_floor(t, t.frame), ENDLESS)
+        t._button.return_value = False
+        t._button.side_effect = None
+        self.assertIsNone(AutoSeaRuinsTask._detail_floor(t, t.frame))
+
     def test_start_from_eight_does_not_repeat_seven(self):
         t = self.task('open')
         t._wait.return_value = 8
@@ -150,10 +167,10 @@ class TestSeaRuinsRecovery(unittest.TestCase):
         with patch('src.task.sea_ruins_recovery.choose_loadout', return_value=plan), \
              patch('src.task.sea_ruins_recovery.vision.normalized'):
             SeaRuinsRecovery._run_sea_stages(t)
-        self.assertEqual(t._scan_presets.call_count, 4)
-        self.assertEqual(t._scan_tokens.call_count, 4)
-        self.assertEqual(t._continue.call_count, 3)
-        t._status.assert_called_with('8—11层挑战完成；未挑战无尽，未领取奖励')
+        self.assertEqual(t._scan_presets.call_count, 5)
+        self.assertEqual(t._scan_tokens.call_count, 5)
+        self.assertEqual(t._continue.call_count, 4)
+        t._status.assert_called_with('第8层至无尽深渊挑战完成；未领取奖励')
 
     def test_error_preserves_stage_and_retries_after_resume(self):
         t = self.task()
@@ -240,6 +257,20 @@ class TestSeaRuinsRecovery(unittest.TestCase):
         self.assertEqual(t._floor, 8)
         t._continue.assert_not_called()
 
+    def test_resume_after_eleven_to_endless_does_not_click_again(self):
+        t = self.task('next')
+        t._floor = 11
+        t._detail.side_effect = lambda frame, floor=None: floor == ENDLESS
+        self.assertEqual(SeaRuinsRecovery._resume_sea_stage(t), 'presets')
+        self.assertEqual(t._floor, ENDLESS)
+        t._continue.assert_not_called()
+
+    def test_endless_result_finishes_without_another_continue(self):
+        t = self.task('result')
+        t._floor = ENDLESS
+        self.assertEqual(SeaRuinsRecovery._sea_step(t), 'finish')
+        t._continue.assert_not_called()
+
     def test_all_stages_have_an_action_and_finished_result_increments_once(self):
         for stage in STAGES[:-1]:
             t = self.task(stage)
@@ -258,12 +289,12 @@ class TestSeaRuinsRecovery(unittest.TestCase):
         with patch('src.task.sea_ruins_recovery.choose_loadout', return_value=plan), \
              patch('src.task.sea_ruins_recovery.vision.normalized'):
             SeaRuinsRecovery._run_sea_stages(t)
-        self.assertEqual(t._floor, 11)
-        self.assertEqual(t._scan_presets.call_count, 5)
-        self.assertEqual(t._scan_tokens.call_count, 5)
-        self.assertEqual(t._equip_token.call_count, 10)
-        self.assertEqual(t._enter_lower.call_count, 5)
-        self.assertEqual(t._continue.call_count, 4)
+        self.assertEqual(t._floor, ENDLESS)
+        self.assertEqual(t._scan_presets.call_count, 6)
+        self.assertEqual(t._scan_tokens.call_count, 6)
+        self.assertEqual(t._equip_token.call_count, 12)
+        self.assertEqual(t._enter_lower.call_count, 6)
+        self.assertEqual(t._continue.call_count, 5)
         t._pause_for_sea_error.assert_not_called()
 
     def test_equipped_token_is_not_clicked_again(self):

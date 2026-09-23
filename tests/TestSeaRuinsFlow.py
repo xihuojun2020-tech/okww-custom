@@ -167,6 +167,22 @@ class TestSeaRuinsFlow(unittest.TestCase):
         t.navigate_ui.side_effect = navigate
         AutoSeaRuinsTask._continue(t)
 
+    def test_eleven_continues_only_when_result_announces_endless(self):
+        t = self.task()
+        t._floor = 11
+        t._result.return_value = True
+        box = Mock()
+        box.name = '即将前往第12层'
+        t.ocr.return_value = [box]
+        def navigate(label, source, target, **kwargs):
+            self.assertIsNone(source(t.frame))
+            box.name = '即将前往无尽深渊'
+            self.assertIsNotNone(source(t.frame))
+            target(t.frame)
+            t._challenge_button.assert_called_with(t.frame, 'endless')
+        t.navigate_ui.side_effect = navigate
+        AutoSeaRuinsTask._continue(t)
+
     def test_detail_floor_accepts_split_two_digit_ocr(self):
         t = self.task()
         t._button.return_value = True

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from pathlib import Path
 import cv2
 import numpy as np
-from src.task.sea_ruins import Preset, Token, choose_loadout, token_score, season_rule, scores_valid, parse_count
+from src.task.sea_ruins import ENDLESS, Preset, Token, choose_loadout, token_score, season_rule, scores_valid, parse_count
 from src.task import sea_ruins_vision as v
 
 TODAY = date(2026, 9, 18)
@@ -51,6 +51,12 @@ class TestSeaRuins(unittest.TestCase):
             with self.subTest(floor=floor):
                 self.assertEqual(season_rule(floor, 0, TODAY), ((), (element,)))
                 self.assertEqual(season_rule(floor, 1, TODAY), ((), (element,)))
+
+    def test_endless_uses_neutral_unverified_rules(self):
+        self.assertEqual(season_rule(ENDLESS, 0, TODAY), ((), ()))
+        self.assertEqual(season_rule(ENDLESS, 1, TODAY), ((), ()))
+        self.assertEqual(token_score(self.wind, self.generic, ENDLESS), 12)
+        self.assertIsNotNone(choose_loadout([self.wind, self.ice], [self.generic], ENDLESS, TODAY))
 
     def test_locked_infinite_empty_unknown_and_single_use(self):
         for token in (Token('狂欢者', '', -1, True), Token('狂欢者', '', 0), Token('狂欢者', '', None), Token('狂欢者', '', 1)):

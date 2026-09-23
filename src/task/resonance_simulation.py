@@ -12,21 +12,15 @@ def _keycap(image, center_x):
     crop = image[668:690, center_x - 9:center_x + 9]
     hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
     pale = (hsv[:, :, 1] < 130) & (hsv[:, :, 2] > 125)
-    return np.count_nonzero(pale) >= crop.shape[0] * crop.shape[1] * .35
+    glyph = cv2.cvtColor(crop[4:19, 4:14], cv2.COLOR_BGR2GRAY) < 110
+    return (np.count_nonzero(pale) >= crop.shape[0] * crop.shape[1] * .35
+            and np.count_nonzero(glyph) >= glyph.size * .08)
 
 
 def skill_bar_visible(frame):
     """E/Q key caps stay stable across mixed skills, charges and cooldowns."""
     image = resized(frame)
-    hp_hsv = cv2.cvtColor(image[681:699, 525:742], cv2.COLOR_BGR2HSV)
-    hp = cv2.inRange(hp_hsv, (0, 0, 145), (179, 100, 255))
-    contours, _ = cv2.findContours(hp, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    parts = [cv2.boundingRect(contour) for contour in contours]
-    hp_bar = (any(x < 20 and width >= 65 and 7 <= height <= 14
-                  for x, y, width, height in parts)
-              and any(x >= 120 and width >= 45 and 7 <= height <= 14
-                      for x, y, width, height in parts))
-    return (_keycap(image, 1145) and _keycap(image, 1210) and hp_bar)
+    return _keycap(image, 1145) and _keycap(image, 1210)
 
 
 def liberation_ready(frame):
