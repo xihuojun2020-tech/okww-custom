@@ -9,6 +9,8 @@ import time
 import win32gui
 import win32process
 
+from ok import PostMessageInteraction
+
 from src.activity_catalog import ACTIVITIES
 from src.runtime.game_runtime_errors import GameProcessLost
 from src.task.BaseWWTask import BaseWWTask
@@ -46,12 +48,15 @@ class ResonanceSimulationTask(BaseWWTask):
             raise GameProcessLost('游戏窗口已断开，停止群声共振任务')
         return win32gui.GetForegroundWindow() in (window.hwnd, getattr(window, 'top_hwnd', None))
 
+    def _input_context_allowed(self):
+        return self._foreground() or isinstance(self.executor.interaction, PostMessageInteraction)
+
     def _input_ready(self):
         executor = self.executor
         executor.check_enabled(check_pause=False)
         self._guard_account_input()
         return (not executor.paused and not executor.exit_event.is_set()
-                and not self._manual_paused and self._foreground())
+                and not self._manual_paused and self._input_context_allowed())
 
     def _hotkey_context(self):
         try:
@@ -147,7 +152,7 @@ class ResonanceSimulationTask(BaseWWTask):
                     self._activity_status(status)
                     time.sleep(.08)
                     continue
-                if not self._foreground():
+                if not self._input_context_allowed():
                     self._release()
                     visible_frames = ready_frames = 0
                     self._activity_status('等待游戏回到前台')

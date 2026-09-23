@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 
 import cv2
 import numpy as np
-from ok import TaskDisabledException
+from ok import PostMessageInteraction, TaskDisabledException
 
 from src.task.ResonanceSimulationTask import ResonanceSimulationTask
 from src.task.resonance_simulation import liberation_ready, skill_bar_visible
@@ -42,6 +42,7 @@ class TestResonanceSimulation(unittest.TestCase):
             frame = cv2.imread(f'tests/fixtures/echoes_remain/{name}.png')
             self.assertFalse(skill_bar_visible(frame))
         self.assertFalse(skill_bar_visible(np.zeros((720, 1280, 3), np.uint8)))
+        self.assertFalse(skill_bar_visible(np.full((720, 1280, 3), 255, np.uint8)))
 
     def test_q_only_ready_with_complete_yellow_ring(self):
         root = Path('tests/fixtures/resonance_simulation')
@@ -81,6 +82,13 @@ class TestResonanceSimulation(unittest.TestCase):
                 patch('src.task.ResonanceSimulationTask.win32process.GetWindowThreadProcessId',
                       return_value=(1, os.getpid() + 1)):
             self.assertFalse(task._hotkey_context())
+
+    def test_background_combat_requires_targeted_post_message_input(self):
+        task = self.task()
+        task._foreground = Mock(return_value=False)
+        self.assertFalse(task._input_context_allowed())
+        task._executor.interaction = PostMessageInteraction.__new__(PostMessageInteraction)
+        self.assertTrue(task._input_context_allowed())
 
     def test_short_attack_and_skill_are_always_released(self):
         task = self.task()
