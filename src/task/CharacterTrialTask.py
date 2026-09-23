@@ -276,10 +276,10 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
         self.screenshot('character_trial_reward_complete')
 
     def _map_ready(self):
-        return bool(self.in_team()[0] and not self._button(self.NEXT, '下一页') and not self._page())
+        return bool(self.in_team()[0] and not self._intro() and not self._page())
 
     def _intro(self):
-        return bool(self._button(self.NEXT, '下一页') and
+        return bool((self._button(self.NEXT, '下一页') or self._button(self.NEXT, '开始试用')) and
                     self.find_one('trial_intro_close', horizontal_variance=.01, vertical_variance=.01))
 
     def _enter(self):
@@ -308,7 +308,7 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
                     if attempts >= 3:
                         raise TrialTimeout('角色介绍页按Esc三次后仍未关闭')
                     attempts += 1
-                    self.log_info(f'识别到下一页和关闭标记，按Esc关闭角色介绍 {attempts}/3')
+                    self.log_info(f'识别到介绍页按钮和关闭标记，按Esc关闭角色介绍 {attempts}/3')
                     self.send_key('esc')
                     last_escape = time.monotonic()
             elif self._map_ready():

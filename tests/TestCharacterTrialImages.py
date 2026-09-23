@@ -36,6 +36,12 @@ class TestCharacterTrialImages(TaskTestCase):
                 self.assertIsNotNone(self.task._button(self.task.NEXT,'下一页'))
                 self.assertTrue(self.task._intro())
 
+    def test_start_trial_intro_from_diagnostic_uses_escape_path(self):
+        self.load('start_trial_intro')
+        self.assertIsNotNone(self.task._button(self.task.NEXT, '开始试用'))
+        self.assertTrue(self.task._intro())
+        self.assertFalse(self.task._map_ready())
+
     def test_current_exit_targets_black_confirm_at_both_resolutions(self):
         with tempfile.TemporaryDirectory() as folder:
             source=cv2.imread('tests/fixtures/character_trial/current_exit.png')
