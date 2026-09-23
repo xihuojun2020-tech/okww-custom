@@ -214,11 +214,21 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
                 self.combat_once(**({'wait_combat_time': 3} if attempt else {}))
             except CombatStateUnknown as error:
                 self.log_warning(f'领域战斗状态异常，重新核对当前画面：{error}')
+            recovered = self.recover_failed_challenge()
+            if recovered is not None:
+                raise CombatStateUnknown(
+                    '领域挑战失败，已退出并保留补跑' if recovered else
+                    '领域挑战失败页无法安全退出，停止输入并保留补跑')
             deadline = time.monotonic() + 5
             state = 'unknown'
             while time.monotonic() < deadline:
                 self.executor.check_enabled()
                 self.executor.next_frame(time_out=min(1, max(0.01, deadline - time.monotonic())))
+                recovered = self.recover_failed_challenge()
+                if recovered is not None:
+                    raise CombatStateUnknown(
+                        '领域挑战失败，已退出并保留补跑' if recovered else
+                        '领域挑战失败页无法安全退出，停止输入并保留补跑')
                 state = self._domain_reward_state()
                 if state in ('claim', 'treasure'):
                     return state

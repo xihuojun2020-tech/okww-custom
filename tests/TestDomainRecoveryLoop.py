@@ -98,6 +98,7 @@ class TestDomainRecoveryLoop(unittest.TestCase):
         import threading
         for states, success in ((['combat', 'claim'], True), (['combat', 'combat'], False)):
             task = Mock(spec=DomainTask)
+            task.recover_failed_challenge.return_value = None
             task.executor = SimpleNamespace(check_enabled=Mock(), next_frame=Mock(), exit_event=threading.Event())
             task.combat_once.side_effect = CombatStateUnknown('switch')
             task._domain_reward_state.side_effect = states
@@ -138,6 +139,7 @@ class TestDomainRecoveryLoop(unittest.TestCase):
         from src.runtime.game_runtime_errors import FrameUnavailable
         for error in (TaskDisabledException('stop'), FrameUnavailable('no frame')):
             task = Mock(spec=DomainTask)
+            task.recover_failed_challenge.return_value = None
             task.executor = SimpleNamespace(check_enabled=Mock(), next_frame=Mock(side_effect=error))
             with self.assertRaises(type(error)):
                 DomainTask._finish_domain_combat(task)

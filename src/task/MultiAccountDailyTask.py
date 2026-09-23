@@ -2107,10 +2107,13 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             try:
                 if self.do_find_account_drop_down() is not None:
                     return True
+                recovered = self.recover_failed_challenge()
+                if recovered is False:
+                    raise GameProcessLost('挑战失败页无法安全退出，停止切换账号')
                 self.ensure_main(time_out=100)
                 self._switch_to_login()
                 return True
-            except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked):
+            except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked, GameProcessLost):
                 raise
             except Exception as recovery_error:
                 self.log_error(
@@ -3026,10 +3029,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             except Exception:
                 mapped = None
             visible.append(profile_status_label(mapped) if mapped else '未映射账号')
-        self.log_error(
+        self.log_warning(
             f'登录界面账号列表中没有找到目标账号 {profile_status_label(profile_name)}；'
-            f'当前列表可见：{visible}（若目标不在列表，说明该账号未在本设备登录器记住，'
-            f'或已被其他账号挤出记住列表，需要扫码登录）'
+            f'本次可见：{visible}；先重试，最终仍缺失时检查登录器记住列表与扫码登录'
         )
         return False
 

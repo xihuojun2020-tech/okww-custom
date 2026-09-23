@@ -1113,6 +1113,27 @@ class BaseWWTask(BaseTask):
         self.click_dialog_right_button()
         self.wait_in_team_and_world(time_out=120)
 
+    def recover_failed_challenge(self):
+        """Return None off a failure screen, or whether its exit reached the world."""
+        frame = self.require_game_frame()
+        failure = self.ocr(.15, .05, .85, .65, frame=frame, match=re.compile(
+            r'挑战失败|挑戰失敗|Challenge Failed|Defeat', re.I))
+        if not failure:
+            return None
+        self.screenshot('challenge_failed_recovery', frame=frame)
+        buttons = self.ocr(.15, .50, .85, .98, frame=frame, match=re.compile(
+            r'^(?:退出副本|退出挑战|退出挑戰|返回|返回主页|返回主頁|Exit Challenge|Leave|Return)$', re.I))
+        if not buttons:
+            self.log_warning('挑战失败页未找到明确退出按钮，停止自动输入')
+            return False
+        self.click(buttons[0], after_sleep=1)
+        if self.wait_until(lambda: self.in_team_and_world() and self.in_world() and not self.in_realm(),
+                           time_out=20, raise_if_not_found=False):
+            self.log_info('挑战失败页已退出，队伍与大世界已确认')
+            return True
+        self.log_warning('点击挑战失败页退出按钮后仍未确认大世界')
+        return False
+
     def click_dialog_right_button(self):
         confirm = self.find_one([
             Labels.confirm_btn_hcenter_vcenter,

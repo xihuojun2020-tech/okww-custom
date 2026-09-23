@@ -130,6 +130,7 @@ class TestDailyRegressionFlow(unittest.TestCase):
         task.combat_once = MethodType(BaseCombatTask.combat_once, task)
         task.executor = SimpleNamespace(check_enabled=Mock(), next_frame=Mock())
         task._domain_reward_state.return_value = 'claim'
+        task.recover_failed_challenge.return_value = None
         self.assertEqual(DomainTask._finish_domain_combat(task), 'claim')
         self.assertEqual(task.get_current_char.return_value.perform.call_count, 2)
         task.make_sure_in_world.assert_not_called()
