@@ -1148,13 +1148,15 @@ class TestAutoAbyssTask(unittest.TestCase):
         task.ensure_in_front = lambda: None
         calls = []
         task.swipe_relative = lambda *args, **kw: calls.append(args)
+        task.scroll_relative = lambda *_args: None
+        task.sleep = lambda *_args: None
         task.log_info = lambda *_: None
         task.screenshot = lambda *_args, **_kw: None
         with patch("src.task.AutoAbyssTask.scroll_thumb_center", return_value=.4), patch(
                 "src.task.AutoAbyssTask.scroll_thumb_x", return_value=.924):
             with self.assertRaisesRegex(Exception, "位置或身份不匹配"):
                 task._show_character_page(1)
-        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(calls), 1)
 
     def test_failed_drag_recovers_by_wheel_without_blind_click(self):
         frame = np.zeros((100, 100, 3), np.uint8)
@@ -1174,6 +1176,29 @@ class TestAutoAbyssTask(unittest.TestCase):
             self.assertIs(task._show_character_page(1), frame)
         self.assertEqual(len(wheels), 2)
         self.assertEqual(task._character_page_index, 1)
+
+    def test_return_to_second_page_corrects_wheel_overshoot(self):
+        frame = np.zeros((100, 100, 3), np.uint8)
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task._character_pages = {2: (.4245, ('anchor',))}
+        task._wait_stable_character_frame = lambda: frame
+        task.ensure_in_front = lambda: None
+        task.swipe_relative = lambda *_args, **_kw: None
+        task.sleep = lambda *_args: None
+        task.log_info = lambda *_args: None
+        task.screenshot = lambda *_args, **_kw: self.fail('should recover')
+        position = [.3718]
+        wheels = []
+        def scroll(_x, _y, amount):
+            wheels.append(amount)
+            position[0] = .4514 if len(wheels) == 1 else .4245
+        task.scroll_relative = scroll
+        task._page_matches = lambda _frame, _page: abs(position[0] - .4245) <= .006
+        with patch('src.task.AutoAbyssTask.scroll_thumb_center', side_effect=lambda _frame: position[0]), patch(
+                'src.task.AutoAbyssTask.scroll_thumb_x', return_value=.9237):
+            self.assertIs(task._show_character_page(2), frame)
+        self.assertEqual(wheels, [-1, 1])
+        self.assertEqual(task._character_page_index, 2)
 
     def test_empty_page_anchors_never_authorize_clicks(self):
         task = AutoAbyssTask.__new__(AutoAbyssTask)

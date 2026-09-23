@@ -1559,43 +1559,32 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             self.ensure_in_front()
             self.swipe_relative(x, current, x, target, duration=.5, settle_time=.3)
             frame = self._wait_stable_character_frame()
+            moved = scroll_thumb_center(frame)
             self.log_info(f'角色回位：目标页={page_index}，尝试={attempt + 1}，x={x:.4f}，'
-                          f'起点={current:.4f}，目标={target:.4f}，动作后={scroll_thumb_center(frame)}')
-        # A failed drag must not authorize clicks. Recover using the proven wheel path.
-        if self._character_pages.get(1, (None, ()))[1]:
-            for step in range(12):
-                if time.monotonic() >= deadline:
-                    break
-                if self._page_matches(frame, 1):
-                    break
-                before = scroll_thumb_center(frame)
-                self.ensure_in_front()
-                self.scroll_relative(.50, .50, 3)
-                self.sleep(.3)
-                frame = self._wait_stable_character_frame()
-                self.log_info(f'角色回顶部：步骤={step + 1}，动作前={before}，动作后={scroll_thumb_center(frame)}')
-            if self._page_matches(frame, 1):
-                # Advance through the same overlapping viewports used during scanning.
-                for step in range(12):
-                    if self._page_matches(frame, page_index):
-                        self._character_page_index = page_index
-                        return frame
-                    if time.monotonic() >= deadline:
-                        break
-                    target, _ = self._character_pages[page_index]
-                    current = scroll_thumb_center(frame)
-                    if current is None or target is None:
-                        break
-                    self.ensure_in_front()
-                    if current > target + .006:
-                        x = scroll_thumb_x(frame, current)
-                        if x is None:
-                            break
-                        self.swipe_relative(x, current, x, target, duration=.5, settle_time=.3)
-                    else:
-                        self.scroll_relative(.50, .50, -3)
-                    self.sleep(.3)
-                    frame = self._wait_stable_character_frame()
+                          f'起点={current:.4f}，目标={target:.4f}，动作后={moved}')
+            if moved is not None and abs(moved - current) < .003:
+                break
+        # Dragging may be ignored by the game. Steer by measured wheel progress
+        # in both directions, without treating a wheel count as a page identity.
+        unchanged = 0
+        for step in range(20):
+            if self._page_matches(frame, page_index):
+                self._character_page_index = page_index
+                return frame
+            current = scroll_thumb_center(frame)
+            if current is None or target is None or abs(current - target) <= .006 or time.monotonic() >= deadline:
+                break
+            amount = 1 if abs(current - target) <= .08 else 3
+            self.ensure_in_front()
+            self.scroll_relative(.50, .50, -amount if current < target else amount)
+            self.sleep(.3)
+            frame = self._wait_stable_character_frame()
+            moved = scroll_thumb_center(frame)
+            self.log_info(f'角色滚轮回位：目标页={page_index}，步骤={step + 1}，'
+                          f'起点={current:.4f}，目标={target:.4f}，动作后={moved}')
+            unchanged = unchanged + 1 if moved is not None and abs(moved - current) < .003 else 0
+            if unchanged >= 2:
+                break
         if self._page_matches(frame, page_index):
             self._character_page_index = page_index
             return frame
