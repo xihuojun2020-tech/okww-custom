@@ -84,6 +84,14 @@ class TestCharacterTrialImages(TaskTestCase):
         self.assertTrue(start_prompt(self.task._ocr(self.task.INTERACT),self.task.height))
         self.assertFalse(start_prompt(self.task._ocr(self.task.HINT),self.task.height))
 
+    def test_start_prompt_f_glyph_fades_but_action_label_remains(self):
+        self.load('start_prompt_visible_180215')
+        self.assertTrue(start_prompt(self.task._ocr(self.task.INTERACT), self.task.height))
+        self.load('start_prompt_f_faded_180215')
+        boxes = self.task._ocr(self.task.INTERACT)
+        self.assertFalse(start_prompt(boxes, self.task.height))
+        self.assertIsNotNone(self.task._button(self.task.INTERACT, '开启挑战'))
+
     def test_name_and_state_at_1080p(self):
         with tempfile.TemporaryDirectory() as folder:
             for name in ('pending','claim','complete'):

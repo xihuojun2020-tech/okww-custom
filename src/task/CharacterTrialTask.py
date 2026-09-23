@@ -340,15 +340,16 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
             raise TrialTimeout('未找到F开启挑战交互')
         self._battle_deadline = time.monotonic() + self.config.get('Trial Combat Timeout', 180)
         for attempt in range(2):
-            self.next_frame()
-            if not start_prompt(self._ocr(self.INTERACT), self.height):
-                raise RuntimeError('开启挑战交互发生变化')
+            # The F glyph fades during its animation while the action label stays
+            # visible. A full F+label prompt was already confirmed above.
+            self._wait(lambda: exact_button(self._ocr(self.INTERACT), '开启挑战')
+                       if self._map_ready() else None, '开启挑战交互消失', 3)
             self.send_key('f')
             try:
                 self._wait(lambda: self.in_combat(), '开启挑战后未进入战斗', 10)
                 return
             except TrialTimeout:
-                if attempt or not start_prompt(self._ocr(self.INTERACT), self.height):
+                if attempt:
                     raise
 
     def _finished(self):

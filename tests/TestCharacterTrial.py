@@ -163,6 +163,26 @@ class TestTrialFlow(unittest.TestCase):
         with self.assertRaises(TaskDisabledException):t._wait_trial_map()
         t.send_key.assert_not_called()
 
+    def test_start_uses_confirmed_prompt_when_f_glyph_fades(self):
+        t=self.task();t.config={'Trial Combat Timeout':180}
+        t.next_frame=Mock();t._map_ready=Mock(return_value=True)
+        t._ocr=Mock(side_effect=[[box('F',100,100),box('开启挑战',160,100)],
+                                 [box('开启挑战',160,100)]])
+        t._executor.method.height=1152;t.send_key=Mock();t._stage=Mock()
+        t.in_combat=Mock(return_value=True)
+        t._wait=Mock(side_effect=lambda probe,*args: probe())
+        t._start()
+        t.send_key.assert_called_once_with('f')
+
+    def test_start_does_not_press_f_when_label_disappears(self):
+        t=self.task();t.config={'Trial Combat Timeout':180}
+        t.next_frame=Mock();t._map_ready=Mock(return_value=True)
+        t._ocr=Mock(side_effect=[[box('F',100,100),box('开启挑战',160,100)],[]])
+        t._executor.method.height=1152;t.send_key=Mock();t._stage=Mock()
+        t._wait=Mock(side_effect=TrialTimeout('开启挑战交互消失'))
+        with self.assertRaisesRegex(TrialTimeout,'开启挑战交互消失'):t._start()
+        t.send_key.assert_not_called()
+
     def test_intro_needs_next_and_close_marker(self):
         t=self.task()
         for next_button,close in ((False,True),(True,False),(True,True)):
