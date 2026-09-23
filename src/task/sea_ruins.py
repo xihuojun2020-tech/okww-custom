@@ -15,7 +15,7 @@ ENDLESS = 'endless'
 
 
 def floor_label(floor):
-    return '无尽深渊' if floor == ENDLESS else f'第{floor}层'
+    return '无尽湍渊' if floor == ENDLESS else f'第{floor}层'
 
 
 def next_floor(floor):

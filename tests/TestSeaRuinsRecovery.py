@@ -110,7 +110,7 @@ class TestSeaRuinsRecovery(unittest.TestCase):
         t.openF2Book.assert_not_called()
         t.click_relative.assert_not_called()
         t._wait.assert_called_once_with(t._detail_floor,
-            '请进入再生海域7至11层或无尽深渊的海墟详情页后继续；未确认关卡名称')
+            '请进入再生海域7至11层或无尽湍渊的海墟详情页后继续；未确认关卡名称')
 
     def test_start_directly_from_endless(self):
         t = self.task('open')
@@ -151,9 +151,11 @@ class TestSeaRuinsRecovery(unittest.TestCase):
 
     def test_endless_name_requires_detail_header(self):
         t = self.task()
-        t._small_text.side_effect = lambda frame, region: [] if region == (.150, .12, .195, .168) else ['无尽深渊']
+        t._small_text.side_effect = lambda frame, region: [] if region == (.150, .12, .195, .168) else ['无尽湍渊']
         t._button.side_effect = lambda frame, region, text: text == '海墟详情'
         self.assertEqual(AutoSeaRuinsTask._detail_floor(t, t.frame), ENDLESS)
+        t._small_text.side_effect = lambda frame, region: [] if region == (.150, .12, .195, .168) else ['无尽深渊']
+        self.assertIsNone(AutoSeaRuinsTask._detail_floor(t, t.frame))
         t._button.return_value = False
         t._button.side_effect = None
         self.assertIsNone(AutoSeaRuinsTask._detail_floor(t, t.frame))
@@ -170,7 +172,7 @@ class TestSeaRuinsRecovery(unittest.TestCase):
         self.assertEqual(t._scan_presets.call_count, 5)
         self.assertEqual(t._scan_tokens.call_count, 5)
         self.assertEqual(t._continue.call_count, 4)
-        t._status.assert_called_with('第8层至无尽深渊挑战完成；未领取奖励')
+        t._status.assert_called_with('第8层至无尽湍渊挑战完成；未领取奖励')
 
     def test_error_preserves_stage_and_retries_after_resume(self):
         t = self.task()

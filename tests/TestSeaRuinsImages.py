@@ -6,6 +6,7 @@ from config import config
 from ok.test.TaskTestCase import TaskTestCase
 from src.task.AutoSeaRuinsTask import AutoSeaRuinsTask
 from src.task import sea_ruins_vision as v
+from src.task.sea_ruins import ENDLESS
 
 ROOT = Path('tests/fixtures/sea_ruins')
 
@@ -35,7 +36,7 @@ class TestSeaRuinsImages(TaskTestCase):
 
     def test_detail_start_floor(self):
         for name, expected in (('detail', 7), ('start_eight', 8), ('next_floor', 8),
-                               ('detail_eleven', 11)):
+                               ('detail_eleven', 11), ('detail_endless', ENDLESS)):
             frame = self.image(name)
             for height in (720, 1080, 1440):
                 self.assertEqual(self.task._detail_floor(cv2.resize(frame, (height*16//9, height))), expected)

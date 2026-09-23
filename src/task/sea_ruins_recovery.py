@@ -116,7 +116,7 @@ class SeaRuinsRecovery:
         if stage == 'open':
             WWOneTimeTask.run(self)
             vision.normalized(self.require_game_frame())
-            floor = self._wait(self._detail_floor, '请进入再生海域7至11层或无尽深渊的海墟详情页后继续；未确认关卡名称')
+            floor = self._wait(self._detail_floor, '请进入再生海域7至11层或无尽湍渊的海墟详情页后继续；未确认关卡名称')
             season_rule(floor, 0)
             self._floor = self._start_floor = floor
         elif stage == 'presets':
@@ -197,7 +197,7 @@ class SeaRuinsRecovery:
                     self._pause_for_sea_error(error)
                     recovering = True
             self.info_set('海墟待接管', '')
-            self._status(f'{floor_label(self._start_floor)}至无尽深渊挑战完成；未领取奖励')
+            self._status(f'{floor_label(self._start_floor)}至无尽湍渊挑战完成；未领取奖励')
         finally:
             self._observing_half = None
             self._deadline = None

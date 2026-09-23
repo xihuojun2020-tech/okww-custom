@@ -176,7 +176,7 @@ class TestSeaRuinsFlow(unittest.TestCase):
         t.ocr.return_value = [box]
         def navigate(label, source, target, **kwargs):
             self.assertIsNone(source(t.frame))
-            box.name = '即将前往无尽深渊'
+            box.name = '即将前往无尽湍渊'
             self.assertIsNotNone(source(t.frame))
             target(t.frame)
             t._challenge_button.assert_called_with(t.frame, 'endless')

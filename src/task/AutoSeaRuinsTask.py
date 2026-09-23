@@ -26,7 +26,7 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = '自动冥歌海墟'
-        self.description = '请从再生海域7至11层或无尽深渊的海墟详情页启动；识别当前关卡后使用原有预设和适配信物挑战至无尽深渊，出错暂停接管。'
+        self.description = '请从再生海域7至11层或无尽湍渊的海墟详情页启动；识别当前关卡后使用原有预设和适配信物挑战至无尽湍渊，出错暂停接管。'
         self.supported_languages = ['zh_CN']
         self.support_schedule_task = False
         self.default_config = {}
@@ -148,7 +148,7 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
         number = ''.join(numbers)
         if number in ('7', '8', '9', '10', '11'):
             return int(number)
-        if any('无尽深渊' in text for text in self._small_text(frame, (.10, .15, .32, .27))):
+        if any('无尽湍渊' in text for text in self._small_text(frame, (.10, .15, .32, .27))):
             return ENDLESS
         challenge = any(self._button(frame, (.72, .88, .93, .95), label)
                         for label in ('开启挑战', '开始挑战', '再次挑战'))
