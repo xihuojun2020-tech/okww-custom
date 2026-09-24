@@ -85,6 +85,14 @@ class TestResonanceSimulation(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '只支持'):
             ResonanceSimulationTask._settings(task)
 
+    def test_side_button_poll_uses_selected_virtual_key(self):
+        task = self.task()
+        task._toggle_vk = ResonanceSimulationTask.TOGGLE_KEYS['鼠标侧键2']
+        with patch('src.task.ResonanceSimulationTask.ctypes.windll.user32.GetAsyncKeyState',
+                   return_value=0x8000) as state:
+            self.assertTrue(task._hotkey_pressed())
+        state.assert_called_once_with(0x06)
+
     def test_hotkey_accepts_own_window_and_rejects_other_apps(self):
         task = self.task()
         task._foreground = Mock(return_value=False)
@@ -133,8 +141,11 @@ class TestResonanceSimulation(unittest.TestCase):
         task.executor.interaction.mouse_up.assert_called_once_with(key='left')
 
     def test_configuration_only_keeps_combat_interval(self):
-        defaults = ResonanceSimulationTask(executor=Mock(scene=None), app=None).default_config
+        task = ResonanceSimulationTask(executor=Mock(scene=None), app=None)
+        defaults = task.default_config
         self.assertEqual(defaults, {'Skill Interval': 2.0, 'Combat Toggle Key': '/?'})
+        self.assertEqual(task.config_type['Combat Toggle Key']['options'],
+                         ['/?', '鼠标侧键1', '鼠标侧键2'])
 
     def test_registered_without_normal_combat_dependency(self):
         from config import config
