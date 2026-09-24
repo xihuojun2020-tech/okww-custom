@@ -206,7 +206,38 @@ class TestAbyssAllocation(unittest.TestCase):
                                                 Labels.char_chisa, Labels.char_aemeath)]
         floors = [FloorRequest("center", i, 5, ElementRule(center=True), True) for i in range(2)]
         result = allocate(records, floors)
-        self.assertEqual(sum(p is not None for _, p in result.assignments), 1)
+        used = [member for _, plan in result.assignments if plan for member in plan.members]
+        self.assertEqual(len(used), len(set(used)))
+
+    def test_current_floor_uses_available_roles_when_preset_three_is_unaffordable(self):
+        records = [record(Labels.char_rover, 7, rover_form=ROVER_SPECTRO),
+                   record(Labels.yangyang_sp, 10), record(Labels.char_denia, 4),
+                   record(Labels.char_verina, 1)]
+        floors = [FloorRequest("left", 3, 4, ElementRule(), True)]
+        result = allocate(records, floors)
+        plan = result.assignments[0][1]
+        self.assertIsNotNone(plan)
+        self.assertEqual(len(plan.members), 3)
+        self.assertEqual(set(plan.members), {ROVER_SPECTRO, Labels.yangyang_sp, Labels.char_denia})
+
+    def test_current_floor_uses_two_when_only_two_have_required_energy(self):
+        records = [record(Labels.char_rover, 7, rover_form=ROVER_SPECTRO),
+                   record(Labels.yangyang_sp, 10), record(Labels.char_denia, 4)]
+        floors = [FloorRequest("center", 0, 5, ElementRule(center=True), True)]
+        result = allocate(records, floors)
+        plan = result.assignments[0][1]
+        self.assertIsNotNone(plan)
+        self.assertEqual(len(plan.members), 2)
+        self.assertEqual(set(plan.members), {ROVER_SPECTRO, Labels.yangyang_sp})
+
+    def test_three_damage_dealers_can_form_flexible_team(self):
+        records = [record(Labels.char_qingxiao, 4), record(Labels.yangyang_sp, 4),
+                   record(Labels.char_aemeath, 4)]
+        result = allocate(records, [FloorRequest("right", 3, 4, ElementRule(), True)])
+        plan = result.assignments[0][1]
+        self.assertIsNotNone(plan)
+        self.assertEqual(len(plan.members), 3)
+        self.assertEqual(plan.reason, "自由编队")
 
     def test_center_both_halves_reserve_different_main_dps_before_sides(self):
         records = [record(Labels.char_qingxiao, 5), record(Labels.char_aemeath, 5),
@@ -219,13 +250,13 @@ class TestAbyssAllocation(unittest.TestCase):
         self.assertIn(Labels.char_aemeath, result.assignments[1][1].members)
         self.assertIsNone(result.assignments[2][1])
 
-    def test_priority_coverage_beats_favored_and_skip_blocks_later_floors(self):
+    def test_more_clearable_floors_beat_priority_and_skip_blocks_later_floors(self):
         records = [record(x, energy=5) for x in (Labels.char_qingxiao, Labels.char_denia, Labels.char_chisa)]
         floors = [FloorRequest("left", 0, 1, ElementRule(), False),
                   FloorRequest("left", 1, 2, ElementRule(), False),
                   FloorRequest("center", 0, 5, ElementRule(center=True), True)]
         result = allocate(records, floors)
-        self.assertEqual([p is not None for _, p in result.assignments], [False, False, True])
+        self.assertEqual([p is not None for _, p in result.assignments], [True, True, False])
 
     def test_search_cancellation_propagates(self):
         def cancel():

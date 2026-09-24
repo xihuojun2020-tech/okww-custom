@@ -1,6 +1,6 @@
 """Pure, bounded whole-run allocation of preset-based teams and shared energy."""
 from dataclasses import dataclass
-from itertools import product
+from itertools import combinations, product
 from heapq import nsmallest
 
 from src.char.BaseChar import CharType, Elements
@@ -101,7 +101,7 @@ def recognized_roster(records):
     return roster
 
 
-def candidate_teams(records, checkpoint=lambda: None):
+def candidate_teams(records, checkpoint=lambda: None, *, include_flexible=False):
     """Preserve preset role structure; rank retained members above substitutions."""
     roster = recognized_roster(records)
     by_role = {role: sorted(x for x in roster if role_for_character(x) == role) for role in CharType}
@@ -122,7 +122,25 @@ def candidate_teams(records, checkpoint=lambda: None):
             old = candidates.get(key)
             if old is None or (len(substitutions), preset.queue, members) < (len(old.substitutions), old.preset.queue, old.members):
                 candidates[key] = plan
-    return tuple(sorted(candidates.values(), key=lambda p: (len(p.substitutions), p.preset.queue, p.members)))
+    if include_flexible:
+        # The game accepts one to three characters. Keep the preset plans above
+        # these fallbacks, but do not leave a playable floor empty for lack of a healer.
+        identities = tuple(sorted(roster))
+        for count in (3, 2, 1):
+            for members in combinations(identities, count):
+                checkpoint()
+                if not any(role_for_character(x) == CharType.MAIN_DPS for x in members):
+                    continue
+                key = tuple(sorted(members))
+                if key in candidates:
+                    continue
+                preset = TEAM_PRESETS[0]
+                candidates[key] = TeamPlan(
+                    preset, members, tuple(x for x in members if x in preset.members),
+                    (), False, True, False, "自由编队",
+                )
+    return tuple(sorted(candidates.values(), key=lambda p: (
+        p.reason == "自由编队", -len(p.members), len(p.substitutions), p.preset.queue, p.members)))
 
 
 @dataclass(frozen=True)
@@ -151,10 +169,10 @@ def allocate(records, floors, *, beam_width=256, checkpoint=lambda: None):
     positions = {x: i for i, x in enumerate(identities)}
     if beam_width < 1:
         raise ValueError("beam_width must be positive")
-    candidates = candidate_teams(records, checkpoint)
+    candidates = candidate_teams(records, checkpoint, include_flexible=True)
     indexed = [(p, tuple(positions[x] for x in p.members)) for p in candidates]
     # score, energy ledger, blocked towers, previous members, assignments
-    states = [((0,) * 7, tuple(roster[x].energy for x in identities), frozenset(), (), ())]
+    states = [((0,) * 9, tuple(roster[x].energy for x in identities), frozenset(), (), ())]
     approximate = False
     for floor in floors:
         checkpoint()
@@ -163,9 +181,22 @@ def allocate(records, floors, *, beam_width=256, checkpoint=lambda: None):
         if len(legal) > beam_width:
             # Preserve a route for each character before filling with locally
             # preferred teams. This keeps rare center DPS and alternate healers.
-            legal.sort(key=lambda item: (*item[2], len(item[0].substitutions), item[0].preset.queue))
+            legal.sort(key=lambda item: (item[0].reason == "自由编队", -len(item[1]),
+                                         *item[2], len(item[0].substitutions), item[0].preset.queue))
             selected = set()
             represented = set()
+            # Reserve smaller teams before the cap; they may be the only ones
+            # affordable after an earlier floor spends shared energy.
+            for size in (1, 2):
+                kept = 0
+                for i, (_, indices, _) in enumerate(legal):
+                    if len(indices) == size:
+                        if len(selected) >= beam_width:
+                            break
+                        selected.add(i)
+                        kept += 1
+                        if kept >= min(16, max(1, beam_width // 8)):
+                            break
             for i, (_, indices, _) in enumerate(legal):
                 if any(index not in represented for index in indices):
                     selected.add(i)
@@ -190,8 +221,9 @@ def allocate(records, floors, *, beam_width=256, checkpoint=lambda: None):
                     next_energy[i] -= floor.cost
                 next_blocked = blocked if plan else blocked | {floor.tower}
                 members = plan.members if plan else previous
-                delta = ((-int(floor.priority), -1, *preference, len(plan.substitutions),
-                          plan.preset.queue + int(bool(previous) and previous != members)) if plan else (0,) * 7)
+                delta = ((-1, -int(floor.priority), int(plan.reason == "自由编队"),
+                          -len(plan.members), *preference, len(plan.substitutions),
+                          plan.preset.queue + int(bool(previous) and previous != members)) if plan else (0,) * 9)
                 next_score = tuple(a + b for a, b in zip(score, delta))
                 next_state = (next_score, tuple(next_energy), next_blocked, members, path + ((floor, plan),))
                 key = (tuple(next_energy), next_blocked, members)

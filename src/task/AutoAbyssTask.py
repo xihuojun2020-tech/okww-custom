@@ -775,7 +775,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         allocation = allocate(records, floors, checkpoint=lambda: self.sleep(0.001))
         self._scheduled_teams = {(f.tower, f.index): p for f, p in allocation.assignments}
         lines = []
-        candidates = candidate_teams(records)
+        candidates = candidate_teams(records, include_flexible=True)
         for group, rule in self._abyss_rules.items():
             excluded = sum(team_preference(p, rule) is None for p in candidates)
             lines.append(
@@ -789,7 +789,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                 reason = "主C逆属性兜底" if main_resisted else "副C逆属性兜底" if sub_resisted else "主C顺属性" if favored else "无逆属性输出"
                 detail = self._format_team_plan(plan, records) + "；" + reason
             else:
-                detail = "未分配：角色、属性或共享体力受限"
+                detail = "未分配：可用输出角色、属性或共享体力受限"
             lines.append(f"{floor.tower}第{floor.index + 1}层（每人{floor.cost}体力）：{detail}")
         if allocation.approximate:
             lines.append("候选较多，使用有界搜索；此方案不保证全局最优，未分配不代表绝对无解")
@@ -797,13 +797,15 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         self.info_set("全局配队计划", preview)
         self.log_info(f"深塔全局配队预览（{priority}）：\n{preview}")
         plan = self._scheduled_teams.get((tower, index))
+        if incomplete_energy and (plan is None or len(plan.members) < 3):
+            raise AbyssTeamUnavailable("角色体力识别不完整：" + "、".join(incomplete_energy))
         if plan is None:
             target = next((f for f in floors if (f.tower, f.index) == (tower, index)), None)
             legal = [p for p in candidates if target and team_preference(p, target.rule) is not None]
             if incomplete_energy:
                 reason = "角色体力识别不完整：" + "、".join(incomplete_energy)
             elif not candidates:
-                reason = "等级、身份或定位不足以组成预设及同定位替补队"
+                reason = "没有可用的输出角色"
             elif not legal:
                 reason = "当前层无符合输出属性规则的候选队"
             elif allocation.approximate:
@@ -833,6 +835,8 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
     def _format_team_plan(self, plan, records):
         names = self._identity_display_names(plan, records)
         members = " / ".join(names.get(identity, identity) for identity in plan.members) or "无"
+        if plan.reason == "自由编队":
+            return f"自由编队（{len(plan.members)}人）；{members}"
         matched = "完整命中" if plan.complete else f"命中{len(plan.matched)}/3"
         parts = [f"第{plan.preset.queue}队列", matched, members]
         if plan.substitutions:
@@ -874,7 +878,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         self._clear_all_selection(records)
         self._set_status("选择编队", plan_text)
         self._select_planned_team(plan, records)
-        self._set_status("确认编队", "三个角色选择标记验证成功，正在点击完成")
+        self._set_status("确认编队", f"{len(plan.members)}个角色选择标记验证成功，正在点击完成")
         self._finish_team_formation()
         self._set_status("编队完成", f"{plan_text}；准备开启挑战")
         self.log_info(f"自动深渊编队完成：{plan_text}", notify=True)
@@ -1770,8 +1774,8 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         return not selected
 
     def _select_planned_team(self, plan, records):
-        if not plan.executable or len(plan.members) != 3:
-            raise Exception("编队计划不足三人，禁止点击角色")
+        if not plan.executable or not 1 <= len(plan.members) <= 3:
+            raise Exception("编队计划人数无效，禁止点击角色")
         for expected_number, identity in enumerate(plan.members, start=1):
             record = self._best_record_for_identity(records, identity)
             if record is not None and self._click_character_record(record, expected_number):
@@ -1793,7 +1797,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         raise Exception("角色选择状态无法确认，已停止且未重复点击")
 
     def _verify_planned_selection_markers(self, plan, records):
-        """Revisit only the three chosen cards and confirm their selection borders remain visible."""
+        """Revisit chosen cards and confirm their selection borders remain visible."""
         for expected_number, identity in enumerate(plan.members, start=1):
             record = self._best_record_for_identity(records, identity)
             if record is None:
