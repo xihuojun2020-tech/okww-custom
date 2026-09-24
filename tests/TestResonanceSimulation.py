@@ -19,6 +19,7 @@ class TestResonanceSimulation(unittest.TestCase):
         task._held_keys = set()
         task._held_mouse = set()
         task._manual_paused = False
+        task._toggle_key = '/?'
         task._executor = SimpleNamespace(interaction=Mock())
         task._input_ready = Mock(return_value=True)
         return task
@@ -51,9 +52,10 @@ class TestResonanceSimulation(unittest.TestCase):
         for name in ('combat', 'marker', 'portal', 'reward_far', 'treasure'):
             self.assertFalse(liberation_ready(cv2.imread(str(root / f'{name}.png'))), name)
 
-    def test_short_slash_taps_are_queued_once_per_press(self):
+    def test_short_taps_are_queued_once_per_press(self):
         task = self.task()
-        task._slash_pressed = Mock(side_effect=[False, True, True, False, True])
+        task._toggle_key = '鼠标侧键1'
+        task._hotkey_pressed = Mock(side_effect=[False, True, True, False, True])
         task._hotkey_context = Mock(side_effect=[True, True])
         stop = Mock()
         stop.wait.side_effect = [False, False, False, False, True]
@@ -70,6 +72,18 @@ class TestResonanceSimulation(unittest.TestCase):
         task._apply_hotkeys(events)
         self.assertFalse(task._manual_paused)
         self.assertEqual(task._release.call_count, 2)
+
+    def test_only_three_toggle_bindings_are_supported(self):
+        choices = ResonanceSimulationTask.TOGGLE_KEYS
+        self.assertEqual(choices, {'/?': 0xBF, '鼠标侧键1': 0x05, '鼠标侧键2': 0x06})
+        for name, code in choices.items():
+            task = SimpleNamespace(config={'Skill Interval': 2.0, 'Combat Toggle Key': name},
+                                   TOGGLE_KEY='Combat Toggle Key', TOGGLE_KEYS=choices)
+            ResonanceSimulationTask._settings(task)
+            self.assertEqual(task._toggle_vk, code)
+        task.config['Combat Toggle Key'] = 'F9'
+        with self.assertRaisesRegex(ValueError, '只支持'):
+            ResonanceSimulationTask._settings(task)
 
     def test_hotkey_accepts_own_window_and_rejects_other_apps(self):
         task = self.task()
@@ -120,7 +134,7 @@ class TestResonanceSimulation(unittest.TestCase):
 
     def test_configuration_only_keeps_combat_interval(self):
         defaults = ResonanceSimulationTask(executor=Mock(scene=None), app=None).default_config
-        self.assertEqual(defaults, {'Skill Interval': 2.0})
+        self.assertEqual(defaults, {'Skill Interval': 2.0, 'Combat Toggle Key': '/?'})
 
     def test_registered_without_normal_combat_dependency(self):
         from config import config

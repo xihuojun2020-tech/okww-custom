@@ -20,18 +20,21 @@ from src.task.resonance_simulation import liberation_ready, skill_bar_visible
 class ResonanceSimulationTask(BaseWWTask):
     navigation_section = 'activities'
     activity_category = '限时活动'
-    VK_OEM_2 = 0xBF
+    TOGGLE_KEY = 'Combat Toggle Key'
+    TOGGLE_KEYS = {'/?': 0xBF, '鼠标侧键1': 0x05, '鼠标侧键2': 0x06}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = ACTIVITIES['resonance_simulation']
-        self.description = '手动移动和选择奖励；技能栏可见时持续自动战斗。按 /? 键暂停或继续。'
+        self.description = '手动移动和选择奖励；技能栏可见时持续自动战斗。可设置暂停或继续按键。'
         self.group_name = '限时活动'
         self.supported_languages = ['zh_CN']
         self.support_schedule_task = False
-        self.default_config.update({'Skill Interval': 2.0})
+        self.default_config.update({'Skill Interval': 2.0, self.TOGGLE_KEY: '/?'})
+        self.config_type[self.TOGGLE_KEY] = {'type': 'drop_down', 'options': list(self.TOGGLE_KEYS)}
         self.config_description.update({
             'Skill Interval': 'E技能尝试间隔秒数；Q仅在检测到完整黄色充能圆环时释放。',
+            self.TOGGLE_KEY: '自动战斗暂停/继续按键；仅在游戏或OK-WW窗口位于前台时响应。',
         })
         self._held_keys = set()
         self._held_mouse = set()
@@ -41,6 +44,10 @@ class ResonanceSimulationTask(BaseWWTask):
         self._skill_interval = float(self.config['Skill Interval'])
         if not math.isfinite(self._skill_interval) or not .5 <= self._skill_interval <= 10:
             raise ValueError('技能间隔必须在0.5至10秒之间')
+        self._toggle_key = self.config.get(self.TOGGLE_KEY, '/?')
+        if self._toggle_key not in self.TOGGLE_KEYS:
+            raise ValueError('群声共振切换键只支持 /?、鼠标侧键1或鼠标侧键2')
+        self._toggle_vk = self.TOGGLE_KEYS[self._toggle_key]
 
     def _foreground(self):
         window = self.hwnd
@@ -67,14 +74,14 @@ class ResonanceSimulationTask(BaseWWTask):
         foreground = win32gui.GetForegroundWindow()
         return bool(foreground and win32process.GetWindowThreadProcessId(foreground)[1] == os.getpid())
 
-    def _slash_pressed(self):
-        return bool(ctypes.windll.user32.GetAsyncKeyState(self.VK_OEM_2) & 0x8000)
+    def _hotkey_pressed(self):
+        return bool(ctypes.windll.user32.GetAsyncKeyState(self._toggle_vk) & 0x8000)
 
     def _watch_hotkey(self, stop, events):
         # Capture short taps even while the task thread is reading a game frame.
-        down = self._slash_pressed()
+        down = self._hotkey_pressed()
         while not stop.wait(.02):
-            pressed = self._slash_pressed()
+            pressed = self._hotkey_pressed()
             if pressed and not down:
                 events.put(self._hotkey_context())
             down = pressed
@@ -88,7 +95,7 @@ class ResonanceSimulationTask(BaseWWTask):
             if accepted:
                 self._manual_paused = not self._manual_paused
                 self._release()
-                self.log_info('群声共振快捷键：' + ('暂停' if self._manual_paused else '继续'))
+                self.log_info(f'群声共振快捷键 {self._toggle_key}：' + ('暂停' if self._manual_paused else '继续'))
             else:
                 self.log_info('群声共振快捷键已忽略：焦点不在游戏或OK-WW')
 
@@ -133,6 +140,7 @@ class ResonanceSimulationTask(BaseWWTask):
 
     def run(self):
         self._settings()
+        self.log_info(f'群声共振自动战斗切换键：{self._toggle_key}')
         hotkey_stop = threading.Event()
         hotkey_events = queue.SimpleQueue()
         hotkey_thread = threading.Thread(target=self._watch_hotkey, args=(hotkey_stop, hotkey_events), daemon=True)
@@ -148,7 +156,7 @@ class ResonanceSimulationTask(BaseWWTask):
                 self._apply_hotkeys(hotkey_events)
                 if self.executor.paused or self._manual_paused:
                     self._release()
-                    status = '程序已暂停' if self.executor.paused else '已手动暂停；按 /? 键继续'
+                    status = '程序已暂停' if self.executor.paused else f'已手动暂停；按 {self._toggle_key} 继续'
                     self._activity_status(status)
                     time.sleep(.08)
                     continue
@@ -176,7 +184,7 @@ class ResonanceSimulationTask(BaseWWTask):
                 elif now >= next_skill:
                     skill = 'e'
                     next_skill = now + self._skill_interval
-                self._activity_status('自动战斗中；按 /? 键暂停')
+                self._activity_status(f'自动战斗中；按 {self._toggle_key} 暂停')
                 self._pulse(attack=True, skill=skill)
                 self.sleep(.04)
         finally:
