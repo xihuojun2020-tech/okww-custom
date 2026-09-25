@@ -19,7 +19,7 @@ from src.task.process_feature import process_feature
 # okww 版本号（固定宽度 X.YY.ZZ）：
 #   小改动 → 第三位 +1；中等改动 → 第二位 +1 且第三位归 00；
 #   大改动 → 第一位 +1 且后两位归 00（仅用户明确提出时执行）
-version = "1.86.04"
+version = "1.86.05"
 
 
 def _find_most_recently_run_pc_exe():
@@ -170,7 +170,7 @@ config_backup_option = ConfigOption('Config Backup', {
 data_warehouse_option = ConfigOption('数据仓库文件夹', {
     '数据仓库文件夹': '',
 }, description='所有备份/输出文件统一存放位置（监控录像、配置备份、账号数据）', config_description={
-    '数据仓库文件夹': '选择一个文件夹后自动建立 ok仓库 子目录（内含 okww监控室/配置备份/账号数据）；留空 = 使用程序目录默认位置',
+    '数据仓库文件夹': '旧版数据仓库设置；截图和录像证据统一存放在运行数据目录的 okww监控室',
 }, config_type={
     '数据仓库文件夹': {'type': 'file_selector', 'selector_type': 'folder'},
 })

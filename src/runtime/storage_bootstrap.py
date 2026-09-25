@@ -13,7 +13,12 @@ import uuid
 from itertools import zip_longest
 from contextlib import ExitStack, closing
 
-SCHEMA = 2
+SCHEMA = 3
+EVIDENCE_KINDS = ('recordings', 'screenshots', 'CompletionEvidence')
+
+
+def destination_for(root, kind):
+    return root / 'okww监控室' / kind if kind in EVIDENCE_KINDS else root / kind
 KINDS = ('diagnostics', 'MaterialPlanner', 'CompletionEvidence', 'screenshots',
          'logs', 'recordings', 'backups', 'exports', 'cache', 'SequenceBackups')
 
@@ -98,7 +103,8 @@ def discover(repo):
         repo / 'logs', repo / 'okww监控室', repo / 'configs_backup', repo / 'export_accounts', repo / 'cache')))
     defaults['SequenceBackups'] = Path(os.environ.get('APPDATA', str(local))) / 'KRLauncher_backup'
     selected = read_json(repo / 'configs/runtime_storage.json', {})
-    active = {k: Path(selected['root']) / k if selected.get('root') and k in KINDS[:4] else v
+    active = {k: Path(selected.get('paths', {}).get(k, str(Path(selected['root']) / k)))
+              if selected.get('root') and k in KINDS[:4] else v
               for k, v in defaults.items()}
     # Only read the known settings files, not arbitrary private config content.
     warehouse = read_json(repo / 'configs/数据仓库文件夹.json', {}) or {}
@@ -119,7 +125,7 @@ def discover(repo):
         base = Path(backup['Config Backup Directory'])
         active['backups'] = base if base.is_absolute() else repo / base
         if not active['backups'].is_dir(): raise OSError(f'已配置的备份目录不可用：{base}')
-    if selected.get('schema') == SCHEMA:
+    if selected.get('schema') in (2, SCHEMA):
         active = {k: Path(selected.get('paths', {}).get(k, str(Path(selected['root']) / k))) for k in KINDS}
     result = {}
     for kind, source in active.items():
@@ -130,6 +136,9 @@ def discover(repo):
         old = local_path(defaults[kind])
         if old != source and old.exists():
             result[kind]['history'].append(str(old))
+    packed_recordings = local_path(repo / 'working/okww监控室')
+    if packed_recordings.is_dir() and str(packed_recordings) != result['recordings']['source']:
+        result['recordings']['history'].append(str(packed_recordings))
     return result
 
 
@@ -198,7 +207,7 @@ def rewrite_references(destination, sources):
     previous = read_json(old.parent / 'migration.json', {})
     previous_source = previous.get('sources', {}).get('diagnostics', {}).get('source')
     if previous_source: diagnostic_roots.append(Path(previous_source))
-    for marker in (destination / 'CompletionEvidence/pending_verified').glob('*/nas.json'):
+    for marker in (destination_for(destination, 'CompletionEvidence') / 'pending_verified').glob('*/nas.json'):
         value = read_json(marker)
         state = Path(value.get('state', ''))
         for root in diagnostic_roots:
@@ -211,13 +220,13 @@ def rewrite_references(destination, sources):
         values = read_json(cursor)
         for name, value in values.items():
             if name.startswith('screenshots/') and '..' not in Path(name).parts:
-                target = destination / name
+                target = destination_for(destination, 'screenshots') / name.removeprefix('screenshots/')
                 if target.is_file():
                     stat = target.stat()
                     if (value.get('size'), value.get('mtime')) == (stat.st_size, stat.st_mtime_ns):
                         value['inode'] = stat.st_ino
         atomic_json(cursor, values)
-    database = destination / 'CompletionEvidence/index.sqlite3'
+    database = destination_for(destination, 'CompletionEvidence') / 'index.sqlite3'
     if database.exists():
         with closing(sqlite3.connect(database)) as db, db:
             tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -228,7 +237,7 @@ def rewrite_references(destination, sources):
                     for name in value.get('video_paths', []):
                         path = Path(name)
                         root = Path(sources['recordings']['source'])
-                        paths.append(str(destination / 'recordings' / path.relative_to(root))
+                        paths.append(str(destination_for(destination, 'recordings') / path.relative_to(root))
                                      if path.is_absolute() and path.is_relative_to(root) else name)
                     value['video_paths'] = paths
                     db.execute('UPDATE account_runs SET metadata=? WHERE id=?',
@@ -241,7 +250,7 @@ def verify_assets(destination, sources):
     """Existing missing assets remain anomalies; no migration may lose an existing asset."""
     anomalies = []
     for kind in ('MaterialPlanner', 'CompletionEvidence'):
-        target_root, source_root = destination / kind, Path(sources[kind]['source'])
+        target_root, source_root = destination_for(destination, kind), Path(sources[kind]['source'])
         database = target_root / 'index.sqlite3'
         if not database.exists(): continue
         with closing(sqlite3.connect(database)) as db:
@@ -279,6 +288,139 @@ def validate_current(repo, value):
     if marker.get('source_repo', str(repo)) != str(repo):
         raise ValueError('活动数据属于另一个安装路径，不能同时共用仓库')
     return value
+
+
+def upgrade_evidence_layout(repo, current, *, progress=lambda message: None, quiesce=None):
+    """Copy schema-2 evidence into one monitor folder before switching writers."""
+    repo, root = local_path(repo), local_path(current['root'])
+    validate_current(repo, current)
+    with Lease(repo / 'configs/.storage-migration.lock'):
+        current = read_json(repo / 'configs/runtime_storage.json', {})
+        if current.get('schema') == SCHEMA:
+            return validate_current(repo, current)
+        if current.get('schema') != 2 or local_path(current['root']) != root:
+            raise ValueError('无法升级未知的运行数据布局')
+        paths = dict(current['paths'])
+        sources = {kind: {'source': paths[kind], 'history': []} for kind in KINDS}
+        warehouse = read_json(repo / 'configs/数据仓库文件夹.json', {}) or {}
+        warehouse_base = str(warehouse.get('数据仓库文件夹', '')).strip()
+        legacy_recordings = [repo / 'okww监控室', repo / 'working/okww监控室']
+        if warehouse_base:
+            base = Path(warehouse_base)
+            legacy_recordings.append((base if base.is_absolute() else repo / base) / 'ok仓库/okww监控室')
+        history = root / 'migration/history/recordings'
+        if history.is_dir():
+            legacy_recordings.extend(path for path in history.iterdir() if path.is_dir())
+        legacy_archives = []
+        for kind in ('screenshots', 'CompletionEvidence'):
+            archive = root / 'migration/history' / kind
+            if archive.is_dir():
+                legacy_archives.extend((kind, path) for path in archive.iterdir() if path.is_dir())
+        legacy_archives.extend(('screenshots', path) for path in
+                               (repo / 'screenshots', repo / 'working/screenshots')
+                               if path != Path(paths['screenshots']))
+        monitor = root / 'okww监控室'
+        journal = root / 'migration/evidence-layout-progress.json'
+        prior = read_json(journal, {})
+        if prior and (prior.get('source_paths') != {k: paths[k] for k in EVIDENCE_KINDS}
+                      or prior.get('source_repo') != str(repo)):
+            raise ValueError('证据迁移记录属于不同的来源，拒绝覆盖')
+        if not prior and monitor.exists() and any(monitor.iterdir()):
+            raise ValueError(f'监控室目标已有未归属文件，拒绝覆盖：{monitor}')
+        if not prior:
+            atomic_json(journal, {'source_repo': str(repo),
+                                  'source_paths': {k: paths[k] for k in EVIDENCE_KINDS},
+                                  'phase': 'COPY'})
+        gate = repo / 'configs/storage_migration.json'
+        atomic_json(gate, {'generation': uuid.uuid4().hex, 'root': str(root)})
+        try:
+            with ExitStack() as stack:
+                plans = []
+                for kind in EVIDENCE_KINDS:
+                    source = local_path(paths[kind])
+                    target = destination_for(root, kind)
+                    if source == target:
+                        continue
+                    if source.is_relative_to(target) or target.is_relative_to(source):
+                        raise ValueError(f'证据来源与目标相互包含：{source}')
+                    entries = inventory(source)
+                    plans.append((kind, source, target, entries))
+                    for relative in entries:
+                        path = source / relative
+                        with path.open('rb') as stream:
+                            database = stream.read(16) == b'SQLite format 3\x00'
+                        if database:
+                            db = stack.enter_context(closing(sqlite3.connect(path, timeout=2)))
+                            db.execute('BEGIN IMMEDIATE')
+                required = sum(size for _, _, target, entries in plans for relative, (size, _) in entries.items()
+                               if not (target / relative).exists())
+                required += sum(size for legacy in legacy_recordings if legacy.is_dir()
+                                for size, _ in inventory(legacy).values())
+                required += sum(size for _, legacy in legacy_archives if legacy.is_dir()
+                                for size, _ in inventory(legacy).values())
+                if shutil.disk_usage(root).free < required + 512 * 1024**2:
+                    raise OSError(f'证据迁移空间不足，至少还需 {required} 字节和 512 MiB 余量')
+                for kind, source, target, entries in plans:
+                    for relative in entries:
+                        copy_verified(source / relative, target / relative, reusable=bool(prior))
+                        progress(f'已校验 {kind}/{relative}')
+                    if inventory(source) != entries:
+                        raise OSError(f'证据来源在迁移期间发生变化：{source}')
+                legacy_mapping = {}
+                recordings_target = destination_for(root, 'recordings')
+                for legacy in legacy_recordings:
+                    legacy = local_path(legacy)
+                    if not legacy.is_dir() or legacy == local_path(paths['recordings']):
+                        continue
+                    entries = inventory(legacy)
+                    for relative in entries:
+                        old_file = legacy / relative
+                        new_file = recordings_target / relative
+                        if new_file.exists() and digest(new_file) != digest(old_file):
+                            suffix = hashlib.sha256(str(old_file).encode('utf-8')).hexdigest()[:12]
+                            new_file = new_file.with_name(f'{new_file.stem}-{suffix}{new_file.suffix}')
+                        copy_verified(old_file, new_file, reusable=bool(prior))
+                        legacy_mapping[str(old_file)] = str(new_file)
+                        progress(f'已校验历史录像 {old_file}')
+                    if inventory(legacy) != entries:
+                        raise OSError(f'历史录像来源在迁移期间发生变化：{legacy}')
+                for kind, legacy in legacy_archives:
+                    legacy = local_path(legacy)
+                    if not legacy.is_dir():
+                        continue
+                    archive_id = hashlib.sha256(str(legacy).encode('utf-8')).hexdigest()[:12]
+                    target = monitor / '历史资料' / kind / archive_id
+                    entries = inventory(legacy)
+                    for relative in entries:
+                        copy_verified(legacy / relative, target / relative, reusable=bool(prior))
+                    if inventory(legacy) != entries:
+                        raise OSError(f'历史证据来源在迁移期间发生变化：{legacy}')
+                rewrite_references(root, sources)
+                database = destination_for(root, 'CompletionEvidence') / 'index.sqlite3'
+                if database.is_file() and legacy_mapping:
+                    with closing(sqlite3.connect(database)) as db, db:
+                        tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                        if 'account_runs' in tables:
+                            for identity, payload in db.execute('SELECT id, metadata FROM account_runs').fetchall():
+                                value = json.loads(payload)
+                                value['video_paths'] = [legacy_mapping.get(path, path)
+                                                        for path in value.get('video_paths', [])]
+                                db.execute('UPDATE account_runs SET metadata=? WHERE id=?',
+                                           (json.dumps(value, ensure_ascii=False), identity))
+                verify_assets(root, sources)
+                for kind in EVIDENCE_KINDS:
+                    paths[kind] = str(destination_for(root, kind))
+                result = dict(current, schema=SCHEMA, paths=paths)
+                atomic_json(journal, dict(read_json(journal), phase='VERIFIED'))
+                atomic_json(repo / 'configs/runtime_storage.json', result)
+                atomic_json(root / 'migration/evidence-layout.json', {
+                    'schema': SCHEMA, 'source_paths': {k: sources[k]['source'] for k in EVIDENCE_KINDS},
+                    'target_paths': {k: paths[k] for k in EVIDENCE_KINDS},
+                    'source_files': {kind: len(entries) for kind, _, _, entries in plans},
+                    'originals_retained': True})
+                return result
+        finally:
+            gate.unlink(missing_ok=True)
 
 
 def migrate(repo, destination, *, progress=lambda message: None, quiesce=None):
@@ -322,10 +464,12 @@ def migrate(repo, destination, *, progress=lambda message: None, quiesce=None):
                         stack.enter_context(Lease(Path(sources['diagnostics']['source']) / name))
                 state['phase'] = 'COPY'
                 # Existing installation-local logs/cache are protected by the updater.
-                paths = {k: str(repo / k if k in ('logs', 'cache') else destination / k) for k in KINDS}
+                paths = {k: str(repo / k if k in ('logs', 'cache') else destination_for(destination, k)) for k in KINDS}
                 roots = [(kind, Path(item['source']), Path(paths[kind])) for kind, item in sources.items()
                          if Path(item['source']) != Path(paths[kind])]
-                roots += [(kind + '/history', Path(old), destination / 'migration/history' / kind /
+                roots += [(kind + '/history', Path(old),
+                           (destination / 'okww监控室/历史资料' / kind if kind in EVIDENCE_KINDS
+                            else destination / 'migration/history' / kind) /
                            hashlib.sha256(old.encode()).hexdigest()[:12])
                           for kind, item in sources.items() for old in item['history']]
                 before = {str(source): inventory(source) for _, source, _ in roots}
@@ -394,6 +538,8 @@ def migrate(repo, destination, *, progress=lambda message: None, quiesce=None):
 def bootstrap(repo, *, progress=lambda message: None, quiesce=None):
     repo = local_path(repo)
     config = read_json(repo / 'configs/runtime_storage.json', {})
+    if config.get('schema') == 2:
+        return upgrade_evidence_layout(repo, config, progress=progress, quiesce=quiesce)
     if config.get('schema') == SCHEMA:
         root = local_path(config['root'])
         if root.anchor.casefold() == repo.anchor.casefold():

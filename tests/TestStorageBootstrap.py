@@ -92,7 +92,7 @@ class TestStorageBootstrap(unittest.TestCase):
         old = self.source('diagnostics', 'states/run--batch.json')
         marker.write_text(json.dumps({'state': str(old)}))
         storage.migrate(self.repo, self.target)
-        copied = storage.read_json(self.target / 'CompletionEvidence/pending_verified/event/nas.json')
+        copied = storage.read_json(self.target / 'okww监控室/CompletionEvidence/pending_verified/event/nas.json')
         self.assertEqual(copied['state'], str(self.target / 'diagnostics/states/run--batch.json'))
 
     def test_target_not_owned_is_rejected(self):
@@ -155,8 +155,79 @@ s.migrate(sys.argv[1],sys.argv[2],progress=progress)
                               np.zeros((12, 20, 3), np.uint8))
         storage.migrate(self.repo, self.target)
         self.assertEqual((self.target / f'MaterialPlanner/assets/{record}/0000.png').read_bytes(), data.tobytes())
-        self.assertTrue((self.target / 'CompletionEvidence' / saved['image_path']).is_file())
+        self.assertTrue((self.target / 'okww监控室/CompletionEvidence' / saved['image_path']).is_file())
         self.assertEqual(storage.read_json(self.target / 'migration/asset-check.json')['existing_anomalies'], [])
+
+    def test_upgrade_v2_keeps_old_files_and_rewrites_video_reference(self):
+        old = self.target / 'recordings/B15'
+        old.mkdir(parents=True)
+        video = old / 'run.mp4'
+        video.write_bytes(b'video')
+        old_evidence = self.target / 'CompletionEvidence'
+        old_evidence.mkdir()
+        with closing(sqlite3.connect(old_evidence / 'index.sqlite3')) as db:
+            db.execute('CREATE TABLE account_runs(id TEXT PRIMARY KEY, metadata TEXT)')
+            db.execute('INSERT INTO account_runs VALUES (?, ?)',
+                       ('run', json.dumps({'video_paths': [str(video)]})))
+            db.commit()
+        self.target.joinpath('screenshots').mkdir()
+        self.target.joinpath('screenshots/screen.png').write_bytes(b'image')
+        generation = 'test-generation'
+        storage.atomic_json(self.target / 'migration.json',
+                            {'generation': generation, 'source_repo': str(self.repo)})
+        old_config = {'schema': 2, 'root': str(self.target), 'generation': generation,
+                      'paths': {kind: str(self.target / kind) for kind in storage.KINDS}}
+        storage.atomic_json(self.repo / 'configs/runtime_storage.json', old_config)
+        result = storage.bootstrap(self.repo)
+        self.assertEqual(result['schema'], 3)
+        moved = self.target / 'okww监控室/recordings/B15/run.mp4'
+        self.assertEqual(moved.read_bytes(), b'video')
+        self.assertEqual(video.read_bytes(), b'video')
+        self.assertTrue((self.target / 'okww监控室/screenshots/screen.png').is_file())
+        with closing(sqlite3.connect(self.target / 'okww监控室/CompletionEvidence/index.sqlite3')) as db:
+            metadata = json.loads(db.execute('SELECT metadata FROM account_runs').fetchone()[0])
+        self.assertEqual(metadata['video_paths'], [str(moved)])
+        self.assertEqual(storage.bootstrap(self.repo), result)
+
+    def test_upgrade_preserves_conflicting_legacy_recording(self):
+        current = self.target / 'recordings/B15'
+        current.mkdir(parents=True)
+        (current / 'run.mp4').write_bytes(b'new')
+        legacy = self.repo / 'okww监控室/B15'
+        legacy.mkdir(parents=True)
+        (legacy / 'run.mp4').write_bytes(b'old')
+        self.target.joinpath('screenshots').mkdir()
+        self.target.joinpath('CompletionEvidence').mkdir()
+        storage.atomic_json(self.target / 'migration.json',
+                            {'generation': 'test', 'source_repo': str(self.repo)})
+        storage.atomic_json(self.repo / 'configs/runtime_storage.json', {
+            'schema': 2, 'root': str(self.target), 'generation': 'test',
+            'paths': {kind: str(self.target / kind) for kind in storage.KINDS}})
+        storage.bootstrap(self.repo)
+        files = list((self.target / 'okww监控室/recordings/B15').glob('*.mp4'))
+        self.assertEqual(sorted(path.read_bytes() for path in files), [b'new', b'old'])
+        self.assertEqual((legacy / 'run.mp4').read_bytes(), b'old')
+
+    def test_upgrade_interruption_keeps_v2_and_resumes(self):
+        old = self.target / 'recordings/B16'
+        old.mkdir(parents=True)
+        (old / 'run.mp4').write_bytes(b'video')
+        self.target.joinpath('screenshots').mkdir()
+        self.target.joinpath('CompletionEvidence').mkdir()
+        storage.atomic_json(self.target / 'migration.json',
+                            {'generation': 'test', 'source_repo': str(self.repo)})
+        storage.atomic_json(self.repo / 'configs/runtime_storage.json', {
+            'schema': 2, 'root': str(self.target), 'generation': 'test',
+            'paths': {kind: str(self.target / kind) for kind in storage.KINDS}})
+        def interrupt(message):
+            if message.startswith('已校验'):
+                raise InterruptedError('stop')
+        with self.assertRaises(InterruptedError):
+            storage.bootstrap(self.repo, progress=interrupt)
+        self.assertEqual(storage.read_json(self.repo / 'configs/runtime_storage.json')['schema'], 2)
+        self.assertFalse((self.repo / 'configs/storage_migration.json').exists())
+        self.assertEqual(storage.bootstrap(self.repo)['schema'], 3)
+        self.assertEqual((old / 'run.mp4').read_bytes(), b'video')
 
 
 if __name__ == '__main__': unittest.main()
