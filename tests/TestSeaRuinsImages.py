@@ -58,6 +58,15 @@ class TestSeaRuinsImages(TaskTestCase):
                 self.assertTrue(self.task._members_match(resized, 0, Preset(1, expected[0])))
                 self.assertTrue(self.task._members_match(resized, 1, Preset(3, expected[2])))
 
+    def test_september25_applied_preset(self):
+        from src.task.sea_ruins import Preset
+        frame = self.image('preset_applied_20260925')
+        expected = ('char_yuanwu', 'char_galbrena', 'char_verina')
+        cards = v.preset_portraits(frame, self.task._page_presets(frame)[1][1])
+        self.assertFalse(self.task._members_match(frame, 0, Preset(2, expected)))
+        self.assertTrue(self.task._members_match(frame, 0, Preset(2, expected), cards))
+        self.assertFalse(self.task._members_match(frame, 1, Preset(2, expected), cards))
+
     def test_zani_reference_is_not_remapped_to_shorekeeper(self):
         import numpy as np
         from ok.feature.FeatureSet import FeatureSet
