@@ -99,6 +99,25 @@ class TestDiagnosticArchive(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'冲突'):upload_archive(archive,target)
             self.assertFalse(list((root/'states').glob('*.json')))
 
+    def test_broken_ready_does_not_block_other_batches_or_get_acknowledged(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / 'root'
+            session = DiagnosticSession(root, 'test')
+            session.record_event('one', {})
+            session.finish(timeout=5)
+            batches = sorted(root.glob('*/batches/*/_READY'))
+            self.assertGreaterEqual(len(batches), 2)
+            broken = batches[0]
+            broken.write_text('incomplete', encoding='ascii')
+            archive = build_archive(root)
+            receipt = json.loads(archive.with_suffix('.json').read_text(encoding='utf-8'))
+            key = session.run.name + '--' + broken.parent.name
+            self.assertEqual(key, receipt['skipped_batches'][0]['key'])
+            self.assertNotIn(key, [item['key'] for item in receipt['batches']])
+            upload_archive(archive, Path(temporary) / 'nas')
+            self.assertFalse((root / 'states' / (key + '.json')).exists())
+            self.assertEqual('incomplete', broken.read_text(encoding='ascii'))
+
     def test_manual_policy_never_wakes_network_worker(self):
         from src.runtime.diagnostic_lifecycle import wake_uploader
         with tempfile.TemporaryDirectory() as temporary, patch('src.runtime.diagnostic_lifecycle.subprocess.Popen') as spawn:

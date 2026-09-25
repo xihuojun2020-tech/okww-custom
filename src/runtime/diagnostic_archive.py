@@ -92,7 +92,7 @@ def build_archive(root, *, day=None, mode='manual', flush_current=True):
     archive = directory / (name + '.zip')
     receipt = archive.with_suffix('.json')
     pending = archive.with_suffix('.zip.partial')
-    entries, logs, references = [], {}, []
+    entries, logs, references, skipped = [], {}, [], []
     with FileLease(root / '.archive.lock'), FileLease(root / '.uploader.lock'):
         try:
             selected = _pending_batches(root, day)
@@ -102,7 +102,8 @@ def build_archive(root, *, day=None, mode='manual', flush_current=True):
                     manifest_path = batch / 'manifest.json'
                     sha = hash_file(manifest_path)
                     if ready.read_text(encoding='ascii') != sha:
-                        raise ValueError(f'批次尚未完整封存：{key}')
+                        skipped.append({'key': key, 'reason': '封存标记与清单不一致'})
+                        continue
                     manifest = validate_manifest(batch, manifest)
                     prefix = 'batches/' + key + '/'
                     package.write(manifest_path, prefix + 'manifest.json')
@@ -123,6 +124,8 @@ def build_archive(root, *, day=None, mode='manual', flush_current=True):
                         write_progress(root, mode=mode, day=day, stage='packing',
                                        completed_batches=len(entries), total_batches=total_batches)
                 if not entries:
+                    if skipped:
+                        raise ValueError('所有待上传批次均未完整封存：' + ', '.join(item['key'] for item in skipped[:3]))
                     raise ValueError('没有尚未上传的已封存资料')
                 dependencies, missing = [], []
                 names = set(package.namelist())
@@ -151,7 +154,7 @@ def build_archive(root, *, day=None, mode='manual', flush_current=True):
                 package.writestr('manifest.json', json.dumps({'schema': 1, 'created_at': time.time(),
                     'day': day, 'mode': mode,
                     'batches': entries, 'sessions': list(logs), 'image_dependencies': dependencies,
-                    'missing_dependencies': missing}, ensure_ascii=False))
+                    'missing_dependencies': missing, 'skipped_batches': skipped}, ensure_ascii=False))
             with zipfile.ZipFile(pending) as package:
                 broken = package.testzip()
                 if broken:
@@ -159,9 +162,10 @@ def build_archive(root, *, day=None, mode='manual', flush_current=True):
             pending.replace(archive)
             atomic_json(receipt, {'schema': 1, 'root': str(root), 'sha256': hash_file(archive),
                                   'size': archive.stat().st_size, 'batches': entries, 'status': 'packed',
-                                  'day': day, 'mode': mode})
+                                  'day': day, 'mode': mode, 'skipped_batches': skipped})
             write_progress(root, mode=mode, day=day, stage='packed', archive=str(archive),
-                           completed_batches=len(entries), total_batches=total_batches)
+                           completed_batches=len(entries), total_batches=total_batches,
+                           skipped_batches=skipped)
             return archive
         finally:
             pending.unlink(missing_ok=True)
@@ -229,7 +233,8 @@ def upload_archive(archive, target=DEFAULT_TARGET):
             acknowledge(batch)
         receipt.update(status='uploaded', remote=str(remote), uploaded_at=time.time())
         atomic_json(receipt_path, receipt)
-        write_progress(root, mode=mode, day=day, stage='uploaded', archive=str(remote), **final_rate)
+        write_progress(root, mode=mode, day=day, stage='uploaded', archive=str(remote),
+                       skipped_batches=receipt.get('skipped_batches', []), **final_rate)
     return str(remote)
 
 

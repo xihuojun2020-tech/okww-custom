@@ -118,7 +118,13 @@ def seal_run(run, kind, *, sizes=None, reviewed_images=(), offsets=None, inciden
                 'policy': metadata.get('policy'), 'source_ranges': list(source_ranges),
                 'log_ranges': {p.name: [int((offsets or {}).get(p.name, 0)), n] for p, n in sources.items()}}
     atomic_json(batch / 'manifest.json', manifest)
-    (batch / '_READY').write_text(digest((batch / 'manifest.json').read_bytes()), encoding='ascii')
+    ready = batch / '_READY'
+    temporary_ready = batch / '_READY.tmp'
+    with temporary_ready.open('w', encoding='ascii') as stream:
+        stream.write(digest((batch / 'manifest.json').read_bytes()))
+        stream.flush()
+        os.fsync(stream.fileno())
+    temporary_ready.replace(ready)
     from src.runtime.diagnostic_queue import queue_batch
     queue_batch(batch)
     atomic_json(run / 'upload-status.json', {'latest_batch': batch_id, 'status': 'pending'})
