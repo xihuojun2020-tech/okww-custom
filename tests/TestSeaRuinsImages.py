@@ -61,11 +61,10 @@ class TestSeaRuinsImages(TaskTestCase):
     def test_september25_applied_preset(self):
         from src.task.sea_ruins import Preset
         frame = self.image('preset_applied_20260925')
-        expected = ('char_yuanwu', 'char_galbrena', 'char_verina')
-        cards = v.preset_portraits(frame, self.task._page_presets(frame)[1][1])
-        self.assertFalse(self.task._members_match(frame, 0, Preset(2, expected)))
-        self.assertTrue(self.task._members_match(frame, 0, Preset(2, expected), cards))
-        self.assertFalse(self.task._members_match(frame, 1, Preset(2, expected), cards))
+        expected = ('char_chouyuan', 'char_galbrena', 'char_verina')
+        self.assertEqual(expected, self.task._page_presets(frame)[1][0].members)
+        self.assertTrue(self.task._members_match(frame, 0, Preset(2, expected)))
+        self.assertFalse(self.task._members_match(frame, 1, Preset(2, expected)))
 
     def test_zani_reference_is_not_remapped_to_shorekeeper(self):
         import numpy as np

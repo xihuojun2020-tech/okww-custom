@@ -244,7 +244,9 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
             top += .032
             members = []
             for portrait in vision.preset_portraits(frame, top):
-                found = self._identify_character(portrait)
+                h, w = portrait.shape[:2]
+                # Element and slot badges overlap the card corners; identify the unobstructed face.
+                found = self._identify_character(portrait[int(.15*h):int(.73*h), int(.16*w):int(.83*w)])
                 members.append(found[0] if found else '')
             records.append((Preset(number, tuple(members)), top))
         return records
@@ -287,13 +289,9 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
             self.send_key('esc')
         self._wait(lambda f: self._detail(f, self._floor), '预设侧栏关闭后层号未确认')
 
-    def _members_match(self, frame, half, preset, preset_portraits=None):
-        portraits = vision.team_portraits(frame, half)
-        members = [self._identify_character(im) for im in portraits]
-        if all(hit and hit[0] == identity for hit, identity in zip(members, preset.members)):
-            return True
-        return (preset_portraits is not None and len(preset_portraits) == len(portraits) == 3
-                and all(self._same_art(card, applied) for card, applied in zip(preset_portraits, portraits)))
+    def _members_match(self, frame, half, preset):
+        members = [self._identify_character(im) for im in vision.team_portraits(frame, half)]
+        return all(hit and hit[0] == identity for hit, identity in zip(members, preset.members))
 
     def _apply_preset(self, half, preset):
         self._open_presets(half)
@@ -304,9 +302,8 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
                 if candidate.number == preset.number:
                     if candidate.members != preset.members:
                         raise SeaLoadoutChanged('预设回位后成员变化，未点击；继续后重新规划')
-                    portraits = vision.preset_portraits(self.frame, top)
                     self.click_relative(.16, top+.065)
-                    self._wait(lambda f: self._members_match(f, half, preset, portraits), '预设应用后头像顺序未确认')
+                    self._wait(lambda f: self._members_match(f, half, preset), '预设应用后头像顺序未确认')
                     self._close_presets()
                     return
             self.scroll_relative(.20, .50, -2)
