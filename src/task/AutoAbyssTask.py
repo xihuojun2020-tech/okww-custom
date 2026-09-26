@@ -71,6 +71,10 @@ class AbyssCenterUnavailable(Exception):
     """Stop the entire task when center allocation cannot be safely executed."""
 
 
+class AbyssSelectionIdentityUnknown(Exception):
+    """A selected border was found but its avatar could not be matched."""
+
+
 @dataclass(frozen=True)
 class CharacterScanRecord:
     character_id: str
@@ -1720,8 +1724,10 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                     matches = [r for r in matches if effective_character_id(r) == form]
                 identities = {effective_character_id(r) for r in matches}
                 if len(identities) != 1:
+                    self.log_warning(f"选中卡片身份复核失败：页={page_index}，行列={slot[:2]}，"
+                                     f"识别={identified}，匹配={sorted(map(str, identities))}")
                     self.screenshot("abyss_selection_identity_unknown", frame=frame)
-                    raise Exception("选中卡片身份未知，禁止清理或开始战斗")
+                    raise AbyssSelectionIdentityUnknown("选中卡片身份未知，禁止清理或开始战斗")
                 selected[identities.pop()] = replace(matches[0], screen_index=page_index, slot=slot)
         return selected
 
@@ -1810,7 +1816,33 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             self.log_info(
                 f"最终局部确认 {record.display_name} 选择标记存在，按点击顺序为 {expected_number}"
             )
-        return set(self._selected_records(records)) == set(plan.members)
+        try:
+            return set(self._selected_records(records)) == set(plan.members)
+        except AbyssSelectionIdentityUnknown:
+            # Every planned avatar was independently identified above. The game's
+            # selection numbers provide a second way to reject extra selected cards.
+            numbers = self._selected_numbers_all_pages()
+            expected = set(range(1, len(plan.members) + 1))
+            self.log_warning(f"头像全页复核失败，改用已选编号复核：实测={numbers}，预期={expected}")
+            return numbers == expected
+
+    def _selected_numbers_all_pages(self):
+        numbers = set()
+        for page_index in range(1, self._character_page_count + 1):
+            frame = self._show_character_page(page_index)
+            slots = detect_character_slots(frame)
+            if not slots:
+                return None
+            for slot in slots:
+                if not selection_marker_present(self._slot_crop(frame, slot, SELECTION_MARKER_REGION)):
+                    continue
+                number = self._read_selection_number(frame, slot)
+                if number not in (1, 2, 3):
+                    self.log_warning(f"选中编号不明确：页={page_index}，行列={slot[:2]}，编号={number}")
+                    self.screenshot("abyss_selection_number_unknown", frame=frame)
+                    return None
+                numbers.add(number)
+        return numbers
 
     def _finish_team_formation(self):
         def destination(frame):
@@ -1987,15 +2019,9 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         mask = cv2.inRange(gray, 180, 255)
         if np.count_nonzero(mask) < max(8, int(mask.size * 0.002)):
             return None
-        mask = cv2.copyMakeBorder(mask, 20, 20, 20, 20, cv2.BORDER_CONSTANT, value=0)
-        scale = ocr_resize_scale(mask.shape[0], 256)
-        prepared = cv2.resize(
-            cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR),
-            None,
-            fx=scale,
-            fy=scale,
-            interpolation=cv2.INTER_CUBIC,
-        )
+        # A binary mask can create a false extra "1" beside the real "2".
+        # Preserve the game's dark number badge when enlarging for OCR.
+        prepared = cv2.resize(crop, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
         try:
             boxes = self.ocr(0, 0, 1, 1, frame=prepared)
         except Exception as exc:

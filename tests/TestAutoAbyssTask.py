@@ -1407,6 +1407,36 @@ class TestAutoAbyssTask(unittest.TestCase):
         self.assertTrue(task._verify_planned_selection_markers(plan, records))
         self.assertEqual(seen, ["a", "b", "c"])
 
+    def test_final_selection_uses_numbers_after_avatar_recheck_fails(self):
+        from src.task.AutoAbyssTask import AbyssSelectionIdentityUnknown
+        records = [CharacterScanRecord(name, name, 10, 90, .9, 1, index)
+                   for index, name in enumerate(("a", "b", "c"))]
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task._show_character_page = lambda _page: np.zeros((10, 10, 3), dtype=np.uint8)
+        task._verify_record_identity = lambda *_: True
+        task._selection_marker_present = lambda *_: True
+        task._best_record_for_identity = lambda _records, identity: next(r for r in records if r.character_id == identity)
+        task._selected_records = lambda _records: (_ for _ in ()).throw(AbyssSelectionIdentityUnknown())
+        task._selected_numbers_all_pages = lambda: {1, 2, 3}
+        task.log_info = task.log_warning = lambda *_: None
+        plan = SimpleNamespace(members=("a", "b", "c"))
+        self.assertTrue(task._verify_planned_selection_markers(plan, records))
+        task._selected_numbers_all_pages = lambda: {1, 2, 3, 4}
+        self.assertFalse(task._verify_planned_selection_markers(plan, records))
+        task._selected_numbers_all_pages = lambda: None
+        self.assertFalse(task._verify_planned_selection_markers(plan, records))
+
+    def test_selected_number_scan_rejects_unreadable_selected_card(self):
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task._character_page_count = 1
+        task._show_character_page = lambda _page: np.zeros((1080, 1920, 3), dtype=np.uint8)
+        task._read_selection_number = lambda *_: None
+        task.log_warning = lambda *_: None
+        task.screenshot = lambda *_args, **_kwargs: None
+        with patch('src.task.AutoAbyssTask.detect_character_slots', return_value=(character_card_slots()[0],)), \
+             patch('src.task.AutoAbyssTask.selection_marker_present', return_value=True):
+            self.assertIsNone(task._selected_numbers_all_pages())
+
     def test_select_planned_team_stops_when_number_state_is_unknown(self):
         records = [
             CharacterScanRecord("a", "A", 10, 90, .9, 1, 0),
