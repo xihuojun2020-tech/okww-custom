@@ -7,13 +7,12 @@ import numpy as np
 from src.char import CharFactory as factory
 from src.char.BaseChar import BaseChar
 from src.char.Hiyuki import Hiyuki
+from src.task.BaseCombatTask import BaseCombatTask, CombatStateUnknown
 
 
 class TestCharacterIdentityRecovery(unittest.TestCase):
     def setUp(self):
-        self.old = Hiyuki.__new__(Hiyuki)
-        self.old.char_name = factory.Labels.char_hiyuki
-        self.old.confidence = .940819
+        self.old = Hiyuki(None, 0, char_name=factory.Labels.char_hiyuki, confidence=.940819)
         self.task = Mock()
         self.task.find_one.return_value = None
         self.task.require_game_frame.return_value = np.zeros((720, 1280, 3), np.uint8)
@@ -48,6 +47,106 @@ class TestCharacterIdentityRecovery(unittest.TestCase):
     def test_repeated_capture_does_not_confirm_change(self):
         for _ in range(5):
             self.assertIs(factory.get_char_by_pos(self.task, object(), 0, self.old), self.old)
+
+    def test_weak_old_portrait_does_not_hide_strong_new_identity(self):
+        self.task.find_one.return_value = self.runner
+        self.loader.side_effect = lambda cls: Hiyuki if cls is Hiyuki else Mock(return_value=self.new)
+        self.assertIs(self.sample(), self.old)
+        self.assertIs(self.sample(), self.old)
+        self.assertIs(self.sample(), self.new)
+
+    def prepare_load(self):
+        self.old.index = 0
+        self.old.reset_state = Mock()
+        self.loader.side_effect = lambda cls: cls
+        self.task.chars = [self.old]
+        self.task._char_identity = BaseCombatTask._char_identity
+        self.task.in_team.return_value = (True, 0, 1)
+        self.task._app = None
+        self.task._char_context = None
+        self.task.executor.next_frame.side_effect = self.advance_frame
+
+    def advance_frame(self, **kwargs):
+        self.task.executor._last_frame_time += 1
+        return self.task.require_game_frame.return_value
+
+    def test_load_confirms_real_change_before_exposing_combat_roster(self):
+        self.prepare_load()
+        self.assertTrue(BaseCombatTask.load_chars(self.task))
+        self.assertEqual(self.task.chars[0].char_name, factory.Labels.char_rover)
+        self.assertIsNot(self.task.chars[0], self.old)
+        self.assertEqual(self.task.executor.next_frame.call_count, 2)
+        self.old.reset_state.assert_not_called()
+        self.task.click.assert_not_called()
+        self.task.send_key.assert_not_called()
+
+    def test_load_stale_captures_stop_with_evidence(self):
+        self.prepare_load()
+        self.task.executor.next_frame.side_effect = None
+        with self.assertRaises(CombatStateUnknown):
+            BaseCombatTask.load_chars(self.task)
+        self.task.screenshot.assert_called_once()
+        self.old.reset_state.assert_not_called()
+        self.task.click.assert_not_called()
+        self.task.send_key.assert_not_called()
+
+    def test_daily_entries_confirm_roster_before_entering_combat(self):
+        from types import MethodType
+        from src.task.DailyTask import DailyTask
+        from src.task.MultiAccountDailyTask import MultiAccountDailyTask
+        for task_class in (DailyTask, MultiAccountDailyTask):
+            with self.subTest(entry=task_class.__name__):
+                self.prepare_load()
+                self.task.in_liberation = False
+                self.task._in_combat = False
+                self.task.has_target.return_value = True
+                self.task.load_chars = MethodType(task_class.load_chars, self.task)
+                self.assertTrue(task_class.do_check_in_combat(self.task, target=False))
+                self.assertEqual(self.task.chars[0].char_name, factory.Labels.char_rover)
+                self.assertTrue(self.task._in_combat)
+
+    def test_unchanged_team_needs_no_additional_capture(self):
+        self.prepare_load()
+        self.task.find_one.return_value = SimpleNamespace(confidence=.95)
+        self.assertTrue(BaseCombatTask.load_chars(self.task))
+        self.assertIs(self.task.chars[0], self.old)
+        self.task.executor.next_frame.assert_not_called()
+        self.task.find_best_match_in_box.assert_not_called()
+
+    def test_account_change_discards_previous_account_identity(self):
+        self.prepare_load()
+        self.task._char_context = (123, 'previous-account')
+        self.assertTrue(BaseCombatTask.load_chars(self.task))
+        self.assertEqual(self.task.chars[0].char_name, factory.Labels.char_rover)
+        self.task.find_one.assert_not_called()
+        self.task.executor.next_frame.assert_not_called()
+
+    def test_weak_or_ambiguous_replacements_cannot_enter_combat_as_old_char(self):
+        self.prepare_load()
+        self.candidate.confidence = .83
+        with self.assertRaises(CombatStateUnknown):
+            BaseCombatTask.load_chars(self.task)
+        self.assertIs(self.task.chars[0], self.old)
+        self.task.screenshot.assert_called_once()
+        self.assertIn('0.83', self.task.log_warning.call_args.args[0])
+        self.old.reset_state.assert_not_called()
+
+    def test_missing_hud_during_confirmation_does_not_load_old_team(self):
+        self.prepare_load()
+        self.task.in_team.side_effect = [(True, 0, 1)] + [(False, -1, 1)] * 5
+        with self.assertRaises(CombatStateUnknown):
+            BaseCombatTask.load_chars(self.task)
+        self.task.screenshot.assert_called_once()
+        self.old.reset_state.assert_not_called()
+
+    def test_user_stop_during_confirmation_propagates(self):
+        from ok import TaskDisabledException
+        self.prepare_load()
+        self.task.executor.next_frame.side_effect = TaskDisabledException('stop')
+        with self.assertRaises(TaskDisabledException):
+            BaseCombatTask.load_chars(self.task)
+        self.task.screenshot.assert_not_called()
+        self.old.reset_state.assert_not_called()
 
     def test_close_runner_up_prevents_change(self):
         self.runner.confidence = .91

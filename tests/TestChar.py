@@ -1,5 +1,6 @@
 import time
 import unittest
+from types import SimpleNamespace
 from config import config
 from ok.test.TaskTestCase import TaskTestCase
 from src.Labels import Labels
@@ -785,6 +786,8 @@ class TestChar(TaskTestCase):
 
         task = AutoCombatTask.__new__(AutoCombatTask)
         task.chars = [None, None, None]
+        task._executor = self.task.executor
+        task.require_game_frame = lambda: SimpleNamespace(shape=(720, 1280, 3))
         task.load_hotkey = lambda: None
         task.in_team = lambda: (True, 0, 3)
         task.get_box_by_name = lambda name: name
@@ -826,6 +829,8 @@ class TestChar(TaskTestCase):
             pass
         task = AutoCombatTask.__new__(AutoCombatTask)
         task.chars = [None, None, None]
+        task._executor = self.task.executor
+        task.require_game_frame = lambda: SimpleNamespace(shape=(720, 1280, 3))
         task.load_hotkey = lambda: None
         task.in_team = lambda: (True, 0, 1)
         task.get_box_by_name = lambda name: name

@@ -11,6 +11,11 @@ class TestForte(TaskTestCase):
     task_class = AutoCombatTask
     config = config
 
+    def setUp(self):
+        # These are unrelated screenshots, not consecutive frames of one party.
+        self.task.chars = [None, None, None]
+        self.task._char_context = None
+
     def test_forte1(self):
         self.task.do_reset_to_false()
         self.set_image('tests/images/treasure2.png')

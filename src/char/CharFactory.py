@@ -166,6 +166,7 @@ def _get_buff_time(task, info):
 
 def _apply_char_config(task, char, info):
     if char and info:
+        char._identity_unconfirmed = False
         char.char_name = info['canonical_name']
         char.set_char_type(_get_char_type(task, info))
         char.set_buff_time(_get_buff_time(task, info))
@@ -185,10 +186,14 @@ def get_char_by_pos(task, box, index, old_char):
     info = None
     name = "unknown"
     char = None
+    if old_char:
+        old_char._identity_unconfirmed = old_char.char_name in char_names
+        old_char._identity_observation = None
     if old_char and old_char.confidence > 0.92 and old_char.char_name in char_names:
         info = char_dict.get(old_char.char_name)
         char = _find_registered_char(task, box, info)
-        if char:
+        # A weak old-template hit must not conceal a much stronger new portrait.
+        if char and char.confidence >= .9:
             old_char.__dict__.pop('_replacement_evidence', None)
             cls = load_custom_char_class(info.get('cls'))
             if type(old_char) is not cls:
@@ -199,12 +204,14 @@ def get_char_by_pos(task, box, index, old_char):
                                                     buff_time=_get_buff_time(task, info)), info)
             _apply_char_config(task, old_char, info)
             return old_char
+        char = None
     if not char:
         char = task.find_best_match_in_box(box, char_names, threshold=0.6)
         if char:
             info = char_dict.get(char.name)
             name = char.name
             if old_char and old_char.char_name in char_names:
+                old_char._identity_observation = (name, round(char.confidence, 3))
                 previous = char_dict[old_char.char_name]
                 if info['canonical_name'] != previous['canonical_name']:
                     if char.confidence < .9:

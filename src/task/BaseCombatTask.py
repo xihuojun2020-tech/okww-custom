@@ -943,17 +943,42 @@ class BaseCombatTask(CombatCheck):
         if not in_team:
             return
         previous_char_identity = self._char_identity(self.chars)
-        # in_team() reports the actual party size; do not assume a minimum of two
-        # members (solo teams are valid in the game and must still enter combat).
-        team_size = max(1, min(3, int(count or 1)))
-        old_chars = self.chars
-        self.chars = [
-            get_char_by_pos(
-                self, self.get_box_by_name(f'box_char_{index + 1}'), index,
-                safe_get(old_chars, index)
-            )
-            for index in range(team_size)
-        ]
+        deadline = time.monotonic() + 4
+        for attempt in range(6):
+            frame = self.require_game_frame()
+            context = (getattr(self.hwnd, 'hwnd', None),
+                       getattr(self, '_verified_profile_id', None))
+            previous_context = getattr(self, '_char_context', None)
+            if previous_context is not None and context != previous_context:
+                self.chars = []
+            self._char_context = context
+            if in_team:
+                # Preserve actual solo/duo/trio size, including after a new capture.
+                team_size = max(1, min(3, int(count or 1)))
+                old_chars = self.chars
+                self.chars = [
+                    get_char_by_pos(
+                        self, self.get_box_by_name(f'box_char_{index + 1}'), index,
+                        safe_get(old_chars, index)
+                    )
+                    for index in range(team_size)
+                ]
+                if not any(c.__dict__.get('_identity_unconfirmed', False) or
+                           c.__dict__.get('_replacement_evidence') for c in self.chars):
+                    break
+            if attempt == 5 or time.monotonic() >= deadline:
+                self._in_combat = False
+                details = [{'slot': c.index + 1, 'cached': c.char_name,
+                            'observed': c.__dict__.get('_identity_observation'),
+                            'unconfirmed': c.__dict__.get('_identity_unconfirmed', False),
+                            'pending': c.__dict__.get('_replacement_evidence')} for c in self.chars]
+                self.log_warning(f'combat roster unconfirmed team={(in_team, current_index, count)} '
+                                 f'chars={details}')
+                self.screenshot('combat_roster_unconfirmed', frame=frame)
+                raise CombatStateUnknown('队伍角色身份未确认，已保存截图；停止使用旧角色战斗脚本')
+            # Complete factory confirmation here, before any rotation can start.
+            self.executor.next_frame(time_out=min(.5, max(.01, deadline - time.monotonic())))
+            in_team, current_index, count = self.in_team()
 
         for char in self.chars:
             if char is not None:

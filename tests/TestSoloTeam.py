@@ -107,6 +107,24 @@ class TestSoloTeam(TaskTestCase):
                 self.assertEqual(len(self.task.chars), 1)
                 self.assertEqual(type(self.task.get_current_char()).__name__, 'Qingxiao')
 
+    def test_real_portrait_replaces_old_rotation_before_combat(self):
+        from src.char.Hiyuki import Hiyuki
+        from src.Labels import Labels
+        self.set_image('tests/images/solo_qingxiao_combat_1440.png')
+        self.task.chars = [Hiyuki(self.task, 0, char_name=Labels.char_hiyuki, confidence=.95)]
+        self.task._char_context = None
+        self.task.executor._last_frame_time = 1
+
+        def capture(**kwargs):
+            self.task.executor._last_frame_time += 1
+            return self.task.frame
+
+        with patch.object(self.task, 'load_hotkey'), \
+             patch.object(self.task.executor, 'next_frame', side_effect=capture) as frames:
+            self.assertTrue(self.task.load_chars())
+        self.assertEqual(type(self.task.get_current_char()).__name__, 'Qingxiao')
+        self.assertEqual(frames.call_count, 2)
+
     def test_portrait_fallback_rejects_missing_player_or_extra_member(self):
         source = cv2.imread('tests/images/solo_qingxiao_combat_1440.png')
         for scenario in ('no_player', 'no_portrait', 'second_member', 'third_member'):
