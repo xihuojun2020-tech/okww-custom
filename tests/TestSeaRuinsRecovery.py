@@ -32,6 +32,9 @@ class TestSeaRuinsRecovery(unittest.TestCase):
         lamp = next(rule for rule in CATALOG if rule.name == '那映照虚幻的燃灯')
         self.assertEqual(identify_token('那映照虛', 'gold'), lamp)
         self.assertIsNone(identify_token('那映照虛', 'purple'))
+        # Inventory recognition keys on name; the catalogue owns rarity.
+        token = next(rule for rule in CATALOG if rule.name == '镌刻者-长夜孤灯')
+        self.assertEqual(identify_token(token.name), token)
         self.assertIsNone(identify_token('那'))
         self.assertIsNone(identify_token('新信物'))
         self.assertIsNone(identify_token('狂欢者…', 'blue'))

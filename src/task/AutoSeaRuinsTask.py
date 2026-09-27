@@ -324,15 +324,20 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
     def _page_tokens(self, frame):
         records = []
         for rect in vision.token_cards(frame):
-            rarity = vision.token_rarity(frame, rect)
-            if rarity == 'green' or vision.token_locked(frame, rect):
+            if vision.token_locked(frame, rect):
                 continue
             x, y, w, h = rect
             caption = ''.join(self._small_text(frame, ((x+5)/2048, (y+h*.79)/1152,
                                                        (x+w-5)/2048, (y+h*.99)/1152)))
-            rule = identify_token(caption, rarity)
+            rule = identify_token(caption)
             if rule is None:
-                raise RuntimeError(f'信物名称/品质未确认：{caption} / {rarity}，请调整列表后继续')
+                rarity = vision.token_rarity(frame, rect)
+                raise RuntimeError(f'信物名称未确认：{caption}（颜色参考：{rarity}），请调整列表后继续')
+            # The catalogue maps each recognized name to its canonical rarity.
+            # UI color sampling is unreliable around selection/highlight borders.
+            rarity = rule.rarity
+            if rarity == 'green':
+                continue
             count = self._token_count(frame, rect)
             if count is None:
                 raise RuntimeError(f'{rule.name}数量未确认，请调整列表后继续')

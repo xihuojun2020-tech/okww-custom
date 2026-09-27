@@ -130,6 +130,18 @@ class TestSeaRuinsImages(TaskTestCase):
                 self.assertEqual([t.remaining for t, _ in records], [2, 1, 2, 2, -1, -1, -1])
                 click.assert_not_called()
 
+    def test_inventory_name_overrides_selected_border_rarity_color(self):
+        from unittest.mock import patch
+        task = self.task
+        frame = self.image('incident_token')
+        # The incident screenshot's selected purple token was read as blue by
+        # the old independent color gate. Its unique catalog name is authoritative.
+        with patch.object(task, '_small_text', return_value=['镌刻者-长夜孤灯']), \
+                patch.object(task, '_token_count', return_value=2):
+            records = task._page_tokens(frame)
+        self.assertEqual(len(records), 8)  # six purple, three blue, less one new card
+        self.assertEqual(records[5][0].name, '镌刻者-长夜孤灯')
+
     def test_thin_category_highlight_is_not_a_token_card(self):
         frame = np.zeros((1152, 2048, 3), np.uint8)
         frame[424:431, 974:1116] = (255, 120, 30)

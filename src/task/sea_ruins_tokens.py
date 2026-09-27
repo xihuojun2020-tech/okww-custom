@@ -39,6 +39,7 @@ def name_key(text):
 
 
 def identify_token(caption, rarity=None):
+    """Identify by the visible name; optionally require a known rarity."""
     key = name_key(caption)
     if len(key) < 3:
         return None
