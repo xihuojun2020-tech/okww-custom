@@ -1,5 +1,6 @@
 import re
 import time
+import json
 from decimal import Decimal, ROUND_UP, ROUND_DOWN
 
 import cv2
@@ -15,6 +16,8 @@ from src.char import BaseChar
 from src.char.BaseChar import SwitchPriority, dot_color  # noqa
 from src.char.CharFactory import get_char_by_pos
 from src.combat.CombatCheck import CombatCheck
+from src.combat.roster_context import roster_context
+from src.combat.rotation_state import RotationState
 from src.task.BaseWWTask import isolate_white_text_to_black, binarize_for_matching
 
 logger = Logger.get_logger(__name__)
@@ -473,6 +476,7 @@ class BaseCombatTask(CombatCheck):
                     break
         finally:
             self._local_revive_active = previous
+            self.finish_rotation_tracking('combat_loop_exit')
         self.combat_end()
         if self.switch_healer_enabled():
             self.switch_healer()
@@ -547,6 +551,10 @@ class BaseCombatTask(CombatCheck):
             f'switch_cd={switch_cd} last_switch_time={char.last_switch_time:.3f}')
 
     def _log_switch_choice(self, current_char, target, has_intro, reason):
+        state = self.__dict__.get('_rotation_state')
+        if state:
+            state.recent.append(dict(source=current_char.index + 1, target=target.index + 1,
+                                     intro=has_intro, reason=reason))
         logger.info(
             f'switch selection result current={current_char}({current_char.char_type}) '
             f'target={target}({target.char_type}) has_intro={has_intro} reason={reason}')
@@ -628,6 +636,16 @@ class BaseCombatTask(CombatCheck):
             return self._log_switch_choice(
                 current_char, current_char, has_intro, 'no_candidate_above_no_priority')
 
+        state = self.__dict__.get('_rotation_state')
+        if state and state.main_due(self.chars, current_char):
+            mains = [char for _, char in prioritized_candidates
+                     if char.is_main_dps and not self._target_has_switch_cd(char)]
+            if mains:
+                target = self._oldest_switch_target(mains)
+                if any(not char.has_buff() for char in self.chars if char and not char.is_main_dps):
+                    self.report_rotation_anomaly('support_preparation_exhausted', current_char)
+                return self._log_switch_choice(current_char, target, has_intro, 'support_attempts_return_to_main')
+
         highest_priority = max(priority for priority, _ in prioritized_candidates)
         candidates = [char for priority, char in prioritized_candidates if priority == highest_priority]
 
@@ -676,6 +694,9 @@ class BaseCombatTask(CombatCheck):
             # sending a switch key for a teammate that does not exist.
             current_char.continues_normal_attack(0.2)
             return
+        state = self.__dict__.get('_rotation_state')
+        if state and state.finish_turn(current_char):
+            self.report_rotation_anomaly('main_exits_without_rotation', current_char, recheck=True)
         has_intro = free_intro
         current_con = 0
         self.update_lib_portrait_icon()
@@ -689,6 +710,8 @@ class BaseCombatTask(CombatCheck):
             if current_con == 1:
                 has_intro = True
 
+        if state:
+            state.rows[current_char.index]['last_outro_ready'] = has_intro
         switch_to = self._choose_switch_target(current_char, has_intro, target_low_con=target_low_con)
         if not switch_to or switch_to == current_char:
             logger.warning(f"{current_char} can't find next char to switch to, performing too fast add a normal attack")
@@ -749,6 +772,8 @@ class BaseCombatTask(CombatCheck):
                 current_char.switch_out(con_full=has_intro)
                 switch_to.is_current_char = True
                 switch_to.last_switch_in_time = time.time()
+                if state:
+                    state.switched(switch_to)
                 if has_intro:
                     current_time = time.time()
                     self.add_freeze_duration(current_time, switch_to.intro_motion_freeze_duration, -100)
@@ -854,6 +879,7 @@ class BaseCombatTask(CombatCheck):
 
     def combat_end(self):
         """战斗结束时调用的清理方法。"""
+        self.finish_rotation_tracking('combat_end')
         current_char = self.get_current_char(raise_exception=False)
         if current_char:
             current_char.on_combat_end(self.chars)
@@ -936,7 +962,7 @@ class BaseCombatTask(CombatCheck):
             if isinstance(char, char_cls):
                 return char
 
-    def load_chars(self):
+    def load_chars(self, *, reset_state=True, force_full_scan=False):
         """加载队伍中的角色信息。"""
         self.load_hotkey()
         in_team, current_index, count = self.in_team()
@@ -946,11 +972,12 @@ class BaseCombatTask(CombatCheck):
         deadline = time.monotonic() + 4
         for attempt in range(6):
             frame = self.require_game_frame()
-            context = (getattr(self.hwnd, 'hwnd', None),
-                       getattr(self, '_verified_profile_id', None))
+            context = roster_context(self)
             previous_context = getattr(self, '_char_context', None)
             if previous_context is not None and context != previous_context:
                 self.chars = []
+                self._rotation_evidence_times = {}
+                force_full_scan = True
             self._char_context = context
             if in_team:
                 # Preserve actual solo/duo/trio size, including after a new capture.
@@ -959,7 +986,7 @@ class BaseCombatTask(CombatCheck):
                 self.chars = [
                     get_char_by_pos(
                         self, self.get_box_by_name(f'box_char_{index + 1}'), index,
-                        safe_get(old_chars, index)
+                        safe_get(old_chars, index), **({'force_full_scan': True} if force_full_scan else {})
                     )
                     for index in range(team_size)
                 ]
@@ -980,15 +1007,25 @@ class BaseCombatTask(CombatCheck):
             self.executor.next_frame(time_out=min(.5, max(.01, deadline - time.monotonic())))
             in_team, current_index, count = self.in_team()
 
+        identity_changed = self._char_identity(self.chars) != previous_char_identity
         for char in self.chars:
             if char is not None:
-                char.reset_state()
+                if reset_state or identity_changed:
+                    char.reset_state()
                 if char.index == current_index:
                     char.is_current_char = True
                 else:
                     char.is_current_char = False
-        self.combat_start = time.time()
-        if self._char_identity(self.chars) != previous_char_identity:
+        if reset_state or identity_changed:
+            self.combat_start = time.time()
+            self.finish_rotation_tracking('roster_reload')
+            self._rotation_state = RotationState(self.chars)
+        if force_full_scan:
+            self.log_info('combat roster verified ' + json.dumps(
+                dict(context=context, task=type(self).__name__,
+                     chars=[dict(slot=c.index + 1, script=c.name, identity=str(c.char_name),
+                                 confidence=round(c.confidence, 3)) for c in self.chars]), ensure_ascii=False))
+        if identity_changed:
             translated_names = []
             for c in self.chars:
                 if c is not None:
@@ -1000,6 +1037,55 @@ class BaseCombatTask(CombatCheck):
             for c in self.chars:
                 self.log_info(f'loaded chars success {c} {c.confidence}')
         return True
+
+    def prepare_character_rotation(self, char):
+        context_changed = self.__dict__.get('_char_context') != roster_context(self)
+        recheck = self.__dict__.pop('_rotation_roster_recheck', False)
+        if context_changed or recheck:
+            if not self.load_chars(reset_state=context_changed, force_full_scan=True):
+                raise CombatStateUnknown('战斗动作前未能确认队伍')
+            if self.get_current_char() is not char:
+                return False
+        state = self.__dict__.get('_rotation_state')
+        if state:
+            state.begin(char)
+        return True
+
+    def record_combat_action(self, char, action):
+        state = self.__dict__.get('_rotation_state')
+        if state and char.index in state.rows:
+            state.action(char, action)
+
+    def report_rotation_anomaly(self, reason, char, *, recheck=False):
+        if recheck:
+            self._rotation_roster_recheck = True
+        state = self.__dict__.get('_rotation_state')
+        if state:
+            state.events[reason] += 1
+        now = time.monotonic()
+        saved = self.__dict__.setdefault('_rotation_evidence_times', {})
+        if now - saved.get(reason, -float('inf')) < 120:
+            return
+        saved[reason] = now
+        data = dict(reason=reason, task=type(self).__name__, context=roster_context(self), at_unix=time.time(),
+                    slot=char.index + 1, script=char.name,
+                    rotation=state.snapshot() if state else None)
+        self.log_warning('combat rotation anomaly ' + json.dumps(data, ensure_ascii=False))
+        from src.runtime.diagnostic_lifecycle import record_combat_anomaly
+        for save in (lambda: record_combat_anomaly(data), lambda: self.screenshot('combat_rotation_' + reason)):
+            try:
+                save()
+            except (TaskDisabledException, GameProcessLost, FrameUnavailable, ConfigIntegrityBlocked, ConfigWriteBlocked):
+                raise
+            except Exception as error:
+                self.log_warning(f'combat rotation evidence unavailable: {type(error).__name__}')
+
+    def finish_rotation_tracking(self, reason):
+        state = self.__dict__.pop('_rotation_state', None)
+        if state and any(row['turns'] for row in state.rows.values()):
+            self.log_info('combat rotation summary ' + json.dumps(
+                dict(reason=reason, task=type(self).__name__, context=self.__dict__.get('_char_context'),
+                     **state.snapshot()), ensure_ascii=False))
 
     @staticmethod
     def _char_identity(chars):

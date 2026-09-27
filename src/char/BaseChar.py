@@ -224,6 +224,9 @@ class BaseChar:
         Subclasses should normally customize ``do_perform`` and leave this wrapper
         intact so timing/logging behavior remains consistent.
         """
+        prepare = getattr(self.task, 'prepare_character_rotation', None)
+        if prepare and prepare(self) is False:
+            return
         self.last_perform = time.time()
         if self.is_solo and (self.is_main_dps or self.is_sub_dps):
             self.has_intro = False
@@ -490,6 +493,7 @@ class BaseChar:
             down_time (float, optional): 按键按下的持续时间。默认为 0.01。
         """
         self._resonance_available = False
+        self._record_combat_action('resonance_send_attempt')
         self.task.send_key(self.get_resonance_key(), interval=interval, down_time=down_time, after_sleep=post_sleep)
 
     def send_echo_key(self, after_sleep=0, interval=-1, down_time=0.01):
@@ -501,6 +505,7 @@ class BaseChar:
             down_time (float, optional): 按键按下的持续时间。默认为 0.01。
         """
         self._echo_available = False
+        self._record_combat_action('echo_send_attempt')
         self.task.send_key(self.get_echo_key(), interval=interval, down_time=down_time, after_sleep=after_sleep)
 
     def heavy_click_forte(self, check_fun=None):
@@ -528,11 +533,17 @@ class BaseChar:
         if self.is_solo and not getattr(self.task, 'use_liberation', True):
             return False
         self._liberation_available = False
+        self._record_combat_action('liberation_send_attempt')
         self.task.send_key(self.get_liberation_key(), interval=interval, down_time=down_time, after_sleep=after_sleep)
 
     def record_resonance_use(self):
         """更新共鸣技能的最后使用时间。"""
         self.last_res = time.time()
+
+    def _record_combat_action(self, action):
+        record = getattr(self.task, 'record_combat_action', None)
+        if record:
+            record(self, action)
 
     def record_liberation_use(self):
         """更新共鸣解放的最后使用时间。"""
@@ -697,6 +708,7 @@ class BaseChar:
         self.task.in_liberation = False
         self._liberation_available = False
         if clicked:
+            self._record_combat_action('liberation_hud_observed')
             self.logger.info(f'click_liberation end {duration}')
         return clicked
 

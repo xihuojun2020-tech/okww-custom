@@ -138,6 +138,13 @@ def record_crash(kind, value, tb, *, fatal=True):
         pass
 
 
+def record_combat_anomaly(data):
+    """Reuse the bounded incident queue for stalled combat without an exception."""
+    if _session is not None:
+        _session.record_event('combat_rotation_anomaly', data)
+        _session.record_error(data)
+
+
 def attach_framework_hooks():
     """Wrap the existing save callback, without copying an entire framework module."""
     if _session is None:

@@ -63,15 +63,44 @@ class TestQingxiaoSolo(unittest.TestCase):
         char.click_echo.assert_called_once_with(time_out=0)
         char.continues_normal_attack.assert_called_once_with(0.2)
 
-    def test_multi_team_keeps_existing_setup_gate(self):
+    def test_multi_team_without_buffs_uses_available_skills_before_switch(self):
         char = self.make_char()
         char.task.chars.append(object())
         char.has_all_buff = Mock(return_value=False)
         char.do_perform()
         char.cast_enhanced_resonance.assert_called_once()
         char.switch_next_char.assert_called_once()
+        char.click_resonance.assert_called_once()
+        char.click_liberation.assert_called_once()
+        self.assertEqual(char.continues_normal_attack.call_count, 2)
+
+    def test_team_fallback_for_missing_intro_or_partial_buffs(self):
+        for buffs, intro in ((False, False), (False, True), (True, False)):
+            char = self.make_char()
+            char.task.chars.extend([object(), object()])
+            char.has_all_buff = Mock(return_value=buffs)
+            char.has_intro = intro
+            char.do_perform()
+            char.click_liberation.assert_called_once_with(wait_if_cd_ready=0)
+            char.click_resonance.assert_called_once()
+            char.switch_next_char.assert_called_once()
+            self.assertFalse(char.must_cast_lib_this_turn)
+
+    def test_full_team_setup_keeps_heavy_liberation_rotation(self):
+        from src.Labels import Labels
+        char = self.make_char()
+        char.task.chars.extend([object(), object()])
+        char.has_all_buff = Mock(return_value=True)
+        char.has_intro = True
+        char.handle_heavy.return_value = Labels.qingxiao_h2
+        char.liberation_available = Mock(return_value=True)
+        char.time_elapsed_accounting_for_freeze = Mock(return_value=0)
+        char.task.wait_until = Mock()
+        char.do_perform()
+        self.assertTrue(char.must_cast_lib_this_turn)
+        char.click_liberation.assert_called_once_with()
         char.click_resonance.assert_not_called()
-        char.click_liberation.assert_not_called()
+        char.continues_normal_attack.assert_not_called()
 
 
 if __name__ == '__main__':

@@ -74,6 +74,8 @@ class TestAccountSwitchCompatibilityEntryPoint(unittest.TestCase):
             '_select_account_with_retry',
             '_click_login_for_target',
             'switch_to_account',
+            '_link_daily_profile',
+            '_require_daily_profile',
         ):
             self.assertNotIn(production_method, TestAccountSwitchTask.__dict__)
 

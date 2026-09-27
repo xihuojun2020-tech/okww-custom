@@ -860,6 +860,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             )
         self._verified_profile_name = profile_name
         self._verified_profile_id = str(profile_id)
+        from src.combat.roster_context import advance_roster_context
+        advance_roster_context(self, profile_id)
         self._verified_profile_snapshot = copy.deepcopy(selected)
         self._snapshot_bound_externally = snapshot_profile is not None
         if snapshot_profile is None and self.config is not None and self.config.get(DAILY_PROFILE) != profile_name:

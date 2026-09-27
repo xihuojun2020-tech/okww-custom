@@ -28,7 +28,7 @@
 
 每个 `profiles.<profile_id>` 必须包含：
 
-- `display_name`：界面显示名称，如 `A1` 或 `【A1-示例-15300000001】`。
+- `display_name`：界面显示名称，如 `A1` 或 `【A1-示例-19910000001】`。
 - `account_aliases`：登录识别备用身份数组，可包含短名、掩码手机号或 U 开头账号；不同账号不得共享同一身份。
 - `task_config`：账号任务意图。必须至少包含下列受保护键：
   - `Which to Farm`
@@ -139,7 +139,7 @@
   "profiles": {
     "00000000-0000-4000-8000-000000000001": {
       "display_name": "A1",
-      "account_aliases": ["A1", "153****9621", "U123456789A"],
+      "account_aliases": ["A1", "199****0001", "UTESTACCOUNT001"],
       "task_config": {
         "Which to Farm": "Tacet Suppression",
         "Which Tacet Suppression to Farm": 1,
@@ -152,7 +152,7 @@
         "Weekly Garden Check Day": "无",
         "Merge Echo on Sunday": false,
         "备用识别名称": "使用",
-        "备用识别名称内容": "U123456789A"
+        "备用识别名称内容": "UTESTACCOUNT001"
       },
       "schedule": {
         "mode": "daily",

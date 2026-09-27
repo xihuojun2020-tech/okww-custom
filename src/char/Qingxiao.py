@@ -18,7 +18,10 @@ class Qingxiao(BaseChar):
         self.must_cast_lib_this_turn = self.has_all_buff() and self.has_intro
 
         if not self.must_cast_lib_this_turn:
-            self.cast_enhanced_resonance()
+            self.logger.info('Qingxiao basic rotation: team buffs or intro unavailable')
+            self._record_combat_action('basic_rotation')
+            self.perform_solo()
+            self.continues_normal_attack(1.8)
             return self.switch_next_char()
 
         start = time.time()

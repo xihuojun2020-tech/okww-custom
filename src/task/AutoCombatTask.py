@@ -195,6 +195,7 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
             return result
         finally:
             self._release_combat_inputs()
+            self.finish_rotation_tracking('auto_combat_exit')
 
     def _run_combat(self):
         self.warm_up_char_features()

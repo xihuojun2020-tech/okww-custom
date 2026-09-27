@@ -181,7 +181,7 @@ def _find_registered_char(task, box, info):
     return task.find_best_match_in_box(box, template_names, threshold=0.6)
 
 
-def get_char_by_pos(task, box, index, old_char):
+def get_char_by_pos(task, box, index, old_char, *, force_full_scan=False):
     highest_confidence = 0
     info = None
     name = "unknown"
@@ -189,7 +189,7 @@ def get_char_by_pos(task, box, index, old_char):
     if old_char:
         old_char._identity_unconfirmed = old_char.char_name in char_names
         old_char._identity_observation = None
-    if old_char and old_char.confidence > 0.92 and old_char.char_name in char_names:
+    if not force_full_scan and old_char and old_char.confidence > 0.92 and old_char.char_name in char_names:
         info = char_dict.get(old_char.char_name)
         char = _find_registered_char(task, box, info)
         # A weak old-template hit must not conceal a much stronger new portrait.
@@ -210,6 +210,16 @@ def get_char_by_pos(task, box, index, old_char):
         if char:
             info = char_dict.get(char.name)
             name = char.name
+            if force_full_scan:
+                runner_names = [label for label in char_names
+                                if char_dict[label]['canonical_name'] != info['canonical_name']]
+                runner = task.find_best_match_in_box(box, runner_names, threshold=0.6)
+                if char.confidence < .9 or (runner and char.confidence - runner.confidence < .08):
+                    unresolved = old_char or BaseChar(task, index, char_name='unknown')
+                    unresolved._identity_unconfirmed = True
+                    unresolved._identity_observation = (name, round(char.confidence, 3))
+                    unresolved.__dict__.pop('_replacement_evidence', None)
+                    return unresolved
             if old_char and old_char.char_name in char_names:
                 old_char._identity_observation = (name, round(char.confidence, 3))
                 previous = char_dict[old_char.char_name]
@@ -225,8 +235,8 @@ def get_char_by_pos(task, box, index, old_char):
                         old_char.__dict__.pop('_replacement_evidence', None)
                         return old_char
                     frame = task.require_game_frame()
-                    context = (getattr(task.hwnd, 'hwnd', None),
-                               getattr(task, '_verified_profile_id', None), frame.shape[:2])
+                    from src.combat.roster_context import roster_context
+                    context = (*roster_context(task), frame.shape[:2])
                     token = getattr(task.executor, '_last_frame_time', None) or id(frame)
                     key = (info['canonical_name'], context)
                     evidence = old_char.__dict__.get('_replacement_evidence')
@@ -243,6 +253,10 @@ def get_char_by_pos(task, box, index, old_char):
                                   f'old={old_char.char_name} new={name} score={char.confidence:.3f}')
                 old_char.__dict__.pop('_replacement_evidence', None)
             cls = load_custom_char_class(info.get('cls'))
+            if (old_char and type(old_char) is cls and
+                    old_char.char_name == info['canonical_name']):
+                old_char.confidence = char.confidence
+                return _apply_char_config(task, old_char, info)
             return _apply_char_config(task, cls(task, index, char_name=info['canonical_name'],
                                                 confidence=char.confidence,
                                                 ring_index=info.get('ring_index', -1),
@@ -250,12 +264,16 @@ def get_char_by_pos(task, box, index, old_char):
                                                 buff_time=_get_buff_time(task, info)), info)
     if old_char:
         old_char.__dict__.pop('_replacement_evidence', None)
+        if force_full_scan:
+            old_char._identity_unconfirmed = True
         task.log_debug(f'could not refresh known char {index}; keeping {old_char}')
         return old_char
     task.log_info(f'could not find char {index} {info} {highest_confidence}')
     if task.debug:
         task.screenshot(f'could not find char {index}')
-    return BaseChar(task, index, char_name=name)
+    unknown = BaseChar(task, index, char_name=name)
+    unknown._identity_unconfirmed = force_full_scan
+    return unknown
 
 
 def is_float(s):

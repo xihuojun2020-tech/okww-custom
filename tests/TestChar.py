@@ -1544,7 +1544,7 @@ class TestChar(TaskTestCase):
 
         self.assertFalse(qingxiao.handle_heavy())
 
-    def test_qingxiao_without_full_setup_only_tries_enhanced_skill_then_switches(self):
+    def test_qingxiao_without_full_setup_uses_basic_rotation_then_switches(self):
         class TrackingQingxiao(Qingxiao):
             def __init__(self):
                 super().__init__(None, 0)
@@ -1553,9 +1553,11 @@ class TestChar(TaskTestCase):
             def has_all_buff(self):
                 return False
 
-            def cast_enhanced_resonance(self):
-                self.actions.append('enhanced_resonance')
-                return True
+            def perform_solo(self):
+                self.actions.append('basic_rotation')
+
+            def continues_normal_attack(self, duration):
+                self.actions.append(('attack', duration))
 
             def switch_next_char(self):
                 self.actions.append('switch')
@@ -1567,7 +1569,7 @@ class TestChar(TaskTestCase):
         qingxiao.has_intro = True
         qingxiao.do_perform()
 
-        self.assertEqual(qingxiao.actions, ['enhanced_resonance', 'switch'])
+        self.assertEqual(qingxiao.actions, ['basic_rotation', ('attack', 1.8), 'switch'])
 
     def test_switch_priority_integer_bands_and_offsets(self):
         self.assertEqual(

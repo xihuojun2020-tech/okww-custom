@@ -10,21 +10,33 @@ class Suisui(BaseChar):
     CONCERTO_TIMEOUT = 12.0
     FORTE3_SWITCH_LOCKOUT = 16.0
     MAIN_DPS_FORTE3_SWITCH_LOCKOUT = 32
+    FAILED_ROTATION_COOLDOWN = 40.0
+    RETRY_FORTE_TIMEOUT = 6.0
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.last_forte3_switch = -1
         self.should_heavy = False
+        self.last_failed_rotation = -1
+        self._yield_after_recheck = False
 
     def reset_state(self):
         super().reset_state()
         self.last_forte3_switch = -1
         self.should_heavy = False
+        self.last_failed_rotation = -1
+        self._yield_after_recheck = False
 
     def do_perform(self):
+        if self._yield_after_recheck:
+            # prepare_character_rotation has checked the portraits before this turn.
+            self._yield_after_recheck = False
+            return self.switch_next_char()
         if not self.should_heavy:
             self.should_heavy = self.has_intro
-        self.perform_forte3_rotation()
+        if self.perform_forte3_rotation() is False:
+            self._yield_after_recheck = True
+            return
         self.switch_next_char()
 
     def perform_forte3_rotation(self):
@@ -34,7 +46,8 @@ class Suisui(BaseChar):
                 self.heavy_attack(1.5)
             self.click_resonance()
             self.should_heavy = False
-        while self.time_elapsed_accounting_for_freeze(start) < self.FORTE_TIMEOUT:
+        timeout = self.RETRY_FORTE_TIMEOUT if self.recent_rotation_failure() else self.FORTE_TIMEOUT
+        while self.time_elapsed_accounting_for_freeze(start) < timeout:
             if self.forte3_available():
                 self.logger.debug('forte3 available')
                 break
@@ -48,12 +61,12 @@ class Suisui(BaseChar):
             self.cycle_start()
             if not self.has_intro:
                 if self.try_e():
-                    return self.switch_next_char()
+                    return True
             self.click()
             self.cycle_sleep(self.ATTACK_INTERVAL)
         else:
             self.logger.warning('Suisui forte3 detection timed out')
-            return
+            return self.rotation_timed_out('suisui_forte_timeout')
 
         liberation_clicked = False
         start = time.time()
@@ -64,9 +77,20 @@ class Suisui(BaseChar):
                     self.task.next_frame()
                     continue
             if self.is_con_full() and self.forte3_available():
-                return
+                self.last_failed_rotation = -1
+                return True
             self.click(after_sleep=0.1)
         self.logger.warning('Suisui concerto fill timed out')
+        return self.rotation_timed_out('suisui_concerto_timeout')
+
+    def recent_rotation_failure(self):
+        return (self.last_failed_rotation >= 0 and
+                self.time_elapsed_accounting_for_freeze(self.last_failed_rotation) < self.FAILED_ROTATION_COOLDOWN)
+
+    def rotation_timed_out(self, reason):
+        self.last_failed_rotation = time.time()
+        self.task.report_rotation_anomaly(reason, self, recheck=True)
+        return False
 
     def try_e(self):
         if self.task.find_one(Labels.suisui_e1):
@@ -88,6 +112,8 @@ class Suisui(BaseChar):
             self.last_forte3_switch = time.time()
 
     def get_switch_priority(self, current_char=None, has_intro=False, target_low_con=False):
+        if self.recent_rotation_failure():
+            return SwitchPriority.NORMAL
         since_last = self.time_elapsed_accounting_for_freeze(self.last_forte3_switch)
         if since_last > 40:
             return SwitchPriority.MUST
