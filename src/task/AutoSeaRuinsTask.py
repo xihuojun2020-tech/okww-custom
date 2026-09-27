@@ -497,81 +497,75 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
             self.skip_combat_check = True
             self._release()
 
+    def _backstep_sea_exit(self, deadline, end_condition):
+        """Recover an overshot entrance with at most one second of checked S steps."""
+        if self._exit_detours >= 3:
+            raise RuntimeError('出口3轮后退恢复后仍未到达，请检查入口位置')
+        self._exit_detours += 1
+        self._release()
+        self._status(f'出口标记异常，短按S后退{self._exit_detours}/3')
+        self.screenshot('sea_exit_before_backstep')
+        try:
+            for _ in range(4):
+                self.next_frame()
+                if end_condition():
+                    return True
+                if not self.in_team_and_world(frame=self.frame):
+                    raise RuntimeError('出口后退时失去地图状态，已停止移动')
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                self.send_key('s', down_time=min(.25, remaining))
+                self._release()
+            self.next_frame()
+            return bool(end_condition())
+        finally:
+            self._release()
+            self.screenshot('sea_exit_after_backstep')
+
     def _walk_sea_exit(self, find, *, time_out, end_condition):
-        """Reacquire heading in short segments; bounded sea-only obstacle recovery."""
+        """Reacquire heading in short segments; back away from an overshot exit."""
         deadline = time.monotonic() + time_out
         anchor, anchor_point, unchanged_since = None, None, time.monotonic()
-        last_recenter = unchanged_since
         off_center_since = None
+        last_side, last_side_at = 0, 0.
+        last_recovery = unchanged_since
         try:
             while time.monotonic() < deadline:
                 self.next_frame()
                 if end_condition():
                     return True
                 point = find().center()  # missing marker raises before any input
-                # Exclude character animation, HUD and the pinned overhead marker.
                 scene = np.hstack([cv2.resize(vision.crop(self.frame, region), (64, 64))
                     for region in ((.22, .35, .40, .70), (.62, .35, .80, .70))])
                 now = time.monotonic()
-                if abs(point[0] - self.width*.5) > self.width*.15:
+                side = -1 if point[0] < self.width*.35 else (1 if point[0] > self.width*.65 else 0)
+                crossed = bool(side and last_side and side != last_side and now-last_side_at <= 4)
+                if side:
+                    last_side, last_side_at = side, now
+                if side:
                     off_center_since = now if off_center_since is None else off_center_since
                 else:
                     off_center_since = None
-                # Animated water can change every frame even while we circle
-                # away from an off-centre marker; elapsed time must also recover.
-                if (self._exit_recenters < 2 and off_center_since is not None
-                        and now - off_center_since >= 8 and now - last_recenter >= 8):
-                    self._exit_recenters += 1
-                    self._release()
-                    self._status(f'出口标记持续偏离视角，中键回正{self._exit_recenters}/2')
-                    self.middle_click(after_sleep=.3)
-                    last_recenter = time.monotonic()
-                    off_center_since = last_recenter
-                    self.next_frame()
-                    if end_condition():
-                        return True
-                    find()
-                    anchor = None
-                    continue
                 if (anchor is None or np.mean(cv2.absdiff(scene, anchor)) > 3
                         or abs(point[0]-anchor_point[0]) > self.width*.01
                         or abs(point[1]-anchor_point[1]) > self.height*.01):
                     anchor, anchor_point, unchanged_since = scene, point, now
-                elif now - unchanged_since >= 4:
-                    if self._exit_recenters < 2:
-                        self._exit_recenters += 1
-                        self._release()
-                        self._status(f'出口寻路无进展，中键回正视角{self._exit_recenters}/2')
-                        self.middle_click(after_sleep=.3)
-                        last_recenter = time.monotonic()
-                        off_center_since = last_recenter if off_center_since is not None else None
-                        self.next_frame()
-                        if end_condition():
-                            return True
-                        find()
-                        anchor = None
-                        continue
-                    if self._exit_detours >= 3:
-                        raise RuntimeError('出口寻路连续无进展，3轮有限脱困后仍未到达')
-                    self._exit_detours += 1
-                    side = 'a' if self._exit_detours % 2 else 'd'
-                    self._release()
-                    self._status(f'出口寻路无进展，有限脱困{self._exit_detours}/3')
-                    for key in ('s', side, side, side):
-                        self.next_frame()
-                        if end_condition():
-                            return True
-                        find()  # revalidate marker/phase before each short step
-                        remaining = deadline - time.monotonic()
-                        if remaining <= 0:
-                            return False
-                        self.send_key(key, down_time=min(.25, remaining))
+                # Water/character animation must not reset the off-centre timer.
+                if ((crossed or (off_center_since is not None and now-off_center_since >= 4)
+                     or now-unchanged_since >= 4) and now-last_recovery >= 2):
+                    self.log_info(f'海墟出口后退触发 x={point[0]/self.width:.3f} '
+                                  f'y={point[1]/self.height:.3f} crossed={crossed}')
+                    if self._backstep_sea_exit(deadline, end_condition):
+                        return True
+                    last_recovery = time.monotonic()
+                    off_center_since = None
+                    last_side = 0
                     anchor = None
                     continue
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     break
-                # Restarting clears the shared walker's sticky centered flag.
                 if self.walk_to_box(find, time_out=min(1., remaining), end_condition=end_condition):
                     return True
                 self._release()
@@ -585,7 +579,7 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
         self.middle_click(after_sleep=.3)
         self._status('后台寻路前往下半海域出口')
         self._exit_detours = 0
-        self._exit_recenters = 0
+        self._exit_last_marker = None
 
         def arrived():
             if self._prompt(self.frame, '进入下半海域'):
@@ -602,6 +596,7 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
                 self._release()
                 raise SeaExitMarkerLost()
             x, y, _ = marker
+            self._exit_last_marker = marker
             return self.box_of_screen(x-.005, y-.005, x+.005, y+.005)
 
         try:
@@ -614,16 +609,22 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
                 except SeaExitMarkerLost:
                     self._release()
                     self._status('出口标记暂时丢失，停步重新识别')
-                    if not arrived() and self._exit_recenters < 2:
-                        self._exit_recenters += 1
-                        self._status(f'出口标记丢失，中键回正视角{self._exit_recenters}/2')
-                        self.middle_click(after_sleep=.3)
+                    if arrived():
+                        reached = True
+                        break
                     # Restart the walker after recovery: its last_direction and
                     # cached target are invalid once movement keys are released.
-                    for _ in range(10):
+                    for retry in range(10):
                         remaining = deadline - time.monotonic()
                         if remaining <= 0:
                             break
+                        if retry == 3 and self._exit_last_marker is not None:
+                            if self._backstep_sea_exit(deadline, arrived):
+                                reached = True
+                                break
+                            remaining = deadline - time.monotonic()
+                            if remaining <= 0:
+                                break
                         self.sleep(min(.3, remaining))
                         self.next_frame()
                         reached = arrived()

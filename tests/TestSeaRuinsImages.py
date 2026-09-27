@@ -166,3 +166,15 @@ class TestSeaRuinsImages(TaskTestCase):
         with patch.object(task, '_wait', side_effect=lambda probe, *a, **kw: probe(frame)), \
                 patch.object(task, 'screenshot'), patch.object(task, 'info_set'):
             self.assertEqual(task._read_result(), (1410, 1490, 2900))
+
+    def test_september27_exit_crossing_frames_keep_upper_state_without_f(self):
+        for name, side in (('exit_cross_left_20260927', -1), ('exit_cross_right_20260927', 1)):
+            frame = self.image(name)
+            for height in (720, 1080, 1440):
+                with self.subTest(name=name, height=height):
+                    resized = cv2.resize(frame, (height*16//9, height))
+                    marker = v.exit_marker(resized)
+                    self.assertIsNotNone(marker)
+                    self.assertGreater((marker[0]-.5)*side, .15)
+                    self.assertTrue(self.task._upper_end(resized))
+                    self.assertFalse(self.task._prompt(resized, '进入下半海域'))
