@@ -88,6 +88,26 @@ def parse_remaining(text):
     return int(match[1]) if match and int(match[1]) <= 3 else None
 
 
+def remaining_from_boxes(boxes, height):
+    """Read the weekly row without joining the promotion row above it."""
+    rows = []
+    for part in sorted(boxes, key=lambda box: (box.y, box.x)):
+        row = next((row for row in rows if abs(row[0].y - part.y) <= height * .012), None)
+        if row is None:
+            rows.append([part])
+        else:
+            row.append(part)
+    values = set()
+    for row in rows:
+        text = ''.join(part.name for part in sorted(row, key=lambda box: box.x))
+        if '本周剩余可收取次数' in compact(text):
+            value = parse_remaining(text)
+            if value is None:
+                return None
+            values.add(value)
+    return values.pop() if len(values) == 1 else None
+
+
 def parse_cost(text):
     match = re.fullmatch(r'[xX×](\d{1,3})', compact(text))
     return int(match[1]) if match and 0 < int(match[1]) <= 240 else None

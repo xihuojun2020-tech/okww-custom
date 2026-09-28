@@ -10,6 +10,7 @@ from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.weekly_boss import (
     WEEKLY_BOSSES, WEEKLY_AUTO, WeeklyBossResult, compact, boss_title, match_target_button,
     combat_phase, parse_cost, parse_remaining, parse_stamina, weekly_title_rows,
+    remaining_from_boxes,
 )
 
 
@@ -21,7 +22,7 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
     navigation_section = 'tasks'
     owns_switch_healer_config = True
 
-    BOOK_COUNT = (0.365, 0.13, 0.68, 0.18)
+    BOOK_COUNT = (0.365, 0.115, 0.965, 0.24)
     DETAIL_COUNT = (0.635, 0.825, 0.855, 0.871)
     LIST = (0.365, 0.25, 0.965, 0.89)
     TITLE = (0.02, 0.03, 0.38, 0.095)
@@ -96,17 +97,20 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         return self._wait_for(read, message, timeout)[0]
 
     def _read_remaining(self, detail=False):
-        region = self.DETAIL_COUNT if detail else self.BOOK_COUNT
-        return self._stable_value(lambda: parse_remaining(self._text(region)),
+        return self._stable_value(lambda: parse_remaining(self._text(self.DETAIL_COUNT))
+                                  if detail else self._weekly_book_remaining(),
                                   '无法稳定识别本周剩余可收取次数，停止周本')
+
+    def _weekly_book_remaining(self):
+        return remaining_from_boxes(self._ocr(self.BOOK_COUNT), self.height)
 
     def _open_weekly_book(self):
         self.reset_to_false('weekly guidebook')
         self.ensure_main(time_out=120)
         self.openF2Book('gray_book_boss')
         self.open_boss_book('zhange')
-        self._wait_for(lambda: '本周剩余可收取次数' in compact(self._text(self.BOOK_COUNT)),
-                       '未进入战歌重奏页面')
+        self._wait_for(lambda: (value,) if (value := self._weekly_book_remaining()) is not None else None,
+                       '战歌重奏列表已切换，但未确认本周剩余次数')
 
     def _list_signature(self):
         self.next_frame()

@@ -202,6 +202,7 @@ def get_char_by_pos(task, box, index, old_char, *, force_full_scan=False):
                                                     ring_index=info.get('ring_index', -1),
                                                     char_type=_get_char_type(task, info),
                                                     buff_time=_get_buff_time(task, info)), info)
+            old_char._identity_unconfirmed = False
             _apply_char_config(task, old_char, info)
             return old_char
         char = None
@@ -214,12 +215,39 @@ def get_char_by_pos(task, box, index, old_char, *, force_full_scan=False):
                 runner_names = [label for label in char_names
                                 if char_dict[label]['canonical_name'] != info['canonical_name']]
                 runner = task.find_best_match_in_box(box, runner_names, threshold=0.6)
-                if char.confidence < .9 or (runner and char.confidence - runner.confidence < .08):
+                margin = char.confidence - runner.confidence if runner else None
+                strong = char.confidence >= .9 and (margin is None or margin >= .08)
+                # A stable portrait can score below .90 on another machine.
+                # Require independent frames and a clear runner-up before accepting it.
+                candidate = char_dict[char.name]['canonical_name']
+                frame = task.require_game_frame()
+                from src.combat.roster_context import roster_context
+                context = (*roster_context(task), frame.shape[:2], index)
+                token = getattr(task.executor, '_last_frame_time', None) or id(frame)
+                now = time.monotonic()
+                evidence = old_char.__dict__.get('_identity_evidence') if old_char else None
+                eligible = char.confidence >= .82 and (margin is None or margin >= .08)
+                if eligible and not strong:
+                    if not evidence or evidence[0] != (candidate, context) or now - evidence[3] > 2:
+                        evidence = ((candidate, context), token, 1, now)
+                    elif evidence[1] != token:
+                        evidence = (evidence[0], token, evidence[2] + 1, now)
+                else:
+                    evidence = None
+                if not strong and (not evidence or evidence[2] < 3):
                     unresolved = old_char or BaseChar(task, index, char_name='unknown')
                     unresolved._identity_unconfirmed = True
-                    unresolved._identity_observation = (name, round(char.confidence, 3))
+                    unresolved._identity_observation = (name, char.confidence, margin,
+                                                        evidence[2] if evidence else 0)
+                    unresolved._identity_evidence = evidence
                     unresolved.__dict__.pop('_replacement_evidence', None)
                     return unresolved
+                if old_char:
+                    old_char.__dict__.pop('_identity_evidence', None)
+                if not strong:
+                    task.log_info(f'character identity verified slot={index + 1} '
+                                  f'name={candidate} score={char.confidence:.3f} '
+                                  f'margin={margin} frames={evidence[2]}')
             if old_char and old_char.char_name in char_names:
                 old_char._identity_observation = (name, round(char.confidence, 3))
                 previous = char_dict[old_char.char_name]
@@ -256,6 +284,7 @@ def get_char_by_pos(task, box, index, old_char, *, force_full_scan=False):
             if (old_char and type(old_char) is cls and
                     old_char.char_name == info['canonical_name']):
                 old_char.confidence = char.confidence
+                old_char._identity_unconfirmed = False
                 return _apply_char_config(task, old_char, info)
             return _apply_char_config(task, cls(task, index, char_name=info['canonical_name'],
                                                 confidence=char.confidence,

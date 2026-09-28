@@ -184,12 +184,13 @@ class TestTrioCombatRecovery(unittest.TestCase):
         task.find_best_match_in_box = Mock(side_effect=lambda box, names, **kw:
             SimpleNamespace(name=Labels.char_suisui, confidence=.99) if Labels.char_suisui in names else None)
         self.assertIs(get_char_by_pos(task, object(), 1, old, force_full_scan=True), old)
+        self.assertFalse(old._identity_unconfirmed)
         task.find_one.assert_not_called()
         self.assertEqual(old.last_failed_rotation, 100)
         self.assertTrue(old._yield_after_recheck)
 
     def test_recheck_rejects_weak_ambiguous_and_unknown_portraits(self):
-        for score, runner in ((.85, None), (.96, SimpleNamespace(confidence=.92)), (None, None)):
+        for score, runner in ((.79, None), (.96, SimpleNamespace(confidence=.92)), (None, None)):
             task = combat_task()
             candidate = SimpleNamespace(name=Labels.char_suisui, confidence=score) if score else None
             task.find_best_match_in_box = Mock(side_effect=lambda box, names, **kw:
@@ -197,6 +198,29 @@ class TestTrioCombatRecovery(unittest.TestCase):
             for old in (None, task.chars[1]):
                 char = get_char_by_pos(task, object(), 1, old, force_full_scan=True)
                 self.assertTrue(char._identity_unconfirmed)
+
+    def test_stable_low_score_needs_three_independent_frames(self):
+        task = combat_task()
+        task.find_best_match_in_box = Mock(side_effect=lambda box, names, **kw:
+            SimpleNamespace(name=Labels.char_suisui, confidence=.846)
+            if Labels.char_suisui in names else SimpleNamespace(confidence=.71))
+        char = None
+        for token in (1, 1, 2, 3):
+            task.executor._last_frame_time = token
+            char = get_char_by_pos(task, object(), 1, char, force_full_scan=True)
+            self.assertEqual(char._identity_unconfirmed, token != 3)
+        self.assertEqual(char.char_name, Labels.char_suisui)
+
+    def test_ambiguous_low_score_never_accumulates_identity(self):
+        task = combat_task()
+        task.find_best_match_in_box = Mock(side_effect=lambda box, names, **kw:
+            SimpleNamespace(name=Labels.char_suisui, confidence=.846)
+            if Labels.char_suisui in names else SimpleNamespace(confidence=.80))
+        char = None
+        for token in range(1, 5):
+            task.executor._last_frame_time = token
+            char = get_char_by_pos(task, object(), 1, char, force_full_scan=True)
+            self.assertTrue(char._identity_unconfirmed)
 
     def test_timeout_rechecks_before_switch_and_does_not_repeat_full_wait(self):
         task = combat_task()

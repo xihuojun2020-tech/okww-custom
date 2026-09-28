@@ -23,12 +23,22 @@ class TestWeeklyBossImages(TaskTestCase):
     def test_guidebook_names_and_counts(self):
         for page, indices in ((1, (0, 1, 2)), (2, (3, 4, 5)), (3, (6, 7, 8, 9))):
             self.load(f'list{page}')
-            self.assertEqual(parse_remaining(self.task._text(self.task.BOOK_COUNT)), 3)
+            self.assertEqual(self.task._weekly_book_remaining(), 3)
             boxes = self.task._ocr(self.task.LIST)
             for index in indices:
                 with self.subTest(page=page, target=WEEKLY_BOSSES[index].name):
                     self.assertIsNotNone(match_target_button(boxes, WEEKLY_BOSSES[index].name, self.task.height),
                                          [b.name for b in boxes])
+
+    def test_double_reward_header_reads_weekly_row(self):
+        self.load('nas_double_reward_header')
+        self.assertEqual(self.task._weekly_book_remaining(), 3)
+
+    def test_tacet_reward_marker_near_lower_edge(self):
+        self.set_image('tests/images/tacet_reward/nas_low_marker.png')
+        marker = self.task.find_treasure_icon()
+        self.assertIsNotNone(marker)
+        self.assertGreater(marker.center()[1] / self.task.height, .75)
 
     def test_detail_preserves_default_difficulty(self):
         self.load('detail')

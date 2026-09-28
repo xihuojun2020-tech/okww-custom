@@ -978,6 +978,8 @@ class BaseCombatTask(CombatCheck):
                 self.chars = []
                 self._rotation_evidence_times = {}
                 force_full_scan = True
+            if not self.chars:
+                force_full_scan = True
             self._char_context = context
             if in_team:
                 # Preserve actual solo/duo/trio size, including after a new capture.

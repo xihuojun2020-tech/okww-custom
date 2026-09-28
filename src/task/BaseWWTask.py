@@ -522,7 +522,7 @@ class BaseWWTask(BaseTask):
         return "w" if delta_y > 0 else "s"
 
     def find_treasure_icon(self):
-        return self.find_one('treasure_icon', box=self.box_of_screen(0.03, 0.1, 0.97, 0.81, hcenter=True, vcenter=True),
+        return self.find_one('treasure_icon', box=self.box_of_screen(0.03, 0.08, 0.97, 0.94, hcenter=True, vcenter=True),
                              threshold=0.8,
                              target_height=720)
 
@@ -1029,12 +1029,55 @@ class BaseWWTask(BaseTask):
 
     def walk_to_treasure(self, send_f=True, raise_if_not_found=True):
         self.log_info('start walk_to_treasure')
-        if not self.walk_to_box(self.find_treasure_icon, end_condition=self.find_f_with_claim_text):
-            if not self.walk_to_box(self.find_treasure_icon, end_condition=self.find_f_with_text):
-                raise Exception(f'can not walk to treasure!')
-        if send_f:
-            self.walk_until_f(time_out=2, backward_time=0, raise_if_not_found=raise_if_not_found)
-        self.sleep(1)
+        deadline = time.monotonic() + 45
+        last_position = None
+        stalled = nudges = 0
+        try:
+            while time.monotonic() < deadline:
+                self.next_frame()
+                if self.find_f_with_claim_text():
+                    break
+                marker = self.find_treasure_icon()
+                if marker:
+                    position = marker.center()
+                    if last_position and abs(position[0] - last_position[0]) < self.width * .015 \
+                            and abs(position[1] - last_position[1]) < self.height * .015:
+                        stalled += 1
+                    else:
+                        stalled = 0
+                    last_position = position
+                    if stalled < 3:
+                        # One short movement discards stale alignment and target state.
+                        self.do_walk_to_box(lambda: self.find_treasure_icon() or marker,
+                                            time_out=min(1, deadline - time.monotonic()),
+                                            end_condition=self.find_f_with_claim_text,
+                                            y_offset=.1)
+                        continue
+                else:
+                    last_position = None
+                if nudges >= 6:
+                    break
+                direction = ('s', 'a', 'd')[nudges % 3]
+                self.middle_click(after_sleep=.2)
+                self.send_key(direction, down_time=.25)
+                nudges += 1
+                stalled = 0
+                self.log_info(f'领奖位置重新定位 {nudges}/6 direction={direction}')
+            else:
+                self.log_warning('领奖搜索达到 45 秒上限')
+            if not self.find_f_with_claim_text() or (send_f and not self.walk_until_f(
+                    time_out=2, backward_time=0, target_text=[re.compile('领取|領取|Claim', re.I)],
+                    raise_if_not_found=False)):
+                self.screenshot('treasure_approach_failed', frame=self.require_game_frame())
+                if raise_if_not_found:
+                    raise RuntimeError('can not walk to treasure: claim interaction unconfirmed')
+                return False
+            self.sleep(1)
+            return True
+        finally:
+            for direction in ('w', 'a', 's', 'd'):
+                self.send_key_up(direction)
+            self.mouse_up(key='right')
 
     def yolo_find_echo(self, use_color=False, turn=True, update_function=None, time_out=8, threshold=0.5):
         max_echo_count = 0

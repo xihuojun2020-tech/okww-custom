@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 
 from src.task.weekly_boss import (
     WEEKLY_BOSSES, combat_phase, parse_remaining, parse_cost, parse_stamina,
-    match_target_button,
+    match_target_button, remaining_from_boxes,
 )
 from src.task.WeeklyBossTask import WeeklyBossTask
 
@@ -23,6 +23,15 @@ class TestWeeklyBossParsing(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertIsNone(parse_remaining(text))
         self.assertEqual(parse_remaining('本周剩余可收取次数: ２／３'), 2)
+
+    def test_promotion_row_does_not_replace_weekly_allowance(self):
+        promotion = box('剩余海歌重奏双倍奖励次数：3/6', x=710, y=163)
+        label = box('本周剩余可收取次数：', x=710, y=222)
+        amount = box('0/3', x=1110, y=224)
+        self.assertEqual(remaining_from_boxes([amount, promotion, label], 1080), 0)
+        self.assertIsNone(remaining_from_boxes([promotion], 1080))
+        self.assertIsNone(remaining_from_boxes([label, amount,
+            box('本周剩余可收取次数：2/3', x=710, y=250)], 1080))
 
     def test_cost_and_stamina_do_not_read_reward_quantities(self):
         self.assertEqual(parse_cost('x60'), 60)
