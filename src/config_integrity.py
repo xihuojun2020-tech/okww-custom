@@ -69,6 +69,7 @@ PROTECTED_TASK_KEYS = (
     "Nightmare Settlements to Farm",
     "Auto Farm all Nightmare Nest",
     "Weekly Garden Check Day",
+    "Garden Execution Mode",
     "Weekly Boss Target",
     "Merge Echo on Sunday",
     "备用识别名称",
@@ -86,6 +87,7 @@ _TASK_KEY_TYPES = {
     "Nightmare Settlements to Farm": list,
     "Auto Farm all Nightmare Nest": bool,
     "Weekly Garden Check Day": str,
+    "Garden Execution Mode": str,
     "Weekly Boss Target": str,
     "Merge Echo on Sunday": bool,
     "备用识别名称": str,
@@ -332,10 +334,13 @@ def validate_master(data: Any) -> list[str]:
             missing_keys = [key for key in PROTECTED_TASK_KEYS
                             if key not in task_config and key not in (
                                 'Weekly Boss Target', 'Material Planner Enabled',
-                                'Nightmare Settlements to Farm')]
+                                'Nightmare Settlements to Farm', 'Garden Execution Mode')]
             from src.task.weekly_boss import WEEKLY_BOSSES
             if task_config.get('Weekly Boss Target', '无') not in ('无', '自动（列表首项）', *(b.key for b in WEEKLY_BOSSES)):
                 errors.append(f'{path}.task_config weekly boss target is invalid')
+            if ('Garden Execution Mode' in task_config and
+                    task_config['Garden Execution Mode'] not in ('daily', 'multi_account_weekly', 'closed')):
+                errors.append(f'{path}.task_config garden execution mode is invalid')
             if missing_keys:
                 errors.append(f"{path}.task_config missing protected keys: {', '.join(missing_keys)}")
             for key, expected in _TASK_KEY_TYPES.items():

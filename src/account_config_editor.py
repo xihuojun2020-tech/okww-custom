@@ -197,6 +197,8 @@ class AccountConfigEditor:
         if alias_enabled and not alias:
             raise AccountConfigEditorError("启用备用识别名称后必须填写具体名称")
         tasks = copy.deepcopy(dict(template.tasks))
+        # A shared template may opt in, but newly created accounts always start closed.
+        tasks['Garden Execution Mode'] = 'closed'
         from src.recording_policy import RECORDING_PAGES
         tasks['Record Pages'] = list(RECORDING_PAGES)
         tasks[_ALIAS_ENABLE] = "使用" if alias_enabled else "无"

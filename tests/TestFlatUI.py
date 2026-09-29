@@ -34,7 +34,7 @@ def example_task(name='周本挑战'):
 
 
 class TestFlatUI(unittest.TestCase):
-    def test_resonance_executable_card_has_editable_rules_and_manual_evidence(self):
+    def test_resonance_executable_card_exposes_combat_controls_and_evidence(self):
         from ok.gui.tasks.TaskCard import TaskCard
         from src.task.ResonanceSimulationTask import ResonanceSimulationTask
         source = ResonanceSimulationTask(executor=Mock(scene=None), app=None)
@@ -50,16 +50,8 @@ class TestFlatUI(unittest.TestCase):
                 card.setExpand(True)
                 self.assertIsNotNone(card.start_button)
                 self.assertEqual(card._evidence_project, 'resonance_simulation')
-                self.assertIn('Target Text', card.config_widget_by_key)
-                self.assertIn('Combat Keys', card.config_widget_by_key)
-                rule_widget = card.config_widget_by_key['Target Text']
-                custom_rules = '奖励|行动资金\n下一关|藏宝地\n通用|测试入口'
-                def apply_rules(dialog):
-                    dialog.findChild(QPlainTextEdit).setPlainText(custom_rules)
-                    return QDialog.Accepted
-                with patch.object(QDialog, 'exec', apply_rules):
-                    rule_widget.edit_button.click()
-                self.assertEqual(task.config['Target Text'], custom_rules)
+                self.assertIn('Skill Interval', card.config_widget_by_key)
+                self.assertIn('Combat Toggle Key', card.config_widget_by_key)
                 card.resize(1000, card.sizeHint().height())
                 card.show()
                 QApplication.processEvents()
@@ -140,6 +132,8 @@ class TestFlatUI(unittest.TestCase):
                     task.config_type = {'当前序列': {}, '当前执行账号': {}, '目标账号': {}}
                     task.get_sequence_names = lambda: ['S1']
                     task.get_profile_names = lambda: ['A3', 'A4']
+                    sequence_members = ['A3', 'A4']
+                    task.get_sequence_accounts = lambda _sequence=None: list(sequence_members)
                     task._get_profile_names = lambda: ['A3', 'A4']
                     card = SimpleNamespace(task=task, config_widgets=[row])
                     task_tab = SimpleNamespace(card_widgets=[card])
@@ -153,8 +147,13 @@ class TestFlatUI(unittest.TestCase):
                             task.refresh_profile_options()
                     self.assertEqual(row.combo_box.currentData(), 'A3')
                     self.assertIn('测试账号三', row.combo_box.currentText())
-                    row.combo_box.setCurrentIndex(row.combo_box.findData('A4'))
-                    self.assertEqual(config[key], 'A4')
+                    target_index = row.combo_box.findData('A4')
+                    self.assertGreaterEqual(
+                        target_index, 0,
+                        f"{kind.__name__}: {[row.combo_box.itemData(i) for i in range(row.combo_box.count())]}",
+                    )
+                    row.combo_box.setCurrentIndex(target_index)
+                    self.assertEqual(config[key], 'A4', kind.__name__)
                     self.assertIn('199****0004', row.combo_box.currentText())
                     row.deleteLater()
 

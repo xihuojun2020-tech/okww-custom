@@ -106,7 +106,8 @@ class TestSeaRuinsRecovery(unittest.TestCase):
     def test_start_reads_current_floor_without_navigation(self):
         t = self.task('open')
         t._wait.return_value = 8
-        with patch('src.task.sea_ruins_recovery.vision.normalized'):
+        with patch('src.task.sea_ruins_recovery.vision.normalized'), \
+             patch('src.task.sea_ruins_recovery.season_rule', return_value=((), ())):
             self.assertEqual(SeaRuinsRecovery._sea_step(t), 'presets')
         self.assertEqual((t._floor, t._start_floor), (8, 8))
         t._open.assert_not_called()
@@ -118,7 +119,8 @@ class TestSeaRuinsRecovery(unittest.TestCase):
     def test_start_directly_from_endless(self):
         t = self.task('open')
         t._wait.return_value = ENDLESS
-        with patch('src.task.sea_ruins_recovery.vision.normalized'):
+        with patch('src.task.sea_ruins_recovery.vision.normalized'), \
+             patch('src.task.sea_ruins_recovery.season_rule', return_value=((), ())):
             self.assertEqual(SeaRuinsRecovery._sea_step(t), 'presets')
         self.assertEqual((t._floor, t._start_floor), (ENDLESS, ENDLESS))
         t.click_relative.assert_not_called()
@@ -170,7 +172,8 @@ class TestSeaRuinsRecovery(unittest.TestCase):
                                tokens=(Token('a','',2), Token('b','',2)), reasons=())
         t._sea_step.side_effect = lambda: SeaRuinsRecovery._sea_step(t)
         with patch('src.task.sea_ruins_recovery.choose_loadout', return_value=plan), \
-             patch('src.task.sea_ruins_recovery.vision.normalized'):
+             patch('src.task.sea_ruins_recovery.vision.normalized'), \
+             patch('src.task.sea_ruins_recovery.season_rule', return_value=((), ())):
             SeaRuinsRecovery._run_sea_stages(t)
         self.assertEqual(t._scan_presets.call_count, 5)
         self.assertEqual(t._scan_tokens.call_count, 5)
@@ -282,7 +285,8 @@ class TestSeaRuinsRecovery(unittest.TestCase):
             t._sea_presets, t._sea_tokens = [], []
             t._sea_plan.tokens = (Token('a', '', 1), Token('b', '', 1))
             with patch('src.task.sea_ruins_recovery.choose_loadout', return_value=SimpleNamespace(reasons=())), \
-                 patch('src.task.sea_ruins_recovery.vision.normalized'):
+                 patch('src.task.sea_ruins_recovery.vision.normalized'), \
+                 patch('src.task.sea_ruins_recovery.season_rule', return_value=((), ())):
                 self.assertIn(SeaRuinsRecovery._sea_step(t), STAGES)
             self.assertEqual(t._floor, 8 if stage == 'next' else 7)
 
@@ -292,7 +296,8 @@ class TestSeaRuinsRecovery(unittest.TestCase):
                                tokens=(Token('a','',2), Token('b','',2)), reasons=())
         t._sea_step.side_effect = lambda: SeaRuinsRecovery._sea_step(t)
         with patch('src.task.sea_ruins_recovery.choose_loadout', return_value=plan), \
-             patch('src.task.sea_ruins_recovery.vision.normalized'):
+             patch('src.task.sea_ruins_recovery.vision.normalized'), \
+             patch('src.task.sea_ruins_recovery.season_rule', return_value=((), ())):
             SeaRuinsRecovery._run_sea_stages(t)
         self.assertEqual(t._floor, ENDLESS)
         self.assertEqual(t._scan_presets.call_count, 6)

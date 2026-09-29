@@ -170,8 +170,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         try:
             seq_names = self.get_sequence_names()
             profile_names = self.get_profile_names()
+            account_names = self._sequence_profile_names(profile_names)
         except ConfigIntegrityBlocked:
-            seq_names, profile_names = [], []
+            seq_names, profile_names, account_names = [], [], []
         # 选择哪个序列，就只显示该序列的账号配置（sub_configs 联动）
         self.config_type[CURRENT_SEQUENCE] = {
             'type': 'drop_down',
@@ -193,7 +194,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         )
         self.config_type[CURRENT_ACCOUNT] = {
             'type': 'drop_down',
-            'options': [''] + profile_names,
+            'options': [''] + account_names,
         }
         # 管理序列（增删/重命名账号归属序列）
         self.default_config[MANAGE_SEQUENCES] = ''
@@ -224,7 +225,15 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def get_current_sequence(self):
         """当前执行的序列名（仅作账号分类标识，按「当前序列」配置执行）。"""
-        return (self.config.get(CURRENT_SEQUENCE) or '序列1').strip()
+        config = getattr(self, 'config', None)
+        return ((config.get(CURRENT_SEQUENCE) if config is not None else None) or '序列1').strip()
+
+    def after_init(self, *args, **kwargs):
+        """配置加载后刷新依赖当前配置的序列/账号选项。"""
+        result = super().after_init(*args, **kwargs)
+        if getattr(self, 'config', None) is not None:
+            self.refresh_account_options()
+        return result
 
     def validate_config(self, key, value):
         result = super().validate_config(key, value)
@@ -237,7 +246,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
     def get_readonly_config_value(self, key):
         try:
             if key == CURRENT_SEQUENCE_MEMBERS:
-                return self._read_sequences().get(self.get_current_sequence(), [])
+                accounts = self._read_sequences().get(self.get_current_sequence(), [])
+                return accounts or ['该序列暂无账号']
             if key in SEQ_ACCOUNTS:
                 sequence = f'序列{int(re.search(r"\d+", key).group())}'
                 return self._read_sequences().get(sequence, [])
@@ -283,7 +293,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         seq = []
         match = re.fullmatch(r'序列\s*(\d+)', name)
         if match:
-            seq = self.config.get(f'序列 {int(match.group(1))} 账号') or []
+            config = getattr(self, 'config', None)
+            if config is not None:
+                seq = config.get(f'序列 {int(match.group(1))} 账号') or []
         # 统一归属数据优先（多账号任务勾选时同步写入 sequences）
         try:
             seqs = self._read_sequences()
@@ -296,6 +308,15 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         except Exception:
             pass
         return [a for a in seq if a and a != '无']
+
+    def _sequence_profile_names(self, profile_names=None):
+        """Keep the start-account selector inside the selected ordered sequence."""
+        available = set(profile_names if profile_names is not None else self.get_profile_names())
+        result = []
+        for name in self.get_sequence_accounts():
+            if name in available and name not in result:
+                result.append(name)
+        return result
 
     def _seq_index(self, seq_name):
         """序列名 → 配置索引（0..MAX-1）；非序列名返回 None。"""
@@ -491,21 +512,35 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         if getattr(self, 'running', False):
             self._account_refresh_pending = True
             return False
+        sequence_members_available = True
         try:
             seq_names = self.get_sequence_names()
             profile_names = self.get_profile_names()
         except ConfigIntegrityBlocked:
             seq_names, profile_names = [], []
+            sequence_members_available = False
         current_sequence = (self.config.get(CURRENT_SEQUENCE) or '').strip()
         if current_sequence not in seq_names and seq_names:
             current_sequence = seq_names[0]
             self.config[CURRENT_SEQUENCE] = current_sequence
+        if sequence_members_available:
+            try:
+                account_options = self._sequence_profile_names(profile_names)
+            except ConfigIntegrityBlocked:
+                account_options = []
+                sequence_members_available = False
+        else:
+            account_options = []
         self.config_type[CURRENT_SEQUENCE]['options'] = seq_names
         self.config_type[CURRENT_SEQUENCE]['sub_configs'] = {
             seq: [CURRENT_SEQUENCE_MEMBERS] for seq in seq_names
         }
         self.config_type.setdefault(CURRENT_SEQUENCE_MEMBERS, {'type': 'label'})['options'] = profile_names
-        self.config_type[CURRENT_ACCOUNT]['options'] = [''] + profile_names
+        current_account = (self.config.get(CURRENT_ACCOUNT) or '').strip()
+        if sequence_members_available and current_account and current_account not in account_options:
+            current_account = ''
+            self.config[CURRENT_ACCOUNT] = ''
+        self.config_type[CURRENT_ACCOUNT]['options'] = [''] + account_options
         try:
             from ok import og
             main_window = getattr(og, 'main_window', None)
@@ -524,14 +559,14 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                         combo.blockSignals(False)
                     elif key == CURRENT_ACCOUNT and hasattr(widget, 'combo_box'):
                         if hasattr(widget, 'set_options'):
-                            widget.set_options([''] + profile_names)
+                            widget.set_options([''] + account_options)
                             continue
                         combo = widget.combo_box
                         current = self.config.get(CURRENT_ACCOUNT) or ''
                         combo.blockSignals(True)
                         combo.clear()
-                        combo.addItems([''] + profile_names)
-                        combo.setCurrentText(current if current in profile_names else '')
+                        combo.addItems([''] + account_options)
+                        combo.setCurrentText(current if current in account_options else '')
                         combo.blockSignals(False)
                     elif key == CURRENT_SEQUENCE_MEMBERS and hasattr(widget, 'update_value'):
                         widget.update_value()
@@ -697,16 +732,48 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         from datetime import datetime
         return getattr(self, '_progress_date', None) or datetime.now().strftime('%Y-%m-%d')
 
-    def _check_progress_date(self):
+    def _progress_namespace(self):
+        return 'multi_account'
+
+    def _progress_period(self):
+        return self._today()
+
+    def _current_progress_period(self):
         from datetime import datetime
-        if getattr(self, '_progress_date', None) not in (None, datetime.now().strftime('%Y-%m-%d')):
-            raise TaskDisabledException('日期已变化，请重新启动多账号任务以建立新一天的进度')
+        return datetime.now().strftime('%Y-%m-%d')
+
+    def _completion_key(self):
+        return 'Daily Task'
+
+    def _progress_key(self):
+        return f'{self._progress_namespace()}:{self._progress_period()}'
+
+    def _failures_key(self):
+        namespace = self._progress_namespace()
+        return f'{namespace}_failures:{self._progress_period()}'
+
+    def _progress_file_key(self):
+        return self._today() if self._progress_namespace() == 'multi_account' else self._progress_key()
+
+    def _failures_file_key(self):
+        return (f'failures:{self._today()}' if self._progress_namespace() == 'multi_account'
+                else self._failures_key())
+
+    def _progress_path(self):
+        return PROGRESS_FILE
+
+    def _check_progress_date(self):
+        current = self._progress_period()
+        if getattr(self, '_progress_date', None) is not None:
+            now_period = self._current_progress_period()
+            if current != now_period:
+                raise TaskDisabledException('周期已变化，请重新启动任务以建立新周期进度')
 
     def _load_failed_accounts(self):
         if self.integrity_service is not None:
-            values = self.integrity_service.get_progress(f'multi_account_failures:{self._today()}', {})
+            values = self.integrity_service.get_progress(self._failures_key(), {})
         else:
-            values = (read_json_file(PROGRESS_FILE) or {}).get(f'failures:{self._today()}', {})
+            values = (read_json_file(self._progress_path()) or {}).get(self._failures_file_key(), {})
         if not isinstance(values, dict) or any(not isinstance(v, dict) for v in values.values()):
             raise ConfigIntegrityBlocked('多账号失败记录格式异常，请先检查运行记录')
         return values
@@ -752,25 +819,25 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
     def _load_today_progress(self):
         """读取今天的已完成账号记录。"""
         if self.integrity_service is not None:
-            values = self.integrity_service.get_progress(f'multi_account:{self._today()}', [])
+            values = self.integrity_service.get_progress(self._progress_key(), [])
             return list(values or [])
         try:
-            data = read_json_file(PROGRESS_FILE) or {}
-            return list(data.get(self._today(), []) or [])
+            data = read_json_file(self._progress_path()) or {}
+            return list(data.get(self._progress_file_key(), []) or [])
         except Exception:
             return []
 
     def _save_today_progress(self):
         """把 done_set 持久化到今天记录（每完成一个账号立即调用，防中断丢失）。"""
         if self.integrity_service is not None:
-            self.integrity_service.set_progress(f'multi_account:{self._today()}', sorted(self.done_set))
+            self.integrity_service.set_progress(self._progress_key(), sorted(self.done_set))
             return
         try:
-            data = read_json_file(PROGRESS_FILE) or {}
+            data = read_json_file(self._progress_path()) or {}
             if not isinstance(data, dict):
                 data = {}
-            data[self._today()] = sorted(self.done_set)
-            write_json_file(PROGRESS_FILE, data)
+            data[self._progress_file_key()] = sorted(self.done_set)
+            write_json_file(self._progress_path(), data)
         except Exception as e:
             logger.error('save progress failed', e)
             raise ConfigWriteBlocked('多账号完成记录写入失败') from e
@@ -778,14 +845,14 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
     def _save_failed_accounts(self):
         failures = dict(getattr(self, 'failed_accounts', {}) or {})
         if self.integrity_service is not None:
-            self.integrity_service.set_progress(f'multi_account_failures:{self._today()}', failures)
+            self.integrity_service.set_progress(self._failures_key(), failures)
             return
         try:
-            data = read_json_file(PROGRESS_FILE) or {}
+            data = read_json_file(self._progress_path()) or {}
             if not isinstance(data, dict):
                 data = {}
-            data[f'failures:{self._today()}'] = failures
-            write_json_file(PROGRESS_FILE, data)
+            data[self._failures_file_key()] = failures
+            write_json_file(self._progress_path(), data)
         except Exception as error:
             logger.error('save account failures failed', error)
             raise ConfigWriteBlocked('多账号失败记录写入失败') from error
@@ -941,7 +1008,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 reconcile(sequence)
             if self.done_set:
                 labels = MultiAccountDailyTask._done_status_labels(self)
-                self.log_info(f'检测到今日已完成账号（断点恢复）: {labels}', notify=True)
+                period_label = '今日' if self._task_label() == '每日任务' else '本周'
+                self.log_info(f'检测到{period_label}已完成账号（断点恢复）: {labels}', notify=True)
 
             # An explicit start account is the user's assertion about the account
             # already open in the world; it is not a final return target.
@@ -960,21 +1028,24 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         # 第一轮：主界面启动先退登并识别真实账号；登录界面启动则从序列选号。
         in_main = self._classify_start_state() == 'world'
         if sequence and self._next_target_account() is None:
-            MultiAccountDailyTask._finish_sequence(self)
+            self._finish_sequence()
             return
         if in_main:
             if configured_start:
+                if not self._is_done(first_account) and not self._account_start_allowed(first_account):
+                    self._finish_sequence()
+                    return
                 _publish_status_safe(self,
                     account=first_account,
-                    stage='每日任务',
+                    stage=self._task_label(),
                     detail=f'正在执行账号 {profile_status_label(first_account)}',
                 )
                 if not self._is_done(first_account):
                     self.log_info(
-                        f'用户确认当前世界账号为 {profile_status_label(first_account)}，直接执行每日任务',
+                        f'用户确认当前世界账号为 {profile_status_label(first_account)}，直接执行{self._task_label()}',
                         notify=True,
                     )
-                    success, error = MultiAccountDailyTask._run_daily_account(self, first_account)
+                    success, error = self._execute_account_task(first_account)
                     if MultiAccountDailyTask._advance_after_account(self, first_account, success, error):
                         return
                 else:
@@ -1000,26 +1071,30 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 MultiAccountDailyTask._set_run_start(self, first_account)
                 in_sequence = any(self._same_account(first_account, acc) for acc in sequence)
                 if in_sequence and not self._is_done(first_account):
+                    if not self._account_start_allowed(first_account):
+                        self._finish_sequence()
+                        return
                     _publish_status_safe(self,
                         account=first_account,
                         stage='账号切换',
                         detail=f'正在选择账号 {profile_status_label(first_account)}',
                     )
-                    self.log_info(f'主界面启动识别到真实账号 {profile_status_label(first_account)}，重新登录后执行其每日任务', notify=True)
+                    self.log_info(f'主界面启动识别到真实账号 {profile_status_label(first_account)}，重新登录后执行{self._task_label()}', notify=True)
                     self._select_and_login_specific(first_account)
-                    success, error = MultiAccountDailyTask._run_daily_account(self, first_account)
+                    success, error = self._execute_account_task(first_account)
                     if MultiAccountDailyTask._advance_after_account(self, first_account, success, error):
                         return
                 elif not sequence and not self._is_done(first_account):
                     self.log_info(f'未配置账号序列，执行已识别的真实账号 {profile_status_label(first_account)}', notify=True)
                     self._select_and_login_specific(first_account)
-                    success, error = MultiAccountDailyTask._run_daily_account(self, first_account)
+                    success, error = self._execute_account_task(first_account)
                     if MultiAccountDailyTask._advance_after_account(self, first_account, success, error):
                         return
                 else:
+                    period_label = '今日' if self._task_label() == '每日任务' else '本周'
                     self.log_info(
-                        f'真实起始账号 {profile_status_label(first_account)} 不在当前序列或今日已完成，'
-                        '不运行其每日任务，继续选择序列中的下一个账号'
+                        f'真实起始账号 {profile_status_label(first_account)} 不在当前序列或{period_label}已完成，'
+                        f'不运行其{self._task_label()}，继续选择序列中的下一个账号'
                     )
         else:
             _publish_status_safe(self, stage='账号切换', detail='正在识别当前账号')
@@ -1036,11 +1111,11 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             if first_target:
                 _publish_status_safe(self,
                     account=first_target,
-                    stage='每日任务',
+                    stage=self._task_label(),
                     detail=f'正在执行账号 {profile_status_label(first_target)}',
                 )
-                self.log_info(f'从登录界面选择下一个未完成账号：{profile_status_label(first_target)}，开始执行每日任务', notify=True)
-                success, error = MultiAccountDailyTask._run_daily_account(self, first_target)
+                self.log_info(f'从登录界面选择下一个未完成账号：{profile_status_label(first_target)}，开始执行{self._task_label()}', notify=True)
+                success, error = self._execute_account_task(first_target)
                 if MultiAccountDailyTask._advance_after_account(self, first_target, success, error):
                     return
 
@@ -1067,22 +1142,22 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             self.info_set('Completed', MultiAccountDailyTask._done_status_labels(self))
             _publish_status_safe(self,
                 account=next_account,
-                stage='每日任务',
+                stage=self._task_label(),
                 detail=f'正在执行账号 {profile_status_label(next_account)}',
             )
-            self.log_info(f'开始执行账号 {profile_status_label(next_account)} 的每日任务', notify=True)
-            success, error = MultiAccountDailyTask._run_daily_account(self, next_account)
+            self.log_info(f'开始执行账号 {profile_status_label(next_account)} 的{self._task_label()}', notify=True)
+            success, error = self._execute_account_task(next_account)
             if MultiAccountDailyTask._advance_after_account(self, next_account, success, error):
                 return
 
-        MultiAccountDailyTask._finish_sequence(self)
+        self._finish_sequence()
 
     def _advance_after_account(self, account, success, error):
         """Only leave the current account when another target needs execution."""
         if success:
             self.ensure_main(time_out=100)
         if self._next_target_account() is None:
-            MultiAccountDailyTask._finish_sequence(self, account if success else None)
+            self._finish_sequence(account if success else None)
             return True
         if success:
             self._switch_to_login()
@@ -1133,7 +1208,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 return True
             profiles = self._load_profiles()
             profile = profiles.get(account) or {}
-            completion = self.integrity_service.get_completion(identity, 'Daily Task')
+            completion = self.integrity_service.get_completion(identity, self._completion_key())
             return bool(str(completion or '').startswith(self._today()))
         identity = account
         if account in self.done_set or identity in self.done_set:
@@ -1144,7 +1219,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             profile = profiles.get(account) or {}
             lc = profile.get('last_completed') or {}
             today = datetime.now().strftime('%Y-%m-%d')
-            if str(lc.get('Daily Task', '')).startswith(today):
+            if str(lc.get(self._completion_key(), '')).startswith(today):
                 return True
         except Exception:
             pass
@@ -2068,6 +2143,16 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         MultiAccountDailyTask._resolve_failure(self, account)
         return True, None
 
+    def _execute_account_task(self, account):
+        """Dynamic dispatch point for task-specific work in the shared scheduler."""
+        return self._run_daily_account(account)
+
+    def _account_start_allowed(self, _account):
+        return True
+
+    def _task_label(self):
+        return '每日任务'
+
     def _game_window_available(self):
         try:
             hwnd = getattr(self, 'hwnd', None)
@@ -2880,7 +2965,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 raise ConfigWriteBlocked(integrity_service.describe(result))
         profiles = self._load_profiles()
         if not profile_name or profile_name not in profiles:
-            raise ConfigIntegrityBlocked(f'账号方案不存在，已停止每日任务: {profile_name or "未识别"}')
+            raise ConfigIntegrityBlocked(
+                f'账号方案不存在，已停止{self._task_label()}: {profile_name or "未识别"}')
         if not self._link_daily_profile(profile_name):
             raise ConfigIntegrityBlocked(f'无法联动每日任务方案，已停止执行: {profile_status_label(profile_name)}')
         # Repeat the binding at the execution boundary and verify the ID from

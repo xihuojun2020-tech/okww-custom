@@ -1,5 +1,7 @@
 import unittest
 import os
+import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -294,16 +296,60 @@ class TestAccountManagementTabs(unittest.TestCase):
             tab = AccountConfigTab(AccountConfigEditor(env.repository))
             try:
                 for stored in ('Monday', '星期一'):
+                    tab.draft.tasks['Garden Execution Mode'] = 'daily'
                     tab.draft.tasks['Weekly Garden Check Day'] = stored
                     tab._render_form()
                     tab._apply_text()
                     self.assertEqual(tab.draft.tasks['Weekly Garden Check Day'], 'Monday')
+                tab.draft.tasks['Garden Execution Mode'] = 'daily'
                 tab.draft.tasks['Weekly Garden Check Day'] = 'invalid'
                 tab._render_form()
                 with self.assertRaises(ValueError):
                     tab._apply_text()
             finally:
                 tab.deleteLater()
+
+    def test_garden_mode_controls_legacy_check_day_and_roundtrip(self):
+        from src.gui.AccountConfigTab import AccountTemplateDialog
+        from src.account_field_metadata import GARDEN_MODE_DAILY, GARDEN_MODE_MULTI_ACCOUNT_WEEKLY
+        dialog = AccountTemplateDialog({'Garden Execution Mode': GARDEN_MODE_MULTI_ACCOUNT_WEEKLY,
+                                        'Weekly Garden Check Day': 'Sunday'})
+        mode = dialog._widgets['Garden Execution Mode']
+        day = dialog._widgets['Weekly Garden Check Day']
+        self.assertFalse(day.isEnabled())
+        mode.setCurrentIndex(mode.findData(GARDEN_MODE_DAILY))
+        self.assertTrue(day.isEnabled())
+        self.assertEqual(dialog.tasks()['Garden Execution Mode'], GARDEN_MODE_DAILY)
+        dialog.deleteLater()
+        invalid = AccountTemplateDialog({'Garden Execution Mode': 'closed',
+                                         'Weekly Garden Check Day': 'old-bad-day'})
+        self.assertEqual(invalid._widgets['Garden Execution Mode'].currentData(), 'closed')
+        self.assertEqual(invalid._widgets['Weekly Garden Check Day'].currentIndex(), -1)
+        self.assertIn('无效', invalid._widgets['Weekly Garden Check Day'].toolTip())
+        invalid._widgets['Garden Execution Mode'].setCurrentIndex(
+            invalid._widgets['Garden Execution Mode'].findData(GARDEN_MODE_DAILY))
+        self.assertTrue(invalid._widgets['Weekly Garden Check Day'].isEnabled())
+        with self.assertRaises(ValueError):
+            invalid.tasks()
+        invalid.deleteLater()
+
+    def test_garden_mode_qt_controls_work_in_fresh_process(self):
+        script = r'''from PySide6.QtWidgets import QApplication
+from src.gui.AccountConfigTab import AccountTemplateDialog
+app = QApplication([])
+dialog = AccountTemplateDialog({'Garden Execution Mode': 'multi_account_weekly', 'Weekly Garden Check Day': 'Monday'})
+mode = dialog._widgets['Garden Execution Mode']
+day = dialog._widgets['Weekly Garden Check Day']
+assert not day.isEnabled()
+mode.setCurrentIndex(mode.findData('daily'))
+assert day.isEnabled()
+assert dialog.tasks()['Garden Execution Mode'] == 'daily'
+dialog.close()
+'''
+        env = dict(os.environ, QT_QPA_PLATFORM='offscreen')
+        result = subprocess.run([sys.executable, '-c', script], cwd=Path(__file__).resolve().parents[1],
+                                env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     @classmethod
     def setUpClass(cls):

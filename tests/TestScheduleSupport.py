@@ -74,6 +74,9 @@ class TestScheduleSupport(unittest.TestCase):
 
     def test_multi_account_returns_to_main_before_switching_to_login(self):
         run_node = _class_function("src/task/MultiAccountDailyTask.py", "MultiAccountDailyTask", "_run_inner")
+        dispatch_node = _class_function(
+            "src/task/MultiAccountDailyTask.py", "MultiAccountDailyTask", "_execute_account_task"
+        )
         daily_node = _class_function(
             "src/task/MultiAccountDailyTask.py",
             "MultiAccountDailyTask",
@@ -94,18 +97,27 @@ class TestScheduleSupport(unittest.TestCase):
             node for node in ast.walk(run_node)
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
-            and node.func.attr in {"_run_daily_account", "_advance_after_account"}
+            and node.func.attr in {"_execute_account_task", "_advance_after_account"}
         ]
 
         call_names = [node.func.attr for node in sorted(calls, key=lambda call: call.lineno)]
         daily_indexes = [
             index for index, name in enumerate(call_names)
-            if name == "_run_daily_account"
+            if name == "_execute_account_task"
         ]
         self.assertTrue(daily_indexes)
         for daily_index in daily_indexes:
             following = call_names[daily_index + 1:]
             self.assertEqual(following[0], "_advance_after_account")
+        dispatch_calls = [
+            node for node in ast.walk(dispatch_node)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "self"
+            and node.func.attr == "_run_daily_account"
+        ]
+        self.assertEqual(len(dispatch_calls), 1)
         advance = _class_function("src/task/MultiAccountDailyTask.py", "MultiAccountDailyTask", "_advance_after_account")
         calls = sorted((node for node in ast.walk(advance) if isinstance(node, ast.Call)
                         and isinstance(node.func, ast.Attribute)), key=lambda node: node.lineno)
@@ -121,11 +133,11 @@ class TestScheduleSupport(unittest.TestCase):
             node for node in ast.walk(while_node)
             if isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
-            and node.func.attr in {"_run_daily_account", "_advance_after_account", "_switch_to_login"}
+            and node.func.attr in {"_execute_account_task", "_advance_after_account", "_switch_to_login"}
         ]
 
         call_names = [node.func.attr for node in sorted(calls, key=lambda call: call.lineno)]
-        daily_index = call_names.index("_run_daily_account")
+        daily_index = call_names.index("_execute_account_task")
 
         self.assertEqual(call_names[daily_index + 1:], ["_advance_after_account"])
 

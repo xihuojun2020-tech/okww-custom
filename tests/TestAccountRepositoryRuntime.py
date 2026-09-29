@@ -202,7 +202,30 @@ class TestAccountRepositoryRuntime(unittest.TestCase):
 
         self.assertEqual(created.account["display_name"], "A5")
         self.assertEqual(created.tasks["Which to Farm"], "Forgery Challenge")
+        self.assertEqual(created.tasks["Garden Execution Mode"], "closed")
         self.assertEqual(repo.raw["sequences"]["主序列"][-1], created.profile_id)
+
+    def test_garden_mode_migration_is_conservative_and_preserves_user_choice(self):
+        from src.account_field_metadata import migrate_garden_modes
+        master = {"profiles": {
+            self.a: {"task_config": {"Weekly Garden Check Day": "星期三"}},
+            self.b: {"task_config": {"Weekly Garden Check Day": "无"}},
+            "bad": {"task_config": {"Weekly Garden Check Day": "bad"}},
+            "missing": {"task_config": {}},
+            "chosen": {"task_config": {"Weekly Garden Check Day": "Monday",
+                                         "Garden Execution Mode": "daily"}},
+        }}
+        migrated, changed = migrate_garden_modes(master)
+        tasks = {key: value['task_config'] for key, value in migrated['profiles'].items()}
+        self.assertTrue(changed)
+        self.assertEqual(tasks[self.a]['Garden Execution Mode'], 'multi_account_weekly')
+        self.assertEqual(tasks[self.b]['Garden Execution Mode'], 'closed')
+        self.assertEqual(tasks['bad']['Garden Execution Mode'], 'closed')
+        self.assertEqual(tasks['missing']['Garden Execution Mode'], 'closed')
+        self.assertEqual(tasks['chosen']['Garden Execution Mode'], 'daily')
+        again, changed_again = migrate_garden_modes(migrated)
+        self.assertFalse(changed_again)
+        self.assertEqual(again['profiles']['chosen']['task_config']['Garden Execution Mode'], 'daily')
 
     def test_new_profile_always_owns_its_generated_uuid(self):
         repo = self._memory_repo()

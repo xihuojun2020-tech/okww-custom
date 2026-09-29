@@ -201,9 +201,10 @@ class TestDailyMergeEchoTask(unittest.TestCase):
 
     def test_weekly_garden_current_week_record_skips_opening_page(self):
         daily_task = DailyTask.__new__(DailyTask)
-        daily_task._profile_get = Mock(return_value='Monday')
+        daily_task._profile_get = Mock(side_effect=lambda key, default=None:
+                                       'daily' if key == 'Garden Execution Mode' else 'Monday')
         daily_task.get_last_completed = Mock(return_value='2026-09-01 20:00:00')
-        daily_task.get_task_by_class = Mock()
+        daily_task.run_weekly_garden_only = Mock()
         daily_task.info_set = Mock()
         daily_task.log_info = Mock()
 
@@ -212,17 +213,17 @@ class TestDailyMergeEchoTask(unittest.TestCase):
             fake_datetime.fromisoformat.side_effect = datetime.fromisoformat
             daily_task.check_weekly_garden()
 
-        daily_task.get_task_by_class.assert_not_called()
+        daily_task.run_weekly_garden_only.assert_not_called()
 
     def test_weekly_garden_late_check_records_confirmed_completion(self):
         daily_task = DailyTask.__new__(DailyTask)
         daily_task._verified_profile_id = 'profile-a3'
-        daily_task._profile_get = Mock(return_value='Monday')
+        daily_task._profile_get = Mock(side_effect=lambda key, default=None:
+                                       'daily' if key == 'Garden Execution Mode' else 'Monday')
         daily_task.get_last_completed = Mock(return_value=None)
-        garden_task = Mock()
-        garden_task.is_weekly_garden_completed.return_value = True
-        daily_task.get_task_by_class = Mock(return_value=garden_task)
-        daily_task.record_last_completed = Mock()
+        from src.task.weekly_garden import GardenRunResult, garden_week_key
+        daily_task.run_weekly_garden_only = Mock(return_value=GardenRunResult(
+            'completed', garden_week_key(), 6000, True))
         daily_task.info_set = Mock()
         daily_task.log_info = Mock()
 
@@ -230,20 +231,16 @@ class TestDailyMergeEchoTask(unittest.TestCase):
             fake_datetime.now.return_value = datetime(2026, 9, 2, 12, 0, 0)
             daily_task.check_weekly_garden()
 
-        garden_task.open_garden_weekly_page.assert_called_once_with()
-        daily_task.record_last_completed.assert_called_once_with(
-            'Weekly Garden', profile_id='profile-a3')
+        daily_task.run_weekly_garden_only.assert_called_once_with()
+        self.assertIn('已确认完成', ' '.join(str(call) for call in daily_task.log_info.call_args_list))
 
     def test_weekly_garden_failure_keeps_the_account_due_for_next_run(self):
         daily_task = DailyTask.__new__(DailyTask)
         daily_task._verified_profile_id = 'profile-a3'
-        daily_task._profile_get = Mock(return_value='Monday')
+        daily_task._profile_get = Mock(side_effect=lambda key, default=None:
+                                       'daily' if key == 'Garden Execution Mode' else 'Monday')
         daily_task.get_last_completed = Mock(return_value=None)
-        garden_task = Mock()
-        garden_task.is_weekly_garden_completed.return_value = False
-        daily_task.get_task_by_class = Mock(return_value=garden_task)
-        daily_task.run_task_by_class = Mock(side_effect=RuntimeError('failed'))
-        daily_task.record_last_completed = Mock()
+        daily_task.run_weekly_garden_only = Mock(side_effect=RuntimeError('failed'))
         daily_task.info_set = Mock()
         daily_task.log_info = Mock()
         daily_task.log_error = Mock()
@@ -254,7 +251,7 @@ class TestDailyMergeEchoTask(unittest.TestCase):
             fake_datetime.now.return_value = datetime(2026, 9, 2, 12, 0, 0)
             daily_task.check_weekly_garden()
 
-        daily_task.record_last_completed.assert_not_called()
+        daily_task.run_weekly_garden_only.assert_called_once_with()
         self.assertTrue(weekly_garden_check_due(
             'Monday', None, datetime(2026, 9, 3, 12, 0, 0)))
 

@@ -310,6 +310,7 @@ class AccountRepository:
         tasks = copy.deepcopy(dict(template)) if isinstance(template, Mapping) else {}
         tasks.setdefault('Weekly Boss Target', '自动（列表首项）')
         tasks.setdefault('Material Planner Enabled', False)
+        tasks.setdefault('Garden Execution Mode', 'closed')
         # Login aliases identify an account and must never leak from the template.
         tasks["备用识别名称"] = "无"
         tasks["备用识别名称内容"] = ""
@@ -352,6 +353,9 @@ class AccountRepository:
             if any(name not in sequences for name in requested_sequences):
                 raise AccountRepositoryError("账号序列不存在")
             profile_id = str(uuid.uuid4())
+            task_config = copy.deepcopy(dict(tasks))
+            # New accounts always start closed, even when the shared template enables garden runs.
+            task_config['Garden Execution Mode'] = 'closed'
             profile = {
                 **copy.deepcopy(dict(account)),
                 # The repository, not the caller, owns stable account IDs.
@@ -359,9 +363,9 @@ class AccountRepository:
                 # can never disagree with the graph key.
                 "profile_id": profile_id,
                 "display_name": label,
-                "task_config": copy.deepcopy(dict(tasks)),
+                "task_config": task_config,
                 "schedule": {},
-                "extensions": {},
+                "extensions": {"garden_execution_mode_migration": 1},
             }
             candidate = copy.deepcopy(raw)
             source_key = "accounts" if "accounts" in candidate and "profiles" not in candidate else "profiles"
@@ -370,6 +374,17 @@ class AccountRepository:
                 candidate["sequences"][name].append(profile_id)
             self._publish_master(candidate)
             return self.load_profile(profile_id)
+
+    def migrate_garden_execution_modes(self) -> bool:
+        """Migrate every old account through the protected bundle publication transaction."""
+        from .account_field_metadata import migrate_garden_modes
+
+        with self._lock:
+            raw, _, _ = self._load_index()
+            candidate, changed = migrate_garden_modes(raw)
+            if changed:
+                self._publish_master(candidate)
+            return changed
 
     def _publish_master(self, raw: Mapping[str, Any], *, precommit_hook=None):
         from . import account_config_bundle as bundle_module

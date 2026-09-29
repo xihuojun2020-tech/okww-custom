@@ -19,7 +19,7 @@ from src.task.process_feature import process_feature
 # okww 版本号（固定宽度 X.YY.ZZ）：
 #   小改动 → 第三位 +1；中等改动 → 第二位 +1 且第三位归 00；
 #   大改动 → 第一位 +1 且后两位归 00（仅用户明确提出时执行）
-version = "1.87.03"
+version = "1.88.00"
 
 
 def _find_most_recently_run_pc_exe():
@@ -294,6 +294,7 @@ config = {
         ["src.task.SimulationTask", "SimulationTask"],
         # 多账号每日任务（启用：按序列逐账号跑每日任务，支持断点续跑）
         ["src.task.MultiAccountDailyTask", "MultiAccountDailyTask"],
+        ["src.task.MultiAccountWeeklyGardenTask", "MultiAccountWeeklyGardenTask"],
         ["src.task.MergeEchoTask", "MergeEchoTask"],
         # 精简版：隐藏批量强化声骸 / 批量修改声骸主属性
         # ["src.task.EnhanceEchoTask", "EnhanceEchoTask"],

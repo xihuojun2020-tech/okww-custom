@@ -28,7 +28,8 @@ def _task_config():
         "Which Forgery Challenge to Farm": 1, "Material Selection": "Shell Credit",
         "Farm Nightmare Nest for Daily Echo": False, "Nightmare Which to Farm": [],
         "Tacet Discord Nests to Farm": [], "Auto Farm all Nightmare Nest": False,
-        "Weekly Garden Check Day": "无", "Merge Echo on Sunday": False,
+        "Weekly Garden Check Day": "无", "Garden Execution Mode": "closed",
+        "Merge Echo on Sunday": False,
         "备用识别名称": "无", "备用识别名称内容": "",
     }
 
@@ -75,6 +76,20 @@ class TestAccountConfigBundle(unittest.TestCase):
         self.assertTrue(result.published_revision)
         for reader in (repo, AccountRepository(self.root, integrity_service=self.service)):
             self.assertEqual(reader.load_profile(PROFILE_A).tasks['Which Tacet Suppression to Farm'], 2)
+
+    def test_import_migrates_old_garden_day_and_preserves_weekly_completion(self):
+        bundle = self.service_bundle = AccountConfigBundleService(self.root, integrity_service=self.service).export_bundle()
+        tasks = bundle['master_config']['profiles'][PROFILE_A]['task_config']
+        tasks['Weekly Garden Check Day'] = 'Monday'
+        tasks.pop('Garden Execution Mode', None)
+        self.service.record_completion(PROFILE_A, 'Weekly Garden', '2026-09-28T05:00:00+08:00')
+        imported = AccountConfigBundleService(self.root, integrity_service=self.service).import_bundle(
+            bundle, confirm=True, trust_external=True, preserve_runtime_and_preferences=True)
+        self.assertTrue(imported.ok)
+        profile = AccountConfigBundleService(self.root, integrity_service=self.service).integrity.check().master['profiles'][PROFILE_A]
+        self.assertEqual(profile['task_config']['Garden Execution Mode'], 'multi_account_weekly')
+        self.assertEqual(self.service.get_completion(PROFILE_A, 'Weekly Garden'),
+                         '2026-09-28T05:00:00+08:00')
 
     def test_stale_preview_rejected_and_edit_preserves_latest_progress(self):
         from src.account_repository import AccountRepository, ProfileRevisionConflict

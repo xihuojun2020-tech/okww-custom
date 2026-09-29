@@ -14,9 +14,11 @@ class TaskCard(ConfigCard):
     def __init__(self, task: BaseTask, onetime, *, fluent_sample=False):
         config_type = dict(task.config_type or {})
         config_description = task.config_description
-        if type(task).__name__ in ('DailyTask', 'MultiAccountDailyTask'):
+        if type(task).__name__ in ('DailyTask', 'MultiAccountDailyTask', 'MultiAccountWeeklyGardenTask'):
             allowed = ({'方案序列', 'Daily Profile', '备用识别名称', '备用识别名称内容'}
                        if type(task).__name__ == 'DailyTask' else
+                       {'当前序列', '当前执行账号', '当前序列账号', '本次最多处理账号数', '本次时间预算（分钟）'}
+                       if type(task).__name__ == 'MultiAccountWeeklyGardenTask' else
                        {'当前序列', '当前执行账号', '当前序列账号'})
             config_type = {key: dict(value) if isinstance(value, dict) else value for key, value in config_type.items()}
             for key in set(task.config) | set(config_type):
@@ -26,10 +28,10 @@ class TaskCard(ConfigCard):
             for value in config_type.values():
                 if isinstance(value, dict):
                     value.pop('last_completed_provider', None)
-        if type(task).__name__ in ('DailyTask', 'MultiAccountDailyTask'):
+        if type(task).__name__ in ('DailyTask', 'MultiAccountDailyTask', 'MultiAccountWeeklyGardenTask'):
             config_type['Manage Daily Profiles'] = {'hidden': True}
             config_type['管理序列'] = {'hidden': True}
-        description = '' if (type(task).__name__ in ('DailyTask', 'MultiAccountDailyTask') or
+        description = '' if (type(task).__name__ in ('DailyTask', 'MultiAccountDailyTask', 'MultiAccountWeeklyGardenTask') or
                               fluent_sample and type(task).__name__ in ('GardenTask', 'WeeklyBossTask', 'EventTask')) else task.description
         super().__init__(task, task.name, task.config, description, task.default_config, config_description,
                          config_type, config_icon=task.icon or FluentIcon.INFO)
@@ -122,11 +124,11 @@ class TaskCard(ConfigCard):
                 margins = layout.contentsMargins()
                 layout.setContentsMargins(margins.left(), 4, margins.right(), 4)
                 widget.setMinimumHeight(44)
-        if type(task).__name__ in ('DailyTask', 'MultiAccountDailyTask') and self.reset_config is not None:
+        if type(task).__name__ in ('DailyTask', 'MultiAccountDailyTask', 'MultiAccountWeeklyGardenTask') and self.reset_config is not None:
             self.reset_config.hide()
 
     def add_buttons(self):
-        if type(self.task).__name__ not in ('DailyTask', 'MultiAccountDailyTask'):
+        if type(self.task).__name__ not in ('DailyTask', 'MultiAccountDailyTask', 'MultiAccountWeeklyGardenTask'):
             super().add_buttons()
 
     def show_evidence_menu(self, position):
@@ -291,7 +293,8 @@ class TaskCard(ConfigCard):
     def update_buttons(self, task):
         if task == self.task or self.onetime:
             # Determine visibility for instructions button
-            has_instructions = (type(self.task).__name__ not in ('DailyTask', 'MultiAccountDailyTask')
+            has_instructions = (type(self.task).__name__ not in ('DailyTask', 'MultiAccountDailyTask',
+                                                                 'MultiAccountWeeklyGardenTask')
                                 and bool(getattr(self.task, 'instructions', None)))
             self.instructions_button.setVisible(has_instructions)
             self.update_content()

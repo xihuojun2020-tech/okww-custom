@@ -5,6 +5,10 @@ from typing import Any, Mapping
 from src.task.weekly_boss import WEEKLY_BOSSES, WEEKLY_AUTO
 
 WEEKDAYS = ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
+GARDEN_MODE_DAILY = 'daily'
+GARDEN_MODE_MULTI_ACCOUNT_WEEKLY = 'multi_account_weekly'
+GARDEN_MODE_CLOSED = 'closed'
+GARDEN_EXECUTION_MODES = (GARDEN_MODE_DAILY, GARDEN_MODE_MULTI_ACCOUNT_WEEKLY, GARDEN_MODE_CLOSED)
 _WEEKDAY_ALIASES = {prefix + day: english for english, day in zip(WEEKDAYS, '一二三四五六日')
                     for prefix in ('星期', '周')}
 _WEEKDAY_ALIASES.update({'星期天': 'Sunday', '周天': 'Sunday'})
@@ -49,7 +53,8 @@ _LABELS = {
     "Tacet Discord Nests to Farm": ("残象聚落目标", "勾选哪些聚落就刷取哪些；全部取消则跳过残象聚落。"),
     "Nightmare Settlements to Farm": ("梦魇聚落目标", "补充刷取目标，默认全部不选。"),
     "Auto Farm all Nightmare Nest": ("自动刷取所选目标", "开启后依次刷取勾选的残象聚落和梦魇聚落。"),
-    "Weekly Garden Check Day": ("周常乐园检查日", "无表示完全禁用；需要周日运行时请明确选择星期日。"),
+    "Weekly Garden Check Day": ("周常乐园检查日", "仅在乐园执行安排为“随每日执行”时生效；无表示每日入口不执行乐园。"),
+    "Garden Execution Mode": ("乐园执行安排", "随每日执行会按下方检查日及补检规则运行；跟随多账号每周乐园仅由独立周任务运行；关闭会跳过所有自动乐园入口。"),
     "Merge Echo on Sunday": ("周日合成声骸", "开启后在周日执行声骸合成。"),
     "Logout After Daily Task": ("每日任务后自动退登", "单账号运行结束后的退登行为；多账号任务会临时接管。"),
     "备用识别名称": ("使用备用识别名称", "选择“使用”后，下面填写的名称才参与登录账号识别。"),
@@ -60,6 +65,7 @@ _OPTIONS = {
     "Which to Farm": ("Tacet Suppression", "Forgery Challenge", "Simulation Challenge"),
     "Material Selection": ("Resonator EXP", "Weapon EXP", "Shell Credit"),
     "Weekly Garden Check Day": ("无", *WEEKDAYS),
+    "Garden Execution Mode": GARDEN_EXECUTION_MODES,
     "备用识别名称": ("无", "使用"),
 }
 _VALUE_LABELS = {
@@ -74,6 +80,9 @@ _VALUE_LABELS = {
     "Nightmare Purification": "梦魇聚落",
     "Tacet Discord Nest": "残像聚落",
 }
+_VALUE_LABELS.update({GARDEN_MODE_DAILY: "随每日执行",
+                      GARDEN_MODE_MULTI_ACCOUNT_WEEKLY: "跟随多账号每周乐园",
+                      GARDEN_MODE_CLOSED: "关闭"})
 _STORAGE_VALUES = {label: value for value, label in _VALUE_LABELS.items()}
 _IDENTITY = {
     "phone", "masked_phone", "nickname", "alternate_login_name", "game_feature_code",
@@ -97,6 +106,44 @@ def restore_account_value(value: Any) -> Any:
     return _STORAGE_VALUES.get(value, value)
 
 
+def legacy_garden_execution_mode(check_day: Any) -> str:
+    """Conservatively map the old day selector; malformed/missing means closed."""
+    try:
+        day = normalize_weekday(check_day)
+    except ValueError:
+        return GARDEN_MODE_CLOSED
+    return GARDEN_MODE_CLOSED if day == '无' else GARDEN_MODE_MULTI_ACCOUNT_WEEKLY
+
+
+def migrate_garden_modes(master: Mapping[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Return a detached master with missing legacy modes mapped exactly once."""
+    import copy
+
+    result = copy.deepcopy(dict(master))
+    profiles = result.get('profiles', {})
+    if not isinstance(profiles, dict):
+        return result, False
+    changed = False
+    for profile in profiles.values():
+        if not isinstance(profile, dict):
+            continue
+        tasks = profile.get('task_config')
+        if not isinstance(tasks, dict):
+            continue
+        missing_mode = 'Garden Execution Mode' not in tasks
+        if missing_mode:
+            tasks['Garden Execution Mode'] = legacy_garden_execution_mode(
+                tasks.get('Weekly Garden Check Day'))
+            changed = True
+        elif tasks.get('Garden Execution Mode') not in GARDEN_EXECUTION_MODES:
+            continue
+        if missing_mode:
+            extensions = profile.setdefault('extensions', {})
+            if isinstance(extensions, dict) and extensions.get('garden_execution_mode_migration') != 1:
+                extensions['garden_execution_mode_migration'] = 1
+    return result, changed
+
+
 def account_field_metadata(tasks: Mapping[str, Any]) -> tuple[AccountFieldMetadata, ...]:
     result = []
     for key, value in tasks.items():
@@ -111,4 +158,6 @@ def account_field_metadata(tasks: Mapping[str, Any]) -> tuple[AccountFieldMetada
 
 
 __all__ = ["AccountFieldMetadata", "account_field_metadata", "localize_account_value",
-           "restore_account_value"]
+           "restore_account_value", "GARDEN_MODE_DAILY", "GARDEN_MODE_MULTI_ACCOUNT_WEEKLY",
+           "GARDEN_MODE_CLOSED", "GARDEN_EXECUTION_MODES", "legacy_garden_execution_mode",
+           "migrate_garden_modes"]

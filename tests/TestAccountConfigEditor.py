@@ -117,6 +117,7 @@ class TestAccountConfigEditor(unittest.TestCase):
 
     def test_new_account_copies_template_but_never_its_identity(self):
         template = self.editor.load_template("id")
+        template.tasks["Garden Execution Mode"] = "multi_account_weekly"
         created = self.editor.create_profile(
             template,
             display_name="a5",
@@ -133,6 +134,7 @@ class TestAccountConfigEditor(unittest.TestCase):
         self.assertEqual(account["masked_phone"], "199****0005")
         self.assertEqual(tasks["Which to Farm"], "before")
         self.assertEqual(tasks["备用识别名称"], "使用")
+        self.assertEqual(tasks["Garden Execution Mode"], "closed")
         self.assertEqual(kwargs["sequence_ids"], ("序列1",))
         self.assertEqual(kwargs["expected_revision"], "r1")
 

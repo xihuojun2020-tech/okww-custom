@@ -11,6 +11,208 @@ from src.task.weekly_boss import (WEEKLY_TARGET, WEEKLY_MONDAY, WEEKLY_SUNDAY,
 
 
 class TestWeeklyDailyIntegration(unittest.TestCase):
+    class SharedGardenState:
+        def __init__(self):
+            self.completions = {}
+            self.progress = {}
+            self.fail_write = False
+
+        def get_completion(self, profile_id, key):
+            return self.completions.get((profile_id, key))
+
+        def record_completion(self, profile_id, key, timestamp):
+            if self.fail_write:
+                from src.config_integrity import ConfigWriteBlocked
+                raise ConfigWriteBlocked('write blocked')
+            self.completions[(profile_id, key)] = timestamp
+
+        def set_progress(self, key, value):
+            self.progress[key] = value
+
+    @staticmethod
+    def garden_daily(service, points=(6000, 6000), mode='daily'):
+        from src.task.GardenTask import GardenTask
+        daily = object.__new__(DailyTask)
+        daily.integrity_service = service
+        daily._verified_profile_id = 'profile-a1'
+        daily._profile_get = lambda key, default=None: mode if key == 'Garden Execution Mode' else default
+        daily._readonly_active_profile_id = lambda: 'profile-a1'
+        daily.get_last_completed = lambda key: service.get_completion('profile-a1', key)
+        daily.sleep = Mock()
+        daily._refresh_weekly_garden_consumers = Mock()
+        garden = object.__new__(GardenTask)
+        garden.last_result = None
+        garden.open_garden_weekly_page = Mock()
+        garden.read_weekly_garden_points = Mock(side_effect=list(points))
+        garden.record_verified_result = Mock(return_value='weekly_garden:profile-a1:week')
+        daily.get_task_by_class = Mock(return_value=garden)
+        def run_garden(_task_class):
+            from src.task.weekly_garden import GardenRunResult, garden_week_key
+            garden.last_result = GardenRunResult('completed', garden_week_key(), 6000, True,
+                                                  'weekly_garden:profile-a1:week')
+        daily.run_task_by_class = Mock(side_effect=run_garden)
+        return daily, garden
+
+    def test_daily_write_is_shared_with_weekly_sequence_and_daily_skip(self):
+        from src.task.weekly_garden import GARDEN_INDEPENDENT
+        service = self.SharedGardenState()
+        daily, garden = self.garden_daily(service, mode=GARDEN_INDEPENDENT)
+        result = daily.run_weekly_garden_only()
+        self.assertTrue(result.done)
+        self.assertIn(('profile-a1', 'Weekly Garden'), service.completions)
+        self.assertNotIn(('profile-a1', 'Daily Task'), service.completions)
+
+        weekly = object.__new__(__import__(
+            'src.task.MultiAccountWeeklyGardenTask', fromlist=['MultiAccountWeeklyGardenTask']
+        ).MultiAccountWeeklyGardenTask)
+        weekly.integrity_service = service
+        weekly._profile_id_for = lambda account: {'A1': 'profile-a1', 'A3': 'profile-a1'}[account]
+        weekly._load_profiles = lambda: {
+            'A1': {'task_config': {'Garden Execution Mode': GARDEN_INDEPENDENT}},
+            'A3': {'task_config': {'Garden Execution Mode': GARDEN_INDEPENDENT}},
+        }
+        weekly.get_sequence_accounts = lambda: ['A3']  # same profile is shared across sequences
+        self.assertTrue(weekly._garden_done('A3'))
+
+        daily._profile_get = lambda key, default=None: (
+            'daily' if key == 'Garden Execution Mode' else 'Monday')
+        daily.info_set = Mock()
+        daily.log_info = Mock()
+        daily.check_weekly_garden()
+        self.assertEqual(daily.get_task_by_class.call_count, 1)
+        self.assertEqual(garden.open_garden_weekly_page.call_count, 1)
+        daily.run_task_by_class.assert_not_called()
+
+    def test_weekly_entry_writes_shared_completion_and_daily_entry_reads_it(self):
+        from src.task.weekly_garden import GARDEN_INDEPENDENT
+        from src.task.MultiAccountWeeklyGardenTask import MultiAccountWeeklyGardenTask
+        service = self.SharedGardenState()
+        daily, garden = self.garden_daily(service, mode=GARDEN_INDEPENDENT)
+        weekly = object.__new__(MultiAccountWeeklyGardenTask)
+        weekly.integrity_service = service
+        weekly._garden_week_key = 'week'
+        weekly._garden_entered = set()
+        weekly._account_attempts = {}
+        weekly._retry_phase = False
+        weekly._load_profiles = lambda: {
+            'A1': {'task_config': {'Garden Execution Mode': GARDEN_INDEPENDENT}},
+        }
+        weekly._profile_id_for = lambda _account: 'profile-a1'
+        weekly._failure_key = lambda _account: 'profile-a1'
+        weekly._require_daily_profile = Mock()
+        weekly.get_task_by_class = Mock(return_value=daily)
+        weekly._mark_done = Mock()
+        weekly._save_today_progress = Mock()
+        weekly._resolve_failure = Mock()
+        weekly._refresh_garden_status = Mock()
+        weekly.info_set = Mock()
+        weekly.log_info = Mock()
+        weekly.log_error = Mock()
+        weekly.screenshot = Mock()
+        weekly._check_progress_date = Mock()
+        success, error = weekly._execute_account_task('A1')
+        self.assertTrue(success)
+        self.assertIsNone(error)
+        self.assertTrue(weekly._garden_done('A1'))
+        self.assertNotIn(('profile-a1', 'Daily Task'), service.completions)
+        daily._profile_get = lambda key, default=None: 'daily' if key == 'Garden Execution Mode' else 'Monday'
+        daily.info_set = Mock()
+        daily.log_info = Mock()
+        daily.check_weekly_garden()
+        self.assertEqual(garden.open_garden_weekly_page.call_count, 1)
+        self.assertEqual(len(service.completions), 1)
+
+    def test_multi_account_daily_uses_the_same_garden_completion_contract(self):
+        from src.task.MultiAccountDailyTask import MultiAccountDailyTask
+        from src.task.MultiAccountWeeklyGardenTask import MultiAccountWeeklyGardenTask
+        from src.task.weekly_garden import GARDEN_DAILY
+        service = self.SharedGardenState()
+        daily, _garden = self.garden_daily(service, mode=GARDEN_DAILY)
+        multi = object.__new__(MultiAccountDailyTask)
+        multi.integrity_service = service
+        multi.info = {}
+        multi.done_set = set()
+        multi.failed_accounts = {}
+        multi._account_attempts = {}
+        multi._profile_id_for = lambda _account: 'profile-a1'
+        multi._check_progress_date = Mock()
+        multi._require_daily_profile = Mock()
+        multi._daily_is_done = lambda _account: False
+        multi.run_task_by_class = Mock(side_effect=lambda _task: daily.run_weekly_garden_only())
+        multi.info_set = Mock()
+        multi.log_info = Mock()
+        multi.log_error = Mock()
+        multi._mark_done = Mock()
+        multi._save_today_progress = Mock()
+        multi._resolve_failure = Mock()
+        result, error = multi._run_daily_account('A1')
+        self.assertTrue(result)
+        self.assertIsNone(error)
+        self.assertIn(('profile-a1', 'Weekly Garden'), service.completions)
+        self.assertNotIn(('profile-a1', 'Daily Task'), service.completions)
+
+        weekly = object.__new__(MultiAccountWeeklyGardenTask)
+        weekly.integrity_service = service
+        weekly._profile_id_for = lambda _account: 'profile-a1'
+        weekly._load_profiles = lambda: {
+            'A1': {'task_config': {'Garden Execution Mode': GARDEN_DAILY}},
+        }
+        self.assertTrue(weekly._garden_done('A1'))
+
+    def test_shared_completion_refreshes_weekly_card_state_and_emits_task_change(self):
+        from ok import og
+        from src.task.MultiAccountWeeklyGardenTask import MultiAccountWeeklyGardenTask
+        weekly = object.__new__(MultiAccountWeeklyGardenTask)
+        weekly._refresh_garden_status = Mock()
+        executor = SimpleNamespace(onetime_tasks=[weekly])
+        emit = Mock()
+        with patch.object(og, 'executor', executor), \
+                patch('ok.gui.Communicate.communicate.task', SimpleNamespace(emit=emit)):
+            DailyTask._refresh_weekly_garden_consumers(object.__new__(DailyTask))
+        weekly._refresh_garden_status.assert_called_once_with()
+        emit.assert_called_once_with(weekly)
+
+    def test_garden_write_failure_and_precommit_week_rollover_do_not_mark_done(self):
+        from src.task.weekly_garden import GARDEN_INDEPENDENT
+        from src.config_integrity import ConfigWriteBlocked
+        service = self.SharedGardenState()
+        service.fail_write = True
+        daily, _garden = self.garden_daily(service, mode=GARDEN_INDEPENDENT)
+        with self.assertRaises(ConfigWriteBlocked):
+            daily.run_weekly_garden_only()
+        self.assertFalse(service.completions)
+
+        service.fail_write = False
+        service.completions.clear()
+        daily, garden = self.garden_daily(service, points=(0, 0, 1200, 1200),
+                                          mode=GARDEN_INDEPENDENT)
+        from src.task.weekly_garden import GardenRunResult
+        daily.run_task_by_class = Mock(side_effect=lambda _task: setattr(
+            garden, 'last_result', GardenRunResult('completed', 'week-one', 6000, True)))
+        weeks = iter(['week-one', 'week-one', 'week-two'])
+        with patch('src.task.weekly_garden.garden_week_key', side_effect=lambda: next(weeks)):
+            with self.assertRaisesRegex(RuntimeError, '周重置'):
+                daily.run_weekly_garden_only()
+        self.assertFalse(service.completions)
+
+    def test_weekly_garden_finished_exception_propagates_without_recovery(self):
+        from ok.task.exceptions import FinishedException
+        task = object.__new__(DailyTask)
+        task._profile_get = lambda key, default=None: 'daily' if key == 'Garden Execution Mode' else 'Monday'
+        task.get_last_completed = Mock(return_value=None)
+        task.info_set = Mock()
+        task.log_info = Mock()
+        task.run_weekly_garden_only = Mock(side_effect=FinishedException())
+        task.log_error = Mock()
+        task.screenshot = Mock()
+        task.ensure_main = Mock()
+        with patch('src.task.DailyTask.weekly_garden_check_due', return_value=True):
+            with self.assertRaises(FinishedException):
+                task.check_weekly_garden()
+        task.log_error.assert_not_called()
+        task.screenshot.assert_not_called()
+        task.ensure_main.assert_not_called()
+
     def test_low_stamina_is_pending_without_error_or_completion(self):
         task = self.daily(WeeklyBossResult(3, 2, 1, reason='当前体力不足'))
         task.check_weekly_boss()

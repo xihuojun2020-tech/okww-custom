@@ -37,7 +37,7 @@ $groups = @{
     "TestAccountReminders.py",
     "TestCharacterTrial.py", "TestCharacterIdentityRecovery.py", "TestChallengeFailureRecovery.py", "TestWeeklyRewardRecovery.py",
     "TestAutoCombatRecovery.py",
-    "TestWeeklyBossTask.py", "TestWeeklyNavigation.py", "TestPianoTeaching.py", "TestSecondSolTask.py",
+    "TestWeeklyBossTask.py", "TestWeeklyGardenState.py", "TestMultiAccountWeeklyGardenTask.py", "TestWeeklyNavigation.py", "TestPianoTeaching.py", "TestSecondSolTask.py",
     "TestWindowsGraphicsRecovery.py", "TestMultiStartState.py", "TestHotkeyRegistration.py",
     "test_extract_issue_log.py", "TestAccountConfigEditor.py", "TestAccountDirectoryAssessment.py",
     "TestAccountFieldMetadata.py", "TestAccountGraphStore.py", "TestAccountIdentity.py",

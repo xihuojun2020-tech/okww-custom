@@ -49,6 +49,9 @@ class TestAccountRuntimeIntegration(unittest.TestCase):
                             patch.object(module, 'get_default_repository', return_value=repository):
                         task = task_cls(executor=executor, app=None)
                         task.config = dict(task.default_config)
+                        if task_cls is MultiAccountDailyTask:
+                            from src.task.MultiAccountDailyTask import CURRENT_ACCOUNT
+                            task.config[CURRENT_ACCOUNT] = 'A3'
                         self.assertTrue(task.refresh_account_options())
                         if task_cls is DailyTask:
                             self.assertIsNone(task.get_readonly_config_value('Which to Farm'))
@@ -65,7 +68,11 @@ class TestAccountRuntimeIntegration(unittest.TestCase):
                             with self.assertRaises(ConfigIntegrityBlocked):
                                 task._profile_get('Which to Farm')
                         else:
-                            from src.task.MultiAccountDailyTask import CURRENT_SEQUENCE_MEMBERS
+                            from src.task.MultiAccountDailyTask import (
+                                CURRENT_ACCOUNT, CURRENT_SEQUENCE_MEMBERS,
+                            )
+                            self.assertEqual(task.config_type[CURRENT_ACCOUNT]['options'], [''])
+                            self.assertEqual(task.config[CURRENT_ACCOUNT], 'A3')
                             self.assertEqual(task.get_readonly_config_value(CURRENT_SEQUENCE_MEMBERS), [])
                         reader = task.load_daily_profiles if task_cls is DailyTask else task._load_profiles
                         with self.assertRaises(ConfigIntegrityBlocked):
@@ -171,7 +178,7 @@ class TestAccountRuntimeIntegration(unittest.TestCase):
                     self.assertTrue(task.refresh_account_options())
                     self.assertEqual(len(task.config_type[CURRENT_SEQUENCE]['options']), count)
                     self.assertEqual(task.get_readonly_config_value(CURRENT_SEQUENCE_MEMBERS),
-                                     ['A1', 'A3', 'A4'] if count else [])
+                                     ['A1', 'A3', 'A4'] if count else ['该序列暂无账号'])
                     if count:
                         self.assertEqual(len(task.create_run_snapshot(None, sequence_id=f'S{count-1}').profiles), 3)
                     task.clear_run_snapshot()
@@ -315,16 +322,21 @@ class TestAccountRuntimeIntegration(unittest.TestCase):
         multi = object.__new__(MultiAccountDailyTask)
         multi.running = False
         multi._account_refresh_pending = False
-        multi.config = {CURRENT_SEQUENCE: "序列2", CURRENT_ACCOUNT: "A1"}
+        multi.config = {CURRENT_SEQUENCE: "序列1", CURRENT_ACCOUNT: "A1"}
         multi.config_type = {
             CURRENT_SEQUENCE: {}, CURRENT_ACCOUNT: {},
             **{key: {} for key in SEQ_ACCOUNTS},
         }
         multi.get_sequence_names = lambda: ["序列2"]
         multi.get_profile_names = lambda: ["A1", "A3"]
+        multi.get_sequence_accounts = lambda _sequence=None: (
+            ["A1"] if multi.config[CURRENT_SEQUENCE] == "序列2" else []
+        )
         self.assertTrue(multi.refresh_account_options())
+        self.assertEqual(multi.config[CURRENT_SEQUENCE], "序列2")
+        self.assertEqual(multi.config[CURRENT_ACCOUNT], "A1")
         self.assertEqual(multi.config_type[CURRENT_SEQUENCE]["options"], ["序列2"])
-        self.assertEqual(multi.config_type[CURRENT_ACCOUNT]["options"], ["", "A1", "A3"])
+        self.assertEqual(multi.config_type[CURRENT_ACCOUNT]["options"], ["", "A1"])
 
     def test_bind_verified_profile_keeps_immutable_run_snapshot(self):
         profile_id = str(uuid.uuid4())

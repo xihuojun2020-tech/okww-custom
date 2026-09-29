@@ -752,10 +752,12 @@ class MainWindow(FluentWindow):
             return
         from src.task.DailyTask import DailyTask
         from src.task.MultiAccountDailyTask import MultiAccountDailyTask
+        from src.task.MultiAccountWeeklyGardenTask import MultiAccountWeeklyGardenTask
         from src.task.TestAccountSwitchTask import TestAccountSwitchTask
         for task_class, method_name in (
                 (DailyTask, 'refresh_account_options'),
                 (MultiAccountDailyTask, 'refresh_account_options'),
+                (MultiAccountWeeklyGardenTask, 'refresh_account_options'),
                 (TestAccountSwitchTask, 'refresh_profile_options')):
             try:
                 task = self.executor.get_task_by_class(task_class)

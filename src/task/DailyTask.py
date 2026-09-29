@@ -12,6 +12,7 @@ from PySide6.QtCore import QThread
 from PySide6.QtWidgets import QApplication
 
 from ok import Logger, TaskDisabledException
+from ok.task.exceptions import FinishedException
 from ok.util.file import get_relative_path, read_json_file, write_json_file
 from src.task.ForgeryTask import ForgeryTask
 from src.task.MaterialPlannerTask import MaterialPlannerTask, MATERIAL_PLANNER
@@ -87,22 +88,16 @@ ACCOUNT_CONFIG_VERSION = 1
 
 def weekly_garden_check_due(check_day, last_completed, now=None):
     """Return whether this account still needs its weekly garden check."""
+    from src.task.weekly_garden import BEIJING, garden_completed_this_week
     now = now or datetime.now()
     selected_day = normalize_weekday(check_day)
     if selected_day not in WEEKDAYS:
         return False
-    scheduled_weekday = WEEKDAYS.index(selected_day)
-    if now.weekday() < scheduled_weekday:
+    current = now.replace(tzinfo=BEIJING) if now.tzinfo is None else now.astimezone(BEIJING)
+    if garden_completed_this_week(last_completed, current):
         return False
-    if not last_completed:
-        return True
-    try:
-        completed_date = datetime.fromisoformat(
-            str(last_completed).strip().replace('Z', '+00:00')).date()
-    except (TypeError, ValueError):
-        return True
-    week_start = now.date() - timedelta(days=now.weekday())
-    return not (week_start <= completed_date <= now.date())
+    game_weekday = (current - timedelta(hours=4)).weekday()
+    return game_weekday >= WEEKDAYS.index(selected_day)
 
 # 每日任务卡片上的只读展示键：显示各子任务上次完成时间（数据存于方案文件中，不参与配置保存）
 LC_TACET = 'Last Completed - Tacet Suppression'
@@ -1968,6 +1963,10 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def check_weekly_garden(self):
         self.info_set('current task', 'check weekly garden')
+        mode = self._profile_get('Garden Execution Mode', None)
+        if mode in ('multi_account_weekly', 'closed'):
+            self.log_info('乐园执行安排不在每日任务中，跳过')
+            return
         raw_day = self._profile_get(GARDEN_CHECK_DAY, '无')
         try:
             check_day = normalize_weekday(raw_day)
@@ -1975,6 +1974,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             raise ConfigIntegrityBlocked(str(error)) from error
         if check_day not in WEEKDAYS:
             self.log_info('每周乐园未启用，跳过检查和执行')
+            return
+        if mode not in (None, 'daily'):
+            self.log_info('乐园执行安排不在每日任务中，跳过')
             return
         self.log_info('正在检查每周乐园...')
         # 所选日期是本周最早检查日；之后会持续补检，直到账号写入本周完成记录。
@@ -1988,21 +1990,10 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         if today != check_day:
             self.log_info(f'乐园检查日为 {check_day}，本周尚无完成记录，继续补检')
         try:
-            garden_task = self.get_task_by_class(GardenTask)
-            garden_task.open_garden_weekly_page()
-            if garden_task.is_weekly_garden_completed():
-                self.log_info('每周乐园已完成，跳过')
-                self.record_last_completed('Weekly Garden', profile_id=getattr(self, '_verified_profile_id', None))
-                return
-            # 页面检查可能耗时；执行前重新读取受保护快照并核对账号。
-            current_day = normalize_weekday(self._profile_get(GARDEN_CHECK_DAY, '无'))
-            if (current_day not in WEEKDAYS
-                    or getattr(self, '_verified_profile_id', None) != expected_profile):
-                raise ConfigIntegrityBlocked('每周乐园账号或启用状态已变化，停止执行')
-            self.log_info('每周乐园未完成，开始打每周乐园', notify=True)
-            self.run_task_by_class(GardenTask)
-            self.record_last_completed('Weekly Garden', profile_id=getattr(self, '_verified_profile_id', None))
-        except TaskDisabledException:
+            result = self.run_weekly_garden_only()
+            if result.done:
+                self.log_info('每周乐园已确认完成')
+        except (TaskDisabledException, FinishedException):
             raise
         except (ConfigIntegrityBlocked, ConfigWriteBlocked):
             raise
@@ -2010,6 +2001,98 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             self.log_error("GardenTask Failed", e)
             self.screenshot('GardenTask')
             self.ensure_main(time_out=180)
+
+    def run_weekly_garden_only(self):
+        """Run only the garden flow and persist its verified shared completion."""
+        from src.task.weekly_garden import (GARDEN_CLOSED, GardenRunResult,
+                                            garden_completed_this_week, garden_week_key)
+
+        expected_profile = getattr(self, '_verified_profile_id', None)
+        if not expected_profile:
+            raise ConfigIntegrityBlocked('乐园执行必须绑定已核验的账号 profile_id')
+        mode = self._profile_get('Garden Execution Mode', None)
+        if mode == GARDEN_CLOSED:
+            return GardenRunResult('pending', garden_week_key(), error='账号已关闭乐园')
+        if mode not in (None, 'daily', 'multi_account_weekly'):
+            raise ConfigIntegrityBlocked('乐园执行安排无效')
+
+        started_week = garden_week_key()
+        previous = self.get_last_completed('Weekly Garden')
+        if garden_completed_this_week(previous):
+            self._refresh_weekly_garden_consumers()
+            return GardenRunResult('already_completed', started_week, 6000, True)
+
+        garden = self.get_task_by_class(GardenTask)
+        garden.open_garden_weekly_page()
+        first = garden.read_weekly_garden_points()
+        self.sleep(0.6)
+        second = garden.read_weekly_garden_points()
+        if first is not None and first >= 6000 and second is not None and second >= 6000:
+            evidence_ref = garden.record_verified_result(second, started_week, expected_profile)
+            result = GardenRunResult('already_completed', started_week, second, True, evidence_ref)
+        else:
+            if getattr(self, '_verified_profile_id', None) != expected_profile:
+                raise ConfigIntegrityBlocked('乐园积分检查期间当前账号发生变化')
+            garden.last_result = None
+            garden._garden_evidence_profile_id = expected_profile
+            self.run_task_by_class(GardenTask)
+            result = getattr(garden, 'last_result', None)
+            if result is None or not result.done:
+                raise RuntimeError('乐园对局结束后积分未通过两张新画面复核')
+
+        end_week = garden_week_key()
+        if end_week != started_week:
+            garden.open_garden_weekly_page()
+            first = garden.read_weekly_garden_points()
+            self.sleep(0.6)
+            second = garden.read_weekly_garden_points()
+            if first is None or first < 6000 or second is None or second < 6000:
+                raise RuntimeError('乐园执行跨越周重置，新周积分未通过复核')
+            evidence_ref = garden.record_verified_result(second, end_week, expected_profile)
+            result = GardenRunResult('completed', end_week, second, True, evidence_ref)
+        if garden_week_key() != result.week_key:
+            garden.open_garden_weekly_page()
+            first = garden.read_weekly_garden_points()
+            self.sleep(0.6)
+            second = garden.read_weekly_garden_points()
+            verified = first is not None and first >= 6000 and second is not None and second >= 6000
+            if not verified:
+                raise RuntimeError('写入周常完成记录前发生周重置，积分未通过新周复核')
+            from src.task.weekly_garden import GardenRunResult as _GardenRunResult
+            evidence_ref = garden.record_verified_result(second, garden_week_key(), expected_profile)
+            result = _GardenRunResult('completed', garden_week_key(), second, True, evidence_ref)
+        if getattr(self, '_verified_profile_id', None) != expected_profile:
+            raise ConfigIntegrityBlocked('乐园完成后账号绑定发生变化')
+        if result.done:
+            from src.task.weekly_garden import BEIJING
+            timestamp = datetime.now(BEIJING).isoformat(timespec='seconds')
+            if self.integrity_service is not None:
+                self.integrity_service.record_completion(expected_profile, 'Weekly Garden', timestamp)
+                self.integrity_service.set_progress(
+                    f'weekly_garden_verification:{expected_profile}:{result.week_key}',
+                    {'week_key': result.week_key, 'verified': True, 'points': result.points,
+                     'evidence_ref': result.evidence_ref})
+            else:
+                self.record_last_completed('Weekly Garden', profile_id=expected_profile)
+            self._refresh_weekly_garden_consumers()
+        return result
+
+    def _refresh_weekly_garden_consumers(self):
+        """Refresh visible weekly cards after shared completion changes, without changing run targets."""
+        try:
+            from ok import og
+            executor = getattr(og, 'executor', None)
+            tasks = getattr(executor, 'onetime_tasks', ())
+            for task in tasks:
+                if type(task).__name__ != 'MultiAccountWeeklyGardenTask':
+                    continue
+                refresh = getattr(task, '_refresh_garden_status', None)
+                if callable(refresh):
+                    refresh()
+                from ok.gui.Communicate import communicate
+                communicate.task.emit(task)
+        except Exception:
+            pass
 
     def check_discarded_echo(self):
         self.info_set('current task', 'check discarded echo')

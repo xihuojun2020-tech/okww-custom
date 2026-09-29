@@ -325,11 +325,13 @@ class TestCompletionEvidence(unittest.TestCase):
                 else:
                     self.assertTrue(WeeklyBossTask._recheck(task, 3, 3).complete)
                 self.assertEqual(observe.call_args.args[2], 'partial' if remaining else 'completed')
-        for matched in ([], [SimpleNamespace(name='10000')]):
-            task = SimpleNamespace(ocr=Mock(return_value=matched), GARDEN_TARGET_POINTS='target', log_info=Mock())
+        for readings, expected in (((None, 6000), False), ((6000, 6000), True)):
+            task = SimpleNamespace(read_weekly_garden_points=Mock(side_effect=readings),
+                                   sleep=Mock(), log_info=Mock())
             with patch('src.evidence.service.record_task_evidence') as observe:
-                self.assertEqual(GardenTask.is_weekly_garden_completed(task), bool(matched))
-                self.assertEqual(observe.call_count, int(bool(matched)))
+                self.assertEqual(GardenTask.is_weekly_garden_completed(task), expected)
+                self.assertEqual(observe.call_count, int(expected))
+                self.assertEqual(task.read_weekly_garden_points.call_count, 2)
 
     def test_backup_keeps_original_and_recycle_state(self):
         with tempfile.TemporaryDirectory() as root:

@@ -364,7 +364,8 @@ class TestMultiAccountDailyTask(unittest.TestCase):
                     task = SimpleNamespace(ensure_main=Mock(), _switch_to_login=Mock(),
                         _next_target_account=Mock(return_value=target), log_info=Mock(),
                         _notify_user=Mock(), failed_accounts={} if success else {'A3': {'account': 'A3'}},
-                        _weekly_pending={'A3': '待补检'})
+                        _weekly_pending={'A3': '待补检'},
+                        _finish_sequence=lambda current=None: MultiAccountDailyTask._finish_sequence(task, current))
                     with patch.object(MultiAccountDailyTask, '_prepare_login_after_account_failure') as recover:
                         done = MultiAccountDailyTask._advance_after_account(task, 'A3', success, RuntimeError())
                     self.assertEqual(done, target is None)
@@ -393,7 +394,9 @@ class TestMultiAccountDailyTask(unittest.TestCase):
                 _load_today_progress=Mock(return_value=['A1', 'A3', 'A4']),
                 _classify_start_state=Mock(return_value=state),
                 _next_target_account=Mock(return_value=None), _switch_to_login=Mock(),
-                _select_and_login_account=Mock(), log_info=Mock(), _notify_user=Mock())
+                _select_and_login_account=Mock(), log_info=Mock(), _notify_user=Mock(),
+                _task_label=lambda: '每日任务',
+                _finish_sequence=lambda: MultiAccountDailyTask._finish_sequence(task))
             MultiAccountDailyTask._run_inner(task)
             task._switch_to_login.assert_not_called()
             task._select_and_login_account.assert_not_called()
@@ -1037,6 +1040,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
     def test_daily_task_requires_verified_profile_link(self):
         class FakeTask:
             _require_daily_profile = MultiAccountDailyTask._require_daily_profile
+            _task_label = MultiAccountDailyTask._task_label
 
             def __init__(self, profiles, linked):
                 self.profiles = profiles
@@ -1158,6 +1162,11 @@ class TestMultiAccountDailyTask(unittest.TestCase):
             _run_inner = MultiAccountDailyTask._run_inner
             _classify_start_state = lambda self: "world"
             _next_target_account = MultiAccountDailyTask._next_target_account
+            _progress_period = lambda self: '2026-09-29'
+            _finish_sequence = MultiAccountDailyTask._finish_sequence
+            _task_label = MultiAccountDailyTask._task_label
+            _account_start_allowed = MultiAccountDailyTask._account_start_allowed
+            _execute_account_task = lambda self, account: self._test_execute_account_task(account)
 
             def _notify_user(self, *_args):
                 self.events.append('finish')
@@ -1167,6 +1176,13 @@ class TestMultiAccountDailyTask(unittest.TestCase):
                 self.config = {}
                 self.events = []
                 self.targets = [None]
+
+            def _test_execute_account_task(self, account):
+                self._require_daily_profile(account)
+                self.run_task_by_class(None)
+                self._mark_done(account)
+                self._save_today_progress()
+                return True, None
 
             def get_sequence_accounts(self):
                 return ['A1', 'A3', 'A4']
@@ -1243,6 +1259,11 @@ class TestMultiAccountDailyTask(unittest.TestCase):
             _run_inner = MultiAccountDailyTask._run_inner
             _classify_start_state = lambda self: "world"
             _next_target_account = MultiAccountDailyTask._next_target_account
+            _progress_period = lambda self: '2026-09-29'
+            _finish_sequence = MultiAccountDailyTask._finish_sequence
+            _account_start_allowed = MultiAccountDailyTask._account_start_allowed
+            _task_label = MultiAccountDailyTask._task_label
+            _execute_account_task = lambda self, account: self._test_execute_account_task(account)
 
             def _notify_user(self, *_args):
                 self.events.append('finish')
@@ -1252,6 +1273,13 @@ class TestMultiAccountDailyTask(unittest.TestCase):
                 self.config = {CURRENT_ACCOUNT: 'A3'}
                 self.events = []
                 self.targets = iter(['A4', 'A1', None])
+
+            def _test_execute_account_task(self, account):
+                self._require_daily_profile(account)
+                self.run_task_by_class(None)
+                self._mark_done(account)
+                self._save_today_progress()
+                return True, None
 
             def get_sequence_accounts(self):
                 return ['A1', 'A3', 'A4']
@@ -1344,6 +1372,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         class FakeTask:
             integrity_service = None
             info = {'current task': 'combat'}
+            _progress_period = lambda self: '2026-09-29'
 
             def __init__(self):
                 self.done_set = set()
@@ -1434,6 +1463,9 @@ class TestMultiAccountDailyTask(unittest.TestCase):
             _run_inner = MultiAccountDailyTask._run_inner
             _classify_start_state = lambda self: "world"
             _next_target_account = MultiAccountDailyTask._next_target_account
+            _progress_period = lambda self: '2026-09-29'
+            _finish_sequence = MultiAccountDailyTask._finish_sequence
+            _task_label = MultiAccountDailyTask._task_label
 
             def __init__(self):
                 self.done_set = set()

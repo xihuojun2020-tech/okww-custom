@@ -130,6 +130,13 @@ class TestConfigIntegrity(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
+    def test_legacy_master_without_garden_mode_stays_valid_but_bad_new_mode_is_rejected(self):
+        candidate = master()
+        self.assertEqual(validate_master(candidate), [])
+        candidate['profiles'][PROFILE_A]['task_config']['Garden Execution Mode'] = 'enabled'
+        self.assertTrue(any('garden execution mode is invalid' in error
+                            for error in validate_master(candidate)))
+
     def test_first_check_requires_explicit_fingerprint_acceptance(self):
         result = self.service.check()
         self.assertTrue(result.master_valid)

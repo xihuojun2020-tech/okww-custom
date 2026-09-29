@@ -52,7 +52,8 @@ def synthetic_identity(short_name):
     }
 
 
-def make_account_environment(root, *, names=('A1', 'A3', 'A4'), publish=True):
+def make_account_environment(root, *, names=('A1', 'A3', 'A4'), publish=True,
+                            legacy_garden_mode=False):
     """Build a real, trusted schema-v1 store using synthetic identities only."""
     import copy
     from types import SimpleNamespace
@@ -64,16 +65,21 @@ def make_account_environment(root, *, names=('A1', 'A3', 'A4'), publish=True):
     profiles = {}
     for name in names:
         identity = synthetic_identity(name)
-        profiles[identity['profile_id']] = {
-            **identity, 'display_name': name, 'account_aliases': [], 'schedule': {}, 'extensions': {},
-            'task_config': {
+        task_config = {
                 'Which to Farm': 'Tacet Suppression', 'Which Tacet Suppression to Farm': 1,
                 'Which Forgery Challenge to Farm': 1, 'Material Selection': 'Shell Credit',
                 'Farm Nightmare Nest for Daily Echo': False, 'Nightmare Which to Farm': [],
                 'Tacet Discord Nests to Farm': [], 'Auto Farm all Nightmare Nest': False,
-                'Weekly Garden Check Day': '无', 'Merge Echo on Sunday': False,
+                'Weekly Garden Check Day': '无', 'Garden Execution Mode': 'closed',
+                'Merge Echo on Sunday': False,
                 '备用识别名称': '使用', '备用识别名称内容': identity['alternate_login_name'],
-            },
+            }
+        if legacy_garden_mode:
+            task_config.pop('Garden Execution Mode')
+            task_config['Weekly Garden Check Day'] = 'Monday'
+        profiles[identity['profile_id']] = {
+            **identity, 'display_name': name, 'account_aliases': [], 'schedule': {}, 'extensions': {},
+            'task_config': task_config,
         }
     master = {'schema_version': 1, 'config_id': 'synthetic-test', 'timezone': 'Asia/Shanghai',
               'profiles': profiles, 'sequences': {'S1': list(profiles)}, 'extensions': {}}

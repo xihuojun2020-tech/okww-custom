@@ -509,7 +509,10 @@ class AccountConfigBundleService:
             master = bundle.get("master_config")
             if not isinstance(master, Mapping):
                 errors.append("master_config must be an object")
-            elif not errors:
+            else:
+                from .account_field_metadata import migrate_garden_modes
+                master, _ = migrate_garden_modes(master)
+            if isinstance(master, Mapping) and not errors:
                 errors.extend(ci.validate_master(master))
             runtime_raw = bundle.get("runtime_data", {})
             if not isinstance(runtime_raw, Mapping):

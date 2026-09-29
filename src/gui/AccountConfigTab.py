@@ -19,7 +19,8 @@ from src.account_display import account_display_label
 from src.account_rebind_service import AccountRebindService, rebind_confirmation_identity
 from src.account_repository import AccountRepository, AccountRepositoryError, get_default_repository
 from src.account_field_metadata import (account_field_metadata, localize_account_value,
-                                        restore_account_value, normalize_weekday)
+                                        restore_account_value, normalize_weekday,
+                                        GARDEN_MODE_DAILY, GARDEN_EXECUTION_MODES)
 from src.gui.AccountChangeEvent import AccountChangeEvent
 from src.gui.BackgroundOperation import BackgroundOperation
 from src.gui.FlatSettingRow import FlatSettingRow
@@ -129,9 +130,15 @@ def _select_account_choice(widget, key, value):
             value = normalize_weekday(value)
         except ValueError:
             widget.setPlaceholderText('检查日无效，请重新选择')
+            widget.setToolTip('旧乐园检查日无效；选择“随每日执行”后重新选择星期才能保存。')
             widget.setCurrentIndex(-1)
             return
-    widget.setCurrentIndex(max(widget.findData(value), 0))
+    index = widget.findData(value)
+    if index < 0 and key in ('Weekly Garden Check Day', 'Garden Execution Mode'):
+        widget.setCurrentIndex(-1)
+        widget.setToolTip('选项无效，请重新选择')
+    else:
+        widget.setCurrentIndex(max(index, 0))
 
 
 def _read_account_choice(widget, key):
@@ -140,7 +147,19 @@ def _read_account_choice(widget, key):
         if widget.currentIndex() < 0:
             raise ValueError('周常乐园检查日无效，请重新选择星期')
         return normalize_weekday(value)
+    if key == 'Garden Execution Mode' and value not in GARDEN_EXECUTION_MODES:
+        raise ValueError('乐园执行安排无效，请重新选择')
     return value
+
+
+def _link_garden_controls(widgets):
+    mode = widgets.get('Garden Execution Mode')
+    check_day = widgets.get('Weekly Garden Check Day')
+    if mode is None or check_day is None:
+        return
+    update = lambda *_: check_day.setEnabled(mode.currentData() == GARDEN_MODE_DAILY)
+    mode.currentIndexChanged.connect(update)
+    update()
 
 
 class AccountTemplateDialog(QDialog):
@@ -150,6 +169,7 @@ class AccountTemplateDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("编辑新账号模板")
         self._tasks = dict(tasks)
+        self._tasks.setdefault('Garden Execution Mode', 'closed')
         from src.recording_policy import RECORDING_PAGES
         self._tasks['Record Pages'] = list(RECORDING_PAGES)
         for key, value in recording_defaults().items():
@@ -187,6 +207,7 @@ class AccountTemplateDialog(QDialog):
                                if isinstance(display, (list, dict)) else str(display))
             self._widgets[field.key] = widget
             form.addWidget(FlatSettingRow(field.label, widget, field.help_text, content))
+        _link_garden_controls(self._widgets)
         scroll.setWidget(content)
         layout.addWidget(scroll)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel, parent=self)
@@ -542,6 +563,7 @@ class AccountConfigTab(CustomTab):
         self.draft.tasks = value
         from src.recording_policy import RECORDING_PAGES
         self.draft.tasks['Record Pages'] = list(RECORDING_PAGES)
+        self.draft.tasks.setdefault('Garden Execution Mode', 'closed')
         for key, widget in self.form_widgets.items():
             if not widget.isEnabled():
                 continue
@@ -623,7 +645,7 @@ class AccountConfigTab(CustomTab):
                    'Material Selection'}
         daily = {'Farm Nightmare Nest for Daily Echo', 'Nightmare Which to Farm', 'Tacet Discord Nests to Farm',
                  'Nightmare Settlements to Farm', 'Auto Farm all Nightmare Nest'}
-        weekly = {'Weekly Garden Check Day', 'Merge Echo on Sunday'}
+        weekly = {'Garden Execution Mode', 'Weekly Garden Check Day', 'Merge Echo on Sunday'}
         def group(field):
             if field.key in ('Record Pages', 'Screenshot After Daily Task', 'Record After Daily Task', 'Record Duration'): return 4
             if field.key == 'Weekly Boss Target': return 1
@@ -696,6 +718,7 @@ class AccountConfigTab(CustomTab):
                     self.form_sections[key].set_summary(widget.currentText())
                 widget.currentTextChanged.connect(update_group_summary)
                 update_group_summary()
+        _link_garden_controls(self.form_widgets)
         from src.gui.compact_settings import compact_settings
         compact_settings(self, account=True)
 

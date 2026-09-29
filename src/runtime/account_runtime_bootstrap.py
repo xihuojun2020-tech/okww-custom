@@ -66,7 +66,25 @@ def initialize_account_runtime(root=None, program_version=None, *,
         publish_service.recover_incomplete_transactions()
         integrity_service = ConfigIntegrityService(
             resolved, program_version=str(program_version))
+        repository = AccountRepository(
+            paths=integrity_service.paths,
+            integrity_service=integrity_service,
+        )
         integrity_result = integrity_service.check()
+        # Keep account settings repairable when the protected source is missing,
+        # conflicted, or corrupt. Migration is only safe after a passing check.
+        if getattr(integrity_result, "ok", False):
+            try:
+                if repository.migrate_garden_execution_modes():
+                    integrity_result = integrity_service.check()
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception(
+                    "garden_execution_mode_migration_failed")
+                try:
+                    integrity_result = integrity_service.check(record_incident=False)
+                except Exception:
+                    pass
         master = getattr(integrity_result, "master", None) or {}
         profiles = master.get("profiles", {}) if isinstance(master, dict) else {}
         sensitive = []
@@ -82,10 +100,6 @@ def initialize_account_runtime(root=None, program_version=None, *,
             if isinstance(aliases, (list, tuple, set)):
                 sensitive.extend(aliases)
         register_sensitive_values(sensitive)
-        repository = AccountRepository(
-            paths=integrity_service.paths,
-            integrity_service=integrity_service,
-        )
         try:
             if install_start_guard:
                 if controller_cls is None:
