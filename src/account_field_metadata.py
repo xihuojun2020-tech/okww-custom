@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from typing import Any, Mapping
 from src.task.weekly_boss import WEEKLY_BOSSES, WEEKLY_AUTO
+from src.task.tacet_targets import TACET_IDS, TACET_OPTIONS
 
 WEEKDAYS = ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
 GARDEN_MODE_DAILY = 'daily'
@@ -45,7 +46,7 @@ _LABELS = {
     'Record Duration': ('每页录像时长（秒）', ''),
     "Weekly Boss Target": ("每周周本", "无表示关闭；周一检查、周二至周六补检、周日独立复检。优先使用当前体力。"),
     "Which to Farm": ("体力用途", "每天优先消耗体力的副本类型。不会影响账号识别。"),
-    "Which Tacet Suppression to Farm": ("无音区选择", "选择要刷取的无音区编号。不会影响账号识别。"),
+    "Which Tacet Suppression to Farm": ("无音区选择", "选择要刷取的无音区。旧账号选择保留原关卡；前往后不可快速到达时，请先解锁地图。"),
     "Which Forgery Challenge to Farm": ("凝素领域选择", "选择要刷取的凝素领域编号。不会影响账号识别。"),
     "Material Selection": ("材料选择", "模拟领域中优先获取的材料。不会影响账号识别。"),
     "Farm Nightmare Nest for Daily Echo": ("每日刷取梦魇声骸", "开启后每日任务会尝试刷取梦魇声骸。"),
@@ -61,6 +62,7 @@ _LABELS = {
     "备用识别名称内容": ("备用识别名称内容", "可填写 U…A 等登录页显示名称；停用时保留但不会用于识别。"),
 }
 _OPTIONS = {
+    'Which Tacet Suppression to Farm': TACET_IDS,
     "Weekly Boss Target": ("无", WEEKLY_AUTO, *(boss.key for boss in WEEKLY_BOSSES)),
     "Which to Farm": ("Tacet Suppression", "Forgery Challenge", "Simulation Challenge"),
     "Material Selection": ("Resonator EXP", "Weapon EXP", "Shell Credit"),
@@ -153,7 +155,8 @@ def account_field_metadata(tasks: Mapping[str, Any]) -> tuple[AccountFieldMetada
         options = tuple(_OPTIONS.get(key, ()))
         result.append(AccountFieldMetadata(
             str(key), label, help_text, editor, options,
-            tuple(str(localize_account_value(option)) for option in options), identity, identity or key == 'Record Pages'))
+            tuple(dict(TACET_OPTIONS)[option] if key == 'Which Tacet Suppression to Farm'
+                  else str(localize_account_value(option)) for option in options), identity, identity or key == 'Record Pages'))
     return tuple(result)
 
 

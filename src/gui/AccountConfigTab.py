@@ -125,6 +125,16 @@ class FixedRecordingPages(QWidget):
 
 
 def _select_account_choice(widget, key, value):
+    if key == 'Which Tacet Suppression to Farm' and value is None:
+        value = 1
+    if key == 'Which Tacet Suppression to Farm':
+        from src.task.tacet_targets import tacet_serial
+        try:
+            tacet_serial(value)
+        except ValueError:
+            widget.setCurrentIndex(-1)
+            widget.setToolTip('无音区目标无效，请重新选择')
+            return
     if key == 'Weekly Garden Check Day':
         try:
             value = normalize_weekday(value)
@@ -134,7 +144,7 @@ def _select_account_choice(widget, key, value):
             widget.setCurrentIndex(-1)
             return
     index = widget.findData(value)
-    if index < 0 and key in ('Weekly Garden Check Day', 'Garden Execution Mode'):
+    if index < 0 and key in ('Weekly Garden Check Day', 'Garden Execution Mode', 'Which Tacet Suppression to Farm'):
         widget.setCurrentIndex(-1)
         widget.setToolTip('选项无效，请重新选择')
     else:
@@ -143,6 +153,9 @@ def _select_account_choice(widget, key, value):
 
 def _read_account_choice(widget, key):
     value = widget.currentData()
+    if key == 'Which Tacet Suppression to Farm':
+        from src.task.tacet_targets import tacet_serial
+        tacet_serial(value)
     if key == 'Weekly Garden Check Day':
         if widget.currentIndex() < 0:
             raise ValueError('周常乐园检查日无效，请重新选择星期')

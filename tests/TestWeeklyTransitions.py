@@ -7,6 +7,7 @@ from tests import TestNavigationAdapter as navigation_tests
 
 class TestWeeklyTransitions(unittest.TestCase):
     def task(self):
+        from types import MethodType
         harness=navigation_tests.TestNavigationAdapter()
         self.addCleanup(harness.doCleanups)
         task=harness.task()
@@ -15,6 +16,8 @@ class TestWeeklyTransitions(unittest.TestCase):
         for name in ('TITLE','SINGLE','START'):
             setattr(task,name,getattr(WeeklyBossTask,name))
         task._text=Mock(return_value=task._entry_boss.name)
+        task._story_entry_warning = MethodType(WeeklyBossTask._story_entry_warning, task)
+        task._story_entry_confirmation = MethodType(WeeklyBossTask._story_entry_confirmation, task)
         task.click=lambda button:task.click_relative(.7,.9)
         return task
 
@@ -80,6 +83,19 @@ class TestWeeklyTransitions(unittest.TestCase):
         with patch('src.task.WeeklyBossTask.match_target_button',return_value=self.button):
             WeeklyBossTask._open_weekly_target(task,task._entry_boss)
         self.assertEqual(task.click_relative.call_count,2)
+
+    def test_story_missing_confirm_never_reclicks_background_list(self):
+        task = self.task()
+        task.LIST = WeeklyBossTask.LIST
+        task._text = lambda region, frame: (
+            '提前到达目标位置可能影响剧情体验，是否确认前往？'
+            if region == (.25,.43,.75,.53) and task.click_relative.called else task._entry_boss.name)
+        task._button = Mock(return_value=None)
+        task._ocr = Mock(return_value=[])
+        with patch('src.task.WeeklyBossTask.match_target_button', return_value=self.button):
+            with self.assertRaises(TransitionTimeout):
+                WeeklyBossTask._open_weekly_target(task, task._entry_boss)
+        task.click_relative.assert_called_once()
 
 
 if __name__=='__main__':unittest.main()

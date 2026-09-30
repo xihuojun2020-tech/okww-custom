@@ -59,6 +59,7 @@ WEEKLY_BOSSES = (
     WeeklyBoss('weekly_crownless', '无冠巨像之心'),
     WeeklyBoss('weekly_border_flame', '无序边境之火'),
     WeeklyBoss('weekly_bell', '昔日咏叹之钟'),
+    WeeklyBoss('weekly_order_law', '定序诸理之律'),
 )
 
 

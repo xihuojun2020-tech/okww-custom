@@ -2,6 +2,8 @@
 from ok import Logger
 from src.task.BaseCombatTask import BaseCombatTask, CharRevivedException
 from src.task.WWOneTimeTask import WWOneTimeTask
+from src.task.tacet_targets import TACET_STRUCTURE, TACET_NAMES, TACET_OPTIONS, TACET_BUTTON_LABELS, tacet_serial
+from src.task.ui_transition import TargetUnavailable
 
 logger = Logger.get_logger(__name__)
 
@@ -16,14 +18,17 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
         default_config = {
             'Which Tacet Suppression to Farm': 1,  # starts with 1
         }
-        self.structure = [2, 5, 5, 7]
+        self.structure = list(TACET_STRUCTURE)
         self.total_number = sum(self.structure)
         self.target_enemy_time_out = 10
         default_config.update(self.default_config)
         self.config_description = {
-            'Which Tacet Suppression to Farm': 'The Tacet Suppression number in the F2 list.',
+            'Which Tacet Suppression to Farm': 'Select a Tacet Field. Existing choices keep their locations after list updates.',
         }
         self.default_config = default_config
+        self.config_type['Which Tacet Suppression to Farm'] = {
+            'type': 'integer_drop_down', 'options': TACET_OPTIONS,
+        }
         self.door_walk_method = {  # starts with 0
             0: [],
             1: [],
@@ -49,6 +54,8 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
     def farm_tacet(self, daily=False, used_stamina=0, config=None, activity_ready=False, stamina_budget=None):
         if config is None:
             config = self.config
+        target_id = config.get('Which Tacet Suppression to Farm', 1)
+        tacet_serial(target_id)
         must_use = self.daily_stamina_budget(activity_ready, self.stamina_once, used_stamina) if daily else 0
         if stamina_budget is not None:
             if stamina_budget < self.stamina_once:
@@ -75,7 +82,7 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
                 return self.not_enough_stamina()
 
             self.open_boss_book('wuyin')
-            index = config.get('Which Tacet Suppression to Farm', 1) - 1
+            index = target_id - 1
             self.teleport_to_tacet(index)
             self.click_team_challenge()
             while True:
@@ -111,10 +118,21 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
             self.back(after_sleep=1)
 
     def teleport_to_tacet(self, index):
+        if type(index) is not int:
+            raise ValueError('请选择有效的无音区目标')
         self.info_set('Teleport to Tacet Suppression', index)
-        if not 0 <= index < self.total_number:
-            raise IndexError(f'Index out of range, max is {self.total_number}')
-        is_team = self.click_on_book_target(index + 1, self.total_number, self.structure)
+        target_id = index + 1
+        serial = tacet_serial(target_id)
+        name = TACET_NAMES.get(target_id) if self.game_lang == 'zh_CN' else None
+        self.log_info(f'无音区目标：保存值={target_id}，当前列表第{serial}项，名称={name or "按列表位置"}')
+        self.scroll_relative(.75, .5, 30)
+        self.sleep(.5)
+        try:
+            is_team = self.click_on_book_target(serial, self.total_number, self.structure,
+                target_name=name, button_labels=TACET_BUTTON_LABELS)
+        except TargetUnavailable:
+            self.screenshot('tacet_target_unavailable')
+            raise
         if not is_team:
             self.wait_click_travel()
             self.walk_until_f(time_out=10, backward_time=0, raise_if_not_found=True)

@@ -143,6 +143,7 @@ NIGHTMARE_OPTIONS = ['Nightmare Purification', 'Tacet Discord Nest']
 
 # 残象聚落名称（合并进每日任务模块，随方案切换）
 from src.nightmare_nests import NEST_NAMES, DEFAULT_NEST_NAMES, NIGHTMARE_NAMES
+from src.task.tacet_targets import TACET_OPTIONS
 
 # 凝素领域显示名。持久化值仍为 F2 列表中的整数序号，便于兼容旧账号。
 # 第 5～20 项暂保留序号占位，后续按游戏内实际名称继续补全。
@@ -250,6 +251,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         except ConfigIntegrityBlocked:
             initial_sequences, initial_profiles = [], []
         self.config_type = {
+            'Which Tacet Suppression to Farm': {
+                'type': 'integer_drop_down', 'options': TACET_OPTIONS,
+            },
             WEEKLY_TARGET: {'type': 'drop_down', 'options': [WEEKLY_DISABLED, WEEKLY_AUTO, *(b.key for b in WEEKLY_BOSSES)]},
             DAILY_PROFILE: {'type': 'drop_down', 'options': initial_profiles},
             # 方案序列：选序列后「账号配置」下拉随之只显示该序列的方案（两级联动，避免翻页）

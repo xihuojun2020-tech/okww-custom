@@ -10,6 +10,22 @@ from src.task.weekly_boss import WEEKLY_AUTO, WEEKLY_BOSSES, match_target_button
 
 
 class TestWeeklyNavigation(unittest.TestCase):
+    def test_auto_accepts_new_limited_first_row(self):
+        task = self.task()
+        boss = next(b for b in WEEKLY_BOSSES if b.key == 'weekly_order_law')
+        task._confirm_list_top = Mock()
+        task._ocr = Mock(return_value=self.rows(boss))
+        self.assertEqual(boss, WeeklyBossTask._select_first_target(task))
+        task._open_weekly_target.assert_called_once_with(boss)
+
+    def test_missing_limited_target_never_chooses_existing_boss(self):
+        task = self.task()
+        boss = next(b for b in WEEKLY_BOSSES if b.key == 'weekly_order_law')
+        task._ocr = Mock(return_value=self.rows(WEEKLY_BOSSES[0]))
+        with self.assertRaises(WeeklyPageTimeout):
+            WeeklyBossTask._select_target(task, boss)
+        task._open_weekly_target.assert_not_called()
+
     def task(self, remaining=3):
         task = weekly_tests.TestWeeklyBossFlow().task(remaining)
         task._executor = SimpleNamespace(method=SimpleNamespace(height=1440))

@@ -1940,7 +1940,28 @@ class BaseWWTask(BaseTask):
         bar_top = bar.y / self.height
         return bar_top
 
-    def click_on_book_target(self, serial_number: int, total_number: int, structure: list[int] = None):
+    def _book_target_buttons(self, frame, labels, target_name=None):
+        boxes = self.ocr(.35, .23, .97, .90, frame=frame) or []
+        buttons = sorted((box for box in boxes if str(box.name).strip() in labels
+                          and box.x >= self.width_of_screen(.82)), key=lambda box: box.y)
+        if target_name is not None:
+            titles = [box for box in boxes if ''.join(str(box.name).split()) == target_name]
+            if len(titles) != 1:
+                return []
+            title = titles[0]
+            buttons = [box for box in buttons
+                       if -.01 <= (box.y - title.y) / self.height_of_screen(1) <= .075]
+            if len(buttons) != 1:
+                return []
+        return buttons
+
+    def click_on_book_target(self, serial_number: int, total_number: int, structure: list[int] = None,
+                             *, target_name=None, button_labels=None):
+        def buttons():
+            if button_labels:
+                return self._book_target_buttons(self.require_game_frame(), button_labels, target_name)
+            return sorted(self.find_feature('boss_proceed', box=self.box_of_screen(
+                0.9113, 0.229, 0.9613, 0.861), threshold=0.8), key=lambda box: box.y)
         def get_cross_count(structure, sn):
             current_sum = 0
             cross_count = 0
@@ -1974,10 +1995,13 @@ class BaseWWTask(BaseTask):
             height = item_h * serial_number
             to_click_y = min(bar_top + height + cross_count * separator, bar_bottom)
             self.click(bar_x, to_click_y, after_sleep=1)
-        btns = self.find_feature('boss_proceed', box=self.box_of_screen(0.9113, 0.229, 0.9613, 0.861), threshold=0.8)
+        btns = self.wait_until(buttons, time_out=3, raise_if_not_found=False)
         if not btns:
-            raise Exception("can't find boss_proceed")
-        if target_index > -1:
+            self.screenshot('book_target_not_confirmed')
+            raise RuntimeError(f'无法确认指南目标及对应入口：{target_name or serial_number}')
+        if target_name is not None:
+            target = btns[0]
+        elif target_index > -1:
             if target_index < len(btns):
                 target = btns[target_index]
             else:
@@ -1991,7 +2015,7 @@ class BaseWWTask(BaseTask):
                 height = item_h * serial_number
                 to_click_y = min(bar_top + height + cross_count * separator, bar_bottom)
                 self.click(bar_x, to_click_y, after_sleep=1)
-                btns = self.find_feature('boss_proceed', box=self.box_of_screen(0.9113, 0.229, 0.9613, 0.861), threshold=0.8)
+                btns = self.wait_until(buttons, time_out=3, raise_if_not_found=False)
                 if not btns:
                     raise Exception("can't find boss_proceed after scroll")
                 target = max(btns, key=lambda box: box.y)
@@ -2001,7 +2025,8 @@ class BaseWWTask(BaseTask):
         self.click(target, after_sleep=1)
         feature = self.wait_book_target_state()
         if feature.name == 'remove_custom':
-            raise RuntimeError('指南目标没有可用传送或挑战入口，停止；未移除标记')
+            from src.task.ui_transition import TargetUnavailable
+            raise TargetUnavailable(f'指南目标没有可用传送或挑战入口：{target_name or serial_number}；请先解锁地图')
         return feature.name in ('team_start_challenge', 'team_entry')
 
     def change_time_to_night(self):

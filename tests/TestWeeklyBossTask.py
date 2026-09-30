@@ -40,11 +40,13 @@ class TestWeeklyBossParsing(unittest.TestCase):
         self.assertIsNone(parse_stamina('3/3'))
         self.assertIsNone(parse_stamina('228/240 5/240'))
 
-    def test_targets_are_ten_distinct_ids_in_user_order(self):
-        self.assertEqual(len(WEEKLY_BOSSES), 10)
-        self.assertEqual(len({b.key for b in WEEKLY_BOSSES}), 10)
+    def test_targets_include_limited_boss_and_preserve_existing_order(self):
+        self.assertEqual(len(WEEKLY_BOSSES), 11)
+        self.assertEqual(len({b.key for b in WEEKLY_BOSSES}), 11)
         self.assertEqual(WEEKLY_BOSSES[1].name, '虚妄诞生之种')
-        self.assertEqual(WEEKLY_BOSSES[-1].name, '昔日咏叹之钟')
+        self.assertEqual(WEEKLY_BOSSES[-2].name, '昔日咏叹之钟')
+        self.assertEqual(WEEKLY_BOSSES[-1].key, 'weekly_order_law')
+        self.assertEqual(WEEKLY_BOSSES[-1].name, '定序诸理之律')
 
     def test_button_must_belong_to_same_row(self):
         name = '虚妄诞生之种'

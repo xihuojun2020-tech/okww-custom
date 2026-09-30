@@ -25,6 +25,20 @@ from tests.fixture_support import make_account_environment
 
 
 class TestAccountManagementTabs(unittest.TestCase):
+    def test_tacet_template_preserves_ids_and_invalid_value_requires_selection(self):
+        from src.gui.AccountConfigTab import AccountTemplateDialog
+        for value in (1, 19, 20, 21):
+            dialog = AccountTemplateDialog({'Which Tacet Suppression to Farm': value})
+            control = dialog._widgets['Which Tacet Suppression to Farm']
+            self.assertEqual(21, control.count())
+            self.assertEqual(value, control.currentData())
+            self.assertEqual(value, dialog.tasks()['Which Tacet Suppression to Farm'])
+            dialog.deleteLater()
+        dialog = AccountTemplateDialog({'Which Tacet Suppression to Farm': 22})
+        self.assertEqual(-1, dialog._widgets['Which Tacet Suppression to Farm'].currentIndex())
+        with self.assertRaises(ValueError):
+            dialog.tasks()
+        dialog.deleteLater()
     def test_fifth_nest_is_available_without_changing_legacy_template(self):
         from src.gui.AccountConfigTab import AccountTemplateDialog
         from src.nightmare_nests import NEST_NAMES

@@ -1870,3 +1870,77 @@ msgstr "隨每日任務執行會依下方檢查日及補檢規則運行；選擇
 
 msgid "仅在乐园执行安排为“随每日执行”时生效；无表示每日入口不执行乐园。"
 msgstr "僅在樂園執行安排為「隨每日任務執行」時生效；選「無」則每日任務不執行樂園。"
+
+msgid ""
+"Select a Tacet Field. Existing choices keep their locations after list "
+"updates."
+msgstr "選擇無音區。列表更新後，既有選擇仍對應原關卡。"
+
+msgid "weekly_order_law"
+msgstr "定序諸理之律"
+
+msgid "定序诸理之律"
+msgstr "定序諸理之律"
+
+msgid "沉心域无音区"
+msgstr "沉心域無音區"
+
+msgid "烬心域无音区"
+msgstr "燼心域無音區"
+
+msgid "方擎西峰无音区"
+msgstr "方擎西峰無音區"
+
+msgid "玄幽东岳无音区"
+msgstr "玄幽東嶽無音區"
+
+msgid "第5个无音区"
+msgstr "第5個無音區"
+
+msgid "第6个无音区"
+msgstr "第6個無音區"
+
+msgid "第7个无音区"
+msgstr "第7個無音區"
+
+msgid "第8个无音区"
+msgstr "第8個無音區"
+
+msgid "第9个无音区"
+msgstr "第9個無音區"
+
+msgid "第10个无音区"
+msgstr "第10個無音區"
+
+msgid "第11个无音区"
+msgstr "第11個無音區"
+
+msgid "第12个无音区"
+msgstr "第12個無音區"
+
+msgid "第13个无音区"
+msgstr "第13個無音區"
+
+msgid "第14个无音区"
+msgstr "第14個無音區"
+
+msgid "第15个无音区"
+msgstr "第15個無音區"
+
+msgid "第16个无音区"
+msgstr "第16個無音區"
+
+msgid "第17个无音区"
+msgstr "第17個無音區"
+
+msgid "第18个无音区"
+msgstr "第18個無音區"
+
+msgid "第19个无音区"
+msgstr "第19個無音區"
+
+msgid "第20个无音区"
+msgstr "第20個無音區"
+
+msgid "第21个无音区"
+msgstr "第21個無音區"
