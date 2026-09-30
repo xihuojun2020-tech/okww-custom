@@ -25,6 +25,22 @@ from tests.fixture_support import make_account_environment
 
 
 class TestAccountManagementTabs(unittest.TestCase):
+    def test_fifth_nest_is_available_without_changing_legacy_template(self):
+        from src.gui.AccountConfigTab import AccountTemplateDialog
+        from src.nightmare_nests import NEST_NAMES
+        old = ['落渊南丘残象聚落', '盲望之塌残象聚落',
+               '复生丘原残象聚落', '陷足流川残象聚落']
+        dialog = AccountTemplateDialog({'Tacet Discord Nests to Farm': old})
+        control = dialog._widgets['Tacet Discord Nests to Farm']
+        self.assertEqual(5, len(control.boxes))
+        self.assertFalse(control.boxes[NEST_NAMES[0]].isChecked())
+        self.assertEqual(old, dialog.tasks()['Tacet Discord Nests to Farm'])
+        control.set_values([])
+        self.assertEqual([], dialog.tasks()['Tacet Discord Nests to Farm'])
+        control.set_values(None)
+        self.assertEqual(NEST_NAMES, dialog.tasks()['Tacet Discord Nests to Farm'])
+        dialog.deleteLater()
+
     def test_nest_checkboxes_preserve_selection_and_empty_template(self):
         from src.gui.AccountConfigTab import NestSelection, AccountTemplateDialog
         from src.nightmare_nests import NEST_NAMES, NIGHTMARE_NAMES

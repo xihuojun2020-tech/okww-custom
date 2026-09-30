@@ -13,9 +13,10 @@ TRAVEL_FEATURES = ['fast_travel_custom', 'gray_teleport']
 CONFIRM_FEATURES = ['confirm_btn_hcenter_vcenter', 'confirm_btn_highlight_hcenter_vcenter']
 
 # 残象聚落（Tacet Discord Nest）名称，按游戏内 F2 残象页面从上到下的顺序
-from src.nightmare_nests import NEST_NAMES, NIGHTMARE_NAMES
+from src.nightmare_nests import (NEST_NAMES, DEFAULT_NEST_NAMES, NIGHTMARE_NAMES, NEST_TOTALS_BY_NAME,
+                                 canonical_nest_name)
 # 每个位置的聚落怪物总数（用于校验行位置是否对应正确，48 出现两次所以不能单独用总数定位）
-NEST_TOTAL_BY_POSITION = [41, 48, 48, 24]
+NEST_TOTAL_BY_POSITION = list(NEST_TOTALS_BY_NAME.values())
 # 可识别的聚落总数（保留 36 以兼容旧版本/历史数据）
 NEST_TOTALS = {'24', '36', '41', '48'}
 # 要刷的残象聚落（勾选 = 刷，不勾选 = 不打）
@@ -57,8 +58,8 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
         self.default_config.update({'Which to Farm': ['Nightmare Purification', 'Tacet Discord Nest']})
         self.config_type['Which to Farm'] = {'type': "multi_selection",
                                              'options': ['Nightmare Purification', 'Tacet Discord Nest']}
-        # 要刷的残象聚落：勾选 = 刷，不勾选 = 不打（默认全刷）
-        self.default_config.update({FARM_TACET_DISCORD_NESTS: list(NEST_NAMES)})
+        # Preserve the old four implicit targets; the new location is opt-in.
+        self.default_config.update({FARM_TACET_DISCORD_NESTS: list(DEFAULT_NEST_NAMES)})
         self.default_config.update({FARM_NIGHTMARE_SETTLEMENTS: []})
         self.config_type[FARM_TACET_DISCORD_NESTS] = {
             'type': 'multi_selection',
@@ -84,6 +85,8 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
         self.log_info('opened gray_book_boss')
         while nest := self.get_nest_to_go():
             self.combat_nest(nest)
+            if nest.cache_key.startswith('residual:'):
+                self._nest_attempted.add(nest.cache_key)
         self._assert_selected_targets_complete()
         self.ensure_main(time_out=30)
 
@@ -105,6 +108,8 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
                 self.ensure_main(time_out=30)
             if self._capture_success:
                 break
+            if nest.cache_key.startswith('residual:'):
+                self._nest_attempted.add(nest.cache_key)
         self.ensure_main(time_out=30)
         if not self._capture_success:
             raise CombatStateUnknown('每日声骸未确认获取，保留待补跑')
@@ -278,10 +283,16 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
         return self.openF2Book(feature)
 
     def _init_queue(self):
-        quests = self.config.get('Which to Farm') or ['Nightmare Purification', 'Tacet Discord Nest']
+        quests = self.config.get('Which to Farm')
+        if quests is None:
+            quests = ['Nightmare Purification', 'Tacet Discord Nest']
         actions = []
         if 'Tacet Discord Nest' in quests:
-            actions.append(self.go_nest)
+            selected = self._selected_residual_names()
+            if selected:
+                actions.append(self.go_nest)
+                if NEST_NAMES[-1] in selected:
+                    actions.append(self.go_nest_scroll)
         if 'Nightmare Purification' in quests:
             actions.append(self.go_nightmare)
             actions.append(self.go_nightmare_scroll)
@@ -298,8 +309,108 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
 
     def go_nest(self):
         self.open_boss_book('canxiang')
+        # The book remembers its position after teleporting or changing tabs.
+        self.scroll_relative(.75, .5, 20)
+        self.sleep(.3)
+
+    def go_nest_scroll(self):
+        self.open_boss_book('canxiang')
+        # Same right-hand scrollbar positioning used by click_on_book_target.
+        self.click(.9730, .8806, after_sleep=.3)
+
+    def _selected_residual_names(self):
+        selected = self.config.get(FARM_TACET_DISCORD_NESTS)
+        if selected is None:
+            selected = DEFAULT_NEST_NAMES
+        names = set()
+        for value in selected:
+            name = canonical_nest_name(value)
+            if name is None:
+                raise RuntimeError(f'无法识别配置中的残像聚落：{value}')
+            names.add(name)
+        return names
+
+    def _residual_rows(self, frame, required=None, top=False):
+        boxes = self.ocr(.35, .13, 1, .96, frame=frame) or []
+        titles = [(box, canonical_nest_name(box.name)) for box in boxes]
+        titles = [(box, name) for box, name in titles if name]
+        if top and NEST_NAMES[0] not in {name for _, name in titles}:
+            raise ValueError('未确认列表顶部的梦枢天罗')
+        counts = [(box, match) for box in boxes
+                  for match in re.finditer(self.count_re, box.name)]
+        buttons = [box for box in boxes
+                   if str(box.name).strip() in ('前往', '前往挑战', 'Go', 'Go To', 'Proceed')]
+        rows = {}
+        for title, name in titles:
+            if required is not None and name not in required:
+                continue
+            # A count belongs below its title, before the next visible title.
+            limit = min((other.y for other, _ in titles if other.y > title.y),
+                        default=self.height_of_screen(.96))
+            matched = [(box, match) for box, match in counts
+                       if title.y <= box.y < limit
+                       and box.y - title.y < self.height_of_screen(.12)]
+            if len(matched) != 1 or name in rows:
+                raise ValueError(f'{name} 的进度行无法唯一确认')
+            count, match = matched[0]
+            current, total = map(int, match.groups())
+            if total != NEST_TOTALS_BY_NAME[name] or not 0 <= current <= total:
+                raise ValueError(f'{name} 进度不符：{current}/{total}')
+            controls = [button for button in buttons
+                        if title.y <= button.y < limit
+                        and abs(button.y - count.y) < self.height_of_screen(.07)]
+            rows[name] = (current, total, controls[0] if len(controls) == 1 else None)
+        return rows
+
+    def _find_residual_nest(self):
+        selected = self._selected_residual_names()
+        bottom = self.queues[0].__name__ == 'go_nest_scroll'
+        required = selected & ({NEST_NAMES[-1]} if bottom else set(NEST_NAMES[:-1]))
+        if not required:
+            return None
+        detail = ''
+        for attempt in range(3):
+            frame = self.require_game_frame()
+            try:
+                rows = self._residual_rows(frame, required, top=not bottom)
+                missing = required - rows.keys()
+                if missing:
+                    raise ValueError('未找到所选地点：' + '、'.join(sorted(missing)))
+                if any(current < total and button is None
+                       for name, (current, total, button) in rows.items() if name in required):
+                    raise ValueError('所选地点的前往按钮无法唯一确认')
+            except ValueError as error:
+                detail = str(error)
+                self.log_info(f'残像聚落识别重试 {attempt + 1}/3：{detail}')
+                if attempt < 2:
+                    if bottom:
+                        self.scroll_relative(.75, .5, -4)
+                    else:
+                        self.scroll_relative(.75, .5, 20)
+                    self.sleep(.3)
+                continue
+            for name in NEST_NAMES:
+                if name not in required:
+                    continue
+                current, total, button = rows[name]
+                key = 'residual:' + name
+                if current == total:
+                    self._nest_completed.add(name)
+                    self._clear_target_progress(key)
+                    continue
+                self._nest_completed.discard(name)
+                self._record_target_progress(key, name, current, total)
+                if key in self._unreachable_nests:
+                    continue
+                publish_task_status(self, stage='刷梦魇巢穴', detail=f'当前目标：{name}')
+                return NestTarget(button, key, name, NEST_NAMES.index(name) + 1, current, total)
+            return None
+        self.screenshot('residual_nest_identification_failed', frame=frame)
+        raise RuntimeError(f'残像聚落识别失败：{detail}')
 
     def find_nest(self):
+        if self.queues and self.queues[0].__name__ in ('go_nest', 'go_nest_scroll'):
+            return self._find_residual_nest()
         counts = self.ocr(0.35, 0.13, 1, 0.96, match=self.count_re)
         candidates = [(box, match) for box in sorted(counts, key=lambda item: item.y)
                       for match in re.finditer(self.count_re, box.name)
@@ -356,6 +467,8 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
         self._nest_progress = {}
         self._nest_stagnation = {}
         self._incomplete_targets = {}
+        self._nest_completed = set()
+        self._nest_attempted = set()
 
     def _record_target_progress(self, cache_key, display_name, current, total):
         progress = getattr(self, '_nest_progress', None)
@@ -365,8 +478,9 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
         previous = progress.get(cache_key)
         if previous is None or current > previous:
             self._nest_stagnation[cache_key] = 0
-        else:
+        elif not cache_key.startswith('residual:') or cache_key in self._nest_attempted:
             self._nest_stagnation[cache_key] = self._nest_stagnation.get(cache_key, 0) + 1
+        self._nest_attempted.discard(cache_key)
         progress[cache_key] = current
         self._incomplete_targets[cache_key] = (display_name, current, total)
         if self._nest_stagnation[cache_key] >= 3:
@@ -375,8 +489,17 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
     def _clear_target_progress(self, cache_key):
         getattr(self, '_incomplete_targets', {}).pop(cache_key, None)
         getattr(self, '_nest_stagnation', {}).pop(cache_key, None)
+        getattr(self, '_nest_progress', {}).pop(cache_key, None)
+        getattr(self, '_nest_attempted', set()).discard(cache_key)
 
     def _assert_selected_targets_complete(self):
+        quests = self.config.get('Which to Farm')
+        if quests is None:
+            quests = ['Nightmare Purification', 'Tacet Discord Nest']
+        if 'Tacet Discord Nest' in quests:
+            missing = self._selected_residual_names() - self._nest_completed
+            if missing:
+                raise RuntimeError('所选残像聚落未确认完成：' + '、'.join(sorted(missing)))
         incomplete = list(getattr(self, '_incomplete_targets', {}).values())
         if not incomplete:
             return

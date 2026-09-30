@@ -93,6 +93,15 @@ class TestDailyFailureRecovery(unittest.TestCase):
         values['Tacet Discord Nests to Farm'] = ['另一个聚落']
         self.assertNotEqual(full, DailyTask._nightmare_checkpoint_key(task, True))
 
+    def test_name_verified_residual_clear_uses_new_checkpoint(self):
+        task = Mock(spec=DailyTask)
+        values = {'Tacet Discord Nests to Farm': ['落渊南丘残象聚落']}
+        task._profile_get.side_effect = lambda key, default: values.get(key, default)
+        self.assertTrue(DailyTask._nightmare_checkpoint_key(task, True).startswith('daily_step_v3:'))
+        self.assertTrue(DailyTask._nightmare_checkpoint_key(task, False).startswith('daily_step_v2:'))
+        values['Tacet Discord Nests to Farm'] = []
+        self.assertTrue(DailyTask._nightmare_checkpoint_key(task, True).startswith('daily_step_v2:'))
+
     def test_checkpoint_refresh_boundary_missing_and_future(self):
         task = Mock(spec=DailyTask)
         now = datetime(2026, 9, 14, 4, 1)

@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 
 from src.task.BaseWWTask import BaseWWTask
 from src.task.DailyTask import DailyTask, DailyActivityIncomplete
-from src.task.NightmareNestTask import NightmareNestTask
+from src.task.NightmareNestTask import NightmareNestTask, NestTarget
 from src.task.daily_observation import resource_values, objective_progress
 from src.task.daily_reserve_policy import DailyReservePolicy
 
@@ -97,7 +97,7 @@ class TestDailyOutcomeRecovery(unittest.TestCase):
     def test_capture_candidate_does_not_skip_next_target_without_result(self):
         task=Mock(spec=NightmareNestTask)
         task._unreachable_nests=set()
-        task.get_nest_to_go.side_effect=['one','two',None]
+        task.get_nest_to_go.side_effect=[NestTarget(None, 'one'), NestTarget(None, 'two'), None]
         task.combat_nest.side_effect=lambda nest:setattr(task,'_capture_success',True)
         verify=Mock(side_effect=[False,True])
         with patch('src.task.NightmareNestTask.WWOneTimeTask.run'):

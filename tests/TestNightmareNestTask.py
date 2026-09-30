@@ -75,7 +75,7 @@ class TestNightmareNestTask(unittest.TestCase):
         task = NightmareNestTask.__new__(NightmareNestTask)
         task.config = {'Which to Farm': ['Nightmare Purification', 'Tacet Discord Nest']}
         task._init_queue()
-        self.assertEqual(['go_nest', 'go_nightmare', 'go_nightmare_scroll'],
+        self.assertEqual(['go_nest', 'go_nest_scroll', 'go_nightmare', 'go_nightmare_scroll'],
                          [action.__name__ for action in task.queues])
 
     def test_capture_success_clears_combat_before_post_combat_waits(self):
@@ -292,14 +292,19 @@ class TestNightmareNestTask(unittest.TestCase):
 
     def test_find_nest_keeps_partially_completed_row(self):
         task = NightmareNestTask.__new__(NightmareNestTask)
-        task.config = {}
+        task.config = {'Tacet Discord Nests to Farm': ['落渊南丘残象聚落']}
         task.count_re = re.compile(r"(\d{1,2})/(\d{1,2})")
         task.queues = [task.go_nest]
         task._unreachable_nests = set()
         task.log_info = lambda *args, **kwargs: None
         task.height_of_screen = lambda value: 1000 * value
         task.width_of_screen = lambda value: 2000 * value
-        task.ocr = lambda *args, **kwargs: [FakeBox('3/41', y=200)]
+        task._reset_progress_tracking()
+        task.require_game_frame = lambda: object()
+        task.ocr = lambda *args, **kwargs: [FakeBox('梦枢天罗残象聚落', y=100),
+                                           FakeBox('落渊南丘残象聚落', y=200),
+                                           FakeBox('3/41', y=260),
+                                           FakeBox('前往', x=1800, y=230)]
 
         target = task.find_nest()
 
@@ -308,6 +313,7 @@ class TestNightmareNestTask(unittest.TestCase):
 
     def test_incomplete_selected_target_prevents_success(self):
         task = NightmareNestTask.__new__(NightmareNestTask)
+        task.config = {'Which to Farm': ['Nightmare Purification']}
         task._incomplete_targets = {'go_nest:41:10': ('落渊南丘残象聚落', 3, 41)}
 
         with self.assertRaisesRegex(RuntimeError, '3/41'):
@@ -331,6 +337,211 @@ class TestNightmareNestTask(unittest.TestCase):
         shifted = task._make_nest_cache_key(FakeBox('0/36', y=202), '36')
 
         self.assertEqual(first, shifted)
+
+    def residual_task(self, selected, boxes, bottom=False):
+        from unittest.mock import Mock
+        task = NightmareNestTask.__new__(NightmareNestTask)
+        task.config = {'Which to Farm': ['Tacet Discord Nest'],
+                       'Tacet Discord Nests to Farm': selected}
+        task.count_re = re.compile(r'(\d{1,2})/(\d{1,2})')
+        task._reset_progress_tracking()
+        task._unreachable_nests = set()
+        task.queues = [task.go_nest_scroll if bottom else task.go_nest]
+        task.require_game_frame = Mock(return_value=object())
+        task.ocr = Mock(return_value=boxes)
+        task.height_of_screen = lambda value: 1000 * value
+        task.scroll_relative = Mock()
+        task.sleep = Mock()
+        task.click = Mock()
+        task.open_boss_book = Mock()
+        task.screenshot = Mock()
+        task.log_info = Mock()
+        return task
+
+    def residual_boxes(self, names, current=0, start=150):
+        from src.nightmare_nests import NEST_TOTALS_BY_NAME
+        boxes = []
+        for index, name in enumerate(names):
+            y = start + index * 170
+            boxes.extend([FakeBox(name, y=y),
+                          FakeBox(f'{current}/{NEST_TOTALS_BY_NAME[name]}', y=y+60),
+                          FakeBox('前往', x=1800, y=y+30)])
+        return boxes
+
+    def test_only_bottom_selection_adds_bottom_action(self):
+        from src.nightmare_nests import NEST_NAMES
+        for selected in ([], NEST_NAMES[:4], [NEST_NAMES[-1]], NEST_NAMES):
+            with self.subTest(selected=selected):
+                task = self.residual_task(selected, [])
+                task._init_queue()
+                self.assertEqual((["go_nest"] if selected else []) +
+                                 (["go_nest_scroll"] if NEST_NAMES[-1] in selected else []),
+                                 [action.__name__ for action in task.queues])
+
+    def test_three_identical_totals_are_selected_by_name(self):
+        from src.nightmare_nests import NEST_NAMES
+        boxes = self.residual_boxes(NEST_NAMES[:4])
+        task = self.residual_task([NEST_NAMES[3]], boxes)
+        target = task.find_nest()
+        self.assertEqual(NEST_NAMES[3], target.display_name)
+        self.assertIs(boxes[-1], target.box)
+        self.assertEqual('residual:' + NEST_NAMES[3], target.cache_key)
+        task.scroll_relative.assert_not_called()
+
+    def test_fifth_target_is_named_after_scroll_and_overlap_ignored(self):
+        from src.nightmare_nests import NEST_NAMES
+        task = self.residual_task([NEST_NAMES[-1]], self.residual_boxes(NEST_NAMES[2:]), bottom=True)
+        target = task.find_nest()
+        self.assertEqual(NEST_NAMES[-1], target.display_name)
+        self.assertEqual(5, target.ordinal)
+
+    def test_missing_top_target_retries_upwards_and_cannot_report_success(self):
+        from src.nightmare_nests import NEST_NAMES
+        task = self.residual_task([NEST_NAMES[1]], self.residual_boxes([NEST_NAMES[0]]))
+        with self.assertRaisesRegex(RuntimeError, '未找到所选地点'):
+            task.find_nest()
+        self.assertEqual(2, task.scroll_relative.call_count)
+        self.assertTrue(all(call.args[-1] > 0 for call in task.scroll_relative.call_args_list))
+        task.screenshot.assert_called_once()
+        with self.assertRaisesRegex(RuntimeError, '未确认完成'):
+            task._assert_selected_targets_complete()
+
+    def test_wrong_total_or_missing_button_never_clicks(self):
+        from src.nightmare_nests import NEST_NAMES
+        for broken in ('count', 'button'):
+            boxes = self.residual_boxes([NEST_NAMES[0]])
+            if broken == 'count':
+                boxes[1].name = '0/41'
+            else:
+                boxes.pop()
+            task = self.residual_task([NEST_NAMES[0]], boxes)
+            with self.assertRaises(RuntimeError):
+                task.find_nest()
+            task.click.assert_not_called()
+
+    def test_completed_selection_needs_no_bottom_or_unselected_counts(self):
+        from src.nightmare_nests import NEST_NAMES
+        boxes = self.residual_boxes([NEST_NAMES[0]], current=48)
+        task = self.residual_task([NEST_NAMES[0]], boxes)
+        self.assertIsNone(task.find_nest())
+        task._assert_selected_targets_complete()
+        task.scroll_relative.assert_not_called()
+
+    def test_missing_fifth_blocks_all_selected_completion(self):
+        from src.nightmare_nests import NEST_NAMES
+        task = self.residual_task(NEST_NAMES, [])
+        task._nest_completed.update(NEST_NAMES[:-1])
+        with self.assertRaisesRegex(RuntimeError, '陷足流川'):
+            task._assert_selected_targets_complete()
+
+    def test_refresh_is_not_a_combat_attempt_and_identity_survives_scroll(self):
+        from src.nightmare_nests import NEST_NAMES
+        task = self.residual_task([NEST_NAMES[3]], self.residual_boxes(NEST_NAMES[:4]))
+        first = task.find_nest()
+        for _ in range(5):
+            self.assertEqual(first.cache_key, task.find_nest().cache_key)
+        self.assertEqual(0, task._nest_stagnation[first.cache_key])
+        for index in range(3):
+            task._nest_attempted.add(first.cache_key)
+            if index < 2:
+                task.find_nest()
+            else:
+                with self.assertRaisesRegex(RuntimeError, '连续 3 次'):
+                    task.find_nest()
+
+    def test_stale_bottom_view_must_not_be_treated_as_top(self):
+        from src.nightmare_nests import NEST_NAMES
+        task = self.residual_task([NEST_NAMES[3]], self.residual_boxes(NEST_NAMES[1:]))
+        with self.assertRaisesRegex(RuntimeError, '列表顶部'):
+            task.find_nest()
+
+    def test_saved_old_names_are_not_reinterpreted_by_new_order(self):
+        old = ['落渊南丘残象聚落', '陷足流川残象聚落']
+        task = self.residual_task(old, [])
+        self.assertEqual(set(old), task._selected_residual_names())
+        self.assertNotIn('梦枢天罗残象聚落', task._selected_residual_names())
+        task.config['Tacet Discord Nests to Farm'] = ['落渊南丘残像聚落']
+        self.assertEqual({'落渊南丘残象聚落'}, task._selected_residual_names())
+
+    def test_missing_legacy_selection_and_explicit_empty_keep_new_target_disabled(self):
+        from src.nightmare_nests import DEFAULT_NEST_NAMES
+        task = self.residual_task([], [])
+        del task.config['Tacet Discord Nests to Farm']
+        self.assertEqual(set(DEFAULT_NEST_NAMES), task._selected_residual_names())
+        task.config['Which to Farm'] = []
+        task._init_queue()
+        self.assertEqual([], task.queues)
+
+    def test_bottom_scroll_failure_is_bounded_and_has_evidence(self):
+        from src.nightmare_nests import NEST_NAMES
+        task = self.residual_task([NEST_NAMES[-1]],
+                                  self.residual_boxes(NEST_NAMES[:4]), bottom=True)
+        with self.assertRaisesRegex(RuntimeError, '陷足流川'):
+            task.find_nest()
+        self.assertEqual(2, task.scroll_relative.call_count)
+        task.screenshot.assert_called_once()
+
+    def test_top_entry_restores_upwards_and_bottom_reuses_scrollbar(self):
+        task = self.residual_task([], [])
+        task.go_nest()
+        task.scroll_relative.assert_called_once_with(.75, .5, 20)
+        task.click.assert_not_called()
+        task.go_nest_scroll()
+        task.click.assert_called_once_with(.9730, .8806, after_sleep=.3)
+
+    def test_stop_during_identification_is_not_swallowed(self):
+        from ok import TaskDisabledException
+        from src.nightmare_nests import NEST_NAMES
+        task = self.residual_task([NEST_NAMES[0]], [])
+        task.require_game_frame.side_effect = TaskDisabledException('stop')
+        with self.assertRaises(TaskDisabledException):
+            task.find_nest()
+        task.screenshot.assert_not_called()
+
+    def test_full_run_covers_selected_targets_once_and_scrolls_only_for_fifth(self):
+        from unittest.mock import Mock, patch
+        from src.nightmare_nests import NEST_NAMES, NEST_TOTALS_BY_NAME
+        for selected in (NEST_NAMES[:4], [NEST_NAMES[-1]], NEST_NAMES):
+            with self.subTest(selected=selected):
+                task = self.residual_task(selected, [])
+                page = {'bottom': False}
+                complete = set()
+                visited = []
+                task.ensure_main = Mock()
+                task._open_book_with_retry = Mock()
+
+                def scroll(x, y, count):
+                    page['bottom'] = count < 0
+
+                def click(x, y, **kwargs):
+                    self.assertEqual((.9730, .8806), (x, y))
+                    page['bottom'] = True
+
+                def ocr(*args, **kwargs):
+                    names = NEST_NAMES[2:] if page['bottom'] else NEST_NAMES[:4]
+                    boxes = self.residual_boxes(names)
+                    for box in boxes:
+                        for name in complete:
+                            # Counts are identified by the adjacent title in this fixture.
+                            if box.name == name:
+                                count = boxes[boxes.index(box) + 1]
+                                total = NEST_TOTALS_BY_NAME[name]
+                                count.name = f'{total}/{total}'
+                    return boxes
+
+                def combat(target):
+                    visited.append(target.display_name)
+                    complete.add(target.display_name)
+
+                task.scroll_relative.side_effect = scroll
+                task.click.side_effect = click
+                task.ocr.side_effect = ocr
+                task.combat_nest = combat
+                with patch('src.task.NightmareNestTask.WWOneTimeTask.run'):
+                    task.run()
+                self.assertEqual(selected, visited)
+                # The second bottom positioning confirms progress after returning from combat.
+                self.assertEqual(2 if NEST_NAMES[-1] in selected else 0, task.click.call_count)
 
 
 if __name__ == '__main__':

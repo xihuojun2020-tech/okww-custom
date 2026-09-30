@@ -142,7 +142,7 @@ PROFILE_EXTRA_FIELDS = ('last_completed', 'account_aliases')
 NIGHTMARE_OPTIONS = ['Nightmare Purification', 'Tacet Discord Nest']
 
 # 残象聚落名称（合并进每日任务模块，随方案切换）
-from src.nightmare_nests import NEST_NAMES, NIGHTMARE_NAMES
+from src.nightmare_nests import NEST_NAMES, DEFAULT_NEST_NAMES, NIGHTMARE_NAMES
 
 # 凝素领域显示名。持久化值仍为 F2 列表中的整数序号，便于兼容旧账号。
 # 第 5～20 项暂保留序号占位，后续按游戏内实际名称继续补全。
@@ -194,7 +194,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             'Farm Nightmare Nest for Daily Echo': True,
             AUTO_FARM_NIGHTMARE_NEST: False,
             'Nightmare Which to Farm': ['Tacet Discord Nest'],
-            'Tacet Discord Nests to Farm': list(NEST_NAMES),
+            'Tacet Discord Nests to Farm': list(DEFAULT_NEST_NAMES),
             FARM_NIGHTMARE_SETTLEMENTS: [],
             GARDEN_CHECK_DAY: '无',
             WEEKLY_TARGET: WEEKLY_AUTO,
@@ -625,7 +625,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self.log_warning(message, notify=True)
 
     def _configure_nightmare_task(self, task):
-        residual = list(self._profile_get(FARM_TACET_DISCORD_NESTS, NEST_NAMES))
+        residual = list(self._profile_get(FARM_TACET_DISCORD_NESTS, DEFAULT_NEST_NAMES))
         nightmare = list(self._profile_get(FARM_NIGHTMARE_SETTLEMENTS, []))
         task.config['Which to Farm'] = (["Tacet Discord Nest"] if residual else []) + (
             ["Nightmare Purification"] if nightmare else [])
@@ -636,10 +636,12 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         # Reuse the validated profile's completion store. Legacy generic
         # completion stamps cannot prove capture vs full-clear or target scope.
         intent = [bool(auto_farm),
-                  sorted(self._profile_get(FARM_TACET_DISCORD_NESTS, NEST_NAMES)),
+                  sorted(self._profile_get(FARM_TACET_DISCORD_NESTS, DEFAULT_NEST_NAMES)),
                   sorted(self._profile_get(FARM_NIGHTMARE_SETTLEMENTS, []))]
         digest = hashlib.sha256(json.dumps(intent, ensure_ascii=False).encode()).hexdigest()[:20]
-        return f'daily_step_v2:nightmare:{digest}'
+        # Ordinal-based clears cannot prove all selected locations after the list changed.
+        version = 3 if auto_farm and intent[1] else 2
+        return f'daily_step_v{version}:nightmare:{digest}'
 
     def _daily_objective(self, kind):
         from src.task.daily_observation import objective_progress
@@ -1884,7 +1886,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def validate_daily_tasks(self):
         if self._profile_get(AUTO_FARM_NIGHTMARE_NEST) and not (
-                self._profile_get(FARM_TACET_DISCORD_NESTS, NEST_NAMES)
+                self._profile_get(FARM_TACET_DISCORD_NESTS, DEFAULT_NEST_NAMES)
                 or self._profile_get(FARM_NIGHTMARE_SETTLEMENTS, [])):
             # NightmareNestTask 已整合进每日任务模块，校验基于每日任务里的可见配置
             raise Exception(
