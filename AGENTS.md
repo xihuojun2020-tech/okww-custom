@@ -31,3 +31,11 @@
 - `TestAccountSwitchTask` is the focused test entry point for `MultiAccountDailyTask`; it must reuse the production account-selection, alias-matching, verification, retry, logout, and login methods instead of maintaining a separate switching implementation.
 - Keep account-switch tests synchronized whenever the production multi-account switching path changes.
 - The default continuous switching test order is A1, A3, A4. Resolve these as exact profile short names and cover both configured alternate login names and masked-phone identities.
+
+## Auto combat persistence
+
+- Auto combat is a core service. Once enabled, ordinary errors, repeated errors, failed recovery hooks, capture failures, and other task failures must never disable it or persist `_enabled = False`. Only an explicit user stop/toggle may save the disabled preference.
+- Restore the saved preference on restart and preserve it when resetting combat settings. Do not forcibly enable existing disabled configurations during upgrades.
+- Outside a verified battle or while capture/input is unavailable, retain intent and wait for recovery. Respect explicit global pause and application exit without clearing the preference.
+- Keep one input owner: foreground daily/challenge combat uses the shared combat loop; background combat must not concurrently send keys. Preserve death, result handoff, and user stop signals.
+- Recovery diagnostics must not kill execution. Keep task-owned input release, bounded retry delays without a total retry-count shutdown, and evidence under okww监控室.

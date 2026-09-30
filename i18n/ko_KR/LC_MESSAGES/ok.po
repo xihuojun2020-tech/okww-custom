@@ -1850,3 +1850,22 @@ msgstr "무음구역 3"
 
 msgid "第4个无音区"
 msgstr "무음구역 4"
+
+msgid ""
+"Auto combat stays enabled and retries errors until you manually turn it off."
+msgstr "자동 전투는 수동으로 끌 때까지 활성 상태를 유지하며 오류 발생 시 재시도합니다."
+
+msgid "已手动关闭"
+msgstr "수동으로 꺼짐"
+
+msgid "已开启，等待战斗"
+msgstr "활성화됨, 전투 대기 중"
+
+msgid "自动战斗中"
+msgstr "자동 전투 중"
+
+msgid "异常恢复中"
+msgstr "오류 복구 중"
+
+msgid "等待游戏窗口/截图恢复"
+msgstr "게임 창/화면 캡처 복구 대기 중"

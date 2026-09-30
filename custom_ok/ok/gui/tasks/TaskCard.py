@@ -210,6 +210,8 @@ class TaskCard(ConfigCard):
                  else '已启用' if self.task.enabled else '未运行' if self.onetime else '已关闭')
         self.state_label.setText(state)
         recovery = getattr(self.task, 'recovery_status', '')
+        if recovery and og.app is not None:
+            recovery = og.app.tr(recovery)
         if recovery:
             self.state_label.setText(f'{state} · {recovery}')
         self.state_label.setVisible(bool(self.onetime or self.task.running or self.task.paused or recovery))
@@ -325,6 +327,15 @@ class TaskCard(ConfigCard):
                         self.enable_button.setChecked(task.enabled)
 
             self._rebuild_button_layout()
+
+    def reset_clicked(self):
+        if getattr(self.task, 'persistent_enabled', False) is True:
+            preference = self.task.enabled
+            self.config.reset_to_default()
+            self.config['_enabled'] = preference
+            self.update_config()
+        else:
+            super().reset_clicked()
 
     def check_changed(self, checked):
         manual_control = getattr(self.task, 'set_enabled_from_ui', None)

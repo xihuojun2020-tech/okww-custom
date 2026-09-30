@@ -1956,3 +1956,22 @@ msgstr "第3個無音區"
 
 msgid "第4个无音区"
 msgstr "第4個無音區"
+
+msgid ""
+"Auto combat stays enabled and retries errors until you manually turn it off."
+msgstr "自動戰鬥保持開啟並持續重試異常，直到您手動關閉。"
+
+msgid "已手动关闭"
+msgstr "已手動關閉"
+
+msgid "已开启，等待战斗"
+msgstr "已開啟，等待戰鬥"
+
+msgid "自动战斗中"
+msgstr "自動戰鬥中"
+
+msgid "异常恢复中"
+msgstr "異常恢復中"
+
+msgid "等待游戏窗口/截图恢复"
+msgstr "等待遊戲視窗/擷取恢復"

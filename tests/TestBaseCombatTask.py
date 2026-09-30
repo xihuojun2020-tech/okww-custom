@@ -14,10 +14,106 @@ class TestBaseCombatTask(unittest.TestCase):
         task.switch_healer_enabled.return_value = False
         task.in_combat.return_value = True
         task.is_expected_combat_end.return_value = False
-        task.get_current_char.return_value.perform.side_effect = NotInCombatException('not in_team while switching')
+        task.perform_combat_rotation.side_effect = NotInCombatException('not in_team while switching')
         with self.assertRaises(RuntimeError):
             BaseCombatTask.combat_once(task)
         task.combat_end.assert_not_called()
+
+    def recovery_task(self):
+        from types import SimpleNamespace
+        task = object.__new__(BaseCombatTask)
+        task.info = {}
+        task.skip_combat_check = False
+        task._combat_held_keys = {}
+        task._combat_held_mouse = {}
+        task.chars = []
+        task._last_combat_error = None
+        task._last_combat_error_log = 0
+        task._suppressed_combat_errors = 0
+        task._executor = SimpleNamespace(check_enabled=Mock(), _frame=None)
+        task.next_frame = Mock()
+        task.in_combat = Mock(return_value=True)
+        task.is_expected_combat_end = Mock(return_value=False)
+        task.load_chars = Mock(return_value=True)
+        task.info_set = Mock()
+        task.sleep = Mock()
+        task.get_current_char = Mock(return_value=Mock())
+        return task
+
+    def test_rotation_recovers_more_than_old_retry_limit_then_uses_character_script(self):
+        task = self.recovery_task()
+        char = task.get_current_char.return_value
+        char.perform.side_effect = [ValueError('skill failed')] * 8 + [None]
+        task.perform_combat_rotation()
+        self.assertEqual(9, char.perform.call_count)
+        self.assertEqual(8, task.load_chars.call_count)
+        self.assertEqual([2, 4, 8, 16, 30, 30, 30, 30], [c.args[0] for c in task.sleep.call_args_list])
+        task.load_chars.assert_called_with(force_full_scan=True)
+
+    def test_combat_probe_recovers_and_wait_disables_stale_sleep_checks(self):
+        task = self.recovery_task()
+        task.in_combat.side_effect = [ValueError('frame failed'), True]
+        task.sleep.side_effect = lambda delay: self.assertTrue(task.skip_combat_check)
+        self.assertTrue(task.combat_is_active())
+        self.assertFalse(task.skip_combat_check)
+        task.get_current_char.assert_not_called()
+
+    def test_rotation_stop_death_and_handoff_are_not_swallowed(self):
+        from ok import TaskDisabledException
+        from ok.task.exceptions import FinishedException
+        from src.combat.CombatCheck import CombatFlowInterrupt
+        from src.task.BaseCombatTask import CharDeadException
+        for error in (TaskDisabledException(), FinishedException(), CombatFlowInterrupt(), CharDeadException()):
+            task = self.recovery_task()
+            task.get_current_char.return_value.perform.side_effect = error
+            with self.assertRaises(type(error)):
+                task.perform_combat_rotation()
+            task.sleep.assert_not_called()
+
+    def test_transient_character_combat_loss_revalidates_and_resumes(self):
+        task = self.recovery_task()
+        char = task.get_current_char.return_value
+        char.perform.side_effect = [NotInCombatException('team briefly missing'), None]
+        task.perform_combat_rotation()
+        self.assertEqual(2, char.perform.call_count)
+        task.load_chars.assert_called_once_with(force_full_scan=True)
+        self.assertFalse(task._rotation_recovering)
+
+    def test_rotation_leaving_combat_cannot_retry_blindly(self):
+        task = self.recovery_task()
+        task.get_current_char.return_value.perform.side_effect = ValueError('skill failed')
+        task.in_combat.return_value = False
+        with self.assertRaises(NotInCombatException):
+            task.perform_combat_rotation()
+        self.assertEqual(1, task.get_current_char.return_value.perform.call_count)
+        task.load_chars.assert_not_called()
+
+    def test_release_after_backend_replacement_uses_original_keyboard_and_mouse(self):
+        task = self.recovery_task()
+        original = Mock()
+        replacement = Mock()
+        task.executor.interaction = replacement
+        task.validate_key = lambda key: key
+        task._combat_held_keys['w'] = original
+        task._combat_held_mouse['left'] = original
+        task.send_key_up('w')
+        task.mouse_up(key='left')
+        original.send_key_up.assert_called_once_with(key='w')
+        original.mouse_up.assert_called_once_with(key='left')
+        replacement.send_key_up.assert_not_called()
+        replacement.mouse_up.assert_not_called()
+        self.assertEqual({}, task._combat_held_keys)
+        self.assertEqual({}, task._combat_held_mouse)
+
+    def test_rotation_release_failure_blocks_actions_until_original_backend_recovers(self):
+        task = self.recovery_task()
+        backend = Mock()
+        backend.send_key_up.side_effect = [OSError('window gone'), OSError('window gone'), None]
+        task._combat_held_keys['w'] = backend
+        task.perform_combat_rotation()
+        self.assertEqual(3, backend.send_key_up.call_count)
+        self.assertEqual({}, task._combat_held_keys)
+        task.get_current_char.return_value.perform.assert_called_once()
 
     def test_switch_team_wait_uses_new_frames_without_input(self):
         from types import SimpleNamespace
@@ -42,7 +138,7 @@ class TestBaseCombatTask(unittest.TestCase):
             task.in_combat.return_value = True
             task.is_expected_combat_end.return_value = True
             task.wait_combat.return_value = 'entered'
-            task.get_current_char.return_value.perform.side_effect = error
+            task.perform_combat_rotation.side_effect = error
             if isinstance(error, CharDeadException):
                 with self.assertRaises(CharDeadException):
                     BaseCombatTask.combat_once(task)

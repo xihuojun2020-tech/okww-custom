@@ -7,6 +7,8 @@ import cv2
 import numpy as np
 
 from ok import Logger, Config, TaskDisabledException
+from ok.task.exceptions import FinishedException
+from src.combat.CombatCheck import CombatFlowInterrupt
 from src.runtime.game_runtime_errors import FrameUnavailable, GameProcessLost
 from src.config_integrity import ConfigIntegrityBlocked, ConfigWriteBlocked
 from ok import color_range_to_bound
@@ -85,6 +87,154 @@ class BaseCombatTask(CombatCheck):
         self.add_text_fix({'Ｅ': 'e'})
         self.use_liberation = True
         self._con_anomaly_logs = {}
+        self._combat_held_keys = {}
+        self._combat_held_mouse = {}
+        self._last_combat_error = None
+        self._last_combat_error_log = 0.0
+        self._suppressed_combat_errors = 0
+
+    def send_key_down(self, key, after_sleep=0):
+        key = self.validate_key(key)
+        self._combat_held_keys[key] = self.executor.interaction
+        return super().send_key_down(key, after_sleep)
+
+    def send_key_up(self, key, after_sleep=0):
+        key = self.validate_key(key)
+        original = self._combat_held_keys.get(key)
+        if original is not None and original is not self.executor.interaction:
+            original.send_key_up(key=key)
+            self._combat_held_keys.pop(key, None)
+            if after_sleep:
+                self.sleep(after_sleep)
+            return
+        result = super().send_key_up(key, after_sleep)
+        self._combat_held_keys.pop(key, None)
+        return result
+
+    def mouse_down(self, x=-1, y=-1, name=None, key='left'):
+        self._combat_held_mouse[key] = self.executor.interaction
+        return super().mouse_down(x, y, name, key)
+
+    def mouse_up(self, name=None, key='left'):
+        original = self._combat_held_mouse.get(key)
+        if original is not None and original is not self.executor.interaction:
+            original.mouse_up(key=key)
+            self._combat_held_mouse.pop(key, None)
+            return
+        result = super().mouse_up(name, key)
+        self._combat_held_mouse.pop(key, None)
+        return result
+
+    def _release_combat_inputs(self):
+        for held, method in ((getattr(self, '_combat_held_keys', {}), 'send_key_up'), (getattr(self, '_combat_held_mouse', {}), 'mouse_up')):
+            for key, interaction in list(held.items()):
+                try:
+                    getattr(interaction, method)(key=key)
+                    held.pop(key, None)
+                except Exception:
+                    pass  # Retain the original backend for a later release attempt.
+
+    def record_combat_error(self, error, count, delay):
+        """Best-effort diagnostics: never turn an evidence failure into a combat stop."""
+        try:
+            signature = (type(error).__name__, str(error))
+            now = time.monotonic()
+            self.info_set('自动战斗保护', f'异常恢复中；第 {count} 次，{delay} 秒后重新检查')
+            self.info_set('最近异常', f'{signature[0]}: {signature[1]}')
+        except Exception:
+            signature = (type(error).__name__, 'diagnostic unavailable')
+            now = time.monotonic()
+        if signature != self._last_combat_error or now - self._last_combat_error_log >= 30:
+            self._last_combat_error_log = now
+            try:
+                logger.error(f'combat recovery; retry={count}, delay={delay}s, '
+                             f'merged={self._suppressed_combat_errors}', error)
+            except Exception:
+                pass
+            self._suppressed_combat_errors = 0
+            try:
+                frame = getattr(self.executor, '_frame', None)
+                if frame is not None:
+                    self.screenshot('combat_recovery', frame=frame)
+            except Exception:
+                pass
+        else:
+            self._suppressed_combat_errors += 1
+        self._last_combat_error = signature
+
+    def _wait_combat_recovery(self, delay):
+        # A failed animation/roster must not make sleep_check use stale characters.
+        previous = self.skip_combat_check
+        self.skip_combat_check = True
+        try:
+            self.sleep(delay)
+        finally:
+            self.skip_combat_check = previous
+
+    def combat_is_active(self):
+        errors = 0
+        while True:
+            try:
+                result = self.in_combat()
+                if errors:
+                    self._rotation_recovering = False
+                    self.info.pop('自动战斗保护', None)
+                return result
+            except (TaskDisabledException, FinishedException, CombatFlowInterrupt,
+                    NotInCombatException, ConfigIntegrityBlocked, ConfigWriteBlocked):
+                raise
+            except Exception as error:
+                errors += 1
+                self._rotation_recovering = True
+                self._release_combat_inputs()
+                delay = min(30, 2 ** min(errors, 5))
+                self.record_combat_error(error, errors, delay)
+                self._wait_combat_recovery(delay)
+
+    def on_destroy(self):
+        self._release_combat_inputs()
+        super().on_destroy()
+
+    def perform_combat_rotation(self):
+        """Retry broken character actions only while this task still owns a live battle."""
+        errors = 0
+        while True:
+            self.executor.check_enabled()
+            battle_confirmed = not errors
+            try:
+                self._release_combat_inputs()
+                if self._combat_held_keys or self._combat_held_mouse:
+                    raise RuntimeError('战斗输入仍未释放，等待输入后端恢复')
+                if errors:
+                    self.next_frame()
+                    if not self.in_combat():
+                        raise NotInCombatException('recovering rotation left combat')
+                    battle_confirmed = True
+                    if not self.load_chars(force_full_scan=True):
+                        raise CombatStateUnknown('恢复时无法确认队伍')
+                current = self.get_current_char()
+                if current is None:
+                    raise CombatStateUnknown('无法确认当前角色')
+                current.perform()
+                self._rotation_recovering = False
+                self.info.pop('自动战斗保护', None)
+                return
+            except (TaskDisabledException, FinishedException, CombatFlowInterrupt,
+                    CharDeadException, CharRevivedInPlace, ConfigIntegrityBlocked, ConfigWriteBlocked):
+                raise
+            except Exception as error:
+                if isinstance(error, NotInCombatException) and (
+                        self.is_expected_combat_end() or not battle_confirmed):
+                    raise
+                errors += 1
+                self._rotation_recovering = True
+                self._release_combat_inputs()
+                self.chars = [None, None, None]
+                self.freeze_durations = []
+                self._in_liberation = False
+                delay = min(30, 2 ** min(errors, 5))
+                self.record_combat_error(error, errors, delay)
+                self._wait_combat_recovery(delay)
 
     def _log_con_anomaly(self, key, message, interval=30):
         """Rate-limit repeated concerto anomalies and report the merged count."""
@@ -456,9 +606,9 @@ class BaseCombatTask(CombatCheck):
                     if self.switch_healer_enabled():
                         self.load_chars()
                         self.switch_healer()
-                    while self.in_combat():
+                    while BaseCombatTask.combat_is_active(self):
                         logger.debug(f'combat_once loop {self.chars}')
-                        self.get_current_char().perform()
+                        self.perform_combat_rotation()
                     break
                 except CharRevivedInPlace:
                     if recovery == 3:
@@ -476,6 +626,7 @@ class BaseCombatTask(CombatCheck):
                     break
         finally:
             self._local_revive_active = previous
+            self._release_combat_inputs()
             self.finish_rotation_tracking('combat_loop_exit')
         self.combat_end()
         if self.switch_healer_enabled():

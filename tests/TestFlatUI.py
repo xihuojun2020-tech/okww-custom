@@ -375,6 +375,21 @@ class TestFlatUI(unittest.TestCase):
                 self.assertEqual(card.card.minimumHeight(), 56)
                 card.deleteLater()
 
+    def test_reset_combat_settings_preserves_user_toggle(self):
+        from ok.gui.tasks.TaskCard import TaskCard
+        class Config(dict):
+            def reset_to_default(self):
+                self.clear()
+                self.update({'_enabled': True, 'Use Liberation': True})
+        for enabled in (True, False):
+            config = Config({'_enabled': enabled, 'Use Liberation': False})
+            owner = SimpleNamespace(task=SimpleNamespace(persistent_enabled=True, enabled=enabled),
+                                    config=config, update_config=Mock())
+            TaskCard.reset_clicked(owner)
+            self.assertEqual(enabled, config['_enabled'])
+            self.assertTrue(config['Use Liberation'])
+            owner.update_config.assert_called_once()
+
     def test_helper_static_state_is_not_duplicated(self):
         from ok.gui.tasks.TaskCard import TaskCard
         task = example_task()

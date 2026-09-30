@@ -460,7 +460,11 @@ class TaskExecutor:
 
     def stop_current_task(self):
         if task := self.current_task:
-            task.disable()
+            manual_control = getattr(task, 'set_enabled_from_ui', None)
+            if getattr(task, 'persistent_enabled', False) and callable(manual_control):
+                manual_control(False)
+            else:
+                task.disable()
             task.unpause()
 
     def ensure_capture_worker(self):
@@ -588,8 +592,19 @@ class TaskExecutor:
                 cycled = True
             self.trigger_task_index += 1
             task = self.trigger_tasks[self.trigger_task_index]
-            if task.enabled and task.should_trigger():
-                return task, cycled, True
+            if task.enabled:
+                try:
+                    if task.should_trigger():
+                        return task, cycled, True
+                except (TaskDisabledException, FinishedException):
+                    raise
+                except Exception as error:
+                    if not TaskExecutor._recover_trigger_error(task, error):
+                        task.disable()
+                        try:
+                            logger.error(f'{task.name} trigger probe failed', error)
+                        except Exception:
+                            pass
         return None, cycled, False
 
     def active_trigger_task_count(self):
@@ -608,31 +623,68 @@ class TaskExecutor:
         ]
         return min(delays, default=default)
 
+    @staticmethod
+    def _recover_trigger_error(task, error):
+        recovery = getattr(task, 'handle_execution_error', None)
+        persistent = getattr(task, 'persistent_enabled', False) is True
+        handled = False
+        if callable(recovery):
+            try:
+                handled = bool(recovery(error))
+            except Exception as recovery_error:
+                try:
+                    logger.error('task error recovery failed', recovery_error)
+                except Exception:
+                    pass
+        if persistent and not handled:
+            # Last-resort scheduling survives a broken recovery/diagnostic hook.
+            task._retry_at = time.monotonic() + 30
+            task._error_count = getattr(task, '_error_count', 0) + 1
+            handled = True
+        if handled:
+            try:
+                communicate.task.emit(task)
+            except Exception:
+                pass
+        return handled
+
     def execute(self):
         logger.info(f"start execute")
         while not self.exit_event.is_set():
-            TaskExecutor._service_diagnostic_capture(self)
-            if self.paused:
-                logger.info(f'executor is paused sleep')
-                self.sleep(1)
-            wake_version = self._get_wake_version()
-            task, cycled, is_trigger_task = self.next_task()
+            try:
+                TaskExecutor._service_diagnostic_capture(self)
+                if self.paused:
+                    logger.info(f'executor is paused sleep')
+                    self.sleep(1)
+                wake_version = self._get_wake_version()
+                task, cycled, is_trigger_task = self.next_task()
+            except TaskDisabledException:
+                continue
+            except FinishedException:
+                break
+            except Exception as error:
+                for candidate in getattr(self, 'trigger_tasks', ()):
+                    if getattr(candidate, 'persistent_enabled', False) is True:
+                        TaskExecutor._recover_trigger_error(candidate, error)
+                self._wait_for_activity(1)
+                continue
             if not task:
                 self._wait_for_activity(self.next_trigger_delay(), wake_version)
                 continue
-            if cycled:
-                self.reset_scene()
-            elif time.time() - self._last_frame_time > 0.2:
-                self.reset_scene()
             try:
                 task.start_time = time.time()
                 task.running = True
                 self.current_task = task
+                if cycled or time.time() - self._last_frame_time > 0.2:
+                    self.reset_scene()
                 if not is_trigger_task:
                     communicate.task.emit(task)
                 if cycled or self._frame is None:
                     if self.next_frame(time_out=4) is None and is_trigger_task:
                         logger.info("no frame available, skip remaining trigger tasks")
+                        if getattr(task, 'persistent_enabled', False) is True:
+                            from src.runtime.game_runtime_errors import FrameUnavailable
+                            TaskExecutor._recover_trigger_error(task, FrameUnavailable('等待游戏窗口/截图恢复'))
                         self.trigger_task_index = len(self.trigger_tasks) - 1
                         self.current_task = None
                         task.running = False
@@ -682,20 +734,10 @@ class TaskExecutor:
                     communicate.task.emit(task)
                 break
             except Exception as e:
-                recovery = getattr(task, 'handle_execution_error', None)
-                if is_trigger_task and callable(recovery):
-                    task.running = False
-                    try:
-                        handled = recovery(e)
-                    except Exception as recovery_error:
-                        logger.error('task error recovery failed', recovery_error)
-                        handled = False
-                    if handled:
-                        self.current_task = None
-                        communicate.task.emit(task)
-                        continue
-                if isinstance(e, CaptureException):
-                    communicate.capture_error.emit()
+                task.running = False
+                if is_trigger_task and TaskExecutor._recover_trigger_error(task, e):
+                    self.current_task = None
+                    continue
                 name = task.name
                 task.running = False
                 task.disable()
@@ -706,14 +748,28 @@ class TaskExecutor:
                     params = {"key": e.key}
                 else:
                     error = str(e)
-                communicate.notification.emit(error, name, True, True, None, params, None)
-                task.info_set(QCoreApplication.tr('app', 'Error'), error)
-                logger.error(f"{name} exception stopped", e)
-                if self._frame is not None:
-                    communicate.screenshot.emit(self.frame, name, True, None)
+                try:
+                    if isinstance(e, CaptureException):
+                        communicate.capture_error.emit()
+                    communicate.notification.emit(error, name, True, True, None, params, None)
+                    task.info_set(QCoreApplication.tr('app', 'Error'), error)
+                    logger.error(f"{name} exception stopped", e)
+                    if self._frame is not None:
+                        communicate.screenshot.emit(self._frame, name, True, None)
+                except Exception:
+                    pass  # A reporting failure must not kill all background tasks.
                 self.current_task = None
-                communicate.task.emit(None)
+                try:
+                    communicate.task.emit(None)
+                except Exception:
+                    pass
             finally:
+                release = getattr(task, '_release_combat_inputs', None)
+                if callable(release):
+                    try:
+                        release()
+                    except Exception:
+                        pass
                 task.running = False
                 if self.current_task is task:
                     self.current_task = None

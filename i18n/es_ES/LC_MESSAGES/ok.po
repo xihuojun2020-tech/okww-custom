@@ -1891,3 +1891,24 @@ msgstr "Zona tácita 3"
 
 msgid "第4个无音区"
 msgstr "Zona tácita 4"
+
+msgid ""
+"Auto combat stays enabled and retries errors until you manually turn it off."
+msgstr ""
+"El combate automático permanece activo y reintenta tras errores hasta que lo"
+" desactives manualmente."
+
+msgid "已手动关闭"
+msgstr "Desactivado manualmente"
+
+msgid "已开启，等待战斗"
+msgstr "Activado, esperando combate"
+
+msgid "自动战斗中"
+msgstr "Combate automático en curso"
+
+msgid "异常恢复中"
+msgstr "Recuperación tras un error"
+
+msgid "等待游戏窗口/截图恢复"
+msgstr "Esperando la ventana del juego o la captura"
