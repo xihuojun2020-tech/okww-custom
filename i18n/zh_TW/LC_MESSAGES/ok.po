@@ -1944,3 +1944,15 @@ msgstr "第20個無音區"
 
 msgid "第21个无音区"
 msgstr "第21個無音區"
+
+msgid "第1个无音区"
+msgstr "第1個無音區"
+
+msgid "第2个无音区"
+msgstr "第2個無音區"
+
+msgid "第3个无音区"
+msgstr "第3個無音區"
+
+msgid "第4个无音区"
+msgstr "第4個無音區"

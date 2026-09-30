@@ -2112,3 +2112,15 @@ msgstr "第20个无音区"
 
 msgid "第21个无音区"
 msgstr "第21个无音区"
+
+msgid "第1个无音区"
+msgstr "第1个无音区"
+
+msgid "第2个无音区"
+msgstr "第2个无音区"
+
+msgid "第3个无音区"
+msgstr "第3个无音区"
+
+msgid "第4个无音区"
+msgstr "第4个无音区"

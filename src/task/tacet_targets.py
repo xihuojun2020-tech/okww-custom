@@ -13,7 +13,8 @@ def tacet_serial(target_id):
 
 
 def tacet_label(target_id):
-    return TACET_NAMES.get(target_id, f'第{tacet_serial(target_id)}个无音区')
+    tacet_serial(target_id)  # Validate the persisted ID independently of its display label.
+    return TACET_NAMES[target_id] if target_id in (20, 21) else f'第{target_id}个无音区'
 
 
 TACET_OPTIONS = tuple((value, tacet_label(value)) for value in TACET_IDS)

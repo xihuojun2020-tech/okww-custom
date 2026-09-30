@@ -32,6 +32,8 @@ class TestAccountManagementTabs(unittest.TestCase):
             control = dialog._widgets['Which Tacet Suppression to Farm']
             self.assertEqual(21, control.count())
             self.assertEqual(value, control.currentData())
+            from src.task.tacet_targets import tacet_label
+            self.assertEqual(tacet_label(value), control.currentText())
             self.assertEqual(value, dialog.tasks()['Which Tacet Suppression to Farm'])
             dialog.deleteLater()
         dialog = AccountTemplateDialog({'Which Tacet Suppression to Farm': 22})

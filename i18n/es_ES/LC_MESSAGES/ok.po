@@ -1879,3 +1879,15 @@ msgstr "Campo tácito n.º 20"
 
 msgid "第21个无音区"
 msgstr "Campo tácito n.º 21"
+
+msgid "第1个无音区"
+msgstr "Zona tácita 1"
+
+msgid "第2个无音区"
+msgstr "Zona tácita 2"
+
+msgid "第3个无音区"
+msgstr "Zona tácita 3"
+
+msgid "第4个无音区"
+msgstr "Zona tácita 4"

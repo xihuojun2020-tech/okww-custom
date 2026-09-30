@@ -1838,3 +1838,15 @@ msgstr "무음 구역 20"
 
 msgid "第21个无音区"
 msgstr "무음 구역 21"
+
+msgid "第1个无音区"
+msgstr "무음구역 1"
+
+msgid "第2个无音区"
+msgstr "무음구역 2"
+
+msgid "第3个无音区"
+msgstr "무음구역 3"
+
+msgid "第4个无音区"
+msgstr "무음구역 4"

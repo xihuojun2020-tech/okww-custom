@@ -25,7 +25,10 @@ class TestTacetTargets(unittest.TestCase):
         field = account_field_metadata({'Which Tacet Suppression to Farm': 1})[0]
         self.assertEqual(TACET_IDS, field.options)
         self.assertEqual(tuple(label for _, label in TACET_OPTIONS), field.option_labels)
-        self.assertEqual('方擎西峰无音区', field.option_labels[field.options.index(1)])
+        for value in range(1, 20):
+            self.assertEqual(f'第{value}个无音区', field.option_labels[field.options.index(value)])
+        for value in (20, 21):
+            self.assertEqual(TACET_NAMES[value], field.option_labels[field.options.index(value)])
 
     def task(self):
         task = Mock(spec=TacetTask)
