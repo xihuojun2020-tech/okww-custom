@@ -1,18 +1,22 @@
 """Read-only account evidence dashboard and explicit manual capture/recycle UI."""
 from functools import partial
 import json
+import subprocess
+import threading
+from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QPixmap, QImage
+from PySide6.QtCore import Qt, QTimer, Signal, QUrl
+from PySide6.QtGui import QPixmap, QImage, QDesktopServices
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
     QListWidget, QListWidgetItem, QLineEdit, QScrollArea, QDialog, QDialogButtonBox,
     QMessageBox, QCheckBox, QPlainTextEdit, QSizePolicy, QPushButton, QApplication, QMenu)
 from qfluentwidgets import FluentIcon, PushButton, PrimaryPushButton
 
-from src.account_display import account_display_label
+from src.account_display import account_display_label, parse_account_label
 from src.account_repository import get_default_repository
 from src.evidence.model import (PROJECTS, CURRENT_PROJECTS, GROUPS, project_group,
-    STATUSES, SOURCES, ASSETS, period_for, period_label, summarize)
+    STATUSES, SOURCES, ASSETS, period_for, period_label, summarize, now_iso)
+from src.evidence.export import export_screenshots, export_state
 from src.evidence.service import EvidenceService, get_evidence_service, request_capture
 from src.gui.BackgroundOperation import BackgroundOperation
 from src.gui.ChoiceControls import QtComboBox
@@ -177,6 +181,7 @@ class EvidenceDetailDialog(QDialog):
 class CompletionCheckTab(QWidget):
     name = '完成检查'
     icon = FluentIcon.PHOTO
+    export_progress = Signal(int, int)
 
     def __init__(self, executor, repository=None, account_provider=None):
         super().__init__()
@@ -187,6 +192,11 @@ class CompletionCheckTab(QWidget):
         executor.completion_evidence_service = self.service
         self.account_provider = account_provider or get_default_repository
         self._profiles, self._sequences, self._rows = {}, {}, []
+        self._nicknames = {}
+        self._export_cancel = threading.Event()
+        cancel_on_destroy = self._export_cancel
+        self.destroyed.connect(lambda: cancel_on_destroy.set())
+        self._export_path = None
         self._selected = None
         self._offset = 0
         self._loaded = False
@@ -245,10 +255,22 @@ class CompletionCheckTab(QWidget):
         actions = QHBoxLayout()
         self.pending_only = QCheckBox('仅待检查', right)
         self.capture_button = PrimaryPushButton('保存当前画面', right)
+        self.export_button = PushButton('打包当前账号截图', right)
+        self.export_button.setEnabled(False)
+        self.cancel_export_button = PushButton('取消打包', right)
+        self.cancel_export_button.hide()
+        self.open_export_button = PushButton('打开压缩包所在文件夹', right)
+        self.open_export_button.hide()
         actions.addWidget(self.pending_only)
         actions.addStretch()
+        actions.addWidget(self.open_export_button)
+        actions.addWidget(self.cancel_export_button)
+        actions.addWidget(self.export_button)
         actions.addWidget(self.capture_button)
         content.addLayout(actions)
+        self.export_status = QLabel('选择账号后可打包全部原图；后续点击自动续打包。', right)
+        self.export_status.setWordWrap(True)
+        content.addWidget(self.export_status)
         self.scroll = QScrollArea(right)
         self.scroll.setWidgetResizable(True)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -275,6 +297,12 @@ class CompletionCheckTab(QWidget):
         self.load_operation.busy_changed.connect(self._load_state_changed)
         self.capture_operation = BackgroundOperation(self, (self.capture_button,))
         self.action_operation = BackgroundOperation(self)
+        self.export_operation = BackgroundOperation(self)
+        self.export_operation.busy_changed.connect(self._export_busy_changed)
+        self.export_progress.connect(self._export_progress_changed)
+        self.export_button.clicked.connect(self.export_account_screenshots)
+        self.cancel_export_button.clicked.connect(self._export_cancel.set)
+        self.open_export_button.clicked.connect(self._open_export_folder)
         self.search.textChanged.connect(self._filter_accounts)
         self.sequence.currentIndexChanged.connect(self._filter_accounts)
         self.accounts.currentItemChanged.connect(self._select_account)
@@ -313,6 +341,10 @@ class CompletionCheckTab(QWidget):
         projection, archived, preferred = result
         profiles = projection.get('profiles', {})
         self._profiles = {p['profile_id']: account_display_label(p) for p in profiles.values()}
+        self._nicknames = {p['profile_id']: p.get('nickname') or
+                           parse_account_label(p.get('display_name') or name).get('nickname') or
+                           p.get('short_name') or p['profile_id'][:8]
+                           for name, p in profiles.items()}
         names = {name: p['profile_id'] for name, p in profiles.items()}
         self._sequences = {key: [names[n] for n in values if n in names]
                            for key, values in projection.get('sequences', {}).items()}
@@ -354,6 +386,10 @@ class CompletionCheckTab(QWidget):
         self.accounts.setCurrentItem(current or self.accounts.item(0))
         if not self.accounts.count():
             self._selected = None
+            self.export_button.setEnabled(False)
+            if not self.export_operation.busy:
+                self._export_path = None
+                self.open_export_button.hide()
             self.account_title.setText('没有匹配的账号')
             self._rows = []
             self._display_records()
@@ -362,6 +398,11 @@ class CompletionCheckTab(QWidget):
         if current:
             self._run_record, self._completions, self._history_error = None, {}, ''
             self._selected = current.data(Qt.UserRole)
+            self.export_button.setEnabled(not self.export_operation.busy)
+            if not self.export_operation.busy:
+                self._export_path = None
+                self.open_export_button.hide()
+                self.export_status.setText('正在读取该账号的上次打包记录…')
             self.account_title.setText(self._profiles[self._selected])
             self._rows = []
             self._display_records()
@@ -415,12 +456,14 @@ class CompletionCheckTab(QWidget):
             migration = json.loads(repo.get_preference('daily_periods_v2') or '{}')
             if migration.get('invalid'):
                 error += f" {len(migration['invalid'])} 条旧证据时间无效，保留在历史记录中，未猜测周期。"
-            return rows, repo.latest_run(identity), completions, error
+            return rows, repo.latest_run(identity), completions, error, export_state(repo, identity)
         def loaded(result):
             if (identity, project, mode, offset) != (self._selected, self.project_filter.currentData(), self.mode.currentData(), self._offset):
                 self._load_records()
                 return
-            rows, self._run_record, self._completions, self._history_error = result
+            rows, self._run_record, self._completions, self._history_error, state = result
+            if not self.export_operation.busy:
+                self._show_export_state(state)
             self._rows = rows
             if self._history_error:
                 self.notice.setText(self._history_error)
@@ -428,6 +471,55 @@ class CompletionCheckTab(QWidget):
             self.previous.setVisible(mode != 'current' and offset > 0)
             self._display_records()
         self.load_operation.start(work, loaded, self._error)
+
+    def _show_export_state(self, state):
+        self._export_path = state.get('path')
+        self.open_export_button.setVisible(bool(self._export_path))
+        self.export_status.setText(
+            f"上次成功打包：{state['completed_at']}；下次从 {state['cutoff']} 继续（北京时间）。"
+            if state else '首次打包将包含当前账号全部历史原图；后续点击自动续打包。')
+
+    def _export_busy_changed(self, busy):
+        self.export_button.setEnabled(bool(self._selected) and not busy)
+        self.cancel_export_button.setVisible(busy)
+
+    def _export_progress_changed(self, done, total):
+        self.export_status.setText(f'正在打包：{done}/{total} 张；完成后校验压缩包。')
+
+    def export_account_screenshots(self):
+        if not self._selected or self.export_operation.busy:
+            return
+        identity, cutoff, repo = self._selected, now_iso(), self.repository
+        nickname = self._nicknames.get(identity) or self._profiles.get(identity, identity[:8])
+        self._export_cancel.clear()
+        cancel, progress = self._export_cancel, self.export_progress.emit
+        self.export_status.setText(f'正在打包 {nickname} 的全部新增原图…')
+        def work():
+            return export_screenshots(repo, identity, nickname, cutoff, cancelled=cancel, progress=progress)
+        def loaded(result):
+            if not result['path']:
+                self.export_status.setText(f'{nickname} 没有新增截图；上次打包记录保持不变。')
+                return
+            self._export_path = result['path']
+            self.open_export_button.show()
+            self.export_status.setText(f"{nickname} 打包成功，共 {result['count']} 张；"
+                                       f"截止 {result['state']['cutoff']}。压缩包：{result['path']}")
+            self._open_export_folder()
+        def failed(error):
+            self.export_status.setText(f'截图打包未完成：{error}。上次成功截止时间保持不变。')
+        self.export_operation.start(work, loaded, failed)
+
+    def _open_export_folder(self):
+        if not self._export_path:
+            return
+        try:
+            import os
+            if os.name == 'nt':
+                subprocess.Popen(['explorer.exe', '/select,', self._export_path])
+            elif not QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(self._export_path).parent))):
+                raise OSError('无法启动文件管理器')
+        except OSError as error:
+            self.export_status.setText(f'压缩包已保存：{self._export_path}；打开文件夹失败：{error}，可点击按钮重试。')
 
     def _load_state_changed(self, busy):
         if not busy and self._reload_pending:

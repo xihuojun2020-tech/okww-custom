@@ -385,6 +385,11 @@ class EvidenceRepository:
             db.execute('UPDATE evidence SET trashed=0 WHERE id=?', (evidence_id,))
 
     def permanently_delete(self, evidence_id, *, confirmed=False):
+        from src.evidence.export import asset_lock
+        with asset_lock(self.root):
+            return self._permanently_delete(evidence_id, confirmed=confirmed)
+
+    def _permanently_delete(self, evidence_id, *, confirmed=False):
         if not confirmed:
             raise ValueError('永久删除需要用户明确确认')
         with self._connect() as db:
