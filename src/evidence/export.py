@@ -61,16 +61,31 @@ def export_screenshots(repository, profile_id, nickname, cutoff, *, cancelled=No
                                ('screenshot_export:' + profile_id,)).fetchone()
             state = json.loads(saved[0]) if saved else {}
             rows = [dict(json.loads(payload), trashed=bool(trashed)) for payload, trashed in
-                    db.execute('SELECT metadata, trashed FROM evidence WHERE profile_id=? ORDER BY captured_at, id',
+                    db.execute('SELECT metadata, trashed FROM evidence WHERE profile_id=? ORDER BY rowid',
                                (profile_id,))]
         exported = set(state.get('images', []))
         rows = [row for row in rows if _stamp(row['captured_at']) <= end]
-        images, related = {}, {}
+        # Calendar dates in Beijing time; select BEFORE applying export receipts.
+        # A late older picture must not replace a newer daily/category winner.
+        latest = {}
         for row in rows:
             image = row.get('image_path')
-            if image and image not in exported:
-                images.setdefault(image, row)
-                related.setdefault(image, []).append(row)
+            if not image:
+                continue
+            key = row['project_id'] + ':' + _stamp(row['captured_at']).date().isoformat()
+            rank = (_stamp(row['captured_at']), _stamp(row.get('created_at') or row['captured_at']))
+            if key not in latest or rank >= latest[key][0]:
+                latest[key] = (rank, row)
+        groups = dict(state.get('daily_groups', {}))
+        images = {}
+        for key, (rank, row) in latest.items():
+            previous = groups.get(key)
+            if previous and rank <= (_stamp(previous['captured_at']), _stamp(previous['created_at'])):
+                continue
+            if row['image_path'] not in exported:
+                images[row['image_path']] = row
+            groups[key] = dict(captured_at=row['captured_at'],
+                               created_at=row.get('created_at') or row['captured_at'])
         if not images:
             return dict(path=None, count=0, state=state)
         start = state.get('cutoff') or min((row['captured_at'] for row in images.values()), key=_stamp)
@@ -90,10 +105,7 @@ def export_screenshots(repository, profile_id, nickname, cutoff, *, cancelled=No
             final = folder / f'{base}_{number}.zip'
             number += 1
         pending = folder / ('.' + uuid4().hex + '.pending')
-        entries, checksums = [], {}
-        def public_record(row):
-            return {key: row.get(key) for key in ('evidence_id', 'project_id', 'captured_at',
-                    'completion_status', 'source', 'asset_status', 'trashed')}
+        checksums = {}
         with pending.open('xb') as stream:
             with ZipFile(stream, 'w', ZIP_DEFLATED, allowZip64=True) as archive:
                 for index, (image, row) in enumerate(images.items(), 1):
@@ -112,23 +124,12 @@ def export_screenshots(repository, profile_id, nickname, cutoff, *, cancelled=No
                     entry = f"{prefix}{_name(project)}/{_stamp(row['captured_at']):%Y%m%d-%H%M%S}_{Path(image).name}"
                     archive.writestr(entry, data)
                     checksums[entry] = digest
-                    entries.append(dict(file=entry, sha256=digest, captured_at=row['captured_at'],
-                                        late=_stamp(row['captured_at']) < _stamp(start),
-                                        records=[public_record(r) for r in related[image]]))
                     if progress:
                         progress(index, len(images))
-                manifest = dict(profile_id=profile_id, nickname=nickname, start=start, cutoff=cutoff,
-                                image_count=len(images), actual_start=min((r['captured_at'] for r in images.values()), key=_stamp),
-                                actual_end=max((r['captured_at'] for r in images.values()), key=_stamp),
-                                images=entries, records_without_images=[public_record(r) for r in rows if not r.get('image_path')])
-                archive.writestr('截图清单.json', json.dumps(manifest, ensure_ascii=False, indent=2))
-                archive.writestr('打包说明.txt', f'账号：{nickname}\n时间范围（北京时间）：{start} 至 {cutoff}\n'
-                                 f'原图：{len(images)} 张\n包含全部项目、状态及回收区原图。迟到保存的旧截图见清单 late 字段。\n'
-                                 '没有实际图片的完成记录见 records_without_images。原始截图未删除。\n')
             stream.flush()
             os.fsync(stream.fileno())
         with ZipFile(pending) as archive:
-            if archive.testzip() is not None or len(archive.namelist()) != len(images) + 2:
+            if archive.testzip() is not None or len(archive.namelist()) != len(images):
                 raise ValueError('压缩包完整性校验失败，未推进打包时间')
             for entry, digest in checksums.items():
                 check_cancel()
@@ -139,7 +140,7 @@ def export_screenshots(repository, profile_id, nickname, cutoff, *, cancelled=No
         pending.rename(final)
         pending = None
         state = dict(cutoff=cutoff, completed_at=now_iso(), path=str(final), count=len(images),
-                     images=sorted(exported | set(images)))
+                     images=sorted(exported | set(images)), daily_groups=groups)
         try:
             repository.set_preference('screenshot_export:' + profile_id, json.dumps(state, ensure_ascii=False))
         except Exception as error:

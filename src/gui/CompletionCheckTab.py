@@ -268,7 +268,7 @@ class CompletionCheckTab(QWidget):
         actions.addWidget(self.export_button)
         actions.addWidget(self.capture_button)
         content.addLayout(actions)
-        self.export_status = QLabel('选择账号后可打包全部原图；后续点击自动续打包。', right)
+        self.export_status = QLabel('每天每个类别仅打包最后一张原图；后续点击自动续打包。', right)
         self.export_status.setWordWrap(True)
         content.addWidget(self.export_status)
         self.scroll = QScrollArea(right)
@@ -477,7 +477,7 @@ class CompletionCheckTab(QWidget):
         self.open_export_button.setVisible(bool(self._export_path))
         self.export_status.setText(
             f"上次成功打包：{state['completed_at']}；下次从 {state['cutoff']} 继续（北京时间）。"
-            if state else '首次打包将包含当前账号全部历史原图；后续点击自动续打包。')
+            if state else '按北京时间日期，每个类别仅保留最后一张截图；首次覆盖历史，后续自动续打包。')
 
     def _export_busy_changed(self, busy):
         self.export_button.setEnabled(bool(self._selected) and not busy)
@@ -493,7 +493,7 @@ class CompletionCheckTab(QWidget):
         nickname = self._nicknames.get(identity) or self._profiles.get(identity, identity[:8])
         self._export_cancel.clear()
         cancel, progress = self._export_cancel, self.export_progress.emit
-        self.export_status.setText(f'正在打包 {nickname} 的全部新增原图…')
+        self.export_status.setText(f'正在打包 {nickname} 每天各类别的最后一张新增截图…')
         def work():
             return export_screenshots(repo, identity, nickname, cutoff, cancelled=cancel, progress=progress)
         def loaded(result):

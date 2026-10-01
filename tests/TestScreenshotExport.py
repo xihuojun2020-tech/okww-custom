@@ -34,24 +34,26 @@ class TestScreenshotExport(unittest.TestCase):
     def export(self, when=FIRST, **kwargs):
         return export_screenshots(self.repo, ACCOUNT, '昵称:/测试', when, **kwargs)
 
-    def manifest(self, result):
+    def entries(self, result):
         with ZipFile(result['path']) as archive:
             self.assertIsNone(archive.testzip())
-            return json.loads(archive.read('截图清单.json'))
+            names = archive.namelist()
+            self.assertTrue(all(name.endswith('.png') or name.endswith('/') for name in names))
+            return names
 
     def test_all_history_over_page_limit_statuses_recycle_and_account_isolation(self):
         for index in range(65):
             row = self.save(project='daily_activity' if index % 2 else 'sea_ruins')
-            if index == 0:
+            if index == 64:
                 self.repo.trash(row['evidence_id'])
         self.save(profile=OTHER)
         self.repo.save(dict(profile_id=ACCOUNT, project_id='weekly_boss', captured_at=FIRST), None)
         result = self.export()
-        self.assertEqual(result['count'], 65)
-        manifest = self.manifest(result)
-        self.assertEqual(len(manifest['images']), 65)
-        self.assertEqual(len(manifest['records_without_images']), 1)
-        self.assertTrue(any(i['file'].startswith('回收区/') for i in manifest['images']))
+        self.assertEqual(result['count'], 2)
+        entries = self.entries(result)
+        self.assertEqual(len(entries), 2)
+        self.assertTrue(any(name.startswith('回收区/') for name in entries))
+        self.assertTrue(any(name.startswith('活跃度/') for name in entries))
         self.assertIn('昵称__测试_20261001-120000_至_20261001-120000', Path(result['path']).name)
         self.assertEqual(Path(result['path']).parent, self.repo.root.parent / '完成截图打包')
         self.assertEqual(export_state(self.repo, OTHER), {})
@@ -67,7 +69,7 @@ class TestScreenshotExport(unittest.TestCase):
         repo = EvidenceRepository(self.repo.root)
         result = export_screenshots(repo, ACCOUNT, '新昵称', SECOND)
         self.assertEqual(result['count'], 2)
-        self.assertEqual(sum(i['late'] for i in self.manifest(result)['images']), 1)
+        self.assertTrue(any('20260925-090000' in name for name in self.entries(result)))
         self.assertTrue(Path(result['path']).name.startswith('新昵称_20261001-120000'))
         result = self.export(when=future['captured_at'])
         self.assertEqual(result['count'], 1)
@@ -131,9 +133,40 @@ class TestScreenshotExport(unittest.TestCase):
                         alias['period_id'], json.dumps(alias)))
         result = self.export()
         self.assertEqual(result['count'], 1)
-        manifest = self.manifest(result)
-        self.assertEqual(len(manifest['images'][0]['records']), 2)
-        self.assertNotIn('PRIVATE_TEST_ONLY', json.dumps(manifest))
+        self.assertEqual(len(self.entries(result)), 1)
+
+    def test_late_older_same_day_is_ignored_but_new_last_picture_is_exported(self):
+        self.save()
+        self.export()
+        self.save(when='2026-10-01T11:00:00+08:00')
+        self.assertEqual(self.export(SECOND)['count'], 0)
+        last = self.save(when=SECOND)
+        result = self.export(SECOND)
+        self.assertEqual(result['count'], 1)
+        self.assertTrue(self.entries(result)[0].endswith(Path(last['image_path']).name))
+        self.repo.trash(last['evidence_id'])
+        self.repo.permanently_delete(last['evidence_id'], confirmed=True)
+        self.assertEqual(self.export(SECOND)['count'], 0)
+
+    def test_beijing_calendar_day_not_four_am_game_period(self):
+        self.save(when='2026-09-30T23:59:59+08:00', project='daily_activity')
+        self.save(when='2026-10-01T03:59:59+08:00', project='daily_activity')
+        last = self.save(when='2026-10-01T04:00:00+08:00', project='daily_activity')
+        result = self.export()
+        self.assertEqual(result['count'], 2)
+        entries = self.entries(result)
+        self.assertTrue(any(name.endswith(Path(last['image_path']).name) for name in entries))
+        self.assertFalse(any('20261001-035959' in name for name in entries))
+
+    def test_legacy_receipts_preserved_after_rule_change(self):
+        row = self.save()
+        self.repo.set_preference('screenshot_export:' + ACCOUNT, json.dumps(dict(
+            cutoff=FIRST, images=[row['image_path']])))
+        self.assertEqual(self.export(SECOND)['count'], 0)
+        self.save(when=SECOND)
+        result = self.export(SECOND)
+        self.assertEqual(result['count'], 1)
+        self.assertEqual(result['state']['cutoff'], SECOND)
 
     def test_permanent_delete_waits_for_export_without_blocking_saves(self):
         row = self.save()
