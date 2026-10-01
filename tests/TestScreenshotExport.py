@@ -148,7 +148,7 @@ class TestScreenshotExport(unittest.TestCase):
         self.repo.permanently_delete(last['evidence_id'], confirmed=True)
         self.assertEqual(self.export(SECOND)['count'], 0)
 
-    def test_beijing_calendar_day_not_four_am_game_period(self):
+    def test_beijing_four_am_game_day(self):
         self.save(when='2026-09-30T23:59:59+08:00', project='daily_activity')
         self.save(when='2026-10-01T03:59:59+08:00', project='daily_activity')
         last = self.save(when='2026-10-01T04:00:00+08:00', project='daily_activity')
@@ -156,7 +156,8 @@ class TestScreenshotExport(unittest.TestCase):
         self.assertEqual(result['count'], 2)
         entries = self.entries(result)
         self.assertTrue(any(name.endswith(Path(last['image_path']).name) for name in entries))
-        self.assertFalse(any('20261001-035959' in name for name in entries))
+        self.assertTrue(any('20261001-035959' in name for name in entries))
+        self.assertFalse(any('20260930-235959' in name for name in entries))
 
     def test_legacy_receipts_preserved_after_rule_change(self):
         row = self.save()

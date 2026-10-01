@@ -4,7 +4,7 @@ import json
 import os
 import re
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
 from zipfile import ZipFile, ZIP_DEFLATED
@@ -65,18 +65,18 @@ def export_screenshots(repository, profile_id, nickname, cutoff, *, cancelled=No
                                (profile_id,))]
         exported = set(state.get('images', []))
         rows = [row for row in rows if _stamp(row['captured_at']) <= end]
-        # Calendar dates in Beijing time; select BEFORE applying export receipts.
+        # Game days reset at 04:00 Beijing time; select BEFORE export receipts.
         # A late older picture must not replace a newer daily/category winner.
         latest = {}
         for row in rows:
             image = row.get('image_path')
             if not image:
                 continue
-            key = row['project_id'] + ':' + _stamp(row['captured_at']).date().isoformat()
+            key = row['project_id'] + ':' + (_stamp(row['captured_at']) - timedelta(hours=4)).date().isoformat()
             rank = (_stamp(row['captured_at']), _stamp(row.get('created_at') or row['captured_at']))
             if key not in latest or rank >= latest[key][0]:
                 latest[key] = (rank, row)
-        groups = dict(state.get('daily_groups', {}))
+        groups = dict(state.get('daily_groups', {})) if state.get('day_rule') == 'beijing_4am' else {}
         images = {}
         for key, (rank, row) in latest.items():
             previous = groups.get(key)
@@ -140,7 +140,7 @@ def export_screenshots(repository, profile_id, nickname, cutoff, *, cancelled=No
         pending.rename(final)
         pending = None
         state = dict(cutoff=cutoff, completed_at=now_iso(), path=str(final), count=len(images),
-                     images=sorted(exported | set(images)), daily_groups=groups)
+                     images=sorted(exported | set(images)), daily_groups=groups, day_rule='beijing_4am')
         try:
             repository.set_preference('screenshot_export:' + profile_id, json.dumps(state, ensure_ascii=False))
         except Exception as error:

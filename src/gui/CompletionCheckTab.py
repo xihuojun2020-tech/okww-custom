@@ -477,7 +477,7 @@ class CompletionCheckTab(QWidget):
         self.open_export_button.setVisible(bool(self._export_path))
         self.export_status.setText(
             f"上次成功打包：{state['completed_at']}；下次从 {state['cutoff']} 继续（北京时间）。"
-            if state else '按北京时间日期，每个类别仅保留最后一张截图；首次覆盖历史，后续自动续打包。')
+            if state else '按北京时间凌晨4点分日，每个类别仅保留最后一张截图；首次覆盖历史，后续自动续打包。')
 
     def _export_busy_changed(self, busy):
         self.export_button.setEnabled(bool(self._selected) and not busy)
