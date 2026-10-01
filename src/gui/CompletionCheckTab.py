@@ -257,6 +257,9 @@ class CompletionCheckTab(QWidget):
         self.capture_button = PrimaryPushButton('保存当前画面', right)
         self.export_button = PushButton('打包当前账号截图', right)
         self.export_button.setEnabled(False)
+        self.reexport_button = PushButton('重新打包', right)
+        self.reexport_button.setToolTip('按凌晨4点分日，重新打包所有日期各类别最后一张截图，不要求新增截图。')
+        self.reexport_button.setEnabled(False)
         self.cancel_export_button = PushButton('取消打包', right)
         self.cancel_export_button.hide()
         self.open_export_button = PushButton('打开压缩包所在文件夹', right)
@@ -265,6 +268,7 @@ class CompletionCheckTab(QWidget):
         actions.addStretch()
         actions.addWidget(self.open_export_button)
         actions.addWidget(self.cancel_export_button)
+        actions.addWidget(self.reexport_button)
         actions.addWidget(self.export_button)
         actions.addWidget(self.capture_button)
         content.addLayout(actions)
@@ -301,6 +305,7 @@ class CompletionCheckTab(QWidget):
         self.export_operation.busy_changed.connect(self._export_busy_changed)
         self.export_progress.connect(self._export_progress_changed)
         self.export_button.clicked.connect(self.export_account_screenshots)
+        self.reexport_button.clicked.connect(lambda: self.export_account_screenshots(full=True))
         self.cancel_export_button.clicked.connect(self._export_cancel.set)
         self.open_export_button.clicked.connect(self._open_export_folder)
         self.search.textChanged.connect(self._filter_accounts)
@@ -387,6 +392,7 @@ class CompletionCheckTab(QWidget):
         if not self.accounts.count():
             self._selected = None
             self.export_button.setEnabled(False)
+            self.reexport_button.setEnabled(False)
             if not self.export_operation.busy:
                 self._export_path = None
                 self.open_export_button.hide()
@@ -399,6 +405,7 @@ class CompletionCheckTab(QWidget):
             self._run_record, self._completions, self._history_error = None, {}, ''
             self._selected = current.data(Qt.UserRole)
             self.export_button.setEnabled(not self.export_operation.busy)
+            self.reexport_button.setEnabled(not self.export_operation.busy)
             if not self.export_operation.busy:
                 self._export_path = None
                 self.open_export_button.hide()
@@ -481,24 +488,27 @@ class CompletionCheckTab(QWidget):
 
     def _export_busy_changed(self, busy):
         self.export_button.setEnabled(bool(self._selected) and not busy)
+        self.reexport_button.setEnabled(bool(self._selected) and not busy)
         self.cancel_export_button.setVisible(busy)
 
     def _export_progress_changed(self, done, total):
         self.export_status.setText(f'正在打包：{done}/{total} 张；完成后校验压缩包。')
 
-    def export_account_screenshots(self):
+    def export_account_screenshots(self, checked=False, *, full=False):
         if not self._selected or self.export_operation.busy:
             return
         identity, cutoff, repo = self._selected, now_iso(), self.repository
         nickname = self._nicknames.get(identity) or self._profiles.get(identity, identity[:8])
         self._export_cancel.clear()
         cancel, progress = self._export_cancel, self.export_progress.emit
-        self.export_status.setText(f'正在打包 {nickname} 每天各类别的最后一张新增截图…')
+        self.export_status.setText(f'正在重新打包 {nickname} 全部日期的最后截图…' if full else
+                                   f'正在打包 {nickname} 每天各类别的最后截图…')
         def work():
-            return export_screenshots(repo, identity, nickname, cutoff, cancelled=cancel, progress=progress)
+            return export_screenshots(repo, identity, nickname, cutoff, cancelled=cancel, progress=progress, full=full)
         def loaded(result):
             if not result['path']:
-                self.export_status.setText(f'{nickname} 没有新增截图；上次打包记录保持不变。')
+                self.export_status.setText(f'{nickname} 没有可打包截图。' if full else
+                                           f'{nickname} 没有新增截图；可点击“重新打包”再次打包全部日期。')
                 return
             self._export_path = result['path']
             self.open_export_button.show()

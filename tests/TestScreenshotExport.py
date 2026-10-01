@@ -163,11 +163,27 @@ class TestScreenshotExport(unittest.TestCase):
         row = self.save()
         self.repo.set_preference('screenshot_export:' + ACCOUNT, json.dumps(dict(
             cutoff=FIRST, images=[row['image_path']])))
+        self.assertEqual(self.export(SECOND)['count'], 1)
         self.assertEqual(self.export(SECOND)['count'], 0)
         self.save(when=SECOND)
         result = self.export(SECOND)
         self.assertEqual(result['count'], 1)
         self.assertEqual(result['state']['cutoff'], SECOND)
+
+    def test_reexport_without_new_images_and_failed_reexport_preserves_receipts(self):
+        self.save()
+        old = self.export()
+        self.assertEqual(self.export()['count'], 0)
+        cancel = threading.Event()
+        cancel.set()
+        with self.assertRaises(InterruptedError):
+            self.export(full=True, cancelled=cancel)
+        self.assertEqual(export_state(self.repo, ACCOUNT), old['state'])
+        result = self.export(full=True)
+        self.assertEqual(result['count'], 1)
+        self.assertNotEqual(result['path'], old['path'])
+        self.assertEqual(self.entries(result), self.entries(old))
+        self.assertEqual(self.export()['count'], 0)
 
     def test_permanent_delete_waits_for_export_without_blocking_saves(self):
         row = self.save()

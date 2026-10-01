@@ -40,7 +40,7 @@ def _name(value):
     return value or '未填昵称'
 
 
-def export_screenshots(repository, profile_id, nickname, cutoff, *, cancelled=None, progress=None):
+def export_screenshots(repository, profile_id, nickname, cutoff, *, cancelled=None, progress=None, full=False):
     """Only a verified, durable ZIP advances receipts. Late originals are backfilled."""
     profile_id = str(UUID(profile_id))
     end = _stamp(cutoff)
@@ -63,7 +63,8 @@ def export_screenshots(repository, profile_id, nickname, cutoff, *, cancelled=No
             rows = [dict(json.loads(payload), trashed=bool(trashed)) for payload, trashed in
                     db.execute('SELECT metadata, trashed FROM evidence WHERE profile_id=? ORDER BY rowid',
                                (profile_id,))]
-        exported = set(state.get('images', []))
+        rebuild = full or state.get('day_rule') != 'beijing_4am'
+        exported = set() if rebuild else set(state.get('images', []))
         rows = [row for row in rows if _stamp(row['captured_at']) <= end]
         # Game days reset at 04:00 Beijing time; select BEFORE export receipts.
         # A late older picture must not replace a newer daily/category winner.
@@ -76,7 +77,7 @@ def export_screenshots(repository, profile_id, nickname, cutoff, *, cancelled=No
             rank = (_stamp(row['captured_at']), _stamp(row.get('created_at') or row['captured_at']))
             if key not in latest or rank >= latest[key][0]:
                 latest[key] = (rank, row)
-        groups = dict(state.get('daily_groups', {})) if state.get('day_rule') == 'beijing_4am' else {}
+        groups = {} if rebuild else dict(state.get('daily_groups', {}))
         images = {}
         for key, (rank, row) in latest.items():
             previous = groups.get(key)
@@ -88,7 +89,7 @@ def export_screenshots(repository, profile_id, nickname, cutoff, *, cancelled=No
                                created_at=row.get('created_at') or row['captured_at'])
         if not images:
             return dict(path=None, count=0, state=state)
-        start = state.get('cutoff') or min((row['captured_at'] for row in images.values()), key=_stamp)
+        start = (None if rebuild else state.get('cutoff')) or min((row['captured_at'] for row in images.values()), key=_stamp)
         if _stamp(start) > end:
             raise ValueError('当前时间早于上次打包截止时间，请检查系统时间')
         # Production root is okww监控室/CompletionEvidence; legacy standalone roots
