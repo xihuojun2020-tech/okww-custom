@@ -21,6 +21,13 @@ from src.task.weekly_garden import (
 
 
 class TestWeeklyGardenState(unittest.TestCase):
+    def test_current_value_region_rejects_ranges_and_multiple_numbers(self):
+        from src.task.weekly_garden import garden_current_points
+        self.assertEqual(0, garden_current_points(['0']))
+        self.assertEqual(6000, garden_current_points(['6000']))
+        for values in (['3000-6000'], ['6000', '1000'], ['游历值'], ['9999']):
+            self.assertIsNone(garden_current_points(values))
+
     def test_game_week_changes_at_monday_four_am_beijing(self):
         before = datetime(2026, 9, 28, 3, 59, tzinfo=BEIJING)
         boundary = datetime(2026, 9, 28, 4, 0, tzinfo=BEIJING)
@@ -93,6 +100,7 @@ assert task.read_weekly_garden_points() == 6000
         task.last_result = None
         task.ensure_main = Mock()
         task.open_garden_weekly_page = Mock()
+        task.enter_weekly_garden = Mock()
         values = iter(scores)
         task.read_weekly_garden_points = Mock(side_effect=lambda: next(values, None))
         task.record_verified_result = Mock(return_value='weekly_garden:test:week')
@@ -164,6 +172,14 @@ assert task.read_weekly_garden_points() == 6000
         task.ensure_main.assert_any_call(time_out=180)
         task.wait_feature.assert_called_once_with('garden_start_game', settle_time=1, time_out=5)
         task.wait_book.assert_called_once_with('gray_book_quest', time_out=30)
+
+    def test_unknown_terminal_can_be_verified_on_authoritative_weekly_page(self):
+        task, restart = self._run_with_mocked_end_screen(
+            [0, 6000, 6000], ['6000'], (object(), object(), object()))
+        self.assertTrue(task.last_result.done)
+        self.assertEqual(6000, task.last_result.points)
+        self.assertFalse(any(call.args and call.args[0] is restart
+                             for call in task.click.call_args_list))
 
 
 if __name__ == '__main__':

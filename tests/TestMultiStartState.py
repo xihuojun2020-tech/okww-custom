@@ -11,6 +11,34 @@ from src.task.MultiAccountDailyTask import MultiAccountDailyTask
 
 
 class TestMultiStartState(unittest.TestCase):
+    def test_empty_login_dialog_is_unknown_without_exception(self):
+        task = object.__new__(MultiAccountDailyTask)
+        self.assertIsNone(task._find_login_ready_box(None, True))
+        self.assertIsNone(task._find_login_ready_box([], True))
+
+    def test_known_garden_menu_returns_to_world_before_account_work(self):
+        task = self.task(worlds=(False, True, True))
+        task.ocr.return_value = [SimpleNamespace(name='活跃行迹'), SimpleNamespace(name='周度游历')]
+        task.send_key = Mock()
+        self.assertEqual('world', MultiAccountDailyTask._classify_start_state(task))
+        task.send_key.assert_called_once_with('esc')
+        task._find_login_ready_box.assert_not_called()
+
+    def test_unknown_page_does_not_send_escape(self):
+        task = self.task(worlds=(False, True, True))
+        task.send_key = Mock()
+        MultiAccountDailyTask._classify_start_state(task)
+        task.send_key.assert_not_called()
+
+    def test_stuck_known_menu_has_a_two_input_budget(self):
+        task = self.task(worlds=(False,) * 50)
+        task.ocr.return_value = [SimpleNamespace(name='活跃行迹'), SimpleNamespace(name='周度游历')]
+        task.send_key = Mock()
+        with patch('src.task.MultiAccountDailyTask.time.monotonic', side_effect=range(1000)):
+            with self.assertRaises(FrameUnavailable):
+                MultiAccountDailyTask._classify_start_state(task, time_out=30)
+        self.assertEqual(2, task.send_key.call_count)
+
     def test_redispatch_preserves_real_snapshot_and_initial_account(self):
         import tempfile
         from tests.fixture_support import make_account_environment, synthetic_identity

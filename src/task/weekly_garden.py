@@ -2,12 +2,28 @@
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import re
 
 BEIJING = timezone(timedelta(hours=8))
 GARDEN_DAILY = 'daily'
 GARDEN_INDEPENDENT = 'multi_account_weekly'
 GARDEN_CLOSED = 'closed'
 GARDEN_MODES = (GARDEN_DAILY, GARDEN_INDEPENDENT, GARDEN_CLOSED)
+
+
+def garden_weekly_page(texts):
+    text = ''.join(str(getattr(box, 'name', box)) for box in (texts or []))
+    return '活跃行迹' in text and '周度游历' in text
+
+
+def garden_current_points(texts):
+    """Only for the isolated current-value region, never a whole page."""
+    values = []
+    for box in texts or []:
+        text = str(getattr(box, 'name', box)).strip().replace(',', '')
+        if re.fullmatch(r'\d{1,5}', text) and 0 <= int(text) <= 6000:
+            values.append(int(text))
+    return values[0] if len(values) == 1 else None
 
 
 def _beijing_now(now=None):

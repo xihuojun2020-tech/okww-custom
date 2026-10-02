@@ -939,6 +939,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
     def _classify_start_state(self, time_out=20):
         deadline = time.monotonic() + time_out
         world_frames = 0
+        menu_exits = 0
+        last_menu_exit = float('-inf')
         reason = 'no_frame'
         while time.monotonic() < deadline:
             self.executor.check_enabled()
@@ -959,6 +961,17 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                         continue
                     world_frames = 0
                     texts = self.ocr(frame=frame)
+                    from src.task.weekly_garden import garden_weekly_page
+                    if garden_weekly_page(texts):
+                        reason = 'weekly_garden_menu'
+                        if menu_exits < 2 and time.monotonic() - last_menu_exit >= 3 and time.monotonic() < deadline:
+                            self._guard_account_transition()
+                            self.executor.check_enabled()
+                            self.send_key('esc')
+                            menu_exits += 1
+                            last_menu_exit = time.monotonic()
+                            self.log_info(f'启动识别到周度游历，返回世界后复核 {menu_exits}/2')
+                        continue
                     if self._find_login_ready_box(texts, False) is not None:
                         self.log_info('启动状态已确认：login；同帧账号与登录按钮')
                         return 'login'
@@ -982,8 +995,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 reason = 'frame_unavailable'
             except Exception as error:
                 world_frames = 0
-                reason = f'probe_error={type(error).__name__}'
-            # BaseWWTask.sleep may dismiss a monthly-card popup; classification is read-only.
+                from src.runtime.diagnostic_export import sanitize_text
+                reason = f'probe_error={type(error).__name__}:{sanitize_text(str(error))[:160]}'
+            # Avoid actionful sleeps; only the verified menu above may send ESC.
             if self.executor.exit_event.wait(min(0.2, max(0, deadline - time.monotonic()))):
                 raise TaskDisabledException('启动状态识别已停止')
         self.log_warning(f'启动状态未确认：{reason}；未执行选号或日常操作')
@@ -1530,7 +1544,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _find_login_ready_box(self, texts, in_dialog=False):
         """用账号身份和精确登录按钮共同确认可操作的游戏登录界面。"""
-        structural = list(self.find_boxes(texts, account_pattern))
+        if not texts:
+            return None
+        structural = list(self.find_boxes(texts, account_pattern) or [])
         exact = getattr(self, '_exact_login_button_boxes', None)
         login_boxes = (
             exact(texts)

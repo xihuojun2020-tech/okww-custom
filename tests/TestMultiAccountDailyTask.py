@@ -407,7 +407,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
 
         class FakeTask:
             def ocr(self):
-                return []
+                return [account_box]
 
             def find_boxes(self, texts, match):
                 if match == account_pattern:

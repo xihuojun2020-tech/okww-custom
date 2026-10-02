@@ -89,7 +89,7 @@ $groups = @{
     "TestDailyRecoveryImages.py",
     "TestMaterialVision.py",
     "TestCharacterTrialImages.py",
-    "TestWeeklyBossImages.py", "TestRosterConfirmationImages.py", "TestResidualNestImages.py", "TestNewBookEntryImages.py",
+    "TestWeeklyBossImages.py", "TestGardenPageImages.py", "TestRosterConfirmationImages.py", "TestResidualNestImages.py", "TestNewBookEntryImages.py",
     "TestChar.py", "TestCD.py", "TestCombatCheck.py", "TestCon.py", "TestConfirm.py",
     "TestEcho.py", "TestEnchaneEcho.py", "TestFarmEcho.py", "TestFeatureSet.py", "TestForte.py",
     "TestKey.py", "TestLevitator.py", "TestMap.py", "TestMergeEchoTask.py", "TestNightmareNestTask.py",

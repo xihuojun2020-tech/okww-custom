@@ -1,5 +1,7 @@
 import re
-from src.task.weekly_garden import GardenRunResult, garden_week_key
+import cv2
+from src.task.weekly_garden import (GardenRunResult, garden_week_key,
+                                  garden_weekly_page, garden_current_points)
 
 
 from ok import Logger, run_task
@@ -56,9 +58,8 @@ class GardenTask(WWOneTimeTask, BaseWWTask):
                 'pending', started_week, error='乐园入口积分无法确认，已达到有限重读上限')
             self.ensure_main(time_out=180)
             raise RuntimeError(self.last_result.error)
-        self.click(0.246, 0.486, after_sleep=1)
+        self.enter_weekly_garden()
         unknown_end_observations = 0
-        terminal_unconfirmed = False
         while True:
             self.sleep(0.1)
             target = self.find_best_garden_feature()
@@ -114,12 +115,16 @@ class GardenTask(WWOneTimeTask, BaseWWTask):
                         if unknown_end_observations >= 3:
                             self.last_result = GardenRunResult(
                                 'pending', started_week, error='终局积分无法确认，达到有限重读上限')
-                            terminal_unconfirmed = True
+                            # Both result controls were detected. Return to the
+                            # authoritative weekly page instead of guessing a restart.
+                            back = self.find_one('a_garden_back')
+                            if not back or not self.find_one('a_garden_restart'):
+                                raise RuntimeError(self.last_result.error)
+                            self.click(back, after_sleep=1)
+                            self.ensure_main(time_out=180)
                             break
                         self.sleep(0.6)
                 self.sleep(0.2)
-        if terminal_unconfirmed:
-            raise RuntimeError(self.last_result.error or '乐园终局积分无法确认')
         self.open_garden_weekly_page()
         final_week = garden_week_key()
         if final_week != started_week:
@@ -173,15 +178,47 @@ class GardenTask(WWOneTimeTask, BaseWWTask):
         return evidence_ref
 
     def read_weekly_garden_points(self):
-        """Read the earned/target pair; a lone target label is never completion evidence."""
+        """Confirm the page, then read only the current value above 游历值."""
         frame = self.next_frame()
         if frame is None:
             return None
+        header = self.ocr(.02, .03, .45, .17, frame=frame)
+        if garden_weekly_page(header):
+            anchor = self.ocr(.185, .89, .285, .935, frame=frame)
+            if not any('游历值' in str(getattr(b, 'name', b)) for b in anchor or []):
+                return None
+            for scale in (2160, 3240):
+                digits = self.ocr(.185, .83, .285, .883, frame=frame,
+                                  frame_processor=lambda image, scale=scale: cv2.resize(
+                                      image, None, fx=scale/1080, fy=scale/1080))
+                value = garden_current_points(digits)
+                self.log_info(f'Garden current value OCR: {[b.name for b in digits or []]!r}; value={value}')
+                if value is not None:
+                    return value
+            # A lone 0 can be missed by the detector in a tight crop.
+            # Use full-page context but accept digits only inside the same region.
+            h, w = frame.shape[:2]
+            digits = [b for b in self.ocr(frame=frame) or []
+                      if .185*w <= b.center()[0] <= .285*w
+                      and .83*h <= b.center()[1] <= .883*h]
+            return garden_current_points(digits)
+        # Legacy layouts show an earned/target pair in this anchored region.
         texts = self.ocr(0.102, 0.793, 0.284, 0.956, frame=frame)
         rendered = ' '.join(str(getattr(box, 'name', box)) for box in (texts or []))
         self.log_info(f'Garden score OCR: {rendered!r}')
         match = re.search(r'(?<!\d)(\d{1,5})\s*/\s*6000(?!\d)', rendered.replace(',', ''))
         return min(int(match.group(1)), 6000) if match else None
+
+    def enter_weekly_garden(self):
+        def source(frame):
+            if not garden_weekly_page(self.ocr(.02, .03, .45, .17, frame=frame)):
+                return None
+            boxes = self.ocr(.11, .18, .39, .79, frame=frame)
+            matches = [b for b in boxes or [] if '幻梦游园' in b.name and '狂想' in b.name]
+            return matches[0] if len(matches) == 1 else None
+        self.navigate_ui('周度游历进入幻梦游园', source,
+                         lambda frame: self.find_one('garden_start_game', frame=frame),
+                         identity='weekly_garden', attempts=2, timeout=30)
 
     @staticmethod
     def garden_points_from_texts(texts):
