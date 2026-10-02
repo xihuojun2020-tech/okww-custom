@@ -87,6 +87,7 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
             available = current if getattr(self.executor, '_daily_reserve_policy', None) is not None else (
                 total if allow_backup else current)
             if available < self.stamina_once:
+                self._note_daily_resource_shortfall(total, max(self.stamina_once, must_use))
                 self.log_info('not enough stamina', notify=True)
                 self.back()
                 return

@@ -79,6 +79,7 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
                     f'allow_backup={allow_backup}')
             available = current if daily else (total if allow_backup else current)
             if available < self.stamina_once:
+                self._note_daily_resource_shortfall(total, max(self.stamina_once, must_use))
                 return self.not_enough_stamina()
 
             self.open_boss_book('wuyin')

@@ -16,6 +16,7 @@ class DailyReservePolicy:
     refresh: object = None
     pending_conversion: bool = False
     budget_initialized: bool = False
+    resource_shortfall: object = None
 
     def observe(self, ready, now=None):
         self.full_seen |= ready is True
@@ -33,17 +34,36 @@ class DailyReservePolicy:
         self.remaining=max(0,self.remaining-amount)
 
 
+def conversion_quantity_box(boxes):
+    """A standalone amount must be uniquely adjacent to an explicit quantity label."""
+    labels = [b for b in boxes if re.fullmatch(
+        r'(?:转化数量|转换数量|兑换数量|轉換數量|轉化數量|ConversionQuantity|ConvertAmount)[:：]?',
+        re.sub(r'\s+', '', b.name), re.I)]
+    if len(labels) != 1:
+        return None
+    label = labels[0]
+    if not all(hasattr(label, key) for key in ('x', 'y', 'width', 'height')):
+        return None
+    candidates = [b for b in boxes if re.fullmatch(r'\d{1,4}', b.name.strip())
+                  and all(hasattr(b, key) for key in ('x', 'y', 'width', 'height'))
+                  and label.x + label.width <= b.x <= label.x + label.width + label.width * 3
+                  and abs(b.y + b.height / 2 - label.y - label.height / 2) <= max(label.height, b.height)]
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def conversion_amount(boxes):
     # Only an explicitly labelled amount; resource balances are not conversion quantities.
     texts = [re.sub(r'\s+', '', b.name) for b in boxes]
-    if not any(re.fullmatch(r'(?:备用结晶波片|備用結晶波片|备用体力)(?:转化|转换|轉換)?', t) for t in texts):
+    if not any(re.fullmatch(r'(?:备用结晶波片|備用結晶波片|备用体力|BackupWaveplates)(?:转化|转换|轉換)?', t, re.I) for t in texts):
         return None
     if any(re.search(r'星声|星聲|月相|结晶溶剂|結晶溶劑', t) for t in texts):
         return None
     values=[]
     for text in texts:
-        match=re.fullmatch(r'(?:转化数量|转换数量|兑换数量|轉換數量)[:：]?(\d{1,4})',text)
+        match=re.fullmatch(r'(?:转化数量|转换数量|兑换数量|轉換數量|轉化數量|ConversionQuantity|ConvertAmount)[:：]?(\d{1,4})',text,re.I)
         if match:values.append(int(match[1]))
+    if not values and (box := conversion_quantity_box(boxes)) is not None:
+        values.append(int(box.name))
     return values[0] if len(values)==1 and values[0]>0 else None
 
 

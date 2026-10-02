@@ -672,7 +672,7 @@ class BaseWWTask(BaseTask):
     def prepare_daily_reserve(self, once, budget):
         """Convert only a freshly authorized shortfall, before combat changes activity."""
         from src.task.daily_reserve_policy import conversion_amount, conversion_matches
-        policy = getattr(self.executor, '_daily_reserve_policy', None)
+        policy = getattr(getattr(self, 'executor', None), '_daily_reserve_policy', None)
         before = self.get_verified_stamina()
         current, reserve, _ = before
         if policy is None:
@@ -693,7 +693,7 @@ class BaseWWTask(BaseTask):
             return before
         self.click(buttons[0], after_sleep=.5)
         self.next_frame()
-        amount = conversion_amount(self.ocr(.20, .20, .80, .80))
+        amount = BaseWWTask._reserve_conversion_amount(self, once - current)
         confirm = self.ocr(.55, .60, .80, .80, match=re.compile(r'^(确认|確認|Confirm)$', re.I))
         if amount != once - current or amount > limit or len(confirm) != 1:
             self.screenshot('reserve_precombat_unverified')
@@ -713,11 +713,39 @@ class BaseWWTask(BaseTask):
         self.log_info(f'战前备用补齐已核验：before={before}, after={after}, amount={amount}')
         return after
 
+    def _reserve_conversion_amount(self, expected):
+        from src.task.daily_reserve_policy import conversion_amount, conversion_quantity_box
+        boxes = self.ocr(.20, .20, .80, .80) or []
+        amount = conversion_amount(boxes)
+        field = conversion_quantity_box(boxes) if amount is not None else None
+        if field is not None and amount != expected and expected > 0:
+            self.click(field, after_sleep=.2)
+            self.send_key_down('ctrl')
+            try:
+                self.send_key('a')
+            finally:
+                self.send_key_up('ctrl')
+            for digit in str(expected):
+                self.send_key(digit)
+            self.sleep(.3)
+            self.next_frame()
+            amount = conversion_amount(self.ocr(.20, .20, .80, .80) or [])
+        self.log_info(f'备用转换数量复核：expected={expected}, observed={amount}')
+        return amount
+
     @staticmethod
     def should_use_backup_stamina(activity_ready, current, back_up, budget):
         if activity_ready is not False or int(current) >= int(budget):
             return False
         return int(current) + int(back_up) >= int(budget)
+
+    def _note_daily_resource_shortfall(self, total, budget):
+        from src.task.daily_reserve_policy import DailyReservePolicy
+        policy = getattr(getattr(self, 'executor', None), '_daily_reserve_policy', None)
+        if isinstance(policy, DailyReservePolicy) and policy.profile_id and total >= 0:
+            policy.resource_shortfall = (total, budget) if total < budget else None
+            if policy.resource_shortfall:
+                self.info_set('体力待补充', f'可用总量 {total}，完成当前缺项需 {budget}')
 
     def use_stamina(self, once=60, must_use=0, allow_backup=False, max_claims=2):
         if max_claims not in (1, 2):
@@ -742,6 +770,7 @@ class BaseWWTask(BaseTask):
                 policy.budget_initialized = True
             allow_backup = allow_backup and policy.allowance(current, once) > 0
         if (total if allow_backup else current) < once:
+            BaseWWTask._note_daily_resource_shortfall(self, total, max(once, must_use))
             if policy is not None and current < once and not policy.full_seen:
                 policy.refresh_required = True
             self.log_info(f'体力消费停止：current={current}, reserve={back_up}, allow_backup={allow_backup}, remaining={must_use}')
@@ -777,8 +806,8 @@ class BaseWWTask(BaseTask):
             if policy is not None:
                 limit = min(limit, policy.allowance(current, used))
             self.next_frame()
-            amount = conversion_amount(self.ocr(0.20, 0.20, 0.80, 0.80))
-            if amount is None or amount > limit or amount > back_up:
+            amount = BaseWWTask._reserve_conversion_amount(self, min(limit, back_up))
+            if amount is None or amount != min(limit, back_up) or amount > limit or amount > back_up:
                 self.log_info(f'备用体力转换已拦截：数量={amount}，本次上限={limit}；不接受默认批量转换')
                 self.screenshot('reserve_conversion_blocked')
                 self.back(after_sleep=1)
@@ -1035,6 +1064,8 @@ class BaseWWTask(BaseTask):
         try:
             while time.monotonic() < deadline:
                 self.next_frame()
+                if self.has_claim_stamina():
+                    return True
                 if self.find_f_with_claim_text():
                     break
                 marker = self.find_treasure_icon()
@@ -1072,8 +1103,21 @@ class BaseWWTask(BaseTask):
                 if raise_if_not_found:
                     raise RuntimeError('can not walk to treasure: claim interaction unconfirmed')
                 return False
-            self.sleep(1)
-            return True
+            if not send_f:
+                return True
+            for _ in range(3):
+                self.next_frame()
+                if self.has_claim_stamina():
+                    return True
+                if not self.find_f_with_claim_text():
+                    break
+                self.send_key('f', after_sleep=.3)
+                if self.wait_until(self.has_claim_stamina, time_out=2, raise_if_not_found=False):
+                    return True
+            self.screenshot('treasure_claim_open_failed', frame=self.require_game_frame())
+            if raise_if_not_found:
+                raise RuntimeError('can not walk to treasure: claim interaction unconfirmed after F')
+            return False
         finally:
             for direction in ('w', 'a', 's', 'd'):
                 self.send_key_up(direction)
@@ -1583,7 +1627,16 @@ class BaseWWTask(BaseTask):
         return mask
 
     def find_monthly_card(self):
-        return self.find_one('monthly_card', threshold=0.65, horizontal_variance=0.05, vertical_variance=0.05)
+        frame = self.require_game_frame()
+        candidate = self.find_one('monthly_card', threshold=0.65, horizontal_variance=0.05,
+                                  vertical_variance=0.05, frame=frame)
+        if candidate is None or BaseWWTask._is_mail_page(self, frame):
+            return None
+        return candidate
+
+    def _is_mail_page(self, frame):
+        return bool(self.ocr(.0, .0, .32, .16, frame=frame,
+                             match=re.compile(r'^(邮件|郵件|Mail)$', re.I)))
 
     def handle_monthly_card(self):
         monthly_card = self.find_monthly_card()
@@ -1594,10 +1647,16 @@ class BaseWWTask(BaseTask):
             self.click_relative(0.50, 0.89)
             self.sleep(2)
             # self.screenshot('monthly_card2')
-            self.click_relative(0.50, 0.89)
-            self.sleep(2)
-            self.wait_until(self.in_team_and_world, time_out=10,
-                            post_action=lambda: self.click_relative(0.50, 0.89, after_sleep=1))
+            if self.find_monthly_card() is not None:
+                self.click_relative(0.50, 0.89)
+                self.sleep(2)
+            def retry_card():
+                if self.find_monthly_card() is not None:
+                    self.click_relative(0.50, 0.89, after_sleep=1)
+            if not self.wait_until(self.in_team_and_world, time_out=10,
+                                   post_action=retry_card, raise_if_not_found=False):
+                self.log_warning('月卡处理后未确认大世界，未更新领取时间，继续普通页面恢复')
+                return False
             # self.screenshot('monthly_card3')
             self.set_check_monthly_card(next_day=True)
         # logger.debug(f'check_monthly_card {monthly_card}')

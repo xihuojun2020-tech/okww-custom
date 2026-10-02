@@ -2056,7 +2056,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         retryable = True
         while cause is not None and id(cause) not in visited:
             visited.add(id(cause))
-            if isinstance(cause, TargetUnavailable):
+            if isinstance(cause, TargetUnavailable) or getattr(cause, 'retryable', True) is False:
                 retryable = False
                 if cause is not error:
                     reason += f'；原因：{cause}'

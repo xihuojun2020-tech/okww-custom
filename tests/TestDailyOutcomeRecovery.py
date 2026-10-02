@@ -159,6 +159,28 @@ class TestDailyOutcomeRecovery(unittest.TestCase):
         task.claim_daily.assert_called_once()
         self.assertNotIn('Daily Task',[c.args[0] for c in task.record_last_completed.call_args_list])
 
+    def test_mail_failure_returns_safely_and_continues_without_repeating_consumption(self):
+        task, _, flags = self.daily_flow()
+        flags['Farm Nightmare Nest for Daily Echo'] = False
+        task.open_daily.return_value = (180, True)
+        task.claim_mail.side_effect = RuntimeError('mail overlay')
+        self.run_daily_flow(task)
+        task.claim_mail.assert_called_once()
+        task.claim_battle_pass.assert_called_once()
+        task.run_weekly_tasks.assert_called_once()
+        self.assertIn('Daily Task', [c.args[0] for c in task.record_last_completed.call_args_list])
+
+    def test_mail_user_stop_does_not_continue_tail(self):
+        from ok import TaskDisabledException
+        task, _, flags = self.daily_flow()
+        flags['Farm Nightmare Nest for Daily Echo'] = False
+        task.open_daily.return_value = (180, True)
+        task.claim_mail.side_effect = TaskDisabledException()
+        with self.assertRaises(TaskDisabledException):
+            self.run_daily_flow(task)
+        task.claim_battle_pass.assert_not_called()
+        task.run_weekly_tasks.assert_not_called()
+
     def test_full_clear_failure_is_not_erased_by_echo_completion(self):
         task,child,flags=self.daily_flow()
         flags['Auto Farm all Nightmare Nest']=True

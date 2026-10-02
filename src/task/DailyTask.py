@@ -27,6 +27,7 @@ from src.task.TacetTask import TacetTask
 from src.task.SimulationTask import SimulationTask
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.BaseCombatTask import BaseCombatTask
+from src.task.BaseWWTask import BaseWWTask
 from src.config_integrity import (
     PROTECTED_TASK_KEYS,
     ConfigIntegrityBlocked,
@@ -49,6 +50,10 @@ logger = Logger.get_logger(__name__)
 
 class DailyActivityIncomplete(RuntimeError):
     pass
+
+
+class DailyResourceInsufficient(DailyActivityIncomplete):
+    retryable = False
 
 
 class DailyActivityDetectionError(RuntimeError):
@@ -596,7 +601,14 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self._finish_daily_rewards(daily_reward_ready)
 
         self._publish_daily_stage('每日任务', '正在领取邮件')
-        self.claim_mail()
+        try:
+            self.claim_mail()
+        except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked, FrameUnavailable, GameProcessLost):
+            raise
+        except Exception as error:
+            self.log_warning(f'邮件待补领：{type(error).__name__}: {error}；先确认安全返回，不重跑已完成消耗')
+            self.info_set('邮件待补领', str(error))
+            self.ensure_main(time_out=30)
         self.sleep(1)
         self._publish_daily_stage('每日任务', '正在领取战令奖励')
         self.log_info('正在领取战令奖励...')
@@ -750,6 +762,10 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             message = '已领取当前可领取奖励，但活跃度仍未刷满；账号不会标记为完成'
             self._publish_daily_stage('每日任务', message)
             self._notify_incomplete_daily_activity(message)
+            policy = getattr(getattr(self, 'executor', None), '_daily_reserve_policy', None)
+            shortfall = getattr(policy, 'resource_shortfall', None)
+            if shortfall is not None:
+                raise DailyResourceInsufficient(f'{message}；待补充体力：{shortfall}；本轮不整账号重复补跑')
             raise DailyActivityIncomplete(message)
         return True
 
@@ -2465,9 +2481,29 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def claim_mail(self):
         self.info_set('current task', 'claim mail')
-        self.back(after_sleep=1.5)
-        self.click(0.64, 0.95, after_sleep=1)
-        self.click(0.14, 0.9, after_sleep=1)
+        self.ensure_main(time_out=30)
+        self.back(after_sleep=1)
+        frame = self.require_game_frame()
+        if not BaseWWTask._is_mail_page(self, frame):
+            # Main menu mailbox position; never click the claim position before page verification.
+            self.click(0.64, 0.95, after_sleep=1)
+        self.wait_until(lambda: BaseWWTask._is_mail_page(self, self.require_game_frame()),
+                        time_out=5, raise_if_not_found=True)
+        for attempt in range(3):
+            frame = self.require_game_frame()
+            if not BaseWWTask._is_mail_page(self, frame):
+                self.send_key('esc', after_sleep=.5)
+                continue
+            buttons = self.ocr(.0, .8, .4, 1, frame=frame,
+                               match=re.compile(r'^(全部领取|全部領取|Claim\s+All)$', re.I)) or []
+            if len(buttons) == 1 and attempt == 0:
+                self.click(buttons[0], after_sleep=.5)
+                frame = self.require_game_frame()
+                if not BaseWWTask._is_mail_page(self, frame):
+                    self.send_key('esc', after_sleep=.5)
+            self.send_key('esc', after_sleep=.5)
+            if not BaseWWTask._is_mail_page(self, self.require_game_frame()):
+                break
         self.ensure_main(time_out=10)
 
 

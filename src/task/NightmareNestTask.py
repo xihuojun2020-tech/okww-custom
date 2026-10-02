@@ -3,7 +3,7 @@ import time
 import cv2
 from dataclasses import dataclass
 
-from ok import Logger, TaskDisabledException
+from ok import Logger, TaskDisabledException, WaitFailedException
 from src.task.BaseCombatTask import BaseCombatTask, CombatStateUnknown, CharDeadException, CharRevivedException
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task_status import publish_task_status
@@ -127,12 +127,39 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
             self._capture_success = True
         return self._capture_success
 
+    def _enter_nest(self, nest):
+        residual = isinstance(nest, NestTarget) and nest.cache_key.startswith('residual:')
+        button = nest.box if isinstance(nest, NestTarget) else nest
+        for attempt in range(3):
+            if residual:
+                frame = self.require_game_frame()
+                try:
+                    rows = self._residual_rows(frame, {nest.display_name})
+                    current, total, button = rows[nest.display_name]
+                    if current == total:
+                        self._nest_completed.add(nest.display_name)
+                        return None
+                    if button is None:
+                        raise ValueError('前往按钮不唯一')
+                    self.log_info(f'残像入口 {attempt + 1}/3：{nest.display_name} '
+                                  f'{current}/{total}，按钮=({button.x},{button.y})')
+                except (ValueError, KeyError) as error:
+                    self.screenshot('nest_entry_source_unknown', frame=frame)
+                    raise RuntimeError('残像入口源页无法确认，停止重复点击') from error
+            self.click(button, after_sleep=2)
+            try:
+                return self.wait_book_target_state()
+            except WaitFailedException:
+                if not residual or attempt == 2:
+                    raise
+                self.log_warning(f'残像入口未切换，重新核对同一目标后重试 {attempt + 1}/2')
+
     def combat_nest(self, nest):
-        target_box = nest.box if isinstance(nest, NestTarget) else nest
         target_name = nest.display_name if isinstance(nest, NestTarget) else '当前目标'
         publish_task_status(self, stage='刷梦魇巢穴', detail=f'{target_name} · 正在进入挑战')
-        self.click(target_box, after_sleep=2)
-        feature = self.wait_book_target_state()
+        feature = self._enter_nest(nest)
+        if feature is None:
+            return
         is_team = feature.name in ('team_start_challenge', 'team_entry')
         if is_team:
             self.click_team_challenge()
