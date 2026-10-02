@@ -28,6 +28,7 @@ from src.task.SimulationTask import SimulationTask
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.BaseCombatTask import BaseCombatTask
 from src.task.BaseWWTask import BaseWWTask
+from src.task.weekly_boss_plan import WEEKLY_PLAN, weekly_plan, plan_enabled, plan_revision
 from src.config_integrity import (
     PROTECTED_TASK_KEYS,
     ConfigIntegrityBlocked,
@@ -204,6 +205,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             FARM_NIGHTMARE_SETTLEMENTS: [],
             GARDEN_CHECK_DAY: '无',
             WEEKLY_TARGET: WEEKLY_AUTO,
+            WEEKLY_PLAN: [],
             'Last Completed - Weekly Boss Monday': '',
             'Last Completed - Weekly Boss Sunday': '',
             ALIAS_ENABLE: '无',
@@ -1284,8 +1286,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         try:
             completed = self.get_last_completed(task_name)
             if task_name in (WEEKLY_MONDAY, WEEKLY_SUNDAY):
-                target = self._profile_get(WEEKLY_TARGET, WEEKLY_AUTO)
-                if target == WEEKLY_DISABLED:
+                if not plan_enabled(weekly_plan(self._weekly_plan_tasks())):
                     return '已关闭'
                 current_week = weekly_check_window()[0]
                 try:
@@ -1927,11 +1928,12 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
     def check_weekly_boss(self):
         identity = self._active_profile_id()
         window = weekly_check_window()
-        checked = (identity, window)
+        rows = weekly_plan(self._weekly_plan_tasks())
+        checked = (identity, window, plan_revision(rows))
         if getattr(self, '_weekly_checked_run', None) == checked:
             return True
         self.info_set('周本检查结果', '无需检查')
-        target = self._profile_get(WEEKLY_TARGET, WEEKLY_AUTO)
+        target = WEEKLY_AUTO if plan_enabled(rows) else WEEKLY_DISABLED
         if not weekly_check_due(target, self.get_last_completed(window[1])):
             return False
         self._weekly_checked_run = checked
@@ -1939,7 +1941,11 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self.log_info(f'周本检查：账号={profile_id}，目标={target}，检查周期={window}')
         self._publish_daily_stage('清理体力', '优先检查每周周本')
         try:
-            result = self.get_task_by_class(WeeklyBossTask).run_for_target(target)
+            result = self.get_task_by_class(WeeklyBossTask).run_for_plan(
+                profile_id, self._weekly_plan_tasks, self.integrity_service)
+            if result is not None and result.reason == '计划未启用':
+                self.info_set('周本检查结果', '计划未启用')
+                return False
             if result is not None and not result.complete and getattr(result, 'reason', '') == '当前体力不足':
                 status = f'待补检：当前体力不足，本周仍剩余 {result.remaining} 次；未记录完成'
                 self.info_set('周本检查结果', status)
@@ -1971,6 +1977,17 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             self.screenshot('weekly_daily_pending')
             self.ensure_main(time_out=180)
         return True
+
+    def _weekly_plan_tasks(self):
+        # Re-read saved intent only at safe segment boundaries; the claim event
+        # keeps the original boss/revision even if the user edits a draft.
+        from src.config_integrity import ConfigIntegrityService
+        if isinstance(self.integrity_service, ConfigIntegrityService):
+            self.integrity_service.guard_task_start()
+            return dict(AccountRepository(paths=self.integrity_service.paths,
+                integrity_service=self.integrity_service).load_profile(self._active_profile_id()).tasks)
+        return {WEEKLY_TARGET: self._profile_get(WEEKLY_TARGET, WEEKLY_AUTO),
+                WEEKLY_PLAN: self._profile_get(WEEKLY_PLAN, [])}
 
     def _record_weekly_outcome(self, target, status, remaining):
         if self.integrity_service is not None:

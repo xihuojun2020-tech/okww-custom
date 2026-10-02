@@ -14,6 +14,31 @@ from src.task.DailyTask import DailyTask
 
 
 class TestConfigBackup(unittest.TestCase):
+    def test_restore_preserves_claims_without_rewriting_other_runtime_state(self):
+        from tests.fixture_support import make_account_environment
+        from src.task.weekly_boss_progress import WeeklyBossProgress
+        from src.task.weekly_boss import WEEKLY_BOSSES
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            env = make_account_environment(root)
+            profile_id = env.repository.list_profiles()[0].profile_id
+            progress = WeeklyBossProgress(env.integrity, profile_id)
+            boss = WEEKLY_BOSSES[0].key
+            progress.correct(boss, 2)
+            service = ConfigBackupService(root / 'configs', root / 'backups', harden_permissions=False)
+            snapshot = service.create_transaction_snapshot()
+            before = json.loads((snapshot.path / 'account_runtime_state.json').read_text(encoding='utf-8'))
+            progress.correct(boss, 8)
+            event = progress.begin(boss, 'week', 3, 'rev')
+            service.restore(snapshot.path, confirmed=True)
+            restored = json.loads((root / 'configs/account_runtime_state.json').read_text(encoding='utf-8'))
+            self.assertEqual(8, restored['progress'][progress.key]['counts'][boss])
+            self.assertEqual('pending', restored['progress'][progress.key]['events'][event]['state'])
+            for key in before:
+                if key != 'progress':
+                    self.assertEqual(before[key], restored[key])
+            self.assertTrue(service.verify_snapshot(snapshot.path).ok)
+
     def test_restore_keeps_current_installation_storage_binding(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp).resolve()

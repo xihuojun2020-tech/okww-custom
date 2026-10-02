@@ -45,22 +45,19 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = 'Weekly Boss Challenge'
-        self.description = 'Claim all remaining weekly rewards from one boss, then verify zero remaining. Current stamina only; keep default difficulty and team.'
+        self.description = '按当前每日账号方案的三个周本优先级领取；累计跨周保留，全部达标后领取游戏列表第一项。当前体力不足时保留补检。'
         self.group_name = None
         self.supported_languages = ['zh_CN']
         self.default_config.update({
-            'Weekly Boss': WEEKLY_AUTO,
             'Use Liberation': True,
             'Switch to Healer before and after Combat': True,
         })
-        self.config_type['Weekly Boss'] = {
-            'type': 'drop_down', 'options': [WEEKLY_AUTO, *(boss.key for boss in WEEKLY_BOSSES)],
-        }
-        self.config_description['Weekly Boss'] = 'Use this boss for every remaining reward this run. Does not change difficulty or team.'
         self.target_enemy_time_out = 3
         self.switch_char_time_out = 5
         self.combat_end_condition = self._battle_finished
         self.last_result = None
+        self._claim_progress = None
+        self._claim_event = None
 
     def _stage(self, message):
         self.info_set('周本阶段', message)
@@ -548,12 +545,22 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         self._fight()
         self._stage('寻找领取奖励交互')
         self._seek_reward_interaction()
+        progress = getattr(self, '_claim_progress', None)
+        if progress is not None:
+            self._claim_event = progress.begin(self._entry_boss.key, self._claim_week,
+                                                self._claim_remaining, self._claim_revision)
+            self._stage(f'周本待确认领取：{self._entry_boss.key}；事件={self._claim_event}；本周领取前剩余={self._claim_remaining}')
         self.send_key('f')
         # Only the verified current-stamina confirmation is supported. Never
         # use the generic cancellation handler or click replenishment dialogs.
         self._confirm_claim_if_needed(cost, retry_interaction=True)
         self._stage('等待领奖结算，不重复确认')
         self._wait_for(self._settlement, '领奖结果未确认，停止再次挑战', 20)
+        if progress is not None:
+            progress.resolve(self._claim_event, True)
+            self._stage(f'周本领取已保存：{self._entry_boss.key}；事件={self._claim_event}；累计={progress.counts().get(self._entry_boss.key, 0)}')
+            self._claim_event = None
+            self.info_set('目标累计领取', progress.counts().get(self._entry_boss.key, 0))
         self._stage('已进入领奖结算页')
         # The result page hides the top bar; use the existing anchored reader.
         def balance():
@@ -585,7 +592,11 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
                              f'战歌重奏复核：本周剩余 {remaining} 次；{reason}',
                              progress=dict(initial=initial, claimed=claimed, remaining=remaining))
         self.ensure_main(time_out=60)
+        if getattr(self, '_claim_progress', None) is not None and initial - claimed != remaining:
+            raise RuntimeError('周本剩余次数与已确认领取不一致，停止继续领取')
         if remaining:
+            if reason == '目标领取额度已达':
+                return self.last_result
             if reason == '当前体力不足':
                 self._stage(f'当前体力不足，已领取 {claimed} 次，本周剩余 {remaining} 次，等待补检')
                 return self.last_result
@@ -593,7 +604,9 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         self._stage('已复核 0/3，本周奖励全部领取')
         return self.last_result
 
-    def run_weekly(self, target_key=None):
+    def run_weekly(self, target_key=None, max_claims=None):
+        if max_claims is not None and (type(max_claims) is not int or max_claims <= 0):
+            raise ValueError('本次周本领取上限必须为正整数')
         target_key = target_key if target_key is not None else self.config.get('Weekly Boss',WEEKLY_AUTO)
         self.last_result = None
         self.info['已确认领奖'] = 0
@@ -620,24 +633,81 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         self._enter_challenge()
         claimed = 0
         reason = ''
-        while claimed < initial:
+        allowed = min(initial, max_claims) if max_claims is not None else initial
+        while claimed < allowed:
+            self._claim_remaining = initial - claimed
             stamina = self._fight_and_claim(cost)
             claimed += 1
             self.info['已确认领奖'] = claimed
-            retry = claimed < initial and stamina is not None and stamina >= cost
+            retry = claimed < allowed and stamina is not None and stamina >= cost
+            plan_changed = False
+            if getattr(self, '_claim_progress', None) is not None:
+                from src.task.weekly_boss_plan import weekly_plan, plan_revision
+                plan_changed = plan_revision(weekly_plan(self._claim_read_tasks())) != self._claim_revision
+                retry = retry and not plan_changed
             self._stage(f'已领取 {claimed}/{initial}，' + ('重新挑战' if retry else '退出副本'))
             self._leave_settlement(retry)
             if not retry:
-                if claimed < initial:
+                if (plan_changed or claimed == allowed) and claimed < initial:
+                    reason = '目标领取额度已达'
+                elif claimed < initial:
                     reason = '结算体力未知' if stamina is None else '当前体力不足'
                 break
         return self._recheck(initial, claimed, reason)
 
-    def run(self):
-        WWOneTimeTask.run(self)
-        return self.run_for_target(self.config.get('Weekly Boss'))
+    def run_for_plan(self, profile_id, read_tasks, service):
+        from src.task.weekly_boss import weekly_check_window
+        from src.task.weekly_boss_plan import weekly_plan, choose_weekly_target, plan_revision
+        from src.task.weekly_boss_progress import WeeklyBossProgress
+        progress = WeeklyBossProgress(service, profile_id)
+        if progress.pending():
+            self._open_weekly_book()
+            remaining = self._read_remaining()
+            self.info_set('待核验周本本周剩余', remaining)
+            raise RuntimeError('存在未核验的周本领取，请在账号设置的周本记录中确认结果')
+        window = weekly_check_window()
+        claimed_total, initial, last_remaining = 0, None, 0
+        self._claim_progress = progress
+        self._claim_read_tasks = read_tasks
+        self._claim_week = str(window[0])
+        try:
+            # The game allows three claims per week. Each segment must make progress.
+            for _ in range(4):
+                if weekly_check_window() != window:
+                    raise RuntimeError('周本执行跨越刷新边界，下次重新核验')
+                self.sleep(.01)  # Preserve task stop/pause checks between targets.
+                rows = weekly_plan(read_tasks())
+                choice = choose_weekly_target(rows, progress.counts())
+                if choice is None:
+                    result = WeeklyBossResult(initial or 0, claimed_total, last_remaining, '计划未启用')
+                    self.last_result = result
+                    return result
+                target, needed, stage = choice
+                self._claim_revision = plan_revision(rows)
+                self._stage(f'{stage}：{target}；本次目标剩余需求={needed if needed is not None else "本周剩余额度"}')
+                result = self.run_for_target(target, max_claims=needed)
+                if initial is None:
+                    initial = result.initial
+                claimed_total += result.claimed
+                last_remaining = result.remaining
+                combined = WeeklyBossResult(initial, claimed_total, result.remaining, result.reason)
+                self.last_result = combined
+                if result.complete or result.reason != '目标领取额度已达':
+                    return combined
+                if result.claimed <= 0:
+                    raise RuntimeError('周本目标未确认领取进展，停止重复挑战')
+            raise RuntimeError('周本调度超过本周领取次数，停止重复挑战')
+        finally:
+            self._claim_progress = None
+            self._claim_read_tasks = None
+            self._claim_event = None
 
-    def run_for_target(self, target_key):
+    def run(self):
+        from src.task.DailyTask import DailyTask
+        # The independent entry uses the same account confirmation and scheduler.
+        return self.get_task_by_class(DailyTask).run_weekly_boss_only()
+
+    def run_for_target(self, target_key, max_claims=None):
         if self.game_lang != 'zh_CN':
             raise RuntimeError('周本首版仅支持简体中文游戏')
         if abs(self.width / self.height - 16 / 9) > 0.02:
@@ -645,7 +715,8 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         previous = self.skip_combat_check
         self.skip_combat_check = True
         try:
-            return self.run_weekly(target_key)
+            return (self.run_weekly(target_key) if max_claims is None else
+                    self.run_weekly(target_key, max_claims=max_claims))
         except TaskDisabledException:
             raise
         except Exception:

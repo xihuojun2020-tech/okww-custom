@@ -251,10 +251,11 @@ class TestWeeklyDailyIntegration(unittest.TestCase):
         task = object.__new__(DailyTask)
         task.integrity_service = Mock()
         task._active_profile_id = Mock(return_value='uuid-a1')
-        task._profile_get = Mock(return_value=WEEKLY_BOSSES[0].key)
+        task._profile_get = Mock(side_effect=lambda key, default=None:
+                                WEEKLY_BOSSES[0].key if key == WEEKLY_TARGET else default)
         task.get_last_completed = Mock(return_value=None)
         task._publish_daily_stage = Mock()
-        task.get_task_by_class = Mock(return_value=SimpleNamespace(run_for_target=Mock(return_value=result)))
+        task.get_task_by_class = Mock(return_value=SimpleNamespace(run_for_plan=Mock(return_value=result)))
         task.info_set = Mock()
         task.log_error = Mock()
         task.log_info = Mock()
@@ -267,7 +268,10 @@ class TestWeeklyDailyIntegration(unittest.TestCase):
             task = self.daily(result)
             task.check_weekly_boss()
             self.assertEqual(task.integrity_service.record_completion.call_args.args[0], 'uuid-a1')
-            self.assertEqual(task.get_task_by_class.return_value.run_for_target.call_args.args, (WEEKLY_BOSSES[0].key,))
+            args = task.get_task_by_class.return_value.run_for_plan.call_args.args
+            self.assertEqual(args[0], 'uuid-a1')
+            self.assertEqual(args[1]()[WEEKLY_TARGET], WEEKLY_BOSSES[0].key)
+            self.assertIs(args[2], task.integrity_service)
 
     def test_partial_and_failure_are_pending_without_completion(self):
         task = self.daily(WeeklyBossResult(3, 1, 2))
@@ -275,13 +279,13 @@ class TestWeeklyDailyIntegration(unittest.TestCase):
         task.integrity_service.record_completion.assert_not_called()
         task.ensure_main.assert_called_once()
         task = self.daily()
-        task.get_task_by_class.return_value.run_for_target.side_effect = RuntimeError('体力不足')
+        task.get_task_by_class.return_value.run_for_plan.side_effect = RuntimeError('体力不足')
         task.check_weekly_boss()
         task.integrity_service.record_completion.assert_not_called()
 
     def test_stop_and_unrecoverable_world_propagate(self):
         task = self.daily()
-        task.get_task_by_class.return_value.run_for_target.side_effect = TaskDisabledException()
+        task.get_task_by_class.return_value.run_for_plan.side_effect = TaskDisabledException()
         with self.assertRaises(TaskDisabledException):
             task.check_weekly_boss()
         task.ensure_main.assert_not_called()
@@ -297,10 +301,10 @@ class TestWeeklyDailyIntegration(unittest.TestCase):
         task.check_weekly_boss()
         self.assertEqual(task.info_set.call_count,count)
         self.assertIn('待补检',task.info_set.call_args.args[1])
-        task.get_task_by_class.return_value.run_for_target.assert_called_once()
+        task.get_task_by_class.return_value.run_for_plan.assert_called_once()
         task._weekly_checked_run=None  # next daily run gets its own attempt
         task.check_weekly_boss()
-        self.assertEqual(task.get_task_by_class.return_value.run_for_target.call_count,2)
+        self.assertEqual(task.get_task_by_class.return_value.run_for_plan.call_count,2)
 
     def test_cross_refresh_does_not_write_new_week_completion(self):
         task = self.daily()

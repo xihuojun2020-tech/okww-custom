@@ -246,6 +246,16 @@ class ConfigBackupService:
                         shutil.copy2(live, staged)
                     else:
                         staged.unlink(missing_ok=True)
+                # Merge only claim ledgers after verifying the source snapshot.
+                # Restoring settings cannot rewind confirmed material claims.
+                live_runtime = self.config_dir / 'account_runtime_state.json'
+                staged_runtime = staging / 'account_runtime_state.json'
+                if live_runtime.is_file() and staged_runtime.is_file():
+                    from .task.weekly_boss_progress import preserve_weekly_progress
+                    from .config_integrity import _atomic_write_json_unchecked
+                    incoming = json.loads(staged_runtime.read_text(encoding='utf-8'))
+                    current = json.loads(live_runtime.read_text(encoding='utf-8'))
+                    _atomic_write_json_unchecked(staged_runtime, preserve_weekly_progress(incoming, current))
                 journal['phase'] = 'verified'
                 self._write_restore_journal(journal)
                 if self.config_dir.exists():

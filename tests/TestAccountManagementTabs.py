@@ -25,6 +25,38 @@ from tests.fixture_support import make_account_environment
 
 
 class TestAccountManagementTabs(unittest.TestCase):
+    def test_weekly_three_targets_save_reload_and_show_shared_counts(self):
+        from src.task.weekly_boss_plan import WEEKLY_PLAN
+        from src.task.weekly_boss import WEEKLY_BOSSES
+        from src.task.weekly_boss_progress import WeeklyBossProgress
+        from src.gui.AccountConfigTab import AccountTemplateDialog
+        bosses = [b.key for b in WEEKLY_BOSSES[:3]]
+        with tempfile.TemporaryDirectory() as temp:
+            env = make_account_environment(Path(temp))
+            tab = AccountConfigTab(AccountConfigEditor(env.repository))
+            try:
+                widget = tab.form_widgets[WEEKLY_PLAN]
+                rows = [{'boss': boss, 'limit': limit} for boss, limit in zip(bosses, (6, 4, 3))]
+                for row, (target, limit, _) in zip(rows, widget.rows):
+                    target.setCurrentIndex(target.findData(row['boss']))
+                    limit.setText(str(row['limit']))
+                self.assertTrue(tab.dirty)
+                with patch.object(QMessageBox, 'question', return_value=QMessageBox.Yes):
+                    tab.save()
+                    self._drain_until(lambda: not tab.operation.busy)
+                saved = env.repository.load_profile(tab.selected_profile_id)
+                self.assertEqual(rows, saved.tasks[WEEKLY_PLAN])
+                self.assertEqual(bosses[0], saved.tasks['Weekly Boss Target'])
+                WeeklyBossProgress(env.integrity, tab.selected_profile_id).correct(bosses[0], 6)
+                widget.refresh()
+                self.assertIn('6/6', widget.rows[0][2].text())
+                self.assertIn('已达标', widget.rows[0][2].text())
+                dialog = AccountTemplateDialog(saved.tasks)
+                self.assertEqual(rows, dialog.tasks()[WEEKLY_PLAN])
+                dialog.deleteLater()
+            finally:
+                tab.deleteLater()
+
     def test_tacet_template_preserves_ids_and_invalid_value_requires_selection(self):
         from src.gui.AccountConfigTab import AccountTemplateDialog
         for value in (1, 19, 20, 21):

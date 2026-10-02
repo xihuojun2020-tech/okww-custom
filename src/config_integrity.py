@@ -71,6 +71,7 @@ PROTECTED_TASK_KEYS = (
     "Weekly Garden Check Day",
     "Garden Execution Mode",
     "Weekly Boss Target",
+    "Weekly Boss Targets",
     "Merge Echo on Sunday",
     "备用识别名称",
     "备用识别名称内容",
@@ -89,6 +90,7 @@ _TASK_KEY_TYPES = {
     "Weekly Garden Check Day": str,
     "Garden Execution Mode": str,
     "Weekly Boss Target": str,
+    "Weekly Boss Targets": list,
     "Merge Echo on Sunday": bool,
     "备用识别名称": str,
     "备用识别名称内容": str,
@@ -110,6 +112,7 @@ _BOOTSTRAP_TASK_DEFAULTS = {
     "Auto Farm all Nightmare Nest": False,
     "Weekly Garden Check Day": "无",
     "Weekly Boss Target": "自动（列表首项）",
+    "Weekly Boss Targets": [],
     "Merge Echo on Sunday": False,
     "备用识别名称": "无",
     "备用识别名称内容": "",
@@ -333,9 +336,14 @@ def validate_master(data: Any) -> list[str]:
             # not rewrite stored account intent; explicit disabled remains disabled.
             missing_keys = [key for key in PROTECTED_TASK_KEYS
                             if key not in task_config and key not in (
-                                'Weekly Boss Target', 'Material Planner Enabled',
+                                'Weekly Boss Target', 'Weekly Boss Targets', 'Material Planner Enabled',
                                 'Nightmare Settlements to Farm', 'Garden Execution Mode')]
             from src.task.weekly_boss import WEEKLY_BOSSES
+            from src.task.weekly_boss_plan import weekly_plan
+            try:
+                weekly_plan(task_config)
+            except ValueError as error:
+                errors.append(f'{path}.task_config: {error}')
             if task_config.get('Weekly Boss Target', '无') not in ('无', '自动（列表首项）', *(b.key for b in WEEKLY_BOSSES)):
                 errors.append(f'{path}.task_config weekly boss target is invalid')
             if ('Garden Execution Mode' in task_config and
@@ -1604,6 +1612,17 @@ class ConfigIntegrityService:
             runtime.setdefault("progress", {})[str(key)] = copy.deepcopy(value)
             atomic_write_json(self.paths.runtime, runtime)
             return copy.deepcopy(runtime)
+
+    def update_progress(self, key: str, update) -> Any:
+        """Read/modify/write one progress record under the existing account lock."""
+        with self._lock:
+            runtime = self._runtime()
+            if self._runtime_error:
+                raise ConfigIntegrityBlocked('runtime state is corrupt')
+            value = update(copy.deepcopy((runtime.get('progress') or {}).get(key)))
+            runtime.setdefault('progress', {})[str(key)] = copy.deepcopy(value)
+            atomic_write_json(self.paths.runtime, runtime)
+            return copy.deepcopy(value)
 
 
 class TaskStartGuard:

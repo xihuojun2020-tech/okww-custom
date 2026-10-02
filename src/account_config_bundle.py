@@ -643,6 +643,9 @@ class AccountConfigBundleService:
             ci._atomic_write_json_unchecked(self.paths.master, master)
             ci.atomic_write_json(self.paths.working, working)
             runtime = self._restore_runtime(runtime, set(master.get("profiles", {})))
+            from src.task.weekly_boss_progress import preserve_weekly_progress
+            previous_runtime, _ = _read_optional(self.paths.runtime)
+            runtime = preserve_weekly_progress(runtime, previous_runtime or {})
             runtime["accepted_master_fingerprint"] = ci.fingerprint(ci.normalize_master(master))
             runtime["last_bundle_import"] = datetime.now(timezone.utc).isoformat()
             ci.atomic_write_json(self.paths.runtime, runtime)

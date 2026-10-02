@@ -45,6 +45,7 @@ _LABELS = {
     'Record Pages': ('录像页面（固定全选）', ''),
     'Record Duration': ('每页录像时长（秒）', ''),
     "Weekly Boss Target": ("每周周本", "无表示关闭；周一检查、周二至周六补检、周日独立复检。优先使用当前体力。"),
+    "Weekly Boss Targets": ("周本优先级", "累计领取次数跨周保留；全部达标后领取游戏列表第一项。0跳过，不限保留旧行为。"),
     "Which to Farm": ("体力用途", "每天优先消耗体力的副本类型。不会影响账号识别。"),
     "Which Tacet Suppression to Farm": ("无音区选择", "选择要刷取的无音区。旧账号选择保留原关卡；前往后不可快速到达时，请先解锁地图。"),
     "Which Forgery Challenge to Farm": ("凝素领域选择", "选择要刷取的凝素领域编号。不会影响账号识别。"),

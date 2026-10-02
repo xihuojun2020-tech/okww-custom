@@ -18,6 +18,8 @@ from src.account_config_editor import AccountConfigEditor, ProfileDraft, sanitiz
 from src.account_display import account_display_label
 from src.account_rebind_service import AccountRebindService, rebind_confirmation_identity
 from src.account_repository import AccountRepository, AccountRepositoryError, get_default_repository
+from src.gui.WeeklyBossPlanWidget import WeeklyBossPlanWidget
+from src.task.weekly_boss_plan import WEEKLY_PLAN, weekly_plan, plan_enabled
 from src.account_field_metadata import (account_field_metadata, localize_account_value,
                                         restore_account_value, normalize_weekday,
                                         GARDEN_MODE_DAILY, GARDEN_EXECUTION_MODES)
@@ -182,6 +184,7 @@ class AccountTemplateDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("编辑新账号模板")
         self._tasks = dict(tasks)
+        self._tasks.setdefault(WEEKLY_PLAN, [])
         self._tasks.setdefault('Garden Execution Mode', 'closed')
         from src.recording_policy import RECORDING_PAGES
         self._tasks['Record Pages'] = list(RECORDING_PAGES)
@@ -196,12 +199,14 @@ class AccountTemplateDialog(QDialog):
         content = QWidget(scroll)
         form = QVBoxLayout(content)
         for field in account_field_metadata(self._tasks):
-            if field.key in ('Nightmare Which to Farm', 'Nightmare Settlements to Farm'):
+            if field.key in ('Nightmare Which to Farm', 'Nightmare Settlements to Farm', 'Weekly Boss Target'):
                 continue
             if field.affects_identity or field.key in ("备用识别名称", "备用识别名称内容"):
                 continue
             value = self._tasks.get(field.key)
-            if field.key == 'Record Pages':
+            if field.key == WEEKLY_PLAN:
+                widget = WeeklyBossPlanWidget(self._tasks, parent=self)
+            elif field.key == 'Record Pages':
                 widget = FixedRecordingPages(self)
             elif field.key == "Tacet Discord Nests to Farm":
                 widget = NestSelection(value, self._tasks.get('Nightmare Settlements to Farm', []), self)
@@ -219,7 +224,11 @@ class AccountTemplateDialog(QDialog):
                 widget.setText(json.dumps(display, ensure_ascii=False)
                                if isinstance(display, (list, dict)) else str(display))
             self._widgets[field.key] = widget
-            form.addWidget(FlatSettingRow(field.label, widget, field.help_text, content))
+            if isinstance(widget, WeeklyBossPlanWidget):
+                form.addWidget(QLabel(field.label, content))
+                form.addWidget(widget)
+            else:
+                form.addWidget(FlatSettingRow(field.label, widget, field.help_text, content))
         _link_garden_controls(self._widgets)
         scroll.setWidget(content)
         layout.addWidget(scroll)
@@ -235,9 +244,15 @@ class AccountTemplateDialog(QDialog):
     def tasks(self):
         result = dict(self._tasks)
         for key, widget in self._widgets.items():
-            if key == 'Record Pages':
+            if isinstance(widget, WeeklyBossPlanWidget):
+                rows = widget.values()
+                if result.get(key) != [] or rows != weekly_plan(result):
+                    result[key] = rows
+                    active = [r['boss'] for r in rows if r['boss'] != '无' and r['limit'] != 0]
+                    result['Weekly Boss Target'] = active[0] if active else '无'
+            elif key == 'Record Pages':
                 continue
-            if isinstance(widget, NestSelection):
+            elif isinstance(widget, NestSelection):
                 result[key] = widget.values()
                 result['Nightmare Settlements to Farm'] = widget.nightmare_values()
             elif isinstance(widget, QCheckBox):
@@ -580,7 +595,13 @@ class AccountConfigTab(CustomTab):
         for key, widget in self.form_widgets.items():
             if not widget.isEnabled():
                 continue
-            if isinstance(widget, NestSelection):
+            if isinstance(widget, WeeklyBossPlanWidget):
+                rows = widget.values()
+                if self.draft.tasks.get(key) != [] or rows != weekly_plan(self.draft.tasks):
+                    self.draft.tasks[key] = rows
+                    active = [r['boss'] for r in rows if r['boss'] != '无' and r['limit'] != 0]
+                    self.draft.tasks['Weekly Boss Target'] = active[0] if active else '无'
+            elif isinstance(widget, NestSelection):
                 self.draft.tasks[key] = widget.values()
                 nightmare_values = widget.nightmare_values()
                 if nightmare_values or 'Nightmare Settlements to Farm' in self.draft.tasks:
@@ -642,6 +663,7 @@ class AccountConfigTab(CustomTab):
     def _render_form(self):
         from src.gui.SectionPanel import SectionPanel
         from src.recording_policy import RECORDING_PAGES
+        self.draft.tasks.setdefault(WEEKLY_PLAN, [])
         self.draft.tasks['Record Pages'] = list(RECORDING_PAGES)
         for key, value in recording_defaults().items():
             self.draft.tasks.setdefault(key, value)
@@ -661,7 +683,7 @@ class AccountConfigTab(CustomTab):
         weekly = {'Garden Execution Mode', 'Weekly Garden Check Day', 'Merge Echo on Sunday'}
         def group(field):
             if field.key in ('Record Pages', 'Screenshot After Daily Task', 'Record After Daily Task', 'Record Duration'): return 4
-            if field.key == 'Weekly Boss Target': return 1
+            if field.key in ('Weekly Boss Target', WEEKLY_PLAN): return 1
             if field.key in stamina: return 0
             if field.key in daily: return 0
             if field.key in weekly: return 1
@@ -670,7 +692,7 @@ class AccountConfigTab(CustomTab):
         last_group = None
         fields = sorted(account_field_metadata(self.draft.tasks), key=group)
         for field in fields:
-            if field.key in ('Nightmare Which to Farm', 'Nightmare Settlements to Farm'):
+            if field.key in ('Nightmare Which to Farm', 'Nightmare Settlements to Farm', 'Weekly Boss Target'):
                 continue
             identity_field = field.key in ('备用识别名称', '备用识别名称内容')
             if not identity_field and group(field) != last_group:
@@ -681,7 +703,11 @@ class AccountConfigTab(CustomTab):
                 self.form_sections[last_group] = heading
                 self.form_layout.addRow(heading)
             value = self.draft.tasks.get(field.key)
-            if field.key == 'Record Pages':
+            if field.key == WEEKLY_PLAN:
+                widget = WeeklyBossPlanWidget(self.draft.tasks, self.editor.repository.integrity_service,
+                                              self.draft.profile_id, self.form_host)
+                widget.changed.connect(self._mark_draft_edited)
+            elif field.key == 'Record Pages':
                 widget = FixedRecordingPages(self.form_host)
             elif field.key == "Tacet Discord Nests to Farm":
                 widget = NestSelection(value, self.draft.tasks.get('Nightmare Settlements to Farm', []), self.form_host)
@@ -705,9 +731,11 @@ class AccountConfigTab(CustomTab):
             if identity_field:
                 self.identity_task_layout.addWidget(FlatSettingRow(field.label, widget, field.help_text,
                                                                   self.identity_task_fields))
+            elif isinstance(widget, WeeklyBossPlanWidget):
+                heading.add_widget(widget)
             else:
                 heading.add_row(field.label, widget, field.help_text)
-            if isinstance(widget, NestSelection):
+            if isinstance(widget, (NestSelection, WeeklyBossPlanWidget)):
                 widget.changed.connect(self._mark_draft_edited)
             elif isinstance(widget, QCheckBox):
                 widget.toggled.connect(self._mark_draft_edited)
@@ -715,14 +743,17 @@ class AccountConfigTab(CustomTab):
                 widget.currentIndexChanged.connect(self._mark_draft_edited)
             elif isinstance(widget, QLineEdit):
                 widget.textEdited.connect(self._mark_draft_edited)
-            if field.key == 'Weekly Boss Target':
+            if field.key == WEEKLY_PLAN:
                 self._render_weekly_status()
-        target = self.form_widgets.get('Weekly Boss Target')
+        target = self.form_widgets.get(WEEKLY_PLAN)
         if target is not None and 1 in self.form_sections:
             def update_summary(*_):
-                value = target.currentText()
-                self.form_sections[1].set_summary('已关闭' if target.currentData() == '无' else f'{value} · 本周状态见详情')
-            target.currentTextChanged.connect(update_summary)
+                try:
+                    text = '三个周本按优先级领取 · 跨周累计' if plan_enabled(target.values()) else '周本已关闭'
+                except ValueError:
+                    text = '周本配置待核对'
+                self.form_sections[1].set_summary(text)
+            target.changed.connect(update_summary)
             update_summary()
         for key, field_key in ((0, 'Which to Farm'),):
             widget = self.form_widgets.get(field_key)

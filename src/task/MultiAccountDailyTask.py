@@ -1190,7 +1190,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             return True
         from src.task.weekly_boss import WEEKLY_TARGET, weekly_check_window, weekly_check_due
         profile = self._load_profiles().get(account) or {}
-        target = profile.get('task_config', profile).get(WEEKLY_TARGET, '无')
+        from src.task.weekly_boss_plan import weekly_plan, plan_enabled
+        tasks = profile.get('task_config', profile)
+        target = '自动（列表首项）' if plan_enabled(weekly_plan({WEEKLY_TARGET: '无', **tasks})) else '无'
         service = getattr(self, 'integrity_service', None)
         key = weekly_check_window()[1]
         completion = (service.get_completion(self._profile_id_for(account), key) if service

@@ -296,6 +296,8 @@ class AccountRepository:
         profile = copy.deepcopy(accounts[profile_id])
         tasks = profile.pop("task_config", {})
         tasks.setdefault('Weekly Boss Target', '自动（列表首项）')
+        from src.task.weekly_boss_plan import WEEKLY_PLAN
+        tasks.setdefault(WEEKLY_PLAN, [])
         tasks.setdefault('Material Planner Enabled', False)
         return ProfileRecord(profile_id, self._revision(raw), profile, copy.deepcopy(tasks))
 
@@ -309,6 +311,8 @@ class AccountRepository:
             template = source.get("task_config", {}) if isinstance(source, Mapping) else {}
         tasks = copy.deepcopy(dict(template)) if isinstance(template, Mapping) else {}
         tasks.setdefault('Weekly Boss Target', '自动（列表首项）')
+        from src.task.weekly_boss_plan import WEEKLY_PLAN
+        tasks.setdefault(WEEKLY_PLAN, [])
         tasks.setdefault('Material Planner Enabled', False)
         tasks.setdefault('Garden Execution Mode', 'closed')
         # Login aliases identify an account and must never leak from the template.
