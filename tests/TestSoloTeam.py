@@ -26,6 +26,22 @@ class TestSoloTeam(TaskTestCase):
             with self.subTest(size=(width, height)):
                 self.check_frame(cv2.resize(source, (width, height)), (True, 0, 1))
 
+    def test_new_solo_hud_uses_numeric_hp_and_party_bar(self):
+        # Anonymized HUD from the reported failed frame: both old templates miss.
+        source = cv2.imread('tests/images/solo_new_hud_1440.png')
+        for size in ((2560, 1440), (1920, 1080)):
+            with self.subTest(size=size):
+                self.check_frame(cv2.resize(source, size), (True, 0, 1))
+                no_hp = source.copy()
+                no_hp[1300:1430, 850:1500] = 0
+                self.check_frame(cv2.resize(no_hp, size), (False, -1, 1))
+                no_party = source.copy()
+                no_party[215:450, 2250:2510] = 0
+                self.check_frame(cv2.resize(no_party, size), (False, -1, 1))
+                extra_party = source.copy()
+                extra_party[550:564, 2335:2449] = source[378:392, 2335:2449]
+                self.check_frame(cv2.resize(extra_party, size), (False, -1, 1))
+
     def test_low_health_still_detected(self):
         source = cv2.imread('tests/images/solo_hud_1440.png')
         source[383:388,2350:2442] = 45
@@ -33,16 +49,18 @@ class TestSoloTeam(TaskTestCase):
             self.check_frame(cv2.resize(source,size), (True,0,1))
 
     def test_actual_team_gate_enters_auto_combat_loop(self):
-        self.set_image('tests/images/solo_hud_1440.png')
-        self.task.scene.reset()
-        char = Mock()
-        with patch.object(self.task, 'warm_up_char_features'), \
-             patch.object(self.task, 'in_combat', side_effect=[True, False]), \
-             patch.object(self.task, 'get_current_char', return_value=char), \
-             patch.object(self.task, 'switch_healer'), \
-             patch.object(self.task, 'combat_end'):
-            self.assertTrue(self.task._run_combat())
-        char.perform.assert_called_once()
+        for image in ('solo_hud_1440.png', 'solo_new_hud_1440.png'):
+            with self.subTest(image=image):
+                self.set_image('tests/images/' + image)
+                self.task.scene.reset()
+                char = Mock()
+                with patch.object(self.task, 'warm_up_char_features'), \
+                     patch.object(self.task, 'in_combat', side_effect=[True, False]), \
+                     patch.object(self.task, 'get_current_char', return_value=char), \
+                     patch.object(self.task, 'switch_healer'), \
+                     patch.object(self.task, 'combat_end'):
+                    self.assertTrue(self.task._run_combat())
+                char.perform.assert_called_once()
 
     def test_solo_switch_keeps_attacking_without_team_switch(self):
         char = Mock()
@@ -130,7 +148,7 @@ class TestSoloTeam(TaskTestCase):
         for scenario in ('no_player', 'no_portrait', 'second_member', 'third_member'):
             frame = source.copy()
             if scenario == 'no_player':
-                frame[1360:1399,1048:1093] = 0
+                frame[1300:1430, 850:1500] = 0
             elif scenario == 'no_portrait':
                 frame[275:397,2330:2455] = 0
             else:

@@ -2143,3 +2143,6 @@ msgstr "异常恢复中"
 
 msgid "等待游戏窗口/截图恢复"
 msgstr "等待游戏窗口/截图恢复"
+
+msgid "Hsin"
+msgstr "心"

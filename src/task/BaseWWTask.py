@@ -1597,13 +1597,21 @@ class BaseWWTask(BaseTask):
         # The companion portrait in story quests has no party health bar.
         kwargs = dict(frame=frame, threshold=0.75, use_gray_scale=True,
                       horizontal_variance=0.002, vertical_variance=0.002)
-        if not self.find_one('solo_player_health', **kwargs):
+        player_health = self.find_one('solo_player_health', **kwargs)
+        if not player_health:
+            # The health-bar artwork varies with the active character/HUD skin.
+            # Numeric HP is a more stable fallback, but still require the party HUD.
+            player_health = bool(self.ocr(.35, .89, .58, .99, frame=frame,
+                                          match=re.compile(r'^\d{1,6}/\d{2,6}$')))
+        if not player_health:
             return False
         kwargs['mask_function'] = self._party_health_outline_mask
-        first_health = self.find_one('solo_party_health', **kwargs)
+        first_health = (self.find_one('solo_party_health', **kwargs) or
+                        self.find_one('solo_party_health_alt', **kwargs))
         for top in (0.382, 0.506):
             box = self.box_of_screen(0.907, top, 0.962, top + 0.023)
-            if self.find_one('solo_party_health', box=box, **kwargs):
+            if (self.find_one('solo_party_health', box=box, **kwargs) or
+                    self.find_one('solo_party_health_alt', box=box, **kwargs)):
                 return False
         if first_health:
             return True

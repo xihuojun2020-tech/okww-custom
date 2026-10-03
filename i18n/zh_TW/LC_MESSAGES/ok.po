@@ -1975,3 +1975,6 @@ msgstr "異常恢復中"
 
 msgid "等待游戏窗口/截图恢复"
 msgstr "等待遊戲視窗/擷取恢復"
+
+msgid "Hsin"
+msgstr "心"
