@@ -1912,3 +1912,9 @@ msgstr "Recuperación tras un error"
 
 msgid "等待游戏窗口/截图恢复"
 msgstr "Esperando la ventana del juego o la captura"
+
+msgid "⚔️ Solo Auto Combat"
+msgstr "⚔️ Combate automático en solitario"
+
+msgid "Fight automatically only with a verified one-member party."
+msgstr "Combate automáticamente solo con un equipo confirmado de un personaje."

@@ -228,7 +228,8 @@ class BaseChar:
         if prepare and prepare(self) is False:
             return
         self.last_perform = time.time()
-        if self.is_solo and (self.is_main_dps or self.is_sub_dps):
+        if (self.is_solo and getattr(self.task, 'solo_rotation_enabled', False)
+                and (self.is_main_dps or self.is_sub_dps)):
             self.has_intro = False
             self.has_sub_dps_intro = False
             self.perform_solo()

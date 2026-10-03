@@ -1,11 +1,11 @@
 from config import config
 from ok.test.TaskTestCase import TaskTestCase
-from src.task.AutoCombatTask import AutoCombatTask
+from src.task.SoloCombatTask import SoloCombatTask
 from src.char.Qingxiao import Qingxiao
 
 
 class TestQingxiaoSoloImages(TaskTestCase):
-    task_class = AutoCombatTask
+    task_class = SoloCombatTask
     config = config
 
     def test_skill_frame(self):

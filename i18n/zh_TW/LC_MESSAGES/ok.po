@@ -1978,3 +1978,9 @@ msgstr "等待遊戲視窗/擷取恢復"
 
 msgid "Hsin"
 msgstr "心"
+
+msgid "⚔️ Solo Auto Combat"
+msgstr "⚔️ 單人自動戰鬥"
+
+msgid "Fight automatically only with a verified one-member party."
+msgstr "僅在確認單人編隊時自動戰鬥。"

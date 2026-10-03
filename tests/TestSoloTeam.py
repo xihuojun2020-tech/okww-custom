@@ -5,11 +5,11 @@ import cv2
 from unittest.mock import Mock, patch
 from ok.test.TaskTestCase import TaskTestCase
 from config import config
-from src.task.AutoCombatTask import AutoCombatTask
+from src.task.SoloCombatTask import SoloCombatTask
 
 
 class TestSoloTeam(TaskTestCase):
-    task_class = AutoCombatTask
+    task_class = SoloCombatTask
     config = config
 
     def check_frame(self, frame, expected):

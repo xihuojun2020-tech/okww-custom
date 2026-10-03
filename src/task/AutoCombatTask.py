@@ -14,6 +14,9 @@ logger = Logger.get_logger(__name__)
 class AutoCombatTask(BaseCombatTask, TriggerTask):
     owns_switch_healer_config = True
     persistent_enabled = True
+    use_original_multi_rotation = True
+    solo_rotation_enabled = False
+    combat_mode = 'multi'
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -77,6 +80,7 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
         if not checked:
             super().disable()
             self._release_combat_inputs()
+            self._release_combat_mode()
             return
         # Persist intent before device setup: a missing window is not a user stop.
         self.config['_enabled'] = True
@@ -126,6 +130,8 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
 
     def handle_execution_error(self, error):
         self._release_combat_inputs()
+        if isinstance(error, GameProcessLost):
+            self._release_combat_mode()
         if not self.enabled:
             return True  # An explicit manual stop wins over a late exception.
         self._capture_waiting = isinstance(error, (FrameUnavailable, GameProcessLost, CaptureException))
@@ -179,7 +185,19 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
         self.warm_up_char_features()
         ret = False
         if not self.scene.in_team(self.in_team_and_world):
+            self._release_combat_mode()
             return ret
+        team = self.in_team()
+        if not team[0] or not self._team_size_allowed(team[2]):
+            if not team[0]:
+                self._release_combat_mode()
+            elif getattr(self.executor, '_background_combat_mode', None) == self.combat_mode and not self.in_combat():
+                self._release_combat_mode()
+            return ret
+        owner = getattr(self.executor, '_background_combat_mode', None)
+        if owner is not None and owner != self.combat_mode:
+            return ret
+        self.executor._background_combat_mode = self.combat_mode
         self.use_liberation = self.config.get('Use Liberation')
         if not self.use_liberation and not self.in_world():  # 仅大世界生效
             self.use_liberation = True
@@ -209,7 +227,21 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
                 logger.info(f'combat ended normally duration={int(time.time() - combat_start)}s reason={reason}')
             self.combat_end()
             self.switch_healer()
+            self._release_combat_mode()
+        else:
+            self._release_combat_mode()
         return ret
+
+    def _team_size_allowed(self, count):
+        return count in (2, 3)
+
+    def _release_combat_mode(self):
+        if getattr(self.executor, '_background_combat_mode', None) == self.combat_mode:
+            self.executor._background_combat_mode = None
+
+    def on_destroy(self):
+        self._release_combat_mode()
+        super().on_destroy()
 
     def realm_perform(self):
         if not self.last_is_click:

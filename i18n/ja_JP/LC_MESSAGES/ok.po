@@ -1852,3 +1852,9 @@ msgstr "エラーから復旧中"
 
 msgid "等待游戏窗口/截图恢复"
 msgstr "ゲーム画面の復旧待機中"
+
+msgid "⚔️ Solo Auto Combat"
+msgstr "⚔️ ソロ自動戦闘"
+
+msgid "Fight automatically only with a verified one-member party."
+msgstr "確認済みの1人編成でのみ自動戦闘します。"

@@ -58,7 +58,7 @@ def task_category(task):
 
 def helper_category(task):
     name = type(task).__name__
-    if name in ('AutoCombatTask', 'AutoPickTask'):
+    if name in ('AutoCombatTask', 'SoloCombatTask', 'AutoPickTask'):
         return '战斗与拾取'
     if name in ('AutoDialogTask', 'FastTravelTask'):
         return '剧情与移动'
