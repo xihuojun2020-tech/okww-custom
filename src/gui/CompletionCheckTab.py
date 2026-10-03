@@ -206,6 +206,7 @@ class CompletionCheckTab(QWidget):
         self._cards = []
         self._group_headers = {}
         self._run_record, self._completions = None, {}
+        self._material_summary = []
         self._run_panel = None
         self._history_error = ''
         layout = QVBoxLayout(self)
@@ -403,6 +404,7 @@ class CompletionCheckTab(QWidget):
     def _select_account(self, current, _previous=None):
         if current:
             self._run_record, self._completions, self._history_error = None, {}, ''
+            self._material_summary = []
             self._selected = current.data(Qt.UserRole)
             self.export_button.setEnabled(not self.export_operation.busy)
             self.reexport_button.setEnabled(not self.export_operation.busy)
@@ -453,22 +455,35 @@ class CompletionCheckTab(QWidget):
             repo.set_preference('selected_account', identity)
             rows = (repo.read_current(identity, project) if mode == 'current' else
                     repo.read_page(identity, project, mode == 'trash', offset=offset))
-            completions, error = {}, ''
+            completions, error, material_summary = {}, '', []
             try:
                 source = provider()
                 if source and any(p.profile_id == identity for p in source.list_profiles()):
                     completions = source.get_profile_completions(identity)
+                    from src.task.world_boss_material_plan import material_plan
+                    from src.task.world_boss_material_progress import WorldBossMaterialProgress
+                    from src.task.world_boss_materials import TARGETS_BY_ID
+                    plan = material_plan(source.load_profile(identity).tasks)
+                    progress = WorldBossMaterialProgress(source.integrity_service, identity)
+                    counts = progress.counts()
+                    for row in plan:
+                        if row['boss'] != 'none' and row['limit'] > 0:
+                            count = counts.get(row['boss'], 0)
+                            material_summary.append(f"{TARGETS_BY_ID[row['boss']].name}：已领 {count}/{row['limit']} 次" +
+                                                    (' · 已达标' if count >= row['limit'] else ' · 待领取'))
+                    if progress.pending():
+                        material_summary.append('有材料领奖待核验，请停止任务后到账号设置核对。')
             except Exception:
-                error = '完成记录暂不可读取；截图记录不受影响。'
+                error = '完成记录或首领材料进度暂不可读取；截图记录不受影响。'
             migration = json.loads(repo.get_preference('daily_periods_v2') or '{}')
             if migration.get('invalid'):
                 error += f" {len(migration['invalid'])} 条旧证据时间无效，保留在历史记录中，未猜测周期。"
-            return rows, repo.latest_run(identity), completions, error, export_state(repo, identity)
+            return rows, repo.latest_run(identity), completions, error, export_state(repo, identity), material_summary
         def loaded(result):
             if (identity, project, mode, offset) != (self._selected, self.project_filter.currentData(), self.mode.currentData(), self._offset):
                 self._load_records()
                 return
-            rows, self._run_record, self._completions, self._history_error, state = result
+            rows, self._run_record, self._completions, self._history_error, state, self._material_summary = result
             if not self.export_operation.busy:
                 self._show_export_state(state)
             self._rows = rows
@@ -597,6 +612,9 @@ class CompletionCheckTab(QWidget):
         lines.extend(f'{name}：{stamp}' for name, stamp in completed)
         if not completed:
             lines.append('无记录')
+        if self._material_summary:
+            lines.append('首领材料累计目标（跨日跨周保留）：')
+            lines.extend(self._material_summary)
         if self._history_error:
             lines.append(self._history_error)
         label = QLabel('\n'.join(lines), panel)

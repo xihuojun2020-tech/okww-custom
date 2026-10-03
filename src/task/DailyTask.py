@@ -16,6 +16,7 @@ from ok.task.exceptions import FinishedException
 from ok.util.file import get_relative_path, read_json_file, write_json_file
 from src.task.ForgeryTask import ForgeryTask
 from src.task.MaterialPlannerTask import MaterialPlannerTask, MATERIAL_PLANNER
+from src.task.world_boss_material_plan import MATERIAL_TARGETS, material_plan
 from src.task.GardenTask import GardenTask
 from src.task.WeeklyBossTask import WeeklyBossTask
 from src.task.weekly_boss import (WEEKLY_TARGET, WEEKLY_DISABLED, WEEKLY_BOSSES, WEEKLY_AUTO,
@@ -198,6 +199,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             'Which Forgery Challenge to Farm': 1,  # starts with 1
             'Material Selection': 'Shell Credit',
             MATERIAL_PLANNER: False,
+            MATERIAL_TARGETS: [],
             'Farm Nightmare Nest for Daily Echo': True,
             AUTO_FARM_NIGHTMARE_NEST: False,
             'Nightmare Which to Farm': ['Tacet Discord Nest'],
@@ -546,24 +548,11 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             }
             self._publish_daily_stage('清理体力', stamina_labels.get(target, str(target)))
             self.log_info(f'开始清体力（打 {target}）', notify=True)
-            if self._profile_get(MATERIAL_PLANNER, False):
-                self.get_task_by_class(MaterialPlannerTask).run_for_profile(
-                    self._active_profile_id(), profile_runtime_config, self._guard_bound_profile_identity,
-                    activity_ready=stamina_activity_ready, report=self.info_set, used_stamina=used_stamina)
-            elif target == self.support_tasks[0]:
-                self.get_task_by_class(TacetTask).farm_tacet(daily=True, used_stamina=used_stamina,
-                                                             config=profile_runtime_config,
-                                                             activity_ready=stamina_activity_ready)
-            elif target == self.support_tasks[1]:
-                self.get_task_by_class(ForgeryTask).farm_forgery(daily=True, used_stamina=used_stamina,
-                                                                 config=profile_runtime_config,
-                                                                 activity_ready=stamina_activity_ready)
-            else:
-                self.get_task_by_class(SimulationTask).farm_simulation(daily=True, used_stamina=used_stamina,
-                                                                       config=profile_runtime_config,
-                                                                       activity_ready=stamina_activity_ready)
+            normal_target = self._run_profile_stamina(profile_runtime_config,
+                activity_ready=stamina_activity_ready, used_stamina=used_stamina)
             self.sleep(4)
-            self.record_last_completed(target, profile_id=getattr(self, '_verified_profile_id', None))
+            if normal_target:
+                self.record_last_completed(normal_target, profile_id=getattr(self, '_verified_profile_id', None))
 
         _, daily_reward_ready = self.open_daily()
         if daily_reward_ready is None:
@@ -709,10 +698,6 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _complete_missing_daily_stamina(self, ready, config):
         # Two local steps, not two complete account reruns. Stop on no progress.
-        target = self._profile_get('Which to Farm', self.support_tasks[0])
-        tasks = {self.support_tasks[0]: (TacetTask, 'farm_tacet'),
-                 self.support_tasks[1]: (ForgeryTask, 'farm_forgery'),
-                 self.support_tasks[2]: (SimulationTask, 'farm_simulation')}
         for attempt in range(2):
             if ready is not False:
                 break
@@ -725,15 +710,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             if ready is not False:
                 break
             self._guard_bound_profile_identity()
-            cls, method = tasks[target]
             self._publish_daily_stage('补充活跃度', f'消耗进度 {before[0]}/180，局部补齐 {attempt+1}/2')
-            if self._profile_get(MATERIAL_PLANNER, False):
-                self.get_task_by_class(MaterialPlannerTask).run_for_profile(
-                    self._active_profile_id(), config, self._guard_bound_profile_identity,
-                    activity_ready=False, report=self.info_set, used_stamina=before[0])
-            else:
-                getattr(self.get_task_by_class(cls), method)(daily=True, used_stamina=before[0],
-                                                           config=config, activity_ready=False)
+            self._run_profile_stamina(config, activity_ready=False, used_stamina=before[0])
             after = self._daily_objective('stamina')
             _, ready = self.open_daily()
             self.log_info(f'活跃度局部补齐：before={before}, after={after}, ready={ready}')
@@ -741,6 +719,52 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 self.info_set('活跃度补齐', '没有确认进展，停止局部重复；保留缺项待补跑')
                 break
         return ready
+
+    def _material_plan_tasks(self):
+        from src.config_integrity import ConfigIntegrityService
+        if isinstance(self.integrity_service, ConfigIntegrityService):
+            self.integrity_service.guard_task_start()
+            return dict(AccountRepository(paths=self.integrity_service.paths,
+                integrity_service=self.integrity_service).load_profile(self._active_profile_id()).tasks)
+        return self._readonly_profile_config()
+
+    def _run_profile_stamina(self, config, *, activity_ready, used_stamina):
+        from src.task.world_boss_material_progress import WorldBossMaterialProgress
+        rows = material_plan(config)
+        enabled = any(row['boss'] != 'none' and row['limit'] > 0 for row in rows)
+        profile_id = getattr(self, '_verified_profile_id', None)
+        service = getattr(self, 'integrity_service', None)
+        pending = bool(profile_id and service and WorldBossMaterialProgress(service, profile_id).pending())
+        if enabled or pending:
+            from src.task.WorldBossMaterialTask import WorldBossMaterialTask
+            self._publish_daily_stage('刷首领材料', '按账号累计领奖目标执行')
+            result = self.get_task_by_class(WorldBossMaterialTask).run_for_profile(
+                self._active_profile_id(), self._material_plan_tasks,
+                self._guard_bound_profile_identity, self.integrity_service,
+                activity_ready=activity_ready, used_stamina=used_stamina)
+            self.info_set('首领材料结果', f'{result.status}；本轮领取 {result.claimed} 次')
+            if result.status == 'resource_shortfall':
+                self.log_info('首领材料体力不足，累计已保存，下次继续当前目标')
+                return None
+            if result.spent:
+                used_stamina, ready = self.open_daily()
+                activity_ready = self._stamina_policy_activity_ready(ready)
+                self.ensure_main()
+            config = {**config, **self._material_plan_tasks()}
+        target = config.get('Which to Farm', self._profile_get('Which to Farm', self.support_tasks[0]))
+        methods = {self.support_tasks[0]: (TacetTask, 'farm_tacet'),
+                   self.support_tasks[1]: (ForgeryTask, 'farm_forgery'),
+                   self.support_tasks[2]: (SimulationTask, 'farm_simulation')}
+        planner_enabled = config.get(MATERIAL_PLANNER, self._profile_get(MATERIAL_PLANNER, False))
+        if planner_enabled:
+            self.get_task_by_class(MaterialPlannerTask).run_for_profile(
+                self._active_profile_id(), config, self._guard_bound_profile_identity,
+                activity_ready=activity_ready, report=self.info_set, used_stamina=used_stamina)
+        else:
+            cls, method = methods[target]
+            getattr(self.get_task_by_class(cls), method)(daily=True, config=config,
+                activity_ready=activity_ready, used_stamina=used_stamina)
+        return None if planner_enabled else target
 
     @staticmethod
     def _stamina_policy_activity_ready(activity_ready):

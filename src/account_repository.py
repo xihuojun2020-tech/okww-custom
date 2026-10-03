@@ -299,6 +299,7 @@ class AccountRepository:
         from src.task.weekly_boss_plan import WEEKLY_PLAN
         tasks.setdefault(WEEKLY_PLAN, [])
         tasks.setdefault('Material Planner Enabled', False)
+        tasks.setdefault('World Boss Material Targets', [])
         return ProfileRecord(profile_id, self._revision(raw), profile, copy.deepcopy(tasks))
 
     def load_profile_template(self, fallback_profile_id: str | None = None) -> ProfileTemplateRecord:
@@ -314,6 +315,7 @@ class AccountRepository:
         from src.task.weekly_boss_plan import WEEKLY_PLAN
         tasks.setdefault(WEEKLY_PLAN, [])
         tasks.setdefault('Material Planner Enabled', False)
+        tasks.setdefault('World Boss Material Targets', [])
         tasks.setdefault('Garden Execution Mode', 'closed')
         # Login aliases identify an account and must never leak from the template.
         tasks["备用识别名称"] = "无"

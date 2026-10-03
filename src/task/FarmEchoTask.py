@@ -1,6 +1,7 @@
 import re
 import cv2
 import time
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -10,6 +11,13 @@ from src.task.WWOneTimeTask import WWOneTimeTask
 from ok import find_boxes_by_name
 
 logger = Logger.get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class FarmCycleResult:
+    combat_entered: bool
+    revived: bool
+    echo_picked: bool
 
 
 class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
@@ -123,70 +131,8 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
             self.teleport_to_configured_boss_and_prepare()
         while count < self.config.get("Repeat Farm Count", 0):
             try:
-                self.in_realm_check(60)
-                self.log_debug(f'start farming {count} {self._in_realm}')
-                if not self.is_revived:
-                    self.manage_boss_interactions()
-                else:
-                    self.is_revived = False
-                if self._just_entered_boss_realm:
-                    self._just_entered_boss_realm = False
-                elif not self.in_combat():
-                    if self._in_realm and not self.in_world():
-                        self.send_key('esc', after_sleep=0.5)
-                        self.wait_click_feature('claim_cancel_button_hcenter_vcenter', relative_x=2,
-                                                raise_if_not_found=True,
-                                                post_action=lambda: self.send_key('esc', after_sleep=1),
-                                                settle_time=1)
-                        self.wait_in_team_and_world(time_out=120)
-                        self.sleep(0.1)
-                    else:
-                        if self._has_treasure:
-                            self.wait_until(
-                                lambda: self.find_treasure_icon() or self.in_combat(
-                                    target=True) or self.find_f_with_text(),
-                                time_out=5, raise_if_not_found=False)
-                        if not self.in_combat():
-                            self.log_info('not in combat try click restart')
-                            if self.walk_to_treasure_and_restart():
-                                self.handle_boss_restart_after_treasure()
-                            else:
-                                self.scroll_and_click_buttons()
-
                 count += 1
-                self.log_info('start wait in combat')
-                if not self._in_realm and not self._has_treasure and not self.in_combat():
-                    self.go_to_boss_minimap()
-                    self.execute_treasure_hunt()
-
-                self.sleep(self.combat_wait_time)
-                self.log_info(f'combat_wait_time: {self.combat_wait_time}')
-                self.check_boss_name()
-
-                self.combat_once(wait_combat_time=5, raise_if_not_found=False)
-                if self.is_revived:
-                    continue
-
-                if self.pick_echo():
-                    logger.info(f'farm echo on the face')
-                    dropped = True
-                elif self.config.get('Echo Pickup Method', "Yolo") == "Yolo":
-                    dropped = \
-                        self.yolo_find_echo(turn=self._in_realm, use_color=False, time_out=self.yolo_time_out,
-                                            threshold=self.yolo_threshold)[0]
-                    logger.info(f'farm echo yolo find {dropped}')
-                elif self.config.get('Echo Pickup Method', "Yolo") == "Run in Circle":
-                    dropped = self.run_in_circle_to_find_echo(circle_count=2)
-                    logger.info(f'farm echo walk_circle_find_echo {dropped}')
-                else:
-                    dropped = self.walk_find_echo()
-                    logger.info(f'farm echo walk_find_echo {dropped}')
-                self.incr_drop(dropped)
-                if not self.bypass_end_wait:
-                    if dropped and not self._has_treasure:
-                        self.wait_until(self.in_combat, raise_if_not_found=False, time_out=5)
-                    else:
-                        self.wait_until(self.in_combat, raise_if_not_found=False, time_out=1)
+                self.farm_cycle()
             except TaskDisabledException:
                 raise
             except Exception as e:
@@ -196,6 +142,74 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
                     self.teleport_to_configured_boss_and_prepare()
                     continue
                 raise
+
+    def farm_cycle(self, *, pickup_echo=True):
+        self.in_realm_check(60)
+        self.log_debug(f'start farm cycle {self._in_realm}')
+        if not self.is_revived:
+            self.manage_boss_interactions()
+        else:
+            self.is_revived = False
+        if self._just_entered_boss_realm:
+            self._just_entered_boss_realm = False
+        elif not self.in_combat():
+            if self._in_realm and not self.in_world():
+                self.send_key('esc', after_sleep=0.5)
+                self.wait_click_feature('claim_cancel_button_hcenter_vcenter', relative_x=2,
+                                        raise_if_not_found=True,
+                                        post_action=lambda: self.send_key('esc', after_sleep=1),
+                                        settle_time=1)
+                self.wait_in_team_and_world(time_out=120)
+                self.sleep(0.1)
+            else:
+                if self._has_treasure:
+                    self.wait_until(
+                        lambda: self.find_treasure_icon() or self.in_combat(
+                            target=True) or self.find_f_with_text(),
+                        time_out=5, raise_if_not_found=False)
+                if not self.in_combat():
+                    self.log_info('not in combat try click restart')
+                    if self.walk_to_treasure_and_restart():
+                        self.handle_boss_restart_after_treasure()
+                    else:
+                        self.scroll_and_click_buttons()
+
+        self.log_info('start wait in combat')
+        if not self._in_realm and not self._has_treasure and not self.in_combat():
+            self.go_to_boss_minimap()
+            self.execute_treasure_hunt()
+
+        self.sleep(self.combat_wait_time)
+        self.log_info(f'combat_wait_time: {self.combat_wait_time}')
+        self.check_boss_name()
+
+        entered = self.combat_once(wait_combat_time=5, raise_if_not_found=False)
+        if self.is_revived:
+            return FarmCycleResult(bool(entered), True, False)
+        if not pickup_echo:
+            return FarmCycleResult(bool(entered), False, False)
+
+        if self.pick_echo():
+            logger.info(f'farm echo on the face')
+            dropped = True
+        elif self.config.get('Echo Pickup Method', "Yolo") == "Yolo":
+            dropped = \
+                self.yolo_find_echo(turn=self._in_realm, use_color=False, time_out=self.yolo_time_out,
+                                    threshold=self.yolo_threshold)[0]
+            logger.info(f'farm echo yolo find {dropped}')
+        elif self.config.get('Echo Pickup Method', "Yolo") == "Run in Circle":
+            dropped = self.run_in_circle_to_find_echo(circle_count=2)
+            logger.info(f'farm echo walk_circle_find_echo {dropped}')
+        else:
+            dropped = self.walk_find_echo()
+            logger.info(f'farm echo walk_find_echo {dropped}')
+        self.incr_drop(dropped)
+        if not self.bypass_end_wait:
+            if dropped and not self._has_treasure:
+                self.wait_until(self.in_combat, raise_if_not_found=False, time_out=5)
+            else:
+                self.wait_until(self.in_combat, raise_if_not_found=False, time_out=1)
+        return FarmCycleResult(bool(entered), False, bool(dropped))
 
     def execute_treasure_hunt(self):
         if not self.in_combat() and self.find_treasure_icon() and self.walk_to_treasure_and_restart():
@@ -223,6 +237,8 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
                 self._just_entered_boss_realm = True
             else:
                 walk_result = self.walk_after_boss_teleport()
+        except TaskDisabledException:
+            raise
         except Exception as e:
             raise RuntimeError('Teleport to boss failed') from e
 
@@ -256,7 +272,7 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
         self.info_set('Teleport to Boss', f'{teleport_to_boss} {serial_number - 1}')
         self.openF2Book('gray_book_boss')
         self.open_boss_book(feature)
-        is_team = self.click_on_book_target(serial_number, total_number)
+        is_team = self.select_configured_boss(serial_number, total_number)
         if is_team:
             if teleport_to_boss == 'Weekly Challenge':
                 self.click_configured_boss_level()
@@ -267,6 +283,9 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
         self.wait_in_team_and_world(time_out=120)
         self.sleep(2)
         return is_team
+
+    def select_configured_boss(self, serial_number, total_number):
+        return self.click_on_book_target(serial_number, total_number)
 
     def walk_after_boss_teleport(self):
         self.log_info('walk after boss teleport until combat or F')

@@ -18,6 +18,8 @@ from src.account_config_editor import AccountConfigEditor, ProfileDraft, sanitiz
 from src.account_display import account_display_label
 from src.account_rebind_service import AccountRebindService, rebind_confirmation_identity
 from src.account_repository import AccountRepository, AccountRepositoryError, get_default_repository
+from src.gui.WorldBossMaterialPlanWidget import WorldBossMaterialPlanWidget
+from src.task.world_boss_material_plan import MATERIAL_TARGETS, material_plan
 from src.gui.WeeklyBossPlanWidget import WeeklyBossPlanWidget
 from src.task.weekly_boss_plan import WEEKLY_PLAN, weekly_plan, plan_enabled
 from src.account_field_metadata import (account_field_metadata, localize_account_value,
@@ -177,6 +179,22 @@ def _link_garden_controls(widgets):
     update()
 
 
+def _link_material_controls(widgets):
+    material = widgets.get(MATERIAL_TARGETS)
+    target = widgets.get('Which to Farm')
+    planner = widgets.get('Material Planner Enabled')
+    if material is None:
+        return
+    def update(*_):
+        material.set_fallback(target.currentData() if target else material.fallback,
+                              planner.isChecked() if planner else material.planner_enabled)
+    if target is not None:
+        target.currentIndexChanged.connect(update)
+    if planner is not None:
+        planner.toggled.connect(update)
+    update()
+
+
 class AccountTemplateDialog(QDialog):
     """Edit the shared task-only template with the same field metadata as account editing."""
 
@@ -185,6 +203,7 @@ class AccountTemplateDialog(QDialog):
         self.setWindowTitle("编辑新账号模板")
         self._tasks = dict(tasks)
         self._tasks.setdefault(WEEKLY_PLAN, [])
+        self._tasks.setdefault(MATERIAL_TARGETS, [])
         self._tasks.setdefault('Garden Execution Mode', 'closed')
         from src.recording_policy import RECORDING_PAGES
         self._tasks['Record Pages'] = list(RECORDING_PAGES)
@@ -204,7 +223,9 @@ class AccountTemplateDialog(QDialog):
             if field.affects_identity or field.key in ("备用识别名称", "备用识别名称内容"):
                 continue
             value = self._tasks.get(field.key)
-            if field.key == WEEKLY_PLAN:
+            if field.key == MATERIAL_TARGETS:
+                widget = WorldBossMaterialPlanWidget(self._tasks, parent=self)
+            elif field.key == WEEKLY_PLAN:
                 widget = WeeklyBossPlanWidget(self._tasks, parent=self)
             elif field.key == 'Record Pages':
                 widget = FixedRecordingPages(self)
@@ -224,12 +245,13 @@ class AccountTemplateDialog(QDialog):
                 widget.setText(json.dumps(display, ensure_ascii=False)
                                if isinstance(display, (list, dict)) else str(display))
             self._widgets[field.key] = widget
-            if isinstance(widget, WeeklyBossPlanWidget):
+            if isinstance(widget, (WeeklyBossPlanWidget, WorldBossMaterialPlanWidget)):
                 form.addWidget(QLabel(field.label, content))
                 form.addWidget(widget)
             else:
                 form.addWidget(FlatSettingRow(field.label, widget, field.help_text, content))
         _link_garden_controls(self._widgets)
+        _link_material_controls(self._widgets)
         scroll.setWidget(content)
         layout.addWidget(scroll)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel, parent=self)
@@ -244,7 +266,11 @@ class AccountTemplateDialog(QDialog):
     def tasks(self):
         result = dict(self._tasks)
         for key, widget in self._widgets.items():
-            if isinstance(widget, WeeklyBossPlanWidget):
+            if isinstance(widget, WorldBossMaterialPlanWidget):
+                rows = widget.values()
+                if result.get(key) != [] or rows != material_plan(result):
+                    result[key] = rows
+            elif isinstance(widget, WeeklyBossPlanWidget):
                 rows = widget.values()
                 if result.get(key) != [] or rows != weekly_plan(result):
                     result[key] = rows
@@ -595,7 +621,11 @@ class AccountConfigTab(CustomTab):
         for key, widget in self.form_widgets.items():
             if not widget.isEnabled():
                 continue
-            if isinstance(widget, WeeklyBossPlanWidget):
+            if isinstance(widget, WorldBossMaterialPlanWidget):
+                rows = widget.values()
+                if self.draft.tasks.get(key) != [] or rows != material_plan(self.draft.tasks):
+                    self.draft.tasks[key] = rows
+            elif isinstance(widget, WeeklyBossPlanWidget):
                 rows = widget.values()
                 if self.draft.tasks.get(key) != [] or rows != weekly_plan(self.draft.tasks):
                     self.draft.tasks[key] = rows
@@ -664,6 +694,7 @@ class AccountConfigTab(CustomTab):
         from src.gui.SectionPanel import SectionPanel
         from src.recording_policy import RECORDING_PAGES
         self.draft.tasks.setdefault(WEEKLY_PLAN, [])
+        self.draft.tasks.setdefault(MATERIAL_TARGETS, [])
         self.draft.tasks['Record Pages'] = list(RECORDING_PAGES)
         for key, value in recording_defaults().items():
             self.draft.tasks.setdefault(key, value)
@@ -676,7 +707,7 @@ class AccountConfigTab(CustomTab):
         while self.identity_task_layout.count():
             item = self.identity_task_layout.takeAt(0)
             if item.widget(): item.widget().deleteLater()
-        stamina = {'Material Planner Enabled', 'Which to Farm', 'Which Tacet Suppression to Farm', 'Which Forgery Challenge to Farm',
+        stamina = {MATERIAL_TARGETS, 'Material Planner Enabled', 'Which to Farm', 'Which Tacet Suppression to Farm', 'Which Forgery Challenge to Farm',
                    'Material Selection'}
         daily = {'Farm Nightmare Nest for Daily Echo', 'Nightmare Which to Farm', 'Tacet Discord Nests to Farm',
                  'Nightmare Settlements to Farm', 'Auto Farm all Nightmare Nest'}
@@ -703,7 +734,10 @@ class AccountConfigTab(CustomTab):
                 self.form_sections[last_group] = heading
                 self.form_layout.addRow(heading)
             value = self.draft.tasks.get(field.key)
-            if field.key == WEEKLY_PLAN:
+            if field.key == MATERIAL_TARGETS:
+                widget = WorldBossMaterialPlanWidget(self.draft.tasks, self.editor.repository.integrity_service,
+                                                     self.draft.profile_id, self.form_host)
+            elif field.key == WEEKLY_PLAN:
                 widget = WeeklyBossPlanWidget(self.draft.tasks, self.editor.repository.integrity_service,
                                               self.draft.profile_id, self.form_host)
                 widget.changed.connect(self._mark_draft_edited)
@@ -731,11 +765,11 @@ class AccountConfigTab(CustomTab):
             if identity_field:
                 self.identity_task_layout.addWidget(FlatSettingRow(field.label, widget, field.help_text,
                                                                   self.identity_task_fields))
-            elif isinstance(widget, WeeklyBossPlanWidget):
+            elif isinstance(widget, (WeeklyBossPlanWidget, WorldBossMaterialPlanWidget)):
                 heading.add_widget(widget)
             else:
                 heading.add_row(field.label, widget, field.help_text)
-            if isinstance(widget, (NestSelection, WeeklyBossPlanWidget)):
+            if isinstance(widget, (NestSelection, WeeklyBossPlanWidget, WorldBossMaterialPlanWidget)):
                 widget.changed.connect(self._mark_draft_edited)
             elif isinstance(widget, QCheckBox):
                 widget.toggled.connect(self._mark_draft_edited)
@@ -745,6 +779,7 @@ class AccountConfigTab(CustomTab):
                 widget.textEdited.connect(self._mark_draft_edited)
             if field.key == WEEKLY_PLAN:
                 self._render_weekly_status()
+        _link_material_controls(self.form_widgets)
         target = self.form_widgets.get(WEEKLY_PLAN)
         if target is not None and 1 in self.form_sections:
             def update_summary(*_):
