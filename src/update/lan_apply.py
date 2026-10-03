@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Callable
 
 from .package_validation import ValidatedPackage, validate_package
+from .worker_process import error_detail
 
 
 class ApplyError(RuntimeError):
@@ -44,6 +45,27 @@ def _write_json(path: Path, value: dict) -> None:
 def _running(pid: int) -> bool:
     if pid <= 0:
         return False
+    if os.name == 'nt':
+        import ctypes
+        from ctypes import wintypes
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel.WaitForSingleObject.restype = wintypes.DWORD
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        handle = kernel.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE only
+        if not handle:
+            if ctypes.get_last_error() == 87:  # ERROR_INVALID_PARAMETER: PID gone
+                return False
+            raise ApplyError('无法确认主程序是否已退出，停止安装')
+        try:
+            state = kernel.WaitForSingleObject(handle, 0)
+            if state not in (0, 258):
+                raise ApplyError('无法读取主程序退出状态，停止安装')
+            return state == 258  # WAIT_TIMEOUT: still running
+        finally:
+            kernel.CloseHandle(handle)
     try:
         os.kill(pid, 0)
         return True
@@ -93,19 +115,22 @@ def apply_request(request_path: Path, *, wait_timeout: float = 30.0,
     staging_root = (root / "configs" / "update-staging").resolve()
     if not request_path.resolve().is_relative_to(staging_root) or not archive.is_relative_to(staging_root):
         raise ApplyError("更新请求不在受控暂存目录")
-    if not _wait_parent(request["parent_pid"], wait_timeout):
-        raise ApplyError("主程序未在期限内退出")
-    validated = validate_package(archive, expected_version=request["to_version"],
-                                 expected_sha256=request["sha256"], expected_size=request["size"])
     backup = root / "configs" / "update-backups" / f"v{request['from_version']}-to-v{request['to_version']}"
     extracted = request_path.parent / "extracted"
     journal_path = backup / "journal.json"
     operations: list[dict] = []
     result_path = root / "configs" / "update-result.json"
     status, message = "failed", "更新未执行"
+    parent_exited = False
     try:
+        validated = validate_package(archive, expected_version=request["to_version"],
+                                     expected_sha256=request["sha256"], expected_size=request["size"])
         with zipfile.ZipFile(archive) as package:
             _require_unchanged_dependencies(package, root, validated)
+            _write_json(request_path.with_suffix('.ready.json'), {'pid': os.getpid()})
+            if not _wait_parent(request['parent_pid'], wait_timeout):
+                raise ApplyError('主程序未在期限内退出，当前版本未改变')
+            parent_exited = True
             for name in validated.files:
                 target = (extracted / name).resolve()
                 if not target.is_relative_to(extracted.resolve()):
@@ -162,16 +187,23 @@ def apply_request(request_path: Path, *, wait_timeout: float = 30.0,
                     target.unlink(missing_ok=True)
             except OSError:
                 rollback_ok = False
-        status = "rolled_back" if rollback_ok else "rollback_incomplete"
-        message = f"更新失败，{'已恢复原版本' if rollback_ok else '恢复不完整'}：{type(exc).__name__}"
+        changed = any(operation['applied'] for operation in operations)
+        status = ("rolled_back" if rollback_ok else "rollback_incomplete") if changed else 'failed'
+        recovery = ('已恢复原版本' if rollback_ok else '恢复不完整') if changed else '当前版本未改变'
+        message = f"更新失败，{recovery}：{error_detail(exc)}"
     result = ApplyResult(1, request["from_version"], request["to_version"], status, message,
                          datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), str(backup))
     _write_json(result_path, asdict(result))
-    try:
-        subprocess.Popen(request["restart_command"], cwd=root,
-                         creationflags=0x08000000 if os.name == "nt" else 0)
-    except OSError:
-        pass
+    # Preflight errors occur while the UI is still running. Never start a second
+    # application, or restart an installation whose rollback is incomplete.
+    if status != 'rollback_incomplete' and (parent_exited or not _running(request['parent_pid'])):
+        try:
+            subprocess.Popen(request["restart_command"], cwd=root,
+                             creationflags=0x08000000 if os.name == "nt" else 0)
+        except OSError as error:
+            result = ApplyResult(**{**asdict(result), 'message': result.message +
+                                  '；自动重启失败，请手动启动：' + error_detail(error)})
+            _write_json(result_path, asdict(result))
     return result
 
 
@@ -181,7 +213,8 @@ def main() -> int:
     args = parser.parse_args()
     try:
         result = apply_request(args.request)
-    except ApplyError:
+    except Exception as error:
+        print('局域网安装器失败：' + error_detail(error), flush=True)
         return 2
     return {"succeeded": 0, "rolled_back": 3, "rollback_incomplete": 4}.get(result.status, 2)
 

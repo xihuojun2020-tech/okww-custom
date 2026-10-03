@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sys
+import json
+import logging
 from pathlib import Path
 
 from PySide6.QtCore import Signal
@@ -32,6 +34,12 @@ class LanUpdateCard(SectionPanel):
         self.set_summary(f'当前版本：{current_version}')
         self.set_description('从已配置的局域网发布源检查更新；下载后验证完整性，确认后安装并重启。')
         self.operation = BackgroundOperation(self, (self.action,))
+        result_path = self.config_path.parent / 'update-result.json'
+        try:
+            result = json.loads(result_path.read_text(encoding='utf-8'))
+            self._show_status(f"上次更新 {result['from_version']} → {result['to_version']}：{result['message']}")
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
 
     def _action(self):
         if self.release is None:
@@ -55,7 +63,7 @@ class LanUpdateCard(SectionPanel):
             self._show_status(availability.message)
             self.action.setText("下载并安装" if self.release else "重新检查")
 
-        self.operation.start(work, complete, self._failed, timeout_ms=8000)
+        self.operation.start(work, complete, self._failed, timeout_ms=20000)
 
     def _download(self):
         if getattr(self.executor, "current_task", None) is not None:
@@ -76,13 +84,17 @@ class LanUpdateCard(SectionPanel):
             dialog.yesButton.setText("安装并重启")
             dialog.cancelButton.setText("取消")
             if dialog.exec():
-                self.apply_requested.emit(request)
+                if getattr(self.executor, 'current_task', None) is not None:
+                    self._show_status('自动化任务运行中，停止任务后才能安装更新')
+                else:
+                    self.apply_requested.emit(request)
             else:
                 self._show_status("安装已取消，当前版本未改变")
 
         self.operation.start(work, complete, self._failed)
 
     def _failed(self, error):
+        logging.getLogger(__name__).error('LAN update failed: %s', sanitize_error(error))
         self._show_status("局域网更新失败：" + sanitize_error(error))
 
 

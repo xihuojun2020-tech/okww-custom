@@ -27,21 +27,49 @@ class TestLanUpdateUI(unittest.TestCase):
 
     @patch("custom_ok.ok.gui.MainWindow.subprocess.Popen")
     def test_schedule_starts_helper_before_quitting(self, popen):
+        popen.return_value.poll.return_value = None
         window = SimpleNamespace(app=Mock())
         with tempfile.TemporaryDirectory() as temp:
             request = Path(temp) / "apply-request.json"
             request.write_text("{}", encoding="utf-8")
-            MainWindow.schedule_lan_update(window, request)
+            popen.side_effect = lambda *args, **kwargs: (request.with_suffix('.ready.json').write_text('{}'), popen.return_value)[1]
+            with patch('custom_ok.ok.gui.MainWindow.__file__', str(Path(temp) / '.venv/Lib/site-packages/ok/gui/MainWindow.py')):
+                MainWindow.schedule_lan_update(window, request)
         command = popen.call_args.args[0]
-        self.assertEqual(["-m", "src.update.lan_apply"], command[1:3])
-        self.assertTrue(os.path.isabs(command[3]))
+        self.assertEqual('src.update.lan_apply', command[-2])
+        self.assertTrue(os.path.isabs(command[-1]))
+        from src.update import lan_service
+        self.assertEqual(str(Path(lan_service.__file__).resolve().parents[2]), popen.call_args.kwargs['cwd'])
         window.app.quit.assert_called_once_with()
+
+    @patch('custom_ok.ok.gui.MainWindow.InfoBar.error')
+    @patch('custom_ok.ok.gui.MainWindow.subprocess.Popen')
+    def test_helper_import_failure_keeps_app_running(self, popen, info):
+        popen.return_value.poll.return_value = 1
+        window = SimpleNamespace(app=Mock(), tr=lambda text: text)
+        with tempfile.TemporaryDirectory() as temp:
+            request = Path(temp) / 'apply-request.json'
+            request.write_text('{}')
+            MainWindow.schedule_lan_update(window, request)
+        window.app.quit.assert_not_called()
+        info.assert_called_once()
+
+    def test_card_shows_previous_installation_result(self):
+        import json
+        from src.gui.LanUpdateCard import LanUpdateCard
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'update-result.json').write_text(json.dumps(dict(from_version='1.92.01', to_version='1.92.02', message='校验失败')))
+            card = LanUpdateCard(root / 'lan_update.json', '1.92.01', SimpleNamespace(current_task=None))
+            self.assertIn('校验失败', card.status.text())
+            card.deleteLater()
 
     @patch("custom_ok.ok.gui.MainWindow.subprocess.Popen", side_effect=OSError("blocked"))
     @patch("custom_ok.ok.gui.MainWindow.InfoBar.error")
     def test_failed_helper_launch_does_not_quit(self, info, popen):
         window = SimpleNamespace(app=Mock(), tr=lambda text: text)
-        MainWindow.schedule_lan_update(window, Path("request.json"))
+        with tempfile.TemporaryDirectory() as temp:
+            MainWindow.schedule_lan_update(window, Path(temp) / "request.json")
         window.app.quit.assert_not_called()
         info.assert_called_once()
 

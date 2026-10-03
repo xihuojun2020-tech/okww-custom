@@ -14,6 +14,7 @@ import sys
 import json
 import base64
 from pathlib import Path
+from .worker_process import worker_command
 
 
 class LanTransportError(RuntimeError):
@@ -49,10 +50,11 @@ class FileShareClient:
 
     @staticmethod
     def download(path: str, destination: Path, *, expected_size: int, expected_sha256: str,
-                 deadline_seconds: float = 120.0) -> Path:
+                 deadline_seconds: float = 600.0) -> Path:
         if os.name == 'nt' and str(path).startswith('\\\\'):
             _smb_call('download',dict(path=path,destination=str(destination),expected_size=expected_size,
-                                      expected_sha256=expected_sha256),deadline_seconds)
+                                      expected_sha256=expected_sha256,
+                                      deadline_seconds=deadline_seconds),deadline_seconds + 5)
             return Path(destination)
         return FileShareClient._download_local(path,destination,expected_size=expected_size,
                                                expected_sha256=expected_sha256,deadline_seconds=deadline_seconds)
@@ -66,7 +68,7 @@ class FileShareClient:
         deadline = time.monotonic() + deadline_seconds
         try:
             with source.open("rb") as reader, pending.open("wb") as writer:
-                while chunk := reader.read(65536):
+                while chunk := reader.read(1024 * 1024):
                     if time.monotonic() > deadline:
                         raise LanTransportError("NAS 下载超时")
                     count += len(chunk)
@@ -87,18 +89,19 @@ class FileShareClient:
 
 
 def _smb_call(operation, payload, timeout):
-    command = [sys.executable,'-E','-s','-m','src.update.lan_transport',operation,json.dumps(payload)]
+    command = worker_command('src.update.lan_transport', operation, json.dumps(payload))
     try:
         result = subprocess.run(command,cwd=Path(__file__).resolve().parents[2],capture_output=True,
                                 timeout=timeout,creationflags=subprocess.CREATE_NO_WINDOW)
     except subprocess.TimeoutExpired as error:
         raise LanTransportError('NAS 共享访问超时') from error
-    if result.returncode:
-        raise LanTransportError('无法访问 NAS 共享，请检查连接和 Windows 共享凭据')
     try:
-        return json.loads(result.stdout.decode('utf-8').strip().splitlines()[-1])
+        response = json.loads(result.stdout.decode('utf-8').strip().splitlines()[-1])
     except (ValueError,IndexError) as error:
-        raise LanTransportError('NAS 共享工作进程响应无效') from error
+        raise LanTransportError(f'NAS {operation} 工作进程未正常启动或响应无效（退出码 {result.returncode}）') from error
+    if result.returncode or 'error' in response:
+        raise LanTransportError(f"NAS {operation} 失败：{response.get('error', '工作进程异常退出')}")
+    return response
 
 
 class HttpsPinnedClient:
@@ -196,13 +199,20 @@ class HttpsPinnedClient:
 
 if __name__ == '__main__':
     from src.runtime.diagnostic_policy import connect
-    operation, payload = sys.argv[1], json.loads(sys.argv[2])
-    connect(payload['path'])
-    if operation == 'read':
-        data = FileShareClient._read_local(**payload)
-        print(json.dumps(dict(data=base64.b64encode(data).decode('ascii'))))
-    elif operation == 'download':
-        FileShareClient._download_local(**payload)
-        print('{}')
-    else:
-        raise ValueError('Unknown SMB worker operation')
+    try:
+        operation, payload = sys.argv[1], json.loads(sys.argv[2])
+        connect(payload['path'])
+        if operation == 'read':
+            data = FileShareClient._read_local(**payload)
+            print(json.dumps(dict(data=base64.b64encode(data).decode('ascii'))))
+        elif operation == 'download':
+            FileShareClient._download_local(**payload)
+            print('{}')
+        else:
+            raise ValueError('Unknown SMB worker operation')
+    except Exception as error:
+        from .worker_process import error_detail
+        cause = error.__cause__ or error
+        code = getattr(cause, 'winerror', None) or getattr(cause, 'errno', None)
+        print(json.dumps({'error': error_detail(error) + (f'（系统错误码 {code}）' if code else '')}))
+        raise SystemExit(2)

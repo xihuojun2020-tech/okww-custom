@@ -1,10 +1,15 @@
 import hashlib
 import tempfile
 import unittest
+import json
+import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
 from src.update.lan_transport import CertificatePinError, FileShareClient, HttpsPinnedClient, LanTransportError
+from src.update.lan_transport import _smb_call
+from src.update.worker_process import worker_command
 
 
 class Response:
@@ -27,6 +32,24 @@ class Connection:
 
 
 class TestLanUpdateTransport(unittest.TestCase):
+    def test_worker_inherits_initialized_dependency_paths(self):
+        with tempfile.TemporaryDirectory() as temp:
+            Path(temp, 'only_parent_path.py').write_text("VALUE='inherited'")
+            sys.path.insert(0, temp)
+            try:
+                command = worker_command('only_parent_path')
+                result = subprocess.run(command, capture_output=True)
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertIn('-E', command)
+            finally:
+                sys.path.remove(temp)
+
+    @patch('src.update.lan_transport.subprocess.run')
+    def test_worker_error_is_not_misreported_as_credentials(self, run):
+        run.return_value = subprocess.CompletedProcess([], 2, json.dumps({'error': '更新包长度或 SHA-256 不匹配'}).encode(), b'')
+        with self.assertRaisesRegex(LanTransportError, 'SHA-256'):
+            _smb_call('download', {}, 2)
+
     def client(self, data, length=None, pin=None):
         pin = pin or hashlib.sha256(b"certificate").hexdigest()
         client = HttpsPinnedClient(pin)

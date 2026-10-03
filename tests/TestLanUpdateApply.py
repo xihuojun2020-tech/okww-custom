@@ -3,13 +3,64 @@ import json
 import tempfile
 import unittest
 import zipfile
+import subprocess
+import sys
+import os
 from pathlib import Path
 from unittest.mock import patch
 
-from src.update.lan_apply import apply_request
+from src.update.lan_apply import apply_request, _running, _wait_parent
 
 
 class TestLanUpdateApply(unittest.TestCase):
+    def test_parent_wait_never_signals_or_terminates_process(self):
+        child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'],
+                                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0)
+        try:
+            self.assertTrue(_running(child.pid))
+            self.assertFalse(_wait_parent(child.pid, 0.2))
+            self.assertIsNone(child.poll())
+        finally:
+            child.terminate()
+            child.wait(timeout=5)
+        self.assertFalse(_running(child.pid))
+
+    @patch('src.update.lan_apply.subprocess.Popen')
+    def test_bad_archive_persists_failure_without_changing_files(self, popen):
+        with tempfile.TemporaryDirectory() as temp:
+            root, request = self.fixture(temp)
+            data = json.loads(request.read_text())
+            data['sha256'] = '0' * 64
+            request.write_text(json.dumps(data))
+            result = apply_request(request)
+            self.assertEqual('failed', result.status)
+            self.assertIn('SHA-256', result.message)
+            self.assertEqual('failed', json.loads((root / 'configs/update-result.json').read_text())['status'])
+            self.assertFalse(request.with_suffix('.ready.json').exists())
+            self.assertEqual('old', (root / 'src/example.py').read_text())
+
+    @patch('src.update.lan_apply.subprocess.Popen')
+    def test_live_parent_timeout_does_not_restart_or_replace(self, popen):
+        with tempfile.TemporaryDirectory() as temp:
+            root, request = self.fixture(temp)
+            data = json.loads(request.read_text())
+            data['parent_pid'] = os.getpid()
+            request.write_text(json.dumps(data))
+            result = apply_request(request, wait_timeout=0.1)
+            self.assertEqual('failed', result.status)
+            self.assertIn('未在期限内退出', result.message)
+            self.assertEqual('old', (root / 'src/example.py').read_text())
+            popen.assert_not_called()
+
+    @patch('src.update.lan_apply.subprocess.Popen', side_effect=OSError('restart blocked'))
+    def test_restart_failure_is_recorded(self, popen):
+        with tempfile.TemporaryDirectory() as temp:
+            root, request = self.fixture(temp)
+            result = apply_request(request)
+            self.assertEqual('succeeded', result.status)
+            self.assertIn('自动重启失败', result.message)
+            self.assertIn('restart blocked', (root / 'configs/update-result.json').read_text())
+
     def fixture(self, temp):
         root = Path(temp)
         (root / "src").mkdir()

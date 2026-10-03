@@ -489,20 +489,50 @@ class MainWindow(FluentWindow):
 
     def schedule_lan_update(self, request_path):
         """Start a loaded update helper, then let the application exit normally."""
-        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-        command = [sys.executable, '-m', 'src.update.lan_apply', os.path.abspath(str(request_path))]
+        from pathlib import Path
+        from src.update.worker_process import worker_command
+        from src.update import lan_service
+        from src.account_config_editor import sanitize_error
+        # MainWindow is copied into site-packages by main.py. Its own __file__
+        # cannot identify the installation's working directory.
+        root = str(Path(lan_service.__file__).resolve().parents[2])
+        request = Path(request_path).resolve()
+        ready = request.with_suffix('.ready.json')
+        command = worker_command('src.update.lan_apply', str(request))
         try:
-            subprocess.Popen(
-                command, cwd=root,
-                creationflags=0x08000000 if os.name == 'nt' else 0,
-                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
+            ready.unlink(missing_ok=True)
+            with (request.parent / 'helper.log').open('wb') as output:
+                helper = subprocess.Popen(
+                    command, cwd=root,
+                    creationflags=0x08000000 if os.name == 'nt' else 0,
+                    stdin=subprocess.DEVNULL, stdout=output, stderr=output,
+                )
         except OSError as error:
             logger.error('LAN update helper start failed', error)
             InfoBar.error(self.tr('更新启动失败'), self.tr('当前版本未改变，请查看日志'),
                           duration=3000, parent=self)
             return
-        self.app.quit()
+        def check_ready(attempt=0):
+            code = helper.poll()
+            if code is None and ready.is_file():
+                self.app.quit()
+                return
+            if code is not None or attempt >= 150:
+                if code is None:
+                    helper.terminate()  # parent is still alive; no files replaced
+                message = '安装器未就绪，当前程序保持运行。请查看更新暂存目录中的 helper.log'
+                try:
+                    import json
+                    result = json.loads((Path(root) / 'configs/update-result.json').read_text(encoding='utf-8'))
+                    if result.get('to_version') == request.parent.name.removeprefix('v'):
+                        message = result['message']
+                except (OSError, ValueError, KeyError, TypeError):
+                    pass
+                logger.error('LAN update helper not ready: ' + sanitize_error(message))
+                InfoBar.error(self.tr('更新启动失败'), sanitize_error(message), duration=10000, parent=self)
+                return
+            QTimer.singleShot(100, lambda: check_ready(attempt + 1))
+        check_ready()
 
     def on_tray_icon_activated(self, reason):
         """Handles clicks on the system tray icon."""

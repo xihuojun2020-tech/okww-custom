@@ -27,7 +27,8 @@ class TestMainWindowStartup(unittest.TestCase):
         launcher.is_running.return_value = True
         launcher.exe.return_value = str(root / 'launcher.exe')
         helper = Mock(pid=51)
-        helper.cmdline.return_value = ['python.exe', '-m', 'src.update.lan_apply', str(request)]
+        from src.update.worker_process import worker_command
+        helper.cmdline.return_value = worker_command('src.update.lan_apply', str(request))
         launcher.children.return_value = [helper]
         with patch('main.os.path.realpath', return_value=str(root / 'launcher.exe')), \
                 patch('psutil.Process') as current:

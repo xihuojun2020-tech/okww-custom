@@ -88,7 +88,7 @@ class LanUpdateService:
         for source in candidates(self.config.manifest_url):
             try:
                 data = self._transport().get_bytes(source, max_bytes=MANIFEST_LIMIT,
-                                                   deadline_seconds=5.0)
+                                                   deadline_seconds=15.0)
                 self.manifest_source = source
                 break
             except (OSError, LanTransportError):
