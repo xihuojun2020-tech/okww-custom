@@ -129,6 +129,32 @@ class TestAbyssTeamPlanner(unittest.TestCase):
 
 
 class TestAbyssAllocation(unittest.TestCase):
+    def test_restarted_left_fourth_floor_keeps_affordable_favored_preset(self):
+        first = self.team(Labels.char_qingxiao, Labels.char_denia, Labels.char_verina)
+        second = replace(self.team(Labels.yangyang_sp, 'rover_havoc', Labels.char_sanhua),
+                         preset=replace(TEAM_PRESETS[0], queue=2))
+        floors = [FloorRequest('Left', 3, 4, ElementRule(('气动',), soft='导电'), True)]
+        floors += [FloorRequest('Right', i, i + 1, ElementRule(('湮灭',), soft='冷凝'), True)
+                   for i in range(4)]
+        floors += [FloorRequest('Center', i, 5,
+                               ElementRule(('导电', '热熔'), hard='冷凝', soft='湮灭', center=True), False)
+                   for i in range(2)]
+        records = [record(c, energy=4) for c in first.members]
+        records += [record(c, energy=10) for c in second.members]
+        baseline = allocate(records, floors, candidates=(first, second))
+        self.assertEqual(baseline.assignments[0][1], second)
+        fixed = allocate(records, floors, candidates=(first, second), prefer_current_attributes=True)
+        self.assertEqual(fixed.assignments[0][1], first)
+        self.assertTrue(all(p == second for f, p in fixed.assignments if f.tower == 'Right'))
+        for energy in (3, None, 0):
+            with self.subTest(energy=energy):
+                limited = [record(c, energy=energy) for c in first.members] + records[3:]
+                result = allocate(limited, floors, candidates=(first, second), prefer_current_attributes=True)
+                self.assertEqual(result.assignments[0][1], second)
+        forbidden = [replace(floors[0], rule=ElementRule(('气动',), hard='气动'))] + floors[1:]
+        result = allocate(records, forbidden, candidates=(first, second), prefer_current_attributes=True)
+        self.assertEqual(result.assignments[0][1], second)
+
     def team(self, *members):
         return TeamPlan(TEAM_PRESETS[0], members, (), (), True, True, False, "test")
 

@@ -95,6 +95,33 @@ class TestAbyssSeasonImages(TaskTestCase):
         self.assertTrue(self.task._selected_preset_matches(frame, presets[1].plan))
         self.assertFalse(self.task._selected_preset_matches(frame, presets[0].plan))
 
+    def test_right_third_floor_actual_selected_team_is_confirmed(self):
+        self.set_image(str(self.folder / 'right_floor3_selected.png'))
+        frame = self.task.frame
+        from src.task.AutoAbyssTask import AbyssSavedPreset
+        preset = AbyssSavedPreset(2, (Labels.yangyang_sp, 'rover_havoc', Labels.char_sanhua), (10,)*3)
+        self.assertTrue(self.task._selected_preset_matches(frame, preset.plan))
+        wrong_form = AbyssSavedPreset(2, (Labels.yangyang_sp, 'rover_aero', Labels.char_sanhua), (10,)*3)
+        self.assertFalse(self.task._selected_preset_matches(frame, wrong_form.plan))
+
+    def test_fresh_fourth_floor_production_allocation_uses_favored_first_team(self):
+        from src.task.AutoAbyssTask import COMPLETED
+        self.set_image(str(self.folder / 'side_floor4_presets.png'))
+        task = self.task
+        frame = task.frame.copy()
+        with patch.object(task, 'scroll_relative'), patch.object(task, 'sleep'), \
+                patch.object(task, '_wait_stable_preset_frame', return_value=frame):
+            records = task._scan_saved_presets()
+            task._preset_mode = True
+            task._active_preset_plan = None
+            task._abyss_rules = current_season_rules()
+            states = {TOWER_NAMES[0]: (COMPLETED, COMPLETED, COMPLETED, AVAILABLE),
+                      TOWER_NAMES[2]: (AVAILABLE,)*4,
+                      TOWER_NAMES[1]: (AVAILABLE, LOCKED, LOCKED, LOCKED)}
+            task._allocation_context = (TOWER_NAMES[0], 3, states, '两侧塔优先')
+            self.assertEqual(task._allocate_remaining(records).preset.queue, 1)
+            self.assertNotIn((TOWER_NAMES[0], 0), task._scheduled_teams)
+
 
 if __name__ == '__main__':
     unittest.main()

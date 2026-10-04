@@ -159,7 +159,7 @@ class Allocation:
 
 
 def allocate(records, floors, *, beam_width=256, checkpoint=lambda: None,
-             candidates=None, require_level=True):
+             candidates=None, require_level=True, prefer_current_attributes=False):
     """Beam search over shared energy. Report pruning; never claim impossibility from it.
 
     A skipped floor blocks the rest of that tower. The ledger is shared by every
@@ -177,7 +177,7 @@ def allocate(records, floors, *, beam_width=256, checkpoint=lambda: None,
     # score, energy ledger, blocked towers, previous members, assignments
     states = [((0,) * 9, tuple(roster[x].energy for x in identities), frozenset(), (), ())]
     approximate = False
-    for floor in floors:
+    for floor_number, floor in enumerate(floors):
         checkpoint()
         legal = [(p, indices, preference) for p, indices in indexed
                  if (preference := team_preference(p, floor.rule)) is not None]
@@ -218,6 +218,15 @@ def allocate(records, floors, *, beam_width=256, checkpoint=lambda: None,
             if floor.tower not in blocked:
                 options += [(p, ids, preference) for p, ids, preference in legal
                             if all(energy[i] >= floor.cost for i in ids)]
+            if prefer_current_attributes and floor_number == 0:
+                # The current playable floor takes its affordable favored preset.
+                # Future aggregate scores must not trade it for a neutral team
+                # (or skip it) to split that preset across another tower.
+                favored = [option for option in options if option[0] is not None
+                           and option[2][0:2] == (0, 0) and option[2][2] < 0]
+                if favored:
+                    best_preference = min(option[2] for option in favored)
+                    options = [option for option in favored if option[2] == best_preference]
             for plan, indices, preference in options:
                 next_energy = list(energy)
                 for i in indices:

@@ -824,7 +824,8 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             self.log_info(f"完整可用预设{len(candidates)}队；"
                           f"疲劳值为0、未确认或身份不可用的预设{len(self._saved_presets) - len(candidates)}队已排除")
         allocation = allocate(records, floors, checkpoint=lambda: self.sleep(0.001),
-                              candidates=candidates, require_level=not preset_mode)
+                              candidates=candidates, require_level=not preset_mode,
+                              prefer_current_attributes=preset_mode)
         self._scheduled_teams = {(f.tower, f.index): p for f, p in allocation.assignments}
         lines = []
         candidates = candidates if candidates is not None else candidate_teams(records, include_flexible=True)
@@ -1585,7 +1586,12 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                 if top is None:
                     return False
                 card_x = (.121, .207, .294)[index]
-                marker = self.ocr(card_x + .058, top - .01, card_x + .089, top + .035, frame=frame)
+                # Row-number OCR shifts the inferred top by several pixels.
+                # Keep the whole numbered square, including its lower edge.
+                marker_crop = _relative_crop(frame, (card_x + .052, top - .02,
+                                                      card_x + .092, top + .055))
+                marker_image = cv2.resize(marker_crop, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+                marker = self.ocr(0, 0, 1, 1, frame=marker_image)
                 if exact_ocr_box(marker, str(index + 1)) is None:
                     return False
                 identity = self._preset_member(frame, card_x, top)
