@@ -172,7 +172,8 @@ def allocate(records, floors, *, beam_width=256, checkpoint=lambda: None,
         raise ValueError("beam_width must be positive")
     candidates = (candidate_teams(records, checkpoint, include_flexible=True)
                   if candidates is None else candidates)
-    indexed = [(p, tuple(positions[x] for x in p.members)) for p in candidates]
+    indexed = [(p, tuple(positions[x] for x in p.members)) for p in candidates
+               if p.members and all(x in positions for x in p.members)]
     # score, energy ledger, blocked towers, previous members, assignments
     states = [((0,) * 9, tuple(roster[x].energy for x in identities), frozenset(), (), ())]
     approximate = False

@@ -463,7 +463,9 @@ class TestAutoAbyssTask(unittest.TestCase):
         self.assertTrue(floor_state_sequence_valid((COMPLETED, AVAILABLE, LOCKED, LOCKED)))
         self.assertTrue(floor_state_sequence_valid((COMPLETED, COMPLETED, COMPLETED, COMPLETED)))
         self.assertFalse(floor_state_sequence_valid((AVAILABLE, COMPLETED, LOCKED)))
-        self.assertFalse(floor_state_sequence_valid((COMPLETED, AVAILABLE, AVAILABLE)))
+        self.assertTrue(floor_state_sequence_valid((COMPLETED, AVAILABLE, AVAILABLE)))
+        self.assertTrue(floor_state_sequence_valid((AVAILABLE,) * 4))
+        self.assertFalse(floor_state_sequence_valid((AVAILABLE, LOCKED, AVAILABLE)))
         self.assertFalse(floor_state_sequence_valid((COMPLETED, UNKNOWN)))
 
     def test_floor_verification_clicks_only_the_floor_row_when_reset_is_visible(self):
@@ -1628,6 +1630,36 @@ class TestAutoAbyssTask(unittest.TestCase):
         self.assertNotIn("scan", events)
         self.assertNotIn("form", events)
         self.assertNotIn("fight", events)
+
+    def test_side_priority_defers_center_when_either_side_is_unknown(self):
+        for unknown in ("残响之塔", "回音之塔"):
+            with self.subTest(unknown=unknown):
+                scans = {name: (AVAILABLE,) for name in ("残响之塔", "深境之塔", "回音之塔")}
+                scans[unknown] = (UNKNOWN,) * 4
+                task = AutoAbyssTask.__new__(AutoAbyssTask)
+                task.config = {"Tower Priority": "两侧塔优先"}
+                task._set_status = Mock()
+                task._enter_and_scan_characters = Mock(return_value=[])
+                task._plan_and_form_team = Mock()
+                task._planned_team_energy = Mock(return_value=10)
+                task._fight_selected_tower = Mock(return_value=("完成", 1))
+                outcomes = task._run_towers(scans)
+                self.assertIn("暂缓", outcomes["深境之塔"])
+                self.assertEqual([call.args[0] for call in task._enter_and_scan_characters.call_args_list],
+                                 [name for name in ("残响之塔", "回音之塔") if name != unknown])
+
+    def test_center_priority_still_runs_center_with_unknown_sides(self):
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task.config = {"Tower Priority": CENTER_TOWER_FIRST}
+        task._set_status = Mock()
+        task._enter_and_scan_characters = Mock(return_value=[])
+        task._plan_and_form_team = Mock()
+        task._planned_team_energy = Mock(return_value=10)
+        task._fight_selected_tower = Mock(return_value=("完成", 1))
+        outcomes = task._run_towers({"残响之塔": (UNKNOWN,), "回音之塔": (UNKNOWN,),
+                                     "深境之塔": (AVAILABLE,)})
+        self.assertEqual(outcomes["深境之塔"], "完成（1层）")
+        self.assertEqual(task._enter_and_scan_characters.call_args.args[0], "深境之塔")
 
     def test_plan_and_form_team_stops_before_clicking_when_under_three(self):
         records = [

@@ -1,13 +1,13 @@
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from src.Labels import Labels
 from src.task.AutoAbyssTask import (
-    AVAILABLE, AbyssSavedPreset, AbyssTeamUnavailable, AutoAbyssTask, CharacterScanRecord,
+    AVAILABLE, UNKNOWN, AbyssSavedPreset, AbyssTeamUnavailable, AutoAbyssTask, CharacterScanRecord,
     current_preset_energy,
 )
-from src.task.abyss_allocation import current_season_rules
+from src.task.abyss_allocation import current_season_rules, allocate, ElementRule, FloorRequest
 
 
 class TestAbyssPresetUI(unittest.TestCase):
@@ -16,6 +16,12 @@ class TestAbyssPresetUI(unittest.TestCase):
         self.assertEqual(current_preset_energy('10 → 6'), 10)
         self.assertEqual(current_preset_energy('￥10'), 10)
         self.assertEqual(current_preset_energy('410'), 10)
+        self.assertEqual(current_preset_energy('410>15'), 10)
+        self.assertEqual(current_preset_energy('110》45'), 10)
+        self.assertEqual(current_preset_energy('0 > 0'), 0)
+        self.assertIsNone(current_preset_energy('10 5'))
+        self.assertIsNone(current_preset_energy('19 > 5'))
+        self.assertIsNone(current_preset_energy('M0 > 5'))
         self.assertIsNone(current_preset_energy('19'))
 
     def test_season_elements(self):
@@ -66,6 +72,50 @@ class TestAbyssPresetUI(unittest.TestCase):
                    (Labels.char_qingxiao, Labels.char_denia, Labels.char_verina)]
         with self.assertRaises(AbyssTeamUnavailable):
             task._allocate_remaining(records)
+
+    def test_allocator_skips_preset_with_member_missing_from_energy_ledger(self):
+        bad = AbyssSavedPreset(1, (Labels.char_qingxiao, Labels.char_denia, Labels.char_verina),
+                               (10, 0, 10))
+        good = AbyssSavedPreset(2, (Labels.char_jiyan, Labels.char_mortefi, Labels.char_shorekeeper),
+                                (10, 10, 10))
+        floors = [FloorRequest('残响之塔', 0, 1, ElementRule(), True)]
+        for energy in (0, None):
+            with self.subTest(energy=energy):
+                records = [CharacterScanRecord(m, str(m), energy if m == Labels.char_denia else 10,
+                                              None, 1., 0, 0) for m in bad.members + good.members]
+                result = allocate(records, floors, candidates=(bad.plan, good.plan), require_level=False)
+                self.assertEqual(result.assignments[0][1].preset.queue, 2)
+
+    def test_preset_ledger_lists_level_unknown_and_excludes_deferred_center(self):
+        preset = AbyssSavedPreset(7, (Labels.char_qingxiao, Labels.char_denia, Labels.char_verina),
+                                 (10, 10, 10))
+        records = [CharacterScanRecord(m, str(m), 10, None, 1., 0, 0) for m in preset.members]
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        task._preset_mode = True
+        task._saved_presets = {7: preset}
+        task._abyss_rules = current_season_rules()
+        task._allocation_context = ('残响之塔', 0, {'残响之塔': (AVAILABLE,),
+                                   '回音之塔': (UNKNOWN,), '深境之塔': (AVAILABLE,)}, '两侧塔优先')
+        task.sleep = Mock()
+        task.info_set = Mock()
+        task.log_info = Mock()
+        self.assertEqual(task._allocate_remaining(records).preset.queue, 7)
+        self.assertNotIn(('深境之塔', 0), task._scheduled_teams)
+        ledger = next(c.args[1] for c in task.info_set.call_args_list if c.args[0] == '角色体力账本')
+        self.assertIn(str(Labels.char_denia) + '=10', ledger)
+        self.assertNotIn('无可核对角色', ledger)
+
+    def test_preset_energy_needs_two_arrow_readings_and_rejects_conflicts(self):
+        import numpy as np
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        frame = np.zeros((1152, 2048, 3), np.uint8)
+        for texts, expected in ((('10>15', '0 5', '110>45'), 10),
+                                (('10>5', '', ''), None),
+                                (('10>5', '0>0', '10>5'), None),
+                                (('0>0', '0>0', '0>0'), 0)):
+            with self.subTest(texts=texts):
+                task.ocr = Mock(side_effect=[[SimpleNamespace(name=t)] if t else [] for t in texts])
+                self.assertEqual(task._preset_energy(frame, .207, .185), expected)
 
     def test_challenge_start_opens_preset_tab_without_old_quick_formation(self):
         task = AutoAbyssTask.__new__(AutoAbyssTask)

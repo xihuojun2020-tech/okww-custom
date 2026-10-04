@@ -28,7 +28,7 @@ from src.task_status import publish_task_status
 from src.task.abyss_energy import energy_digits, confirmed_energy
 from src.task.abyss_allocation import (
     CONFIG_FIELDS, FloorRequest, allocate, current_season_rules,
-    candidate_teams, team_preference,
+    candidate_teams, team_preference, recognized_roster,
 )
 
 
@@ -109,14 +109,16 @@ class AbyssSavedPreset:
 
 def current_preset_energy(text):
     """The value left of the arrow is current; the right value is after this floor."""
-    values = re.findall(r'\d+', str(text))
+    # The post-floor lightning and number may become 15/45. They are not current energy.
+    left = re.split(r'[>»＞→》]', str(text), maxsplit=1)[0]
+    if re.search(r'[A-Za-z]', left):
+        return None
+    values = re.findall(r'\d+', left)
     if len(values) == 1 and 0 <= int(values[0]) <= 10:
         return int(values[0])
     # The lightning glyph on the left sometimes becomes an OCR 1 or 4.
     if len(values) == 1 and values[0] in ('110', '410'):
         return 10
-    if len(values) == 2 and re.search(r'[>»＞→]', str(text)) and 0 <= int(values[1]) <= int(values[0]) <= 10:
-        return int(values[0])
     return None
 
 
@@ -169,9 +171,8 @@ def first_available_floor(states):
 
 
 def floor_state_sequence_valid(states):
-    """Accept only completed-prefix, optional available floor, then locked suffix."""
+    """Accept completed-prefix, consecutive open floors, then locked suffix."""
     phase = COMPLETED
-    available_seen = False
     for state in states:
         if state == UNKNOWN:
             return False
@@ -179,9 +180,8 @@ def floor_state_sequence_valid(states):
             if phase != COMPLETED:
                 return False
         elif state == AVAILABLE:
-            if available_seen or phase == LOCKED:
+            if phase == LOCKED:
                 return False
-            available_seen = True
             phase = AVAILABLE
         elif state == LOCKED:
             phase = LOCKED
@@ -195,6 +195,13 @@ def tower_order(priority):
     if priority == CENTER_TOWER_FIRST:
         return (TOWER_NAMES[1], TOWER_NAMES[0], TOWER_NAMES[2])
     return (TOWER_NAMES[0], TOWER_NAMES[2], TOWER_NAMES[1])
+
+
+def unconfirmed_priority_side_towers(priority, results):
+    """Keep center energy unspent when a preferred side tower could not be scanned."""
+    if priority == CENTER_TOWER_FIRST:
+        return ()
+    return tuple(name for name in (TOWER_NAMES[0], TOWER_NAMES[2]) if UNKNOWN in results.get(name, ()))
 
 
 def tower_required_energy(tower_name, states):
@@ -283,20 +290,16 @@ def selected_floor_index(frame):
         return None
     height, width = frame.shape[:2]
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    thickness = max(2, round(height / 288))
     scores = []
     for y1, y2 in FLOOR_ROWS:
-        left, right = int(0.043 * width), int(0.305 * width)
-        top, bottom = int((y1 + 0.009) * height), int((y2 - 0.004) * height)
-        inner_top, inner_bottom = int((y1 + 0.020) * height), int((y2 - 0.020) * height)
-        left_edge, right_edge = int(0.047 * width), int(0.303 * width)
-        border = np.concatenate((
-            gray[top:top + thickness, left:right].ravel(),
-            gray[bottom - thickness:bottom, left:right].ravel(),
-            gray[inner_top:inner_bottom, left_edge:left_edge + thickness].ravel(),
-            gray[inner_top:inner_bottom, right_edge - thickness:right_edge].ravel(),
-        ))
-        scores.append(float(np.mean(border > 170)) if border.size else 0.0)
+        edges = []
+        # Search both horizontal borders; the wider new cards and a few pixels of
+        # vertical drift must not turn a normal first-row border into the selection.
+        for y in (y1 + .009, y2 - .004):
+            strip = gray[int((y - .008) * height):int((y + .008) * height),
+                         int(.060 * width):int(.350 * width)]
+            edges.append(float(np.max(np.mean(strip > 200, axis=1))) if strip.size else 0.0)
+        scores.append(float(np.mean(edges)) if min(edges) >= .05 else 0.0)
     best = int(np.argmax(scores))
     runner_up = max((score for index, score in enumerate(scores) if index != best), default=0.0)
     return best if scores[best] >= 0.09 and scores[best] - runner_up >= 0.015 else None
@@ -738,6 +741,11 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                 outcomes[tower_name] = outcome
                 self._set_status("跳过本塔", f"{tower_name}：{outcome}")
                 continue
+            unknown_sides = unconfirmed_priority_side_towers(priority, remaining)
+            if tower_name == TOWER_NAMES[1] and unknown_sides:
+                outcomes[tower_name] = "两侧塔状态未确认，暂缓中塔"
+                self._set_status("暂缓中塔", f"{'、'.join(unknown_sides)}状态未确认，保留疲劳值")
+                continue
 
             current_floor = first_floor
             current_states = states
@@ -785,28 +793,36 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         preset_mode = getattr(self, '_preset_mode', False)
         incomplete_energy = sorted(
             record.display_name for record in records
-            if record.energy is None and record.level is not None and record.level > 60
+            if record.energy is None and (preset_mode or (record.level is not None and record.level > 60))
         )
         ledger = "；".join(
             f"{record.display_name}={record.energy if record.energy is not None else '未识别'}"
-            f"（{role_for_character(effective_character_id(record))}，Lv.{record.level}）"
+            f"（{role_for_character(effective_character_id(record))}，"
+            f"{('Lv.' + str(record.level)) if record.level is not None else '游戏预设'}）"
             for record in sorted(records, key=lambda item: item.display_name)
-            if record.level is not None and record.level > 60
+            if preset_mode or (record.level is not None and record.level > 60)
         ) or "无可核对角色"
         self.info_set("角色体力账本", ledger)
         self.log_info(f"深塔角色体力账本：{ledger}")
         floors = []
+        unknown_sides = unconfirmed_priority_side_towers(priority, remaining)
         for name in tower_order(priority):
             states = remaining.get(name, ())
             start = first_available_floor(states)
-            if start is None or UNKNOWN in states:
+            if start is None or UNKNOWN in states or (name == TOWER_NAMES[1] and unknown_sides):
                 continue
             for layer in range(start, len(states)):
                 group = ("Center Lower" if layer < 2 else "Center Upper") if name == TOWER_NAMES[1] else (
                     "Left" if name == TOWER_NAMES[0] else "Right")
                 preferred = (name == TOWER_NAMES[1]) == (priority == CENTER_TOWER_FIRST)
                 floors.append(FloorRequest(name, layer, floor_energy_cost(name, layer), self._abyss_rules[group], preferred))
-        candidates = tuple(preset.plan for preset in self._saved_presets.values()) if preset_mode else None
+        candidates = None
+        if preset_mode:
+            roster = recognized_roster(records, require_level=False)
+            candidates = tuple(preset.plan for preset in self._saved_presets.values()
+                               if all(member in roster for member in preset.members))
+            self.log_info(f"完整可用预设{len(candidates)}队；"
+                          f"疲劳值为0、未确认或身份不可用的预设{len(self._saved_presets) - len(candidates)}队已排除")
         allocation = allocate(records, floors, checkpoint=lambda: self.sleep(0.001),
                               candidates=candidates, require_level=not preset_mode)
         self._scheduled_teams = {(f.tower, f.index): p for f, p in allocation.assignments}
@@ -841,7 +857,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             if incomplete_energy:
                 reason = "角色体力识别不完整：" + "、".join(incomplete_energy)
             elif not candidates:
-                reason = "没有可用的输出角色"
+                reason = "没有疲劳值可确认且大于0的完整预设编队" if preset_mode else "没有可用的输出角色"
             elif not legal:
                 reason = "当前层无符合输出属性规则的候选队"
             elif allocation.approximate:
@@ -1053,6 +1069,12 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         avatar_counts = [count_occupied_tower_slots(frame, index) for index in range(len(FLOOR_ROWS))]
         selected = selected_floor_index(frame)
         numbered = [self._row_has_floor_number(frame, row, index) for index, row in enumerate(FLOOR_ROWS)]
+        for index in range(len(FLOOR_ROWS)):
+            if locked[index] and numbered[index]:
+                # Both icons contain a circle; a bright selected "4" can match
+                # the lock template. A verified floor number requires button verification.
+                locked[index] = False
+                self.log_warning(f"{tower_name}第{index + 1}层锁图标模板与明确层号冲突，改为逐层按钮核验")
         present = [
             blocked or avatar_count > 0 or number_found or selected == index
             for index, (blocked, avatar_count, number_found) in enumerate(zip(locked, avatar_counts, numbered))
@@ -1424,16 +1446,20 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
     def _preset_energy(self, frame, x, top):
         readings = []
         for offset in (0, .004, -.004):
-            crop = _relative_crop(frame, (x + .005, top + .108 + offset,
-                                          x + .043, top + .140 + offset))
+            crop = _relative_crop(frame, (x + .004, top + .108 + offset,
+                                          x + .076, top + .140 + offset))
             if crop is None or not crop.size:
                 continue
             enlarged = cv2.resize(crop, None, fx=5, fy=5, interpolation=cv2.INTER_CUBIC)
             text = ' '.join(str(box.name) for box in self.ocr(0, 0, 1, 1, frame=enlarged))
+            # Require the arrow to prove which side is current, never accept a lone
+            # clipped zero. At least two consistent crops must confirm the value.
+            if not re.search(r'[>»＞→》]', text):
+                continue
             value = current_preset_energy(text)
             if value is not None:
                 readings.append(value)
-        return readings[0] if readings and len(set(readings)) == 1 else None
+        return readings[0] if len(readings) >= 2 and len(set(readings)) == 1 else None
 
     def _preset_on_row(self, frame, number, top):
         members, energies = [], []
