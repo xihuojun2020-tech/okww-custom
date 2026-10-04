@@ -46,18 +46,31 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         task = object.__new__(WorldBossMaterialTask)
         task.config = {'Teleport to Boss': 'No', 'Boss': 'Other', 'Use Liberation': False}
         task.use_liberation = False
+        task.info = {}
         task.scene = Mock()
         task._in_realm = False
         for name in ('_stage', 'next_frame', 'manage_boss_parameters', 'teleport_to_configured_boss_and_prepare',
-                     '_release_combat_inputs', 'send_key', 'back', 'click_box', 'screenshot', 'ensure_main', 'log_warning'):
+                     '_release_combat_inputs', '_release_movement', 'send_key', 'back', 'click_box',
+                     'screenshot', 'ensure_main', 'log_warning'):
             setattr(task, name, Mock())
         task.farm_cycle = Mock(return_value=FarmCycleResult(True, False, False))
         def cycle(**kwargs):
             task._material_name_verified = True
+            task.out_of_combat_reason = task.TARGET_GONE_END_REASON
             return FarmCycleResult(True, False, False)
         task.farm_cycle.side_effect = cycle
         task._resources_for_claim = Mock(return_value=True)
         task._material_combat_finished = Mock(return_value=True)
+        task.has_target = task.check_health_bar = Mock(return_value=False)
+        task.in_team_and_world = Mock(return_value=True)
+        task.pickup_dropped_echo = Mock(return_value=False)
+        def wait(probe, **kwargs):
+            for _ in range(6):
+                result = probe()
+                if result:
+                    return result
+            return None
+        task.wait_until = Mock(side_effect=wait)
         def verified():
             task._material_name_verified = True
         task.teleport_to_configured_boss_and_prepare.side_effect = verified
@@ -78,6 +91,8 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         task.use_stamina = Mock(return_value=(True, 60))
         task._confirm_stamina_used = Mock(return_value=(120, 100, 220))
         task._claim_confirmation = Mock(return_value=None)
+        task.has_claim = task.has_claim_stamina = Mock(return_value=False)
+        task._text = Mock(return_value='')
         def wait(probe, **kwargs):
             for _ in range(4):
                 value = probe()
@@ -144,6 +159,120 @@ class TestWorldBossMaterialTask(unittest.TestCase):
             self.run_task(task)
         task._claim_material_reward.assert_not_called()
         self.assertEqual({}, self.progress.counts())
+
+    def test_normal_combat_without_visible_reward_reaches_echo_and_weekly_claim(self):
+        task = self.claim_task()
+        self.tasks = plan((1, 0, 0))
+        task._material_combat_finished.return_value = False
+        task._reward_available = task.find_treasure_icon = Mock(return_value=None)
+        task.pickup_dropped_echo.return_value = True
+        order = []
+        task.pickup_dropped_echo.side_effect = lambda: order.append('echo') or True
+        task._seek_reward_interaction.side_effect = lambda: order.append('reward')
+        self.assertEqual(MaterialRunResult(1, 60, 'complete'), self.run_task(task))
+        self.assertEqual(['echo', 'reward'], order)
+        self.assertEqual({A: 1}, self.progress.counts())
+        task.farm_cycle.assert_called_once_with(pickup_echo=False)
+        task.use_stamina.assert_called_once_with(once=60, must_use=180, allow_backup=False, max_claims=1)
+
+    def test_no_echo_still_claims_and_missing_combat_never_collects_or_claims(self):
+        self.tasks = plan((1, 0, 0))
+        task = self.claim_task()
+        self.assertEqual(MaterialRunResult(1, 60, 'complete'), self.run_task(task))
+        task.pickup_dropped_echo.assert_called_once()
+        task.use_stamina.assert_called_once()
+        self.progress.correct(A, 0)
+        task = self.claim_task()
+        task.farm_cycle.side_effect = None
+        task.farm_cycle.return_value = FarmCycleResult(False, False, False)
+        with self.assertRaises(CombatStateUnknown):
+            self.run_task(task)
+        task.pickup_dropped_echo.assert_not_called()
+        task.use_stamina.assert_not_called()
+
+    def test_echo_stop_propagates_without_reward_and_releases_movement(self):
+        task = self.claim_task()
+        task.pickup_dropped_echo.side_effect = TaskDisabledException('manual stop')
+        with self.assertRaises(TaskDisabledException):
+            self.run_task(task)
+        task.use_stamina.assert_not_called()
+        task._release_movement.assert_called_once()
+        self.assertEqual({}, self.progress.pending())
+        self.assertEqual({}, self.progress.counts())
+
+    def test_post_combat_reappearance_resumes_battle_before_echo_or_reward(self):
+        task = self.runner()
+        task._material_name_verified = True
+        task.has_target.return_value = True
+        self.assertFalse(task._wait_material_post_combat(FarmCycleResult(True, False, False)))
+        task.pickup_dropped_echo.assert_not_called()
+        task.send_key.assert_not_called()
+
+    def test_echo_f_never_triggers_reward_or_unselected_absorption(self):
+        task = self.runner()
+        task._material_phase = 'echo'
+        task._selected_reward_interaction = Mock(return_value=None)
+        task.find_f_with_text = Mock(return_value=True)  # Scrolled to absorption, not yet selected.
+        task.has_claim = task.has_claim_stamina = Mock(return_value=False)
+        self.assertFalse(task.pick_f())
+        task.send_key.assert_not_called()
+        task._selected_reward_interaction.side_effect = [None, box('吸收'), None]
+        self.assertTrue(task.pick_echo())
+        task.send_key.assert_called_once_with('f', after_sleep=.6)
+        task._selected_reward_interaction.assert_called_with('吸收')
+
+    def test_multi_phase_hint_prevents_early_post_combat_handoff(self):
+        task = self.runner()
+        task._material_name_verified = True
+        task._task_hint_phase = Mock(return_value='combat')
+        task.out_of_combat_reason = task.TARGET_GONE_END_REASON
+        with self.assertRaises(CombatStateUnknown):
+            task._wait_material_post_combat(FarmCycleResult(True, False, False))
+        task.send_key.assert_not_called()
+        self.assertFalse(task.skip_combat_check)
+
+    def test_claim_f_retry_reuses_pending_event_and_confirms_cost_only_once(self):
+        task = self.claim_task('confirm')
+        task._claim_dialog.side_effect = [None, ('confirm', (60, 180, box('确认'))),
+                                        ('confirm', (60, 180, box('确认'))),
+                                        ('confirm', (60, 180, box('确认')))]
+        task._reward_available = Mock(return_value=box('领取奖励'))
+        with patch('src.task.WorldBossMaterialTask.time.monotonic', side_effect=[0, 4, 4]):
+            self.assertEqual(60, self.claim(task))
+        self.assertEqual(2, task.send_key.call_count)
+        task.click_box.assert_called_once()
+        self.assertEqual({A: 1}, self.progress.counts())
+        self.assertEqual({}, self.progress.pending())
+
+    def test_partial_reward_dialog_permanently_blocks_f_retry(self):
+        task = self.claim_task()
+        task._claim_dialog.return_value = None
+        task._text.return_value = '领取奖励'
+        task._reward_available = Mock(return_value=box('领取奖励'))
+        with patch('src.task.WorldBossMaterialTask.time.monotonic', side_effect=[0]):
+            with self.assertRaises(CombatStateUnknown):
+                self.claim(task)
+        task.send_key.assert_called_once_with('f', after_sleep=.6)
+        task.use_stamina.assert_not_called()
+        self.assertEqual({}, self.progress.counts())
+        self.assertEqual(1, len(self.progress.pending()))
+
+    def test_shared_echo_search_routes_all_methods_without_starting_another_fight(self):
+        task = self.runner()
+        task.log_info = task.incr_drop = Mock()
+        task.pick_echo = Mock(return_value=False)
+        task.yolo_find_echo = Mock(return_value=(True, False))
+        task.run_in_circle_to_find_echo = Mock(return_value=False)
+        task.walk_find_echo = Mock(return_value=True)
+        task.yolo_time_out, task.yolo_threshold = 12, .5
+        del task.pickup_dropped_echo
+        for method, expected in (('Yolo', True), ('Run in Circle', False), ('Walk', True)):
+            task.config['Echo Pickup Method'] = method
+            self.assertEqual(expected, task.pickup_dropped_echo())
+        task.yolo_find_echo.assert_called_once_with(turn=False, use_color=False, time_out=12, threshold=.5)
+        task.run_in_circle_to_find_echo.assert_called_once_with(circle_count=2)
+        task.walk_find_echo.assert_called_once()
+        task.farm_cycle.assert_not_called()
 
     def test_pending_is_durable_before_f_and_failed_begin_sends_no_input(self):
         task = self.claim_task()
@@ -355,6 +484,7 @@ class TestWorldBossMaterialTask(unittest.TestCase):
     def test_shared_cycle_material_skips_echo_ordinary_still_picks_it(self):
         task = self.runner()
         del task.farm_cycle
+        del task.pickup_dropped_echo
         task._just_entered_boss_realm = True
         task._has_treasure, task.is_revived, task.combat_wait_time = False, False, 0
         task.bypass_end_wait = True

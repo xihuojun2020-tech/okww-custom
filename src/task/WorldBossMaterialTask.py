@@ -43,6 +43,8 @@ class WorldBossMaterialTask(FarmEchoTask):
     CLAIM_CONFIRM = WeeklyBossTask.CLAIM_CONFIRM
     CLAIM_CANCEL = WeeklyBossTask.CLAIM_CANCEL
     CLAIM_STAMINA = WeeklyBossTask.CLAIM_STAMINA
+    TASK_HINT = WeeklyBossTask.TASK_HINT
+    VICTORY = WeeklyBossTask.VICTORY
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -51,7 +53,7 @@ class WorldBossMaterialTask(FarmEchoTask):
         self.visible = True
         self.group_name = None
         self.supported_languages = ['zh_CN']
-        self.instructions = '在每日任务选择当前账号，手动登录对应游戏账号；在此卡选择首领关卡和本次领取次数后开始。成功领奖才计次，体力不足时结束；计入账号累计，不改每日三目标计划，不自动切换账号。'
+        self.instructions = '在每日任务选择当前账号，手动登录对应游戏账号；选择首领关卡和本次领取次数后开始。战后检查并吸收声骸，再领取材料奖励；成功领奖才计次，体力不足时结束；计入账号累计，不改每日三目标计划，不自动切换账号。'
         for key in self.default_config.keys() | self.config_type.keys():
             if key not in ('Use Liberation', 'Switch to Healer before and after Combat'):
                 self.config_type[key] = {'hidden': True}
@@ -102,7 +104,14 @@ class WorldBossMaterialTask(FarmEchoTask):
         return super().perform_combat_rotation()
 
     def _task_hint_phase(self):
-        return 'post' if not self.has_target() and not self.check_health_bar() else None
+        if self._in_realm:
+            phase = WeeklyBossTask._task_hint_phase(self)
+            if phase:
+                return phase
+        if self._material_phase in ('post', 'echo', 'reward') and not (
+                self.has_target() or self.check_health_bar()):
+            return 'post'
+        return None
 
     def handle_claim_button(self):
         if self.has_claim():
@@ -110,8 +119,78 @@ class WorldBossMaterialTask(FarmEchoTask):
         return False
 
     def _material_combat_finished(self):
-        return not self.has_target() and not self.check_health_bar() and bool(
-            self._reward_available() or self.find_treasure_icon() or self.has_claim_stamina())
+        phase = self._task_hint_phase()
+        if phase == 'combat' or self.has_target() or self.check_health_bar():
+            return False
+        return bool(phase == 'post' or self._reward_available() or self.find_treasure_icon()
+                    or self.has_claim_stamina() or self._selected_reward_interaction('吸收')
+                    or self._button(self.VICTORY, '挑战成功'))
+
+    def _wait_material_post_combat(self, result):
+        if not result.combat_entered or not self._material_name_verified:
+            raise CombatStateUnknown('材料战斗未确认进入，不执行吸收或领取')
+        previous = self.__dict__.get('skip_combat_check', False)
+        self.skip_combat_check = True
+        confirmed = 0
+        def read():
+            nonlocal confirmed
+            self.next_frame()
+            if not self.in_team_and_world():
+                confirmed = 0
+                return None
+            if self.has_target() or self.check_health_bar():
+                return 'combat'
+            # Like weekly challenges, a remaining fight objective forbids handing off mid-phase.
+            ready = self._task_hint_phase() != 'combat' and (
+                self._material_combat_finished() or self.is_expected_combat_end())
+            confirmed = confirmed + 1 if ready else 0
+            return 'post' if confirmed >= 2 else None
+        try:
+            phase = self.wait_until(read, time_out=30, raise_if_not_found=False)
+            if not phase:
+                raise CombatStateUnknown('材料战后阶段未确认，不执行吸收或领取')
+            if phase == 'combat':
+                self._stage('敌人仍在或进入下一阶段，继续战斗')
+                return False
+            self.reset_to_false('material combat returned; verify reward')
+            self._material_phase = 'post'
+            self._stage('战斗结束，开始检查声骸和领取奖励')
+            return True
+        finally:
+            self.skip_combat_check = previous
+
+    def pick_echo(self):
+        # The shared YOLO/walk helpers may encounter reward F prompts on the way.
+        if self.has_claim() or self.has_claim_stamina():
+            raise CombatStateUnknown('声骸吸收阶段出现领奖页面，未点击任何消费按钮')
+        if not self._selected_reward_interaction('吸收'):
+            if not self.find_f_with_text(target_text=re.compile(r'^吸收$')):
+                return False
+            self.next_frame()  # A scroll result alone does not prove the selected interaction.
+            if not self._selected_reward_interaction('吸收'):
+                return False
+        self._release_movement()
+        self.send_key('f', after_sleep=.6)
+        self.next_frame()
+        if self.has_claim() or self.has_claim_stamina():
+            raise CombatStateUnknown('吸收后出现未确认的领奖页面，未执行消费')
+        return not self._selected_reward_interaction('吸收')
+
+    def pick_f(self, handle_claim=True):
+        if self._material_phase == 'echo':
+            return self.pick_echo()
+        return super().pick_f(handle_claim=handle_claim)
+
+    def _collect_material_echo(self, guard):
+        guard()
+        self._material_phase = 'echo'
+        self._stage('检查声骸掉落并吸收')
+        try:
+            picked = self.pickup_dropped_echo()
+            self._stage('声骸已吸收，继续领取材料奖励' if picked else '未找到可吸收声骸，继续领取材料奖励')
+            return picked
+        finally:
+            self._release_movement()
 
     def select_configured_boss(self, serial_number, total_number):
         target = self._material_target
@@ -222,14 +301,26 @@ class WorldBossMaterialTask(FarmEchoTask):
         event = self._material_progress.begin(choice[0], self._material_target.cost, material_plan_revision(rows))
         self.send_key('f', after_sleep=.6)
         previous = None
+        dialog_seen = False
+        retries = 0
+        last_input = time.monotonic()
         def stable_dialog():
-            nonlocal previous
+            nonlocal previous, dialog_seen, retries, last_input
             dialog = self._claim_dialog()
+            dialog_seen = dialog_seen or bool(dialog) or self.has_claim() or self.has_claim_stamina() or (
+                compact(self._text(self.CLAIM_TITLE)) == '领取奖励')
+            if not dialog_seen and retries < 2 and time.monotonic() - last_input >= 3:
+                self.next_frame()
+                if self.in_team_and_world() and self._reward_available():
+                    self.send_key('f', after_sleep=.6)
+                    retries += 1
+                    last_input = time.monotonic()
+                    self._stage(f'领奖入口仍在，重试交互 {retries}/2；未重复费用确认')
             identity = (dialog[0], dialog[1][:2]) if dialog else None
             stable = identity is not None and identity == previous
             previous = identity
             return dialog if stable else None
-        dialog = self.wait_until(stable_dialog, time_out=8, raise_if_not_found=False)
+        dialog = self.wait_until(stable_dialog, time_out=20, raise_if_not_found=False)
         if not dialog:
             raise CombatStateUnknown('材料领奖界面未确认，保留待核验记录')
         shape, values = dialog
@@ -338,9 +429,12 @@ class WorldBossMaterialTask(FarmEchoTask):
                 result = self.farm_cycle(pickup_echo=False)
                 if result.revived:
                     continue
+                if not self._wait_material_post_combat(result):
+                    continue
+                self._collect_material_echo(guard)
                 self.next_frame()
-                if not self._material_name_verified or not self._material_combat_finished():
-                    raise CombatStateUnknown('材料战斗未确认结束，不执行领取')
+                if self.has_target() or self.check_health_bar() or self._task_hint_phase() == 'combat':
+                    continue
                 used = self._claim_material_reward(read_tasks, guard, activity_ready, consumed)
                 if used is None:
                     current_target = None

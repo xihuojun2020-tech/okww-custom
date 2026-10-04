@@ -1,5 +1,6 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 from config import config
 from ok.test.TaskTestCase import TaskTestCase
 from src.task.WorldBossMaterialTask import WorldBossMaterialTask
@@ -44,6 +45,34 @@ class TestMaterialCombatImages(TaskTestCase):
         self.load('combat_alive')
         self.assertFalse(self.task._unrevivable_switch_target(char))
         self.assertFalse(char._switch_unrevivable)
+
+    def test_actual_absorb_and_reward_rows_are_distinguished_for_materials(self):
+        self.task._in_realm = False
+        self.task._material_phase = 'combat'
+        for name in ('nas_b7_absorb', 'nas_b8_absorb'):
+            self.set_image('tests/images/weekly_boss/' + name + '.png')
+            self.assertTrue(self.task._selected_reward_interaction('吸收'))
+            self.assertFalse(self.task._reward_available())
+            self.assertTrue(self.task._material_combat_finished())
+        self.set_image('tests/images/weekly_boss/claim.png')
+        self.task._material_phase = 'echo'
+        self.assertTrue(self.task._reward_available())
+        with patch.object(self.task, 'send_key') as send, patch.object(self.task, 'find_f_with_text', return_value=None):
+            self.assertFalse(self.task.pick_f())
+        send.assert_not_called()
+
+    def test_actual_absorption_disappears_after_f_without_opening_reward(self):
+        self.task._material_phase = 'echo'
+        self.set_image('tests/images/weekly_boss/nas_b7_absorb.png')
+        with patch.object(self.task, '_release_movement'), patch.object(self.task, 'send_key') as send:
+            send.side_effect = lambda *args, **kw: self.set_image('tests/images/weekly_boss/nas_b10_no_interaction.png')
+            self.assertTrue(self.task.pick_echo())
+        send.assert_called_once_with('f', after_sleep=.6)
+
+    def test_material_fee_confirmation_reuses_weekly_parser(self):
+        self.set_image('tests/images/weekly_boss/confirmation.png')
+        shape, (cost, stamina, button) = self.task._claim_dialog()
+        self.assertEqual(('confirm', 60, 123, '确认'), (shape, cost, stamina, button.name))
 
 
 if __name__ == '__main__':
