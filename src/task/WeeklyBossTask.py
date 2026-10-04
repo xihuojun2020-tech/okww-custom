@@ -184,30 +184,34 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
                     raise
                 self._stage('周本页面识别失败，重新打开列表复核一次')
 
-    def _select_target(self, boss):
-        self._stage(f'寻找周本：{boss.name}')
+    def _select_target(self, boss, *, button_match=None, title_match=None, open_target=None, label='周本'):
+        """Shared named-row search for weekly and world-boss materials."""
+        button_match = button_match or (lambda boxes: match_target_button(boxes, boss.name, self.height))
+        title_match = title_match or (lambda text: boss_title(text) == boss.name)
+        open_target = open_target or (lambda target, button: self._open_weekly_target(target))
+        self._stage(f'寻找{label}：{boss.name}')
         seen_title = False
+        opened = None
 
-        def scan(label):
-            nonlocal seen_title
+        def scan(step):
+            nonlocal seen_title, opened
             self.next_frame()
             boxes = self._ocr(self.LIST)
             signature = tuple((compact(b.name), round(b.y / self.height, 2)) for b in boxes)
-            titles = [boss_title(b.name) for b in weekly_title_rows(boxes, self.height)]
-            seen_title = seen_title or boss.name in titles
-            self.log_info(f'周本搜索 {label}：可见标题={titles}，OCR框数={len(boxes)}')
-            target = match_target_button(boxes, boss.name, self.height)
+            seen_title = seen_title or any(title_match(b.name) for b in boxes)
+            self.log_info(f'{label}搜索 {step}：原文={[b.name for b in boxes]}，OCR框数={len(boxes)}')
+            target = button_match(boxes)
             if target:
                 # Re-read a new frame so an animation cannot supply the clicked row.
                 self.sleep(.25)
                 self.next_frame()
-                target = match_target_button(self._ocr(self.LIST), boss.name, self.height)
+                target = button_match(self._ocr(self.LIST))
             if target:
-                self.log_info(f'周本目标与同行挑战按钮已确认：{boss.name}')
-                self._open_weekly_target(boss)
+                self.log_info(f'{label}目标与同行按钮已确认：{boss.name}')
+                opened = open_target(boss, target)
             return target is not None, signature
 
-        self.log_info('周本列表：滚轮回顶 x=0.92 y=0.50 count=30')
+        self.log_info(f'{label}列表：滚轮回顶 x=0.92 y=0.50 count=30')
         self.scroll_relative(0.92, 0.5, 30)
         self.sleep(1)
         previous = None
@@ -216,37 +220,37 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         for index in range(16):
             found, signature = scan(f'滚轮第{index + 1}轮')
             if found:
-                return
+                return opened
             unchanged = unchanged + 1 if signature and signature == previous else 0
             progressed = progressed or bool(signature and previous and signature != previous)
-            self.log_info(f'周本列表：连续未变化={unchanged}')
+            self.log_info(f'{label}列表：连续未变化={unchanged}')
             if unchanged >= 2:
                 break
             previous = signature
-            self.log_info('周本列表：滚轮下翻 x=0.92 y=0.50 count=-3')
+            self.log_info(f'{label}列表：滚轮下翻 x=0.92 y=0.50 count=-3')
             self.scroll_relative(0.92, 0.5, -3)
             self.sleep(0.7)
 
         # Same track x as BaseWWTask.click_on_book_target; small overlapping
         # steps avoid skipping rows. A click inside the thumb need not move it.
-        self.log_info('周本滚轮搜索未定位目标，改用右侧滚动条从上到下分段搜索')
+        self.log_info(f'{label}滚轮搜索未定位目标，改用右侧滚动条从上到下分段搜索')
         for index in range(14):
             y = min(0.25 + index * 0.05, 0.88)
-            self.log_info(f'周本滚动条：第{index + 1}/14段 x=0.973 y={y:.3f}')
+            self.log_info(f'{label}滚动条：第{index + 1}/14段 x=0.973 y={y:.3f}')
             self.click_relative(0.973, y)
             self.sleep(0.7)
             found, signature = scan(f'滚动条第{index + 1}段')
             if found:
-                return
+                return opened
             changed = bool(signature and previous and signature != previous)
             progressed = progressed or changed
-            self.log_info(f'周本滚动条：页面内容变化={changed}')
+            self.log_info(f'{label}滚动条：页面内容变化={changed}')
             previous = signature
         if seen_title:
             raise WeeklyPageTimeout(f'已识别「{boss.name}」，但未能稳定确认对应挑战按钮')
         if not progressed:
-            raise WeeklyPageTimeout(f'未确认列表翻页，无法完成周本搜索：{boss.name}；未选择其他目标')
-        raise WeeklyPageTimeout(f'滚动条分段搜索后仍未找到周本或对应挑战按钮：{boss.name}，未选择其他目标')
+            raise WeeklyPageTimeout(f'未确认列表翻页，无法完成{label}搜索：{boss.name}；未选择其他目标')
+        raise WeeklyPageTimeout(f'滚动条分段搜索后仍未找到{label}或对应挑战按钮：{boss.name}，未选择其他目标')
 
     def _story_entry_warning(self, frame):
         text = compact(self._text((.25, .43, .75, .53), frame))
@@ -256,24 +260,26 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         if self._story_entry_warning(frame):
             return self._button((.55, .59, .76, .67), '确认', frame)
 
-    def _open_weekly_target(self, boss):
+    def _open_weekly_target(self, boss, *, button_match=None, title_match=None, label='周本'):
+        button_match = button_match or (lambda boxes: match_target_button(boxes, boss.name, self.height))
+        title_match = title_match or (lambda text: boss_title(text) == boss.name)
         submitted = False
         story_confirmed = False
         story = self._story_entry_confirmation
         def destination(frame):
             if self._story_entry_warning(frame):
                 return False
-            title = boss_title(self._text(self.TITLE, frame))
+            matching = title_match(self._text(self.TITLE, frame))
             single = self._button(self.SINGLE, '单人挑战', frame)
-            if single and title != boss.name:
-                raise RuntimeError('挑战页面与所选周本不一致，停止输入')
-            return bool(single and title == boss.name)
+            if single and not matching:
+                raise RuntimeError(f'挑战页面与所选{label}不一致，停止输入')
+            return bool(single and matching)
         def source(frame):
             if self._story_entry_warning(frame):
                 return story(frame) if submitted and not story_confirmed else None
             if destination(frame):
                 return None
-            return match_target_button(self._ocr(self.LIST, frame), boss.name, self.height)
+            return button_match(self._ocr(self.LIST, frame))
         # TransitionTimeout is intentionally not WeeklyPageTimeout: the outer
         # list-search recovery cannot multiply this step's three-input budget.
         def act(button):
@@ -285,7 +291,7 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
             else:
                 submitted = True
             self.click(button)
-        self.navigate_ui('周本目标详情', source, destination, identity=boss.key, action=act)
+        self.navigate_ui(label + '目标详情', source, destination, identity=boss.key, action=act)
 
     def _detail_ready(self, boss):
         frame = self.frame
@@ -300,19 +306,20 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
             return (cost, stamina) if cost is not None and stamina is not None else None
         return self._stable_value(read, '无法确认周本费用或当前体力')
 
-    def _enter_challenge(self):
-        boss = self._entry_boss
+    def _enter_challenge(self, boss=None, *, title_match=None, label='周本'):
+        boss = boss or self._entry_boss
+        title_match = title_match or (lambda text: boss_title(text) == boss.name)
         def single(frame):
-            title = boss_title(self._text(self.TITLE, frame))
+            matching = title_match(self._text(self.TITLE, frame))
             button = self._button(self.SINGLE, '单人挑战', frame)
-            if button and title != boss.name:
-                raise RuntimeError('周本目标变化，停止单人挑战')
-            return button if title == boss.name else None
-        self.navigate_ui('周本单人挑战', single,
+            if button and not matching:
+                raise RuntimeError(label + '目标变化，停止单人挑战')
+            return button if matching else None
+        self.navigate_ui(label + '单人挑战', single,
             lambda frame: self._button(self.START, '开启挑战', frame), identity=boss.key)
         # Starting a challenge is one submission. Allow long loading without
         # resending an input merely because the old start label lingers.
-        self.navigate_ui('周本进入地图',
+        self.navigate_ui(label + '进入地图',
             lambda frame: self._button(self.START, '开启挑战', frame),
             lambda frame: self.in_team_and_world(frame=frame),
             identity=boss.key, timeout=120, attempts=1, retry_after=120)

@@ -8,7 +8,7 @@ from ok.task.exceptions import FinishedException
 from src.task.FarmEchoTask import FarmEchoTask
 from src.task.WeeklyBossTask import WeeklyBossTask
 from src.task.BaseCombatTask import CombatStateUnknown
-from src.task.world_boss_materials import WORLD_BOSS_TARGETS, TARGETS_BY_ID, material_target_button, matches_health_title
+from src.task.world_boss_materials import WORLD_BOSS_TARGETS, TARGETS_BY_ID, material_target_button, matches_health_title, matches_target
 from src.task.world_boss_material_plan import material_plan, choose_material_target, material_plan_revision, validate_material_request
 from src.task.world_boss_material_progress import WorldBossMaterialProgress
 from src.task.weekly_boss import compact
@@ -27,6 +27,12 @@ class WorldBossMaterialTask(FarmEchoTask):
     _ocr = WeeklyBossTask._ocr
     _text = WeeklyBossTask._text
     _button = WeeklyBossTask._button
+    _story_entry_warning = WeeklyBossTask._story_entry_warning
+    _story_entry_confirmation = WeeklyBossTask._story_entry_confirmation
+    LIST = WeeklyBossTask.LIST
+    TITLE = WeeklyBossTask.TITLE
+    SINGLE = WeeklyBossTask.SINGLE
+    START = WeeklyBossTask.START
     _selected_reward_interaction = WeeklyBossTask._selected_reward_interaction
     _reward_available = WeeklyBossTask._reward_available
     _seek_reward_interaction = WeeklyBossTask._seek_reward_interaction
@@ -101,32 +107,39 @@ class WorldBossMaterialTask(FarmEchoTask):
             self._reward_available() or self.find_treasure_icon() or self.has_claim_stamina())
 
     def select_configured_boss(self, serial_number, total_number):
-        self._stage('按名称查找讨伐强敌：' + self._material_target.name)
-        self.scroll_relative(.92, .5, 30)
-        self.sleep(.6)
-        previous, stable = None, 0
-        for _ in range(18):
-            self.next_frame()
-            boxes = self.ocr(.365, .25, .965, .89)
-            button = material_target_button(boxes, self._material_target, self.height)
-            if button:
-                self.sleep(.25)
-                self.next_frame()
-                button = material_target_button(self.ocr(.365, .25, .965, .89), self._material_target, self.height)
-                if button is None:
-                    continue
-                is_team = compact(button.name) == '直接挑战'
-                self.click_box(button, after_sleep=1)
-                return is_team
-            signature = tuple(compact(b.name) for b in boxes)
-            stable = stable + 1 if signature and signature == previous else 0
-            if stable >= 2:
-                break
-            previous = signature
-            self.scroll_relative(.92, .5, -3)
-            self.sleep(.6)
-        self.screenshot('material_boss_not_found')
-        raise RuntimeError('未在讨伐强敌中确认目标：' + self._material_target.name)
+        target = self._material_target
+        return WeeklyBossTask._select_target(self, target,
+            button_match=lambda boxes: material_target_button(boxes, target, self.height),
+            title_match=lambda text: matches_target(text, target),
+            open_target=self._open_material_target, label='首领材料')
+
+    def _open_material_target(self, target, button):
+        def match_button(boxes):
+            current = material_target_button(boxes, target, self.height)
+            return current if current and compact(current.name) == compact(button.name) else None
+        if compact(button.name) == '直接挑战':
+            WeeklyBossTask._open_weekly_target(self, target, button_match=match_button,
+                title_match=lambda text: matches_target(text, target), label='首领材料')
+            return True
+        self.navigate_ui('首领材料前往地图',
+            lambda frame: match_button(self._ocr(self.LIST, frame)), self._travel_button,
+            identity=target.key)
+        return False
+
+    def teleport_to_configured_boss(self):
+        self.ensure_main(time_out=180)
+        self.openF2Book('gray_book_boss')
+        self.open_boss_book('qiangdi')
+        is_team = self.select_configured_boss(None, None)
+        if is_team:
+            target = self._material_target
+            WeeklyBossTask._enter_challenge(self, target,
+                title_match=lambda text: matches_target(text, target), label='首领材料')
+        else:
+            self.wait_click_travel()
+            self.wait_in_team_and_world(time_out=120)
+        self.sleep(2)
+        return is_team
 
     def check_boss_name(self):
         if self._material_name_verified or not (self.has_target() or self.check_health_bar()):

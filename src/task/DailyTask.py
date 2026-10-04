@@ -386,7 +386,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         from src.task.daily_reserve_policy import DailyReservePolicy
         previous_policy = getattr(self.executor, '_daily_reserve_policy', None)
         self.executor._daily_reserve_policy = DailyReservePolicy(str(getattr(self, '_verified_profile_id', '') or ''))
-        self.executor._daily_reserve_policy.refresh = self._refresh_reserve_activity
+        if not (getattr(self, '_runtime_overrides', None) or {}).get('_world_boss_material_only', False):
+            self.executor._daily_reserve_policy.refresh = self._refresh_reserve_activity
         try:
             with self.account_input_guard(self._guard_bound_profile_identity):
                 result = self._run_daily_inner()
@@ -478,10 +479,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         # validated master, never from stale Config fields.
         profile_runtime_config = self._readonly_profile_config()
         if material_only:
-            used_stamina, ready = self.open_daily()
-            self.ensure_main()
-            return self._run_world_boss_materials(
-                activity_ready=self._stamina_policy_activity_ready(ready), used_stamina=used_stamina)
+            # Like the standalone weekly entry, go straight to materials. This
+            # run uses current stamina only, with no daily reserve authorization.
+            return self._run_world_boss_materials(activity_ready=True, used_stamina=None)
         if self._runtime_overrides.get('_weekly_boss_only', False):
             return self.check_weekly_boss()
 

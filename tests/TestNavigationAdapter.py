@@ -9,6 +9,18 @@ from src.task.ui_transition import TransitionContextChanged, TransitionTimeout
 
 
 class TestNavigationAdapter(unittest.TestCase):
+    def test_activity_title_accepts_actual_mixed_script_ocr(self):
+        task = BaseWWTask.__new__(BaseWWTask)
+        task._guidebook_tab = Mock(return_value=object())
+        for title in ('活跃行迹', '活躍行跡', '活跃行跡', '活躍行迹'):
+            task.ocr = Mock(return_value=[SimpleNamespace(name=title)])
+            self.assertTrue(task._guidebook_content('gray_book_quest', None), title)
+        task.ocr = Mock(return_value=[SimpleNamespace(name='素材获取')])
+        self.assertFalse(task._guidebook_content('gray_book_quest', None))
+        task._guidebook_tab.return_value = None
+        task.ocr.return_value = [SimpleNamespace(name='活跃行跡')]
+        self.assertFalse(task._guidebook_content('gray_book_quest', None))
+
     def task(self, height=1080):
         task = BaseWWTask.__new__(BaseWWTask)
         width = height*16//9

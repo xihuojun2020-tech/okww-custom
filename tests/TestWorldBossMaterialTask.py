@@ -391,6 +391,7 @@ class TestWorldBossMaterialTask(unittest.TestCase):
             self.assertEqual(MaterialRunResult(1, 60, 'complete'), self.standalone_run(task))
         self.assertEqual({A: 1}, self.progress.counts())
         self.assertEqual('world_boss_material', task._completion_run_record['scope'])
+        task.open_daily.assert_not_called()
         task.record_last_completed.assert_not_called()
         task.check_weekly_boss.assert_not_called()
         task._run_profile_stamina.assert_not_called()
@@ -421,6 +422,7 @@ class TestWorldBossMaterialTask(unittest.TestCase):
                 else:
                     self.assertEqual(MaterialRunResult(0, 0, 'resource_shortfall'), self.standalone_run(task))
                 material.farm_cycle.assert_not_called()
+                task.open_daily.assert_not_called()
                 task._run_profile_stamina.assert_not_called()
                 task.record_last_completed.assert_not_called()
                 self.assertFalse(task._profile_run_active)
@@ -440,6 +442,25 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         self.assertEqual('previous', task._executor._daily_reserve_policy)
         self.assertTrue(task._executor.auto_combat_enabled)
         self.assertFalse(task._profile_run_active)
+
+    def test_standalone_resources_never_refresh_daily_or_convert_reserve(self):
+        material = self.runner()
+        task, _ = self.standalone_daily(material)
+        material.openF2Book = Mock()
+        material.prepare_daily_reserve = Mock(return_value=(59, 500, 559))
+        def resources(cost, ready, used):
+            self.assertTrue(ready)
+            self.assertIsNone(used)
+            self.assertIsNone(task.executor._daily_reserve_policy.refresh)
+            with patch.object(WorldBossMaterialTask, 'executor', new_callable=PropertyMock,
+                              return_value=task.executor):
+                return WorldBossMaterialTask._resources_for_claim(material, cost, ready, used)
+        material._resources_for_claim.side_effect = resources
+        result = self.standalone_run(task)
+        self.assertEqual(MaterialRunResult(0, 0, 'resource_shortfall'), result)
+        material.prepare_daily_reserve.assert_called_once_with(60, 0)
+        task.open_daily.assert_not_called()
+        self.assertEqual('previous', task.executor._daily_reserve_policy)
 
     def test_visible_entry_delegates_to_production_daily_boundary(self):
         task = object.__new__(WorldBossMaterialTask)
