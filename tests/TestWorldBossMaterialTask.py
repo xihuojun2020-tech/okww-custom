@@ -15,7 +15,7 @@ from src.task.MaterialPlannerTask import MaterialPlannerTask, MATERIAL_PLANNER
 from src.task.TacetTask import TacetTask
 from src.task.ForgeryTask import ForgeryTask
 from src.task.SimulationTask import SimulationTask
-from src.task.world_boss_materials import TARGETS_BY_ID, material_target_button, matches_health_title
+from src.task.world_boss_materials import TARGETS_BY_ID, material_target_button, matches_health_title, matches_health_title_boxes, matches_target
 from src.task.world_boss_material_plan import MATERIAL_TARGETS
 from src.task.world_boss_material_progress import WorldBossMaterialProgress
 
@@ -46,6 +46,7 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         task = object.__new__(WorldBossMaterialTask)
         task.config = {'Teleport to Boss': 'No', 'Boss': 'Other', 'Use Liberation': False}
         task.use_liberation = False
+        task.scene = Mock()
         task._in_realm = False
         for name in ('_stage', 'next_frame', 'manage_boss_parameters', 'teleport_to_configured_boss_and_prepare',
                      '_release_combat_inputs', 'send_key', 'back', 'click_box', 'screenshot', 'ensure_main', 'log_warning'):
@@ -234,6 +235,67 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         task.in_realm_check = Mock()
         self.assertTrue(task.on_combat_check())
         task.in_combat.assert_not_called()
+
+    def test_lady_health_full_name_and_split_level_without_broadening_list_names(self):
+        target = TARGETS_BY_ID['world_lady_of_the_sea']
+        self.assertTrue(matches_health_title('Lv.85海之女·荣光的灰烬', target))
+        self.assertTrue(matches_health_title('Lv.85海之女・荣光的灰烬', target))
+        self.assertFalse(matches_target('海之女·荣光的灰烬', target))
+        for value in ('梦魇·海之女·荣光的灰烬', '海之女·其他形态', '85海之女·荣光的灰烬'):
+            self.assertFalse(matches_health_title(value, target))
+        parts = [box('LV.', 1067, 20, 49), box('85海之女·荣光的灰烬', 1118, 20, 388)]
+        self.assertTrue(matches_health_title_boxes(parts, target, 1440))
+        parts[0].y = 80
+        self.assertFalse(matches_health_title_boxes(parts, target, 1440))
+        parts[0].y = 20
+        parts[1].x = 1300
+        self.assertFalse(matches_health_title_boxes(parts, target, 1440))
+
+    def test_standalone_entry_clears_stale_combat_before_delegated_navigation_and_on_failure(self):
+        task = self.runner()
+        task.config.update({'首领关卡': TARGETS_BY_ID[A].name, '领取次数': 1})
+        task._in_combat = True
+        task._in_liberation = True
+        task.skip_combat_check = True
+        task.in_combat = Mock(side_effect=AssertionError('stale combat sleep probe'))
+        daily = Mock()
+        def navigation(*args):
+            self.assertFalse(task._in_combat)
+            self.assertFalse(task.in_liberation)
+            self.assertFalse(task.skip_combat_check)
+            task.sleep_check()  # Executor dispatches sleep checks to the current material task.
+            task._in_combat = True
+            task.skip_combat_check = True
+            raise RuntimeError('battle failure')
+        daily.run_world_boss_material_only.side_effect = navigation
+        task.get_task_by_class = Mock(return_value=daily)
+        with self.assertRaisesRegex(RuntimeError, 'battle failure'):
+            task.run()
+        self.assertFalse(task._in_combat)
+        self.assertFalse(task.skip_combat_check)
+        task.in_combat.assert_not_called()
+
+    def test_profile_failure_clears_combat_state_and_allows_repeated_entry(self):
+        task = self.runner()
+        def fail(**kwargs):
+            task._in_combat = True
+            task._in_liberation = True
+            raise CombatStateUnknown('boss identity failed')
+        task.farm_cycle.side_effect = fail
+        with self.assertRaises(CombatStateUnknown):
+            self.run_task(task)
+        self.assertFalse(task._in_combat)
+        self.assertFalse(task.in_liberation)
+        self.assertFalse(task.skip_combat_check)
+        self.assertIsNone(task._material_target)
+        self.assertEqual({}, self.progress.counts())
+        self.assertEqual({}, self.progress.pending())
+        def next_resource_check(*args):
+            self.assertFalse(task._in_combat)
+            task.sleep_check()
+            return False
+        task._resources_for_claim.side_effect = next_resource_check
+        self.assertEqual(MaterialRunResult(0, 0, 'resource_shortfall'), self.run_task(task))
 
     def test_old_reward_without_verified_boss_never_claimed(self):
         task = self.runner()
@@ -464,6 +526,7 @@ class TestWorldBossMaterialTask(unittest.TestCase):
 
     def test_visible_entry_delegates_to_production_daily_boundary(self):
         task = object.__new__(WorldBossMaterialTask)
+        task.scene = Mock()
         task.config = {'首领关卡': TARGETS_BY_ID[B].name, '领取次数': 3}
         daily = Mock()
         daily.run_world_boss_material_only.return_value = MaterialRunResult(1, 60, 'complete')

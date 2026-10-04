@@ -8,7 +8,7 @@ from ok.task.exceptions import FinishedException
 from src.task.FarmEchoTask import FarmEchoTask
 from src.task.WeeklyBossTask import WeeklyBossTask
 from src.task.BaseCombatTask import CombatStateUnknown
-from src.task.world_boss_materials import WORLD_BOSS_TARGETS, TARGETS_BY_ID, material_target_button, matches_health_title, matches_target
+from src.task.world_boss_materials import WORLD_BOSS_TARGETS, TARGETS_BY_ID, material_target_button, matches_health_title_boxes, matches_target
 from src.task.world_boss_material_plan import material_plan, choose_material_target, material_plan_revision, validate_material_request
 from src.task.world_boss_material_progress import WorldBossMaterialProgress
 from src.task.weekly_boss import compact
@@ -79,7 +79,14 @@ class WorldBossMaterialTask(FarmEchoTask):
         name = self.config.get('首领关卡')
         boss = next((target.key for target in WORLD_BOSS_TARGETS if target.name == name), None)
         boss, claims = validate_material_request(boss, self.config.get('领取次数'))
-        return self.get_task_by_class(DailyTask).run_world_boss_material_only(boss, claims)
+        # Executor sleep checks still dispatch to this task during DailyTask navigation.
+        self.reset_to_false('material_entry')
+        self.skip_combat_check = False
+        try:
+            return self.get_task_by_class(DailyTask).run_world_boss_material_only(boss, claims)
+        finally:
+            self.reset_to_false('material_exit')
+            self.skip_combat_check = False
 
     def _current_material_plan(self, read_tasks):
         rows = self.__dict__.get('_material_run_rows')
@@ -157,7 +164,7 @@ class WorldBossMaterialTask(FarmEchoTask):
         def found():
             self.next_frame()
             boxes = self.ocr(.15, .0, .85, .10)
-            return any(matches_health_title(box.name, target) for box in boxes)
+            return matches_health_title_boxes(boxes, target, self.height)
         if not self.wait_until(found, time_out=5, raise_if_not_found=False):
             raise CombatStateUnknown('首领血条名称未确认，停止材料战斗')
         self._material_name_verified = True
@@ -298,8 +305,8 @@ class WorldBossMaterialTask(FarmEchoTask):
         self.use_liberation = self.config.get('Use Liberation', True)
         self._material_reenter = False
         self._in_realm = self._just_entered_boss_realm = self._has_treasure = False
-        self._in_combat = False
-        self.target_loss_started_at = None
+        self.reset_to_false('material_profile_entry')
+        self.skip_combat_check = False
         try:
             while True:
                 guard()
@@ -353,3 +360,5 @@ class WorldBossMaterialTask(FarmEchoTask):
                 self._material_phase = 'idle'
                 self._material_balance = None
                 self._material_name_verified = self._material_reenter = False
+                self.reset_to_false('material_profile_exit')
+                self.skip_combat_check = False
