@@ -260,7 +260,7 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         if self._story_entry_warning(frame):
             return self._button((.55, .59, .76, .67), '确认', frame)
 
-    def _open_weekly_target(self, boss, *, button_match=None, title_match=None, label='周本'):
+    def _open_weekly_target(self, boss, *, button_match=None, title_match=None, label='周本', formation_ready=None):
         button_match = button_match or (lambda boxes: match_target_button(boxes, boss.name, self.height))
         title_match = title_match or (lambda text: boss_title(text) == boss.name)
         submitted = False
@@ -269,6 +269,10 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         def destination(frame):
             if self._story_entry_warning(frame):
                 return False
+            # World bosses can enter formation straight from the named row.
+            # Accept it only after this transition submitted that exact entry.
+            if submitted and formation_ready and formation_ready(frame):
+                return True
             matching = title_match(self._text(self.TITLE, frame))
             single = self._button(self.SINGLE, '单人挑战', frame)
             if single and not matching:

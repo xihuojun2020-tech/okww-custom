@@ -119,12 +119,18 @@ class WorldBossMaterialTask(FarmEchoTask):
             return current if current and compact(current.name) == compact(button.name) else None
         if compact(button.name) == '直接挑战':
             WeeklyBossTask._open_weekly_target(self, target, button_match=match_button,
-                title_match=lambda text: matches_target(text, target), label='首领材料')
+                title_match=lambda text: matches_target(text, target), label='首领材料',
+                formation_ready=self._material_formation_ready)
             return True
         self.navigate_ui('首领材料前往地图',
             lambda frame: match_button(self._ocr(self.LIST, frame)), self._travel_button,
             identity=target.key)
         return False
+
+    def _material_formation_ready(self, frame):
+        # A start label alone cannot prove this is the challenge formation.
+        return bool(self._button(self.START, '开启挑战', frame)
+                    and self._button((.62, .864, .76, .95), '快速编队', frame))
 
     def teleport_to_configured_boss(self):
         self.ensure_main(time_out=180)

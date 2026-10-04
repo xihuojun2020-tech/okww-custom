@@ -65,6 +65,37 @@ class TestWorldBossMaterialNavigation(unittest.TestCase):
         self.assertTrue(task.teleport_to_configured_boss())
         self.assertEqual(4, task.click_relative.call_count)
 
+    def formation(self, task, *, quick=True, entry=True):
+        task._ocr = Mock(side_effect=lambda *args: [self.title, self.button]
+                         if entry and not task.click_relative.called else [])
+        task._text = lambda region, frame: '' if region == (.25, .43, .75, .53) else '队伍1'
+        task._button = lambda region, text, frame: self.button if (
+            (task.click_relative.call_count == 1 or not entry) and (
+                region == task.START and text == '开启挑战' or
+                quick and region == (.62, .864, .76, .95) and text == '快速编队')) else None
+        task.in_team_and_world = lambda **kwargs: task.click_relative.call_count >= 2
+
+    def test_direct_formation_skips_absent_detail_and_single_then_starts_once(self):
+        task = self.task()
+        self.formation(task)
+        self.assertTrue(task.teleport_to_configured_boss())
+        self.assertEqual(2, task.click_relative.call_count)
+        task.wait_click_travel.assert_not_called()
+
+    def test_start_label_without_quick_formation_does_not_prove_destination(self):
+        task = self.task()
+        self.formation(task, quick=False)
+        with self.assertRaises(TransitionTimeout):
+            task.teleport_to_configured_boss()
+        self.assertEqual(1, task.click_relative.call_count)
+
+    def test_unsubmitted_formation_cannot_bypass_named_target_selection(self):
+        task = self.task()
+        self.formation(task, entry=False)
+        with self.assertRaises(TransitionTimeout):
+            task._open_material_target(task._material_target, self.button)
+        task.click_relative.assert_not_called()
+
     def test_wrong_boss_detail_stops_before_single_or_start(self):
         task = self.task()
         self.direct(task, wrong=True)
