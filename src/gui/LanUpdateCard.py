@@ -7,7 +7,6 @@ from pathlib import Path
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
-from qfluentwidgets import MessageBox
 
 from src.account_config_editor import sanitize_error
 from src.gui.BackgroundOperation import BackgroundOperation
@@ -32,7 +31,7 @@ class LanUpdateCard(SectionPanel):
         self.add_action(self.action)
         self.add_widget(self.status)
         self.set_summary(f'当前版本：{current_version}')
-        self.set_description('从已配置的局域网发布源检查更新；下载后验证完整性，确认后安装并重启。')
+        self.set_description('从已配置的局域网发布源检查更新；选择下载并安装后，验证通过即退出、安装并重启。')
         self.operation = BackgroundOperation(self, (self.action,))
         result_path = self.config_path.parent / 'update-result.json'
         try:
@@ -66,9 +65,6 @@ class LanUpdateCard(SectionPanel):
         self.operation.start(work, complete, self._failed, timeout_ms=20000)
 
     def _download(self):
-        if getattr(self.executor, "current_task", None) is not None:
-            self._show_status("自动化任务运行中，停止任务后才能安装更新")
-            return
         root = Path(__file__).resolve().parents[2]
         self._show_status('正在下载并验证更新…')
         release, service = self.release, self.service
@@ -79,17 +75,8 @@ class LanUpdateCard(SectionPanel):
                 release, archive, root, [sys.executable, str(root / "main.py")])
 
         def complete(request):
-            dialog = MessageBox("安装局域网更新",
-                                f"已验证版本 {release.version}。程序将退出、安装并自动重启，是否继续？", self.window())
-            dialog.yesButton.setText("安装并重启")
-            dialog.cancelButton.setText("取消")
-            if dialog.exec():
-                if getattr(self.executor, 'current_task', None) is not None:
-                    self._show_status('自动化任务运行中，停止任务后才能安装更新')
-                else:
-                    self.apply_requested.emit(request)
-            else:
-                self._show_status("安装已取消，当前版本未改变")
+            self._show_status(f'已验证版本 {release.version}，正在安装并重启…')
+            self.apply_requested.emit(request)
 
         self.operation.start(work, complete, self._failed)
 
