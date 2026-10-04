@@ -76,6 +76,7 @@ class WorldBossMaterialTask(FarmEchoTask):
         self._material_progress = None
         self._material_phase = 'idle'
         self._material_name_verified = False
+        self._material_retry_plan = None
         self.combat_end_condition = self._material_combat_finished
 
     def _stage(self, message):
@@ -293,6 +294,17 @@ class WorldBossMaterialTask(FarmEchoTask):
         cost = self._read_claim_cost()
         return ('selection', (cost,)) if cost is not None else None
 
+    def _material_settlement_stamina(self):
+        previous = None
+        def read():
+            nonlocal previous
+            current = self.get_settlement_stamina()
+            stable = current >= 0 and current == previous
+            previous = current
+            return (current,) if stable else None  # Zero is a valid observed balance.
+        observed = self.wait_until(read, time_out=6, raise_if_not_found=False)
+        return observed[0] if observed else None
+
     def _claim_material_reward(self, read_tasks, guard, activity_ready, used_stamina):
         self._material_phase = 'reward'
         self._stage('寻找领取奖励入口')
@@ -304,7 +316,8 @@ class WorldBossMaterialTask(FarmEchoTask):
             self._stage('目标已修改，未执行领取')
             return None
         # Begin before F: a changed layout must not trigger an unjournaled claim.
-        event = self._material_progress.begin(choice[0], self._material_target.cost, material_plan_revision(rows))
+        revision = material_plan_revision(rows)
+        event = self._material_progress.begin(choice[0], self._material_target.cost, revision)
         self.send_key('f', after_sleep=.6)
         previous = None
         dialog_seen = False
@@ -380,10 +393,29 @@ class WorldBossMaterialTask(FarmEchoTask):
         self._has_treasure = True
         self._material_phase = 'idle'
         if self._in_realm:
-            self._stage('材料领取已保存，等待结算页后退出副本')
+            self._stage('材料领取已保存，等待结算页决定重新挑战或退出')
             if not self.wait_until(self._settlement, time_out=20, raise_if_not_found=False):
                 raise CombatStateUnknown('材料领取已保存，但结算页未确认；未重复领取')
-            self._leave_settlement(False)
+            remaining = self._material_settlement_stamina()
+            guard()
+            current_rows = self._current_material_plan(read_tasks)
+            next_target = choose_material_target(current_rows, self._material_progress.counts())
+            policy = getattr(self.executor, '_daily_reserve_policy', None)
+            retry = bool(next_target and next_target[0] == choice[0]
+                         and material_plan_revision(current_rows) == revision
+                         and remaining is not None and remaining >= actual_cost
+                         and not getattr(policy, 'refresh_required', False)
+                         and not getattr(policy, 'pending_conversion', False))
+            self._stage(f'结算剩余体力 {remaining}；' + ('同一目标仍需领取，重新挑战' if retry else '退出副本复核目标与体力'))
+            self._leave_settlement(retry)
+            if retry:
+                reserve = self._material_balance[1]
+                self._material_balance = (remaining, reserve, remaining + reserve)
+                self._material_retry_plan = (choice[0], revision)
+                self._material_reenter = self._has_treasure = False
+                self._just_entered_boss_realm = True
+                return used
+        self._material_retry_plan = None
         # Close any generic reward view before the next guidebook/resource check.
         self.ensure_main(time_out=60)
         self._material_reenter = self._in_realm
@@ -406,6 +438,7 @@ class WorldBossMaterialTask(FarmEchoTask):
         self.config = deepcopy(dict(original_config))
         self.use_liberation = self.config.get('Use Liberation', True)
         self._material_reenter = False
+        self._material_retry_plan = None
         self._in_realm = self._just_entered_boss_realm = self._has_treasure = False
         self.reset_to_false('material_profile_entry')
         self.skip_combat_check = False
@@ -414,13 +447,17 @@ class WorldBossMaterialTask(FarmEchoTask):
                 guard()
                 rows = self._current_material_plan(read_tasks)
                 choice = choose_material_target(rows, progress.counts())
+                if self._material_retry_plan is not None and (
+                        not choice or (choice[0], material_plan_revision(rows)) != self._material_retry_plan):
+                    raise CombatStateUnknown('重新挑战后材料目标或计划变化，不继续战斗或领取')
                 if not choice:
                     enabled = any(row['boss'] != 'none' and row['limit'] > 0 for row in rows)
                     return MaterialRunResult(claimed, spent, 'complete' if enabled else 'plan_disabled')
                 self._material_target = TARGETS_BY_ID[choice[0]]
                 self._stage(f'{self._material_target.name}：还需 {choice[1]} 次')
                 consumed = None if used_stamina is None else used_stamina + spent
-                if not self._resources_for_claim(self._material_target.cost, activity_ready, consumed):
+                if self._material_retry_plan is None and not self._resources_for_claim(
+                        self._material_target.cost, activity_ready, consumed):
                     return MaterialRunResult(claimed, spent, 'resource_shortfall')
                 if self._material_reenter:
                     current_target = None
@@ -462,6 +499,7 @@ class WorldBossMaterialTask(FarmEchoTask):
                 self.use_liberation = original_liberation
                 self._material_target = self._material_progress = None
                 self._material_run_rows = None
+                self._material_retry_plan = None
                 self._material_phase = 'idle'
                 self._material_balance = None
                 self._material_name_verified = self._material_reenter = False

@@ -91,8 +91,10 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         task.use_stamina = Mock(return_value=(True, 60))
         task._confirm_stamina_used = Mock(return_value=(120, 100, 220))
         task._claim_confirmation = Mock(return_value=None)
+        task._task_hint_phase = Mock(return_value='post')
         task._settlement = Mock(return_value=(box('退出副本'), box('重新挑战')))
         task._leave_settlement = Mock()
+        task.get_settlement_stamina = Mock(return_value=120)
         task.has_claim = task.has_claim_stamina = Mock(return_value=False)
         task._text = Mock(return_value='')
         def wait(probe, **kwargs):
@@ -333,6 +335,7 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         self.assertEqual({}, self.progress.pending())
 
     def test_realm_claim_exits_settlement_before_ensuring_main_and_keeps_count(self):
+        self.tasks = plan((1, 0, 0))
         task = self.claim_task('confirm')
         task._in_realm = True
         task.ensure_main.side_effect = lambda **kw: self.assertTrue(task._leave_settlement.called)
@@ -343,6 +346,7 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         self.assertTrue(task._material_reenter)
 
     def test_settlement_animation_is_waited_before_exit_without_reclaiming(self):
+        self.tasks = plan((1, 0, 0))
         task = self.claim_task('confirm')
         task._in_realm = True
         task._settlement.side_effect = [None, (box('退出副本'), box('重新挑战'))]
@@ -365,6 +369,7 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         task.click_box.assert_called_once()
 
     def test_settlement_exit_failure_preserves_success_without_reclaim(self):
+        self.tasks = plan((1, 0, 0))
         task = self.claim_task('confirm')
         task._in_realm = True
         task._leave_settlement.side_effect = RuntimeError('退出加载超时')
@@ -382,6 +387,117 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         task._leave_settlement.assert_not_called()
         task.ensure_main.assert_called_once_with(time_out=60)
         self.assertFalse(task._material_reenter)
+
+    def test_same_boss_three_claims_retry_twice_without_reopening_guide(self):
+        task = self.claim_task('confirm')
+        self.tasks = plan((3, 0, 0))
+        task.teleport_to_configured_boss_and_prepare.side_effect = lambda: setattr(task, '_in_realm', True)
+        task.get_settlement_stamina.side_effect = [120, 120, 60, 60, 0, 0]
+        self.assertEqual(MaterialRunResult(3, 180, 'complete'), self.run_task(task))
+        self.assertEqual([True, True, False], [call.args[0] for call in task._leave_settlement.call_args_list])
+        task._resources_for_claim.assert_called_once()
+        task.teleport_to_configured_boss_and_prepare.assert_called_once()
+        task.ensure_main.assert_called_once_with(time_out=60)
+        self.assertEqual(3, task.farm_cycle.call_count)
+        self.assertEqual(3, task.pickup_dropped_echo.call_count)
+        self.assertEqual(3, task.click_box.call_count)
+        self.assertEqual({A: 3}, self.progress.counts())
+
+    def test_standalone_two_claims_use_settlement_retry_and_frozen_threshold(self):
+        task = self.claim_task('confirm')
+        self.progress.correct(A, 4)
+        task.teleport_to_configured_boss_and_prepare.side_effect = lambda: setattr(task, '_in_realm', True)
+        self.assertEqual(MaterialRunResult(2, 120, 'complete'), task.run_for_profile(
+            'account-a', lambda: self.tasks, Mock(), self.service,
+            activity_ready=True, used_stamina=0, request=(A, 2)))
+        self.assertEqual([True, False], [call.args[0] for call in task._leave_settlement.call_args_list])
+        task._resources_for_claim.assert_called_once()
+        self.assertEqual({A: 6}, self.progress.counts())
+
+    def test_retry_prepares_new_battle_without_generic_restart_or_return(self):
+        task = self.claim_task('confirm')
+        task._in_realm = True
+        self.assertEqual(60, self.claim(task))
+        task._leave_settlement.assert_called_once_with(True)
+        task.ensure_main.assert_not_called()
+        self.assertTrue(task._just_entered_boss_realm)
+        self.assertFalse(task._has_treasure)
+        self.assertFalse(task._material_reenter)
+
+    def test_completed_target_exits_then_enters_second_boss_normally(self):
+        task = self.claim_task('confirm')
+        self.tasks = plan((1, 1, 0))
+        task.teleport_to_configured_boss_and_prepare.side_effect = lambda: setattr(task, '_in_realm', True)
+        self.assertEqual(MaterialRunResult(2, 120, 'complete'), self.run_task(task))
+        self.assertEqual([False, False], [call.args[0] for call in task._leave_settlement.call_args_list])
+        self.assertEqual(2, task._resources_for_claim.call_count)
+        self.assertEqual(2, task.teleport_to_configured_boss_and_prepare.call_count)
+        self.assertEqual({A: 1, B: 1}, self.progress.counts())
+
+    def test_insufficient_or_unknown_settlement_stamina_exits_without_retry(self):
+        for remaining in (59, -1):
+            with self.subTest(remaining=remaining):
+                self.progress.correct(A, 0)
+                task = self.claim_task('confirm')
+                task._in_realm = True
+                task.get_settlement_stamina.return_value = remaining
+                self.assertEqual(60, self.claim(task))
+                task._leave_settlement.assert_called_once_with(False)
+                self.assertEqual({A: 1}, self.progress.counts())
+
+    def test_changed_plan_and_required_activity_refresh_forbid_retry(self):
+        for changed_plan in (True, False):
+            with self.subTest(changed_plan=changed_plan):
+                self.progress.correct(A, 0)
+                self.tasks = plan()
+                task = self.claim_task('confirm')
+                task._in_realm = True
+                if changed_plan:
+                    def change():
+                        self.tasks = plan((3, 1, 0))
+                        return 120
+                    task.get_settlement_stamina.side_effect = change
+                policy = SimpleNamespace(refresh_required=not changed_plan, pending_conversion=False)
+                with patch.object(WorldBossMaterialTask, 'executor', new_callable=PropertyMock,
+                                  return_value=SimpleNamespace(_daily_reserve_policy=policy)):
+                    policy.spend = Mock()
+                    self.assertEqual(60, self.claim(task))
+                task._leave_settlement.assert_called_once_with(False)
+
+    def test_retry_navigation_failure_keeps_claim_without_repeated_confirmation(self):
+        task = self.claim_task('confirm')
+        task._in_realm = True
+        task._leave_settlement.side_effect = RuntimeError('重新挑战加载超时')
+        with self.assertRaisesRegex(RuntimeError, '重新挑战加载超时'):
+            self.claim(task)
+        task._leave_settlement.assert_called_once_with(True)
+        self.assertEqual({A: 1}, self.progress.counts())
+        self.assertEqual({}, self.progress.pending())
+        task.click_box.assert_called_once()
+
+    def test_plan_change_after_retry_stops_before_second_fight_or_guide(self):
+        task = self.claim_task('confirm')
+        task.teleport_to_configured_boss_and_prepare.side_effect = lambda: setattr(task, '_in_realm', True)
+        def changed_guard():
+            if task._leave_settlement.called:
+                self.tasks = plan((0, 1, 0))
+        with self.assertRaisesRegex(CombatStateUnknown, '重新挑战后.*目标'):
+            self.run_task(task, Mock(side_effect=changed_guard))
+        task.farm_cycle.assert_called_once()
+        task._resources_for_claim.assert_called_once()
+        self.assertEqual({A: 1}, self.progress.counts())
+
+    def test_manual_stop_after_saved_claim_prevents_retry_and_preserves_success(self):
+        task = self.claim_task('confirm')
+        task._in_realm = True
+        def stop_after_claim():
+            if self.progress.counts().get(A, 0):
+                raise TaskDisabledException('manual stop')
+        with self.assertRaises(TaskDisabledException):
+            self.claim(task, Mock(side_effect=stop_after_claim))
+        task._leave_settlement.assert_not_called()
+        self.assertEqual({A: 1}, self.progress.counts())
+        self.assertEqual({}, self.progress.pending())
 
     def test_material_claim_handler_never_uses_echo_cancellation(self):
         task = self.runner()
