@@ -91,6 +91,8 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         task.use_stamina = Mock(return_value=(True, 60))
         task._confirm_stamina_used = Mock(return_value=(120, 100, 220))
         task._claim_confirmation = Mock(return_value=None)
+        task._settlement = Mock(return_value=(box('退出副本'), box('重新挑战')))
+        task._leave_settlement = Mock()
         task.has_claim = task.has_claim_stamina = Mock(return_value=False)
         task._text = Mock(return_value='')
         def wait(probe, **kwargs):
@@ -329,6 +331,57 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         task.use_stamina.assert_not_called()
         self.assertEqual({A: 1}, self.progress.counts())
         self.assertEqual({}, self.progress.pending())
+
+    def test_realm_claim_exits_settlement_before_ensuring_main_and_keeps_count(self):
+        task = self.claim_task('confirm')
+        task._in_realm = True
+        task.ensure_main.side_effect = lambda **kw: self.assertTrue(task._leave_settlement.called)
+        self.assertEqual(60, self.claim(task))
+        task._leave_settlement.assert_called_once_with(False)
+        self.assertEqual({A: 1}, self.progress.counts())
+        self.assertEqual({}, self.progress.pending())
+        self.assertTrue(task._material_reenter)
+
+    def test_settlement_animation_is_waited_before_exit_without_reclaiming(self):
+        task = self.claim_task('confirm')
+        task._in_realm = True
+        task._settlement.side_effect = [None, (box('退出副本'), box('重新挑战'))]
+        self.assertEqual(60, self.claim(task))
+        self.assertEqual(2, task._settlement.call_count)
+        task._leave_settlement.assert_called_once_with(False)
+        task.click_box.assert_called_once()
+        task.send_key.assert_called_once_with('f', after_sleep=.6)
+
+    def test_unknown_settlement_after_debit_keeps_success_and_does_not_exit_or_reclaim(self):
+        task = self.claim_task('confirm')
+        task._in_realm = True
+        task._settlement.return_value = None
+        with self.assertRaisesRegex(CombatStateUnknown, '已保存.*结算'):
+            self.claim(task)
+        self.assertEqual({A: 1}, self.progress.counts())
+        self.assertEqual({}, self.progress.pending())
+        task._leave_settlement.assert_not_called()
+        task.ensure_main.assert_not_called()
+        task.click_box.assert_called_once()
+
+    def test_settlement_exit_failure_preserves_success_without_reclaim(self):
+        task = self.claim_task('confirm')
+        task._in_realm = True
+        task._leave_settlement.side_effect = RuntimeError('退出加载超时')
+        with self.assertRaisesRegex(RuntimeError, '退出加载超时'):
+            self.claim(task)
+        self.assertEqual({A: 1}, self.progress.counts())
+        self.assertEqual({}, self.progress.pending())
+        task.ensure_main.assert_not_called()
+        task.click_box.assert_called_once()
+
+    def test_overworld_reward_keeps_existing_return_without_realm_buttons(self):
+        task = self.claim_task()
+        self.assertEqual(60, self.claim(task))
+        task._settlement.assert_not_called()
+        task._leave_settlement.assert_not_called()
+        task.ensure_main.assert_called_once_with(time_out=60)
+        self.assertFalse(task._material_reenter)
 
     def test_material_claim_handler_never_uses_echo_cancellation(self):
         task = self.runner()

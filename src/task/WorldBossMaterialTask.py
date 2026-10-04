@@ -38,6 +38,12 @@ class WorldBossMaterialTask(FarmEchoTask):
     _seek_reward_interaction = WeeklyBossTask._seek_reward_interaction
     _release_movement = WeeklyBossTask._release_movement
     _claim_confirmation = WeeklyBossTask._claim_confirmation
+    _settlement = WeeklyBossTask._settlement
+    _leave_settlement = WeeklyBossTask._leave_settlement
+    SUCCESS = WeeklyBossTask.SUCCESS
+    EXIT = WeeklyBossTask.EXIT
+    RETRY = WeeklyBossTask.RETRY
+    REWARDS = WeeklyBossTask.REWARDS
     CLAIM_TITLE = WeeklyBossTask.CLAIM_TITLE
     CLAIM_MESSAGE = WeeklyBossTask.CLAIM_MESSAGE
     CLAIM_CONFIRM = WeeklyBossTask.CLAIM_CONFIRM
@@ -373,6 +379,11 @@ class WorldBossMaterialTask(FarmEchoTask):
             self.log_warning(f'材料领奖已保存，证据截图失败：{error}')
         self._has_treasure = True
         self._material_phase = 'idle'
+        if self._in_realm:
+            self._stage('材料领取已保存，等待结算页后退出副本')
+            if not self.wait_until(self._settlement, time_out=20, raise_if_not_found=False):
+                raise CombatStateUnknown('材料领取已保存，但结算页未确认；未重复领取')
+            self._leave_settlement(False)
         # Close any generic reward view before the next guidebook/resource check.
         self.ensure_main(time_out=60)
         self._material_reenter = self._in_realm

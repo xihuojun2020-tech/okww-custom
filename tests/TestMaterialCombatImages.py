@@ -74,6 +74,18 @@ class TestMaterialCombatImages(TaskTestCase):
         shape, (cost, stamina, button) = self.task._claim_dialog()
         self.assertEqual(('confirm', 60, 123, '确认'), (shape, cost, stamina, button.name))
 
+    def test_actual_material_settlement_uses_weekly_exit_not_retry(self):
+        self.load('reward_settlement')
+        buttons = self.task._settlement()
+        self.assertEqual(('退出副本', '重新挑战'), tuple(button.name for button in buttons))
+        self.assertEqual(73, self.task.get_settlement_stamina())
+        def navigate(step, source, target, **kwargs):
+            self.assertEqual('退出副本', source(self.task.frame).name)
+            self.assertFalse(target(self.task.frame))
+        with patch.object(self.task, 'navigate_ui', side_effect=navigate) as navigation:
+            self.task._leave_settlement(False)
+        navigation.assert_called_once()
+
 
 if __name__ == '__main__':
     unittest.main()
