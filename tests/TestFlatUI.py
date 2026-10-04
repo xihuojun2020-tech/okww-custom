@@ -34,6 +34,37 @@ def example_task(name='周本挑战'):
 
 
 class TestFlatUI(unittest.TestCase):
+    def test_material_entry_has_start_button_and_only_relevant_combat_controls(self):
+        from ok.gui.tasks.TaskCard import TaskCard
+        from src.task.WorldBossMaterialTask import WorldBossMaterialTask
+        owner = SimpleNamespace(scene=None, text_fix={}, remove_onetime_task=Mock(), _wake_executor=Mock(),
+                                global_config=SimpleNamespace(get_config=lambda _: {}))
+        source = WorldBossMaterialTask(executor=owner, app=None)
+        self.assertTrue(source.visible)
+        task = type('WorldBossMaterialTask', (), {})()
+        task.__dict__.update(vars(example_task()))
+        for key in ('name', 'description', 'instructions', 'default_config', 'config_description', 'config_type'):
+            setattr(task, key, getattr(source, key))
+        task.config = MemoryConfig(source.default_config)
+        with patch.object(og, 'app', SimpleNamespace(tr=str)), \
+                patch.object(og, 'executor', SimpleNamespace(waiting_for_task=lambda _: '')):
+            card = TaskCard(task, True, fluent_sample=True)
+            try:
+                self.assertIsNotNone(card.start_button)
+                self.assertEqual({'Use Liberation', 'Switch to Healer before and after Combat'},
+                                 set(card.config_widget_by_key))
+                self.assertIn('当前账号', card.card.contentLabel.text())
+                card.setExpand(True)
+                card.resize(1000, card.sizeHint().height())
+                card.show()
+                QApplication.processEvents()
+                destination = Path('test_out/material-standalone-card.png')
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                self.assertTrue(card.grab().save(str(destination)))
+            finally:
+                card.close()
+                card.deleteLater()
+
     def test_resonance_executable_card_exposes_combat_controls_and_evidence(self):
         from ok.gui.tasks.TaskCard import TaskCard
         from src.task.ResonanceSimulationTask import ResonanceSimulationTask
@@ -652,6 +683,7 @@ class TestFlatUI(unittest.TestCase):
 
     def test_settings_header_action_and_account_groups(self):
         from src.gui.FlatSettingGroup import FlatActionSettingCard
+        from src.task.weekly_boss_plan import WEEKLY_PLAN
         from PySide6.QtTest import QTest
         card = FlatActionSettingCard('导出', None, '账号配置', '范围说明')
         callback = Mock()
@@ -670,7 +702,7 @@ class TestFlatUI(unittest.TestCase):
             self.assertTrue(all(not section.toggle_button.isChecked() for section in tab.form_sections.values()))
             self.assertEqual(tab.form_sections[0].title, '日常与声骸')
             self.assertEqual(tab.form_sections[1].title, '周常安排')
-            self.assertTrue(tab.form_sections[1].isAncestorOf(tab.form_widgets['Weekly Boss Target']))
+            self.assertTrue(tab.form_sections[1].isAncestorOf(tab.form_widgets[WEEKLY_PLAN]))
             self.assertTrue(tab.identity_group.isAncestorOf(tab.sequence_group))
             tab.deleteLater()
 

@@ -599,7 +599,8 @@ class CompletionCheckTab(QWidget):
         record = self._run_record or {}
         results = {'running': '未记录结束（结果未确认）', 'returned': '正常返回（不代表全部完成）',
                    'failed': '执行出错', 'stopped': '已停止'}
-        lines = ['最近执行范围：' + ('周本单独执行' if record.get('scope') == 'weekly_boss' else '每日任务' if record else '无记录'),
+        scopes = {'weekly_boss': '周本单独执行', 'world_boss_material': '首领材料单独执行', 'daily': '每日任务'}
+        lines = ['最近执行范围：' + (scopes.get(record.get('scope'), '每日任务') if record else '无记录'),
                  '最近开始时间：' + str(record.get('started_at') or '无记录'),
                  '最近结束时间：' + str(record.get('finished_at') or '无记录'),
                  '最近执行结果：' + results.get(record.get('result'), '无记录')]

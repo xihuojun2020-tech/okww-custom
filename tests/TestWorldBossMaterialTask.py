@@ -352,3 +352,119 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         children[WorldBossMaterialTask].run_for_profile.side_effect = RuntimeError('待核验')
         with self.assertRaises(RuntimeError):
             task._run_profile_stamina(self.tasks, activity_ready=True, used_stamina=180)
+
+    def standalone_daily(self, material):
+        task, children = self.daily()
+        task._executor = SimpleNamespace(_daily_reserve_policy='previous', auto_combat_enabled=True)
+        task.config = {}
+        task._runtime_overrides = {}
+        task.clear_profile_binding = Mock()
+        task._ensure_run_account_confirmation = Mock()
+        task._readonly_profile_config = Mock(side_effect=lambda: self.tasks)
+        task._sync_sequence_options = task.ensure_daily_profiles = Mock()
+        task.get_active_profile_name = Mock(return_value='Test account A')
+        task.validate_daily_tasks = Mock(side_effect=AssertionError('unrelated daily validation'))
+        task.check_weekly_boss = Mock(side_effect=AssertionError('weekly boss must not run'))
+        task._run_profile_stamina = Mock(side_effect=AssertionError('normal stamina must not run'))
+        task.record_last_completed = Mock()
+        children[WorldBossMaterialTask] = material
+        return task, children
+
+    def standalone_run(self, task):
+        with patch('src.task.DailyTask.require_account_runtime_for_task'), \
+                patch.object(task.integrity_service, 'guard_task_start'), \
+                patch.object(DailyTask, 'logged_in', False), \
+                patch('src.task.DailyTask.WWOneTimeTask.run'):
+            return task.run_world_boss_material_only()
+
+    def test_standalone_real_claim_ledger_is_seen_by_next_daily_entry(self):
+        self.tasks = plan((1, 0, 0))
+        material = self.runner()
+        def claim(*args):
+            event = material._material_progress.begin(A, 60, 'test')
+            material._material_progress.resolve(event, True)
+            return 60
+        material._claim_material_reward = Mock(side_effect=claim)
+        task, children = self.standalone_daily(material)
+        with patch('src.evidence.service.begin_daily_run') as begin:
+            begin.side_effect = lambda daily: {'scope': 'world_boss_material', 'profile_id': daily._active_profile_id()}
+            self.assertEqual(MaterialRunResult(1, 60, 'complete'), self.standalone_run(task))
+        self.assertEqual({A: 1}, self.progress.counts())
+        self.assertEqual('world_boss_material', task._completion_run_record['scope'])
+        task.record_last_completed.assert_not_called()
+        task.check_weekly_boss.assert_not_called()
+        task._run_profile_stamina.assert_not_called()
+        for cls, method in ((TacetTask, 'farm_tacet'), (ForgeryTask, 'farm_forgery'),
+                            (SimulationTask, 'farm_simulation'), (MaterialPlannerTask, 'run_for_profile')):
+            getattr(children[cls], method).assert_not_called()
+        self.assertEqual('previous', task._executor._daily_reserve_policy)
+        self.assertTrue(task._executor.auto_combat_enabled)
+        self.assertEqual({}, task._runtime_overrides)
+        material.farm_cycle.reset_mock()
+        self.assertEqual(MaterialRunResult(0, 0, 'complete'), self.run_task(material))
+        material.farm_cycle.assert_not_called()
+
+    def test_standalone_disabled_complete_shortfall_and_pending_do_not_fallback(self):
+        for mode in ('disabled', 'complete', 'shortfall', 'pending'):
+            with self.subTest(mode=mode):
+                self.tasks = plan((0, 0, 0) if mode == 'disabled' else (1, 0, 0))
+                self.progress.correct(A, 1 if mode == 'complete' else 0)
+                material = self.runner()
+                material._resources_for_claim.return_value = False
+                task, children = self.standalone_daily(material)
+                task.open_daily.return_value = (None, None)
+                event = self.progress.begin(A, 60, 'test') if mode == 'pending' else None
+                if event:
+                    with self.assertRaisesRegex(RuntimeError, '待核验'):
+                        self.standalone_run(task)
+                    self.progress.resolve(event, False)
+                else:
+                    status = {'disabled': 'plan_disabled', 'complete': 'complete', 'shortfall': 'resource_shortfall'}[mode]
+                    self.assertEqual(MaterialRunResult(0, 0, status), self.standalone_run(task))
+                material.farm_cycle.assert_not_called()
+                task._run_profile_stamina.assert_not_called()
+                task.record_last_completed.assert_not_called()
+                self.assertFalse(task._profile_run_active)
+                self.assertEqual({}, task._runtime_overrides)
+                self.assertEqual('previous', task._executor._daily_reserve_policy)
+
+    def test_standalone_stop_restores_scope_policy_and_releases_inputs(self):
+        material = self.runner()
+        material.farm_cycle.side_effect = TaskDisabledException('manual stop')
+        task, _ = self.standalone_daily(material)
+        task._runtime_overrides = {'unrelated': True}
+        with self.assertRaises(TaskDisabledException):
+            self.standalone_run(task)
+        material._release_combat_inputs.assert_called_once()
+        task.record_last_completed.assert_not_called()
+        self.assertEqual({'unrelated': True}, task._runtime_overrides)
+        self.assertEqual('previous', task._executor._daily_reserve_policy)
+        self.assertTrue(task._executor.auto_combat_enabled)
+        self.assertFalse(task._profile_run_active)
+
+    def test_visible_entry_delegates_to_production_daily_boundary(self):
+        task = object.__new__(WorldBossMaterialTask)
+        daily = Mock()
+        daily.run_world_boss_material_only.return_value = MaterialRunResult(1, 60, 'complete')
+        task.get_task_by_class = Mock(return_value=daily)
+        self.assertEqual(MaterialRunResult(1, 60, 'complete'), task.run())
+        task.get_task_by_class.assert_called_once_with(DailyTask)
+        daily.run_world_boss_material_only.assert_called_once_with()
+
+    def test_material_confirmation_describes_only_real_material_claims(self):
+        from ok import og
+        task, _ = self.daily()
+        task._runtime_overrides = {'_world_boss_material_only': True}
+        task._verified_profile_name = 'A1-Test'
+        task._readonly_profile_config = Mock(return_value=self.tasks)
+        task._profile_get.side_effect = AssertionError('unrelated daily setting in material prompt')
+        bridge = Mock()
+        bridge.confirm.return_value = True
+        with patch.object(og, 'main_window', SimpleNamespace(daily_run_confirmation=bridge)):
+            self.assertTrue(task._confirm_standalone_profile())
+        text = bridge.confirm.call_args.args[1]
+        self.assertIn('本次只执行世界首领突破材料', text)
+        self.assertIn(WORLD_BOSS_TARGETS[0].name, text)
+        self.assertIn('累计上限 2 次', text)
+        self.assertIn('实际消耗体力', text)
+        self.assertNotIn('Weekly garden', text)

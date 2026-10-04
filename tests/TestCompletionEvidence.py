@@ -268,6 +268,31 @@ class TestCompletionEvidence(unittest.TestCase):
                 self.assertIsNone(begin_daily_run(task))
                 finish_daily_run(task, 'failed')
 
+    def test_material_run_scope_and_capture_binding_only_exist_during_standalone_run(self):
+        from unittest.mock import Mock
+        from src.evidence.service import EvidenceService, begin_daily_run, bound_profile
+        from src.task.WorldBossMaterialTask import WorldBossMaterialTask
+        with tempfile.TemporaryDirectory() as root:
+            service = EvidenceService(EvidenceRepository(root))
+            daily = SimpleNamespace(executor=SimpleNamespace(completion_evidence_service=service),
+                                    _verified_profile_id=ACCOUNT, _profile_run_active=True,
+                                    _runtime_overrides={'_world_boss_material_only': True})
+            task = object.__new__(WorldBossMaterialTask)
+            task.get_task_by_class = Mock(return_value=daily)
+            executor = SimpleNamespace(current_task=task)
+            try:
+                self.assertEqual('world_boss_material', begin_daily_run(daily)['scope'])
+                self.assertEqual(ACCOUNT, bound_profile(executor))
+                daily._profile_run_active = False
+                self.assertIsNone(bound_profile(executor))
+                daily._profile_run_active = True
+                daily._runtime_overrides.clear()
+                self.assertIsNone(bound_profile(executor))
+            finally:
+                service.close()
+            self.assertEqual('world_boss_material', service.repository.latest_run(ACCOUNT)['scope'])
+            self.assertEqual([], service.repository.list_records(ACCOUNT))
+
     def test_capture_expiration_switch_and_missing_window_are_rejected(self):
         from src.evidence.service import request_capture, process_capture
         from unittest.mock import Mock

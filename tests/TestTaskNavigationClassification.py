@@ -11,6 +11,12 @@ from src.task.BaseCombatTask import BaseCombatTask
 
 
 class TestTaskNavigationClassification(unittest.TestCase):
+    def test_material_standalone_is_in_daily_execution_category(self):
+        from src.task.WorldBossMaterialTask import WorldBossMaterialTask
+        task = object.__new__(WorldBossMaterialTask)
+        self.assertEqual(classify_task(task), TASKS)
+        self.assertEqual(task_category(task), '每日执行')
+
     def test_echoes_remain_uses_executable_activity_card(self):
         from src.task.EchoesRemainTask import EchoesRemainTask
         from src.gui.activity_catalog import PLACEHOLDERS, PLACEHOLDER_REVISION, activity_revision

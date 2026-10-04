@@ -22,6 +22,7 @@ class MaterialRunResult:
 
 
 class WorldBossMaterialTask(FarmEchoTask):
+    navigation_section = 'tasks'
     # Reuse the weekly claim's selected-F detector and bounded reward approach.
     _ocr = WeeklyBossTask._ocr
     _text = WeeklyBossTask._text
@@ -40,9 +41,14 @@ class WorldBossMaterialTask(FarmEchoTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = '世界首领突破材料'
-        self.description = '累计领奖达到账号目标后，继续账号原有体力用途。'
-        self.visible = False
+        self.description = '单独执行每日任务当前账号的首领材料目标，共享累计领奖记录；目标达标或体力不足时结束。'
+        self.visible = True
+        self.group_name = None
         self.supported_languages = ['zh_CN']
+        self.instructions = '先在账号设置保存首领目标及累计次数，再在每日任务选择当前账号。此入口会实际领取奖励并计入累计次数，只执行首领材料；不自动切换账号。'
+        for key in self.default_config.keys() | self.config_type.keys():
+            if key not in ('Use Liberation', 'Switch to Healer before and after Combat'):
+                self.config_type[key] = {'hidden': True}
         self._material_target = None
         self._material_progress = None
         self._material_phase = 'idle'
@@ -54,7 +60,8 @@ class WorldBossMaterialTask(FarmEchoTask):
         self.log_info('首领材料：' + message)
 
     def run(self):
-        raise RuntimeError('请通过已核验账号的每日任务执行首领材料')
+        from src.task.DailyTask import DailyTask
+        return self.get_task_by_class(DailyTask).run_world_boss_material_only()
 
     def on_combat_check(self):
         self.in_realm_check(20)
