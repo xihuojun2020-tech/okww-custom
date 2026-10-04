@@ -137,7 +137,7 @@ class TestDailyRunConfirmation(unittest.TestCase):
                         patch('src.task.DailyTask.get_default_repository', return_value=env.repository), \
                         patch('src.task.DailyTask.WWOneTimeTask.run', side_effect=RuntimeError('before-game')) as entry:
                     with self.assertRaises(expected):
-                        task.run_world_boss_material_only()
+                        task.run_world_boss_material_only('world_crownless', 1)
                     self.assertEqual(entry.call_count, 1 if answer == 'accept' else 0)
                 task._confirm_standalone_profile.assert_called_once()
                 task.validate_daily_tasks.assert_not_called()

@@ -434,12 +434,11 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             return False
         if self._runtime_overrides.get('_world_boss_material_only', False):
             from src.task.world_boss_materials import TARGETS_BY_ID
-            rows = material_plan(self._readonly_profile_config())
-            targets = [f'{index}. {TARGETS_BY_ID[row["boss"]].name}（累计上限 {row["limit"]} 次）'
-                       for index, row in enumerate(rows, 1) if row['boss'] != 'none' and row['limit'] > 0]
+            boss, claims = self._runtime_overrides['_world_boss_material_request']
             text = (f'确认游戏当前已登录账号：{short_profile_name(self._verified_profile_name)}。\n'
-                    '本次只执行世界首领突破材料：\n' + ('\n'.join(targets) or '账号未启用首领目标') + '\n'
-                    '会实际消耗体力并计入账号累计领奖次数，目标达标后结束。\n'
+                    f'本次只执行世界首领突破材料：{TARGETS_BY_ID[boss].name}，本次领取 {claims} 次。\n'
+                    '会实际消耗体力并计入账号累计领奖次数，不修改每日三目标计划。\n'
+                    '领取达到本次次数或体力不足时结束。\n'
                     '程序尚未自动核验游戏内账号身份，是否继续？')
             return bridge.confirm(self, text)
         text = self.tr(
@@ -780,13 +779,14 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _run_world_boss_materials(self, *, activity_ready, used_stamina):
         from src.task.WorldBossMaterialTask import WorldBossMaterialTask
-        self._publish_daily_stage('刷首领材料', '按账号累计领奖目标执行')
+        request = (getattr(self, '_runtime_overrides', None) or {}).get('_world_boss_material_request')
+        self._publish_daily_stage('刷首领材料', '按本次选择的关卡和领取次数执行' if request else '按账号累计领奖目标执行')
         result = self.get_task_by_class(WorldBossMaterialTask).run_for_profile(
             self._active_profile_id(), self._material_plan_tasks,
             self._guard_bound_profile_identity, self.integrity_service,
-            activity_ready=activity_ready, used_stamina=used_stamina)
-        statuses = {'complete': '目标已达标', 'plan_disabled': '账号未启用首领目标',
-                    'resource_shortfall': '体力不足，下次继续当前目标'}
+            activity_ready=activity_ready, used_stamina=used_stamina, **({'request': request} if request else {}))
+        statuses = {'complete': '本次指定次数已完成' if request else '目标已达标', 'plan_disabled': '账号未启用首领目标',
+                    'resource_shortfall': '体力不足，本次结束' if request else '体力不足，下次继续当前目标'}
         message = f'{statuses.get(result.status, result.status)}；本轮领取 {result.claimed} 次'
         self.info_set('首领材料结果', message)
         self.log_info(message)
@@ -2050,8 +2050,11 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         with self.runtime_config_override('_weekly_boss_only', True):
             return self.run()
 
-    def run_world_boss_material_only(self):
-        with self.runtime_config_override('_world_boss_material_only', True):
+    def run_world_boss_material_only(self, boss, claims):
+        from src.task.world_boss_material_plan import validate_material_request
+        request = validate_material_request(boss, claims)
+        with self.runtime_config_override('_world_boss_material_only', True), \
+                self.runtime_config_override('_world_boss_material_request', request):
             return self.run()
 
     def check_weekly_garden(self):

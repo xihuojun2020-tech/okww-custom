@@ -370,12 +370,12 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         children[WorldBossMaterialTask] = material
         return task, children
 
-    def standalone_run(self, task):
+    def standalone_run(self, task, boss=A, claims=1):
         with patch('src.task.DailyTask.require_account_runtime_for_task'), \
                 patch.object(task.integrity_service, 'guard_task_start'), \
                 patch.object(DailyTask, 'logged_in', False), \
                 patch('src.task.DailyTask.WWOneTimeTask.run'):
-            return task.run_world_boss_material_only()
+            return task.run_world_boss_material_only(boss, claims)
 
     def test_standalone_real_claim_ledger_is_seen_by_next_daily_entry(self):
         self.tasks = plan((1, 0, 0))
@@ -404,7 +404,7 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         self.assertEqual(MaterialRunResult(0, 0, 'complete'), self.run_task(material))
         material.farm_cycle.assert_not_called()
 
-    def test_standalone_disabled_complete_shortfall_and_pending_do_not_fallback(self):
+    def test_standalone_shortfall_and_pending_ignore_daily_limits_and_do_not_fallback(self):
         for mode in ('disabled', 'complete', 'shortfall', 'pending'):
             with self.subTest(mode=mode):
                 self.tasks = plan((0, 0, 0) if mode == 'disabled' else (1, 0, 0))
@@ -419,8 +419,7 @@ class TestWorldBossMaterialTask(unittest.TestCase):
                         self.standalone_run(task)
                     self.progress.resolve(event, False)
                 else:
-                    status = {'disabled': 'plan_disabled', 'complete': 'complete', 'shortfall': 'resource_shortfall'}[mode]
-                    self.assertEqual(MaterialRunResult(0, 0, status), self.standalone_run(task))
+                    self.assertEqual(MaterialRunResult(0, 0, 'resource_shortfall'), self.standalone_run(task))
                 material.farm_cycle.assert_not_called()
                 task._run_profile_stamina.assert_not_called()
                 task.record_last_completed.assert_not_called()
@@ -444,17 +443,18 @@ class TestWorldBossMaterialTask(unittest.TestCase):
 
     def test_visible_entry_delegates_to_production_daily_boundary(self):
         task = object.__new__(WorldBossMaterialTask)
+        task.config = {'首领关卡': WORLD_BOSS_TARGETS[1].name, '领取次数': 3}
         daily = Mock()
         daily.run_world_boss_material_only.return_value = MaterialRunResult(1, 60, 'complete')
         task.get_task_by_class = Mock(return_value=daily)
         self.assertEqual(MaterialRunResult(1, 60, 'complete'), task.run())
         task.get_task_by_class.assert_called_once_with(DailyTask)
-        daily.run_world_boss_material_only.assert_called_once_with()
+        daily.run_world_boss_material_only.assert_called_once_with(B, 3)
 
     def test_material_confirmation_describes_only_real_material_claims(self):
         from ok import og
         task, _ = self.daily()
-        task._runtime_overrides = {'_world_boss_material_only': True}
+        task._runtime_overrides = {'_world_boss_material_only': True, '_world_boss_material_request': (B, 3)}
         task._verified_profile_name = 'A1-Test'
         task._readonly_profile_config = Mock(return_value=self.tasks)
         task._profile_get.side_effect = AssertionError('unrelated daily setting in material prompt')
@@ -464,7 +464,61 @@ class TestWorldBossMaterialTask(unittest.TestCase):
             self.assertTrue(task._confirm_standalone_profile())
         text = bridge.confirm.call_args.args[1]
         self.assertIn('本次只执行世界首领突破材料', text)
-        self.assertIn(WORLD_BOSS_TARGETS[0].name, text)
-        self.assertIn('累计上限 2 次', text)
+        self.assertIn(WORLD_BOSS_TARGETS[1].name, text)
+        self.assertNotIn(WORLD_BOSS_TARGETS[0].name, text)
+        self.assertIn('本次领取 3 次', text)
+        self.assertIn('不修改每日三目标计划', text)
         self.assertIn('实际消耗体力', text)
         self.assertNotIn('Weekly garden', text)
+
+    def test_selected_boss_counts_exact_claims_above_daily_limit_without_changing_plan(self):
+        for daily_tasks in (plan(), {MATERIAL_TARGETS: []}):
+            with self.subTest(daily_tasks=daily_tasks):
+                self.progress.correct(B, 999999)
+                original_tasks = copy.deepcopy(daily_tasks)
+                task = self.claim_task()
+                original_config = task.config
+                read_tasks = Mock(return_value=daily_tasks)
+                result = task.run_for_profile('account-a', read_tasks, Mock(), self.service,
+                    activity_ready=True, used_stamina=0, request=(B, 3))
+                self.assertEqual(MaterialRunResult(3, 180, 'complete'), result)
+                self.assertEqual({B: 1000002}, self.progress.counts())
+                self.assertEqual(3, task.use_stamina.call_count)
+                self.assertEqual(3, task.farm_cycle.call_count)
+                read_tasks.assert_not_called()
+                self.assertEqual(original_tasks, daily_tasks)
+                self.assertIs(original_config, task.config)
+                self.assertIsNone(task._material_run_rows)
+                self.assertEqual({}, self.progress.pending())
+
+    def test_selected_shortfall_preserves_only_successful_claims_and_new_run_uses_new_count(self):
+        self.tasks = {MATERIAL_TARGETS: []}
+        task = self.claim_task()
+        task._resources_for_claim.side_effect = [True, False]
+        self.assertEqual(MaterialRunResult(1, 60, 'resource_shortfall'),
+                         self.run_selected(task, A, 3))
+        self.assertEqual({A: 1}, self.progress.counts())
+        next_run = self.claim_task()
+        cycles = iter([FarmCycleResult(True, True, False), FarmCycleResult(True, False, False)])
+        def cycle(**kwargs):
+            next_run._material_name_verified = True
+            return next(cycles)
+        next_run.farm_cycle.side_effect = cycle
+        self.assertEqual(MaterialRunResult(1, 60, 'complete'), self.run_selected(next_run, A, 1))
+        self.assertEqual({A: 2}, self.progress.counts())
+        self.assertEqual(2, next_run.farm_cycle.call_count)
+        self.assertEqual(1, next_run.use_stamina.call_count)
+
+    def run_selected(self, task, boss, claims):
+        return task.run_for_profile('account-a', lambda: self.tasks, Mock(), self.service,
+            activity_ready=True, used_stamina=0, request=(boss, claims))
+
+    def test_invalid_standalone_choice_or_count_is_rejected_before_game_or_ledger(self):
+        for boss, claims in (('none', 1), (A, 0), (A, -1), (A, True), (A, '2'), (A, 1.5), (A, 10000)):
+            with self.subTest(boss=boss, claims=claims):
+                task = self.runner()
+                with self.assertRaises(ValueError):
+                    self.run_selected(task, boss, claims)
+                task.farm_cycle.assert_not_called()
+                self.assertEqual({}, self.progress.counts())
+                self.assertEqual({}, self.progress.pending())

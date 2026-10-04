@@ -7,6 +7,14 @@ MATERIAL_TARGETS = 'World Boss Material Targets'
 MATERIAL_DISABLED = 'none'
 
 
+def validate_material_request(boss, claims):
+    if not isinstance(boss, str) or boss not in TARGETS_BY_ID:
+        raise ValueError('请选择有效的首领关卡')
+    if type(claims) is not int or not 1 <= claims <= 9999:
+        raise ValueError('本次领取次数需为1至9999整数')
+    return boss, claims
+
+
 def material_plan(tasks):
     rows = tasks.get(MATERIAL_TARGETS)
     if rows is None or rows == []:

@@ -34,7 +34,7 @@ def example_task(name='周本挑战'):
 
 
 class TestFlatUI(unittest.TestCase):
-    def test_material_entry_has_start_button_and_only_relevant_combat_controls(self):
+    def test_material_entry_selects_boss_and_claim_count_with_relevant_combat_controls(self):
         from ok.gui.tasks.TaskCard import TaskCard
         from src.task.WorldBossMaterialTask import WorldBossMaterialTask
         owner = SimpleNamespace(scene=None, text_fix={}, remove_onetime_task=Mock(), _wake_executor=Mock(),
@@ -51,8 +51,17 @@ class TestFlatUI(unittest.TestCase):
             card = TaskCard(task, True, fluent_sample=True)
             try:
                 self.assertIsNotNone(card.start_button)
-                self.assertEqual({'Use Liberation', 'Switch to Healer before and after Combat'},
+                self.assertEqual({'首领关卡', '领取次数', 'Use Liberation', 'Switch to Healer before and after Combat'},
                                  set(card.config_widget_by_key))
+                bosses = card.config_widget_by_key['首领关卡'].combo_box
+                claims = card.config_widget_by_key['领取次数'].spin_box
+                self.assertEqual(15, bosses.count())
+                self.assertEqual('无冠者', bosses.currentText())
+                self.assertEqual((1, 9999, 1), (claims.minimum(), claims.maximum(), claims.value()))
+                bosses.setCurrentIndex(1)
+                claims.setValue(3)
+                self.assertEqual('云闪之鳞', task.config['首领关卡'])
+                self.assertEqual(3, task.config['领取次数'])
                 self.assertIn('当前账号', card.card.contentLabel.text())
                 card.setExpand(True)
                 card.resize(1000, card.sizeHint().height())

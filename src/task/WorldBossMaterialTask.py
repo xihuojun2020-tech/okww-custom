@@ -8,8 +8,8 @@ from ok.task.exceptions import FinishedException
 from src.task.FarmEchoTask import FarmEchoTask
 from src.task.WeeklyBossTask import WeeklyBossTask
 from src.task.BaseCombatTask import CombatStateUnknown
-from src.task.world_boss_materials import TARGETS_BY_ID, material_target_button, matches_health_title
-from src.task.world_boss_material_plan import material_plan, choose_material_target, material_plan_revision
+from src.task.world_boss_materials import WORLD_BOSS_TARGETS, TARGETS_BY_ID, material_target_button, matches_health_title
+from src.task.world_boss_material_plan import material_plan, choose_material_target, material_plan_revision, validate_material_request
 from src.task.world_boss_material_progress import WorldBossMaterialProgress
 from src.task.weekly_boss import compact
 
@@ -41,14 +41,23 @@ class WorldBossMaterialTask(FarmEchoTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = '世界首领突破材料'
-        self.description = '单独执行每日任务当前账号的首领材料目标，共享累计领奖记录；目标达标或体力不足时结束。'
+        self.description = '选择首领关卡和本次领取次数，为每日任务当前账号单独刷取突破材料，共享累计领奖记录。'
         self.visible = True
         self.group_name = None
         self.supported_languages = ['zh_CN']
-        self.instructions = '先在账号设置保存首领目标及累计次数，再在每日任务选择当前账号。此入口会实际领取奖励并计入累计次数，只执行首领材料；不自动切换账号。'
+        self.instructions = '在每日任务选择当前账号，手动登录对应游戏账号；在此卡选择首领关卡和本次领取次数后开始。成功领奖才计次，体力不足时结束；计入账号累计，不改每日三目标计划，不自动切换账号。'
         for key in self.default_config.keys() | self.config_type.keys():
             if key not in ('Use Liberation', 'Switch to Healer before and after Combat'):
                 self.config_type[key] = {'hidden': True}
+        self.default_config.update({'首领关卡': WORLD_BOSS_TARGETS[0].name, '领取次数': 1})
+        self.config_type.update({
+            '首领关卡': {'type': 'drop_down', 'options': [target.name for target in WORLD_BOSS_TARGETS]},
+            '领取次数': {'min': 1, 'max': 9999},
+        })
+        self.config_description.update({
+            '首领关卡': '本次单独刷取的世界首领；不修改账号每日三目标计划。',
+            '领取次数': '本次成功领取奖励的次数，默认1次；实际消耗体力并共享账号累计记录。',
+        })
         self._material_target = None
         self._material_progress = None
         self._material_phase = 'idle'
@@ -61,7 +70,14 @@ class WorldBossMaterialTask(FarmEchoTask):
 
     def run(self):
         from src.task.DailyTask import DailyTask
-        return self.get_task_by_class(DailyTask).run_world_boss_material_only()
+        name = self.config.get('首领关卡')
+        boss = next((target.key for target in WORLD_BOSS_TARGETS if target.name == name), None)
+        boss, claims = validate_material_request(boss, self.config.get('领取次数'))
+        return self.get_task_by_class(DailyTask).run_world_boss_material_only(boss, claims)
+
+    def _current_material_plan(self, read_tasks):
+        rows = self.__dict__.get('_material_run_rows')
+        return rows if rows is not None else material_plan(read_tasks())
 
     def on_combat_check(self):
         self.in_realm_check(20)
@@ -171,7 +187,7 @@ class WorldBossMaterialTask(FarmEchoTask):
         self._stage('寻找领取奖励入口')
         self._seek_reward_interaction()
         guard()
-        rows = material_plan(read_tasks())
+        rows = self._current_material_plan(read_tasks)
         choice = choose_material_target(rows, self._material_progress.counts())
         if not choice or choice[0] != self._material_target.key:
             self._stage('目标已修改，未执行领取')
@@ -195,7 +211,7 @@ class WorldBossMaterialTask(FarmEchoTask):
         if actual_cost != self._material_target.cost:
             raise CombatStateUnknown(f'材料单次费用未确认：{actual_cost}，未点击领取')
         guard()
-        latest = choose_material_target(material_plan(read_tasks()), self._material_progress.counts())
+        latest = choose_material_target(self._current_material_plan(read_tasks), self._material_progress.counts())
         if not latest or latest[0] != choice[0]:
             self.back(after_sleep=.5)
             self._material_progress.resolve(event, False)
@@ -245,12 +261,18 @@ class WorldBossMaterialTask(FarmEchoTask):
         self._material_reenter = self._in_realm
         return used
 
-    def run_for_profile(self, profile_id, read_tasks, guard, service, *, activity_ready, used_stamina):
+    def run_for_profile(self, profile_id, read_tasks, guard, service, *, activity_ready, used_stamina, request=None):
+        if request is not None:
+            boss, claims = validate_material_request(*request)
         progress = WorldBossMaterialProgress(service, profile_id)
         if progress.pending():
             raise RuntimeError('有首领材料领奖待核验，请在账号设置中核对；未继续消费')
         claimed, spent, current_target = 0, 0, None
         self._material_progress = progress
+        # Freeze a one-run cumulative threshold, including counts above the account UI's 9999 cap.
+        # Every claim reuses the same scheduler and durable per-account ledger.
+        self._material_run_rows = ([{'boss': boss, 'limit': progress.counts().get(boss, 0) + claims}]
+                                   if request is not None else None)
         original_config = self.config
         original_liberation = self.use_liberation
         self.config = deepcopy(dict(original_config))
@@ -262,7 +284,7 @@ class WorldBossMaterialTask(FarmEchoTask):
         try:
             while True:
                 guard()
-                rows = material_plan(read_tasks())
+                rows = self._current_material_plan(read_tasks)
                 choice = choose_material_target(rows, progress.counts())
                 if not choice:
                     enabled = any(row['boss'] != 'none' and row['limit'] > 0 for row in rows)
@@ -308,6 +330,7 @@ class WorldBossMaterialTask(FarmEchoTask):
                 self.config = original_config
                 self.use_liberation = original_liberation
                 self._material_target = self._material_progress = None
+                self._material_run_rows = None
                 self._material_phase = 'idle'
                 self._material_balance = None
                 self._material_name_verified = self._material_reenter = False
