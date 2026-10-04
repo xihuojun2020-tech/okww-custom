@@ -1084,6 +1084,10 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             raise Exception("未识别到当前塔的关卡行")
 
         last = max(index for index, value in enumerate(present) if value)
+        # A recognized /12 overview plus an actual floor row proves this four-row
+        # layout. Missing OCR of the unselected "4" must not trim the planning tail.
+        if star_total is not None:
+            last = len(FLOOR_ROWS) - 1
         missing = [index + 1 for index, value in enumerate(present[:last + 1]) if not value]
         if missing:
             missing_text = "/".join(str(floor) for floor in missing)
@@ -1311,6 +1315,18 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                 next_plan = schedule.get((tower_name, floor_index + 1))
                 change_team = bool(schedule) and (
                     next_plan is None or current_plan is None or current_plan.members != next_plan.members)
+                active = getattr(self, '_active_preset_plan', None)
+                if (tower_name != TOWER_NAMES[1] and getattr(self, '_preset_mode', False)
+                        and active is not None and remaining_energy is not None
+                        and remaining_energy >= sum(floor_energy_cost(tower_name, i)
+                                                    for i in range(floor_index + 1, len(FLOOR_ROWS)))):
+                    # Once a real preset has started a side tower, finish that side
+                    # when it can afford the whole tail. The next tower rescans real energy.
+                    change_team = False
+                    schedule[(tower_name, floor_index + 1)] = active
+                    self._scheduled_teams = schedule
+                    self.log_info(f'{tower_name}保持预设{active.preset.queue}续关：'
+                                  f'实际剩余疲劳{remaining_energy}，足够完成本塔剩余楼层')
                 if change_team or (remaining_energy is not None and remaining_energy < next_cost):
                     self._set_status(
                         "重新编队",
@@ -1451,32 +1467,55 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             if crop is None or not crop.size:
                 continue
             enlarged = cv2.resize(crop, None, fx=5, fy=5, interpolation=cv2.INTER_CUBIC)
-            text = ' '.join(str(box.name) for box in self.ocr(0, 0, 1, 1, frame=enlarged))
-            # Require the arrow to prove which side is current, never accept a lone
-            # clipped zero. At least two consistent crops must confirm the value.
-            if not re.search(r'[>»＞→》]', text):
-                continue
-            value = current_preset_energy(text)
-            if value is not None:
-                readings.append(value)
+            values = []
+            for box in self.ocr(0, 0, 1, 1, frame=enlarged):
+                text = str(box.name)
+                arrow = re.search(r'[>»＞→》]', text)
+                left = re.split(r'[>»＞→》]', text, maxsplit=1)[0].strip()
+                # Some arrows vanish in OCR. Box position still distinguishes a
+                # complete current-value box from the post-floor number on the right.
+                positioned = (hasattr(box, 'x') and hasattr(box, 'width'))
+                current_box = positioned and (box.x + box.width / 2) < enlarged.shape[1] * .56
+                if not arrow and not current_box:
+                    continue
+                value = current_preset_energy(text)
+                # Repair the lightning only when its left-hand location is proven.
+                if (value is None and positioned and box.x < enlarged.shape[1] * .25
+                        and re.fullmatch(r'[14][0-9]', left)):
+                    value = int(left[-1])
+                # A lone zero without an arrow can be a clipped 10.
+                if value is not None and (arrow or value > 0):
+                    values.append(value)
+            if values and len(set(values)) == 1:
+                readings.append(values[0])
         return readings[0] if len(readings) >= 2 and len(set(readings)) == 1 else None
+
+    def _preset_member(self, frame, x, top):
+        avatar = _relative_crop(frame, (x, top + .005, x + .078, top + .115))
+        if avatar is None or not avatar.size or float(np.std(avatar)) < 38:
+            return None
+        hit = self._identify_character(avatar)
+        if hit is None:
+            return None
+        identity = hit[0]
+        if identity in ROVER_CHARACTER_IDS:
+            # Keep the colored glyph, excluding the gold selection border/background.
+            icon = _relative_crop(frame, (x + .006, top + .013, x + .022, top + .037))
+            identity, _confidence = classify_rover_element_crop(icon)
+            if identity == ROVER_UNKNOWN:
+                return None
+        return identity
 
     def _preset_on_row(self, frame, number, top):
         members, energies = [], []
         for x in (.121, .207, .294):
-            avatar = _relative_crop(frame, (x, top + .005, x + .078, top + .115))
-            if avatar is None or avatar.size == 0 or float(np.std(avatar)) < 38:
+            identity = self._preset_member(frame, x, top)
+            if identity is None:
                 return None
-            hit = self._identify_character(avatar) if avatar is not None and avatar.size else None
             energy = self._preset_energy(frame, x, top)
-            if hit is None or energy is None:
+            if energy is None:
+                self.log_warning(f'预设{number}角色{identity}当前疲劳无法确认，未使用右侧预计值')
                 return None
-            identity = hit[0]
-            if identity in ROVER_CHARACTER_IDS:
-                icon = _relative_crop(frame, (x, top + .006, x + .024, top + .040))
-                identity, _confidence = classify_rover_element_crop(icon)
-                if identity == ROVER_UNKNOWN:
-                    return None
             members.append(identity)
             energies.append(energy)
         if len(set(members)) != 3:
@@ -1534,13 +1573,22 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         if exact_ocr_box(self.ocr(.68,.82,.95,.98,frame=frame), '开启挑战') is None:
             return False
         observed = []
-        for x in (.512, .584, .648):
-            avatar = _relative_crop(frame, (x, .726, x + .055, .827))
+        for index, x in enumerate((.512, .584, .648)):
+            avatar = _relative_crop(frame, (x, .720, x + .065, .840))
             hit = self._identify_character(avatar) if avatar is not None and avatar.size else None
             identity = hit[0] if hit else None
             if identity in ROVER_CHARACTER_IDS:
-                icon = _relative_crop(frame, (x, .728, x + .018, .757))
-                identity, _confidence = classify_rover_element_crop(icon)
+                # The bottom thumbnail has no element icon. Confirm form on the
+                # selected preset card, whose numbered marker proves selection.
+                top = next((top for number, top in self._preset_page_rows(frame)
+                            if number == plan.preset.queue), None)
+                if top is None:
+                    return False
+                card_x = (.121, .207, .294)[index]
+                marker = self.ocr(card_x + .058, top - .01, card_x + .089, top + .035, frame=frame)
+                if exact_ocr_box(marker, str(index + 1)) is None:
+                    return False
+                identity = self._preset_member(frame, card_x, top)
             observed.append(identity)
         return tuple(observed) == plan.members
 

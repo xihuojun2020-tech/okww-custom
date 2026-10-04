@@ -468,6 +468,50 @@ class TestAutoAbyssTask(unittest.TestCase):
         self.assertFalse(floor_state_sequence_valid((AVAILABLE, LOCKED, AVAILABLE)))
         self.assertFalse(floor_state_sequence_valid((COMPLETED, UNKNOWN)))
 
+    def test_twelve_star_layout_verifies_fourth_row_even_when_its_digit_is_missed(self):
+        class Offline(AutoAbyssTask):
+            @property
+            def frame(self):
+                return np.zeros((1440, 2560, 3), np.uint8)
+        task = Offline.__new__(Offline)
+        task._row_matches = Mock(return_value=False)
+        task._row_has_floor_number = lambda _frame, _row, i: i < 3
+        task._verify_floor_state = Mock(return_value=AVAILABLE)
+        task.log_info = Mock()
+        task.log_warning = Mock()
+        task.screenshot = Mock()
+        self.assertEqual(task._scan_tower_floors('残响之塔', star_total=0), (AVAILABLE,) * 4)
+        self.assertEqual(task._verify_floor_state.call_count, 4)
+
+    def test_saved_side_team_finishes_four_floors_with_exact_ten_energy(self):
+        from src.task.AutoAbyssTask import AbyssSavedPreset
+        first = AbyssSavedPreset(1, (Labels.char_qingxiao, Labels.char_denia, Labels.char_verina), (10,)*3).plan
+        second = AbyssSavedPreset(2, (Labels.char_jiyan, Labels.char_mortefi, Labels.char_shorekeeper), (10,)*3).plan
+        for fourth in (None, second):
+            task = AutoAbyssTask.__new__(AutoAbyssTask)
+            task._preset_mode = True
+            task._active_preset_plan = first
+            task._scheduled_teams = {('残响之塔', i): first for i in range(3)}
+            if fourth is not None:
+                task._scheduled_teams[('残响之塔', 3)] = fourth
+            task._set_status = Mock()
+            task.log_info = Mock()
+            task._click_start_challenge = Mock()
+            task._prepare_challenge_map = Mock()
+            task._run_combat_and_wait_result = Mock(side_effect=[
+                ('continue', SimpleNamespace(name='继续挑战')) for _ in range(3)
+            ] + [('tower_complete', SimpleNamespace(name='返回深塔'))])
+            task.next_frame = Mock()
+            task.require_game_frame = Mock(return_value='frame')
+            task.ocr = Mock(return_value=[SimpleNamespace(name='预设编队')])
+            task._selected_preset_matches = lambda _frame, plan: plan.members == first.members
+            task._apply_saved_preset = Mock()
+            task.click_box = Mock()
+            task._return_from_result = Mock()
+            self.assertEqual(task._fight_selected_tower('残响之塔', 0, 10), ('完成', 4))
+            task._apply_saved_preset.assert_not_called()
+            self.assertEqual(task._scheduled_teams[('残响之塔', 3)], first)
+
     def test_floor_verification_clicks_only_the_floor_row_when_reset_is_visible(self):
         class OfflineAbyssTask(AutoAbyssTask):
             @property

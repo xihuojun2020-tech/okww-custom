@@ -39,7 +39,7 @@ class TestAbyssSeasonImages(TaskTestCase):
 
     def test_real_presets_read_all_six_current_energies_as_ten(self):
         expected = ((Labels.char_qingxiao, Labels.char_denia, Labels.char_verina),
-                    ('yangyang_sp', 'rover_aero', Labels.char_sanhua))
+                    ('yangyang_sp', 'rover_havoc', Labels.char_sanhua))
         original = cv2.imread(str(self.folder / 'presets.png'))
         self.set_image(str(self.folder / 'presets.png'))
         rows = self.task._preset_page_rows(self.task.frame)
@@ -82,6 +82,18 @@ class TestAbyssSeasonImages(TaskTestCase):
             self.assertIsNotNone(task._scheduled_teams[(TOWER_NAMES[0], 0)])
             self.assertEqual(sum(p is not None for (tower, _), p in task._scheduled_teams.items()
                                  if tower != TOWER_NAMES[1]), 8)
+
+    def test_fourth_floor_presets_keep_four_energy_and_confirm_selected_havoc_rover(self):
+        self.set_image(str(self.folder / 'side_floor4_presets.png'))
+        frame = self.task.frame
+        presets = [self.task._preset_on_row(frame, n, top)
+                   for n, top in self.task._preset_page_rows(frame)[:2]]
+        self.assertTrue(all(p is not None for p in presets))
+        self.assertEqual(presets[0].energies, (4, 4, 4))
+        self.assertEqual(presets[1].energies, (10, 10, 10))
+        self.assertEqual(presets[1].members, ('yangyang_sp', 'rover_havoc', Labels.char_sanhua))
+        self.assertTrue(self.task._selected_preset_matches(frame, presets[1].plan))
+        self.assertFalse(self.task._selected_preset_matches(frame, presets[0].plan))
 
 
 if __name__ == '__main__':

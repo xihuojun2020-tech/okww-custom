@@ -133,6 +133,15 @@ class TestAbyssPresetUI(unittest.TestCase):
         texts = [call.args[0] for call in task._wait_exact_text_or_fail.call_args_list]
         self.assertEqual(texts, ['角色列表', '预设编队', '开启挑战'])
 
+    def test_missing_arrow_uses_current_box_position_and_excludes_projected_number(self):
+        import numpy as np
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        frame = np.zeros((720, 1280, 3), np.uint8)
+        task.ocr = Mock(side_effect=[
+            [SimpleNamespace(name=text, x=75, width=100),
+             SimpleNamespace(name='10', x=350, width=70)] for text in ('4', '14', '4')])
+        self.assertEqual(task._preset_energy(frame, .207, .185), 4)
+
     def test_apply_preset_checks_page_again_before_click(self):
         preset = AbyssSavedPreset(7, (Labels.char_qingxiao, Labels.char_denia,
                                        Labels.char_verina), (10, 10, 10))

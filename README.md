@@ -1,5 +1,5 @@
 <div align="center">
-  <p>当前版本：<a href="更新日志.md">1.97.02 修复深塔两侧优先与预设疲劳值识别</a> · <a href="docs/references/world-boss-materials.md">首领材料设置与单独执行</a> · <a href="docs/references/solo-combat.md">单人输出支持清单</a> · <a href="docs/references/completion-evidence.md">完成检查分组与图片复制</a> · <a href="docs/references/material-planner-1.59.md">养成材料规划</a></p>
+  <p>当前版本：<a href="更新日志.md">1.97.03 修复深塔第四层续队及暗主预设核验</a> · <a href="docs/references/world-boss-materials.md">首领材料设置与单独执行</a> · <a href="docs/references/solo-combat.md">单人输出支持清单</a> · <a href="docs/references/completion-evidence.md">完成检查分组与图片复制</a> · <a href="docs/references/material-planner-1.59.md">养成材料规划</a></p>
   <h1 align="center">
     <img src="icons/icon.png" width="200" alt="ok-ww logo"/>
     <br/>
