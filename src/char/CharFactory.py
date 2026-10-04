@@ -22,6 +22,7 @@ from src.char.Encore import Encore
 from src.char.Galbrena import Galbrena
 from src.char.HavocRover import HavocRover
 from src.char.Hiyuki import Hiyuki
+from src.char.Hsin import Hsin
 from src.char.Iuno import Iuno
 from src.char.Jianxin import Jianxin
 from src.char.Jinhsi import Jinhsi
@@ -135,6 +136,7 @@ _char_dict_raw = {
     Labels.char_xigelika: {'cls': Xigelika, 'char_type': CharType.MAIN_DPS, 'ring_index': Elements.WIND},
     Labels.char_luhesi: {'cls': Luhesi, 'char_type': CharType.MAIN_DPS, 'ring_index': Elements.SPECTRO},
     Labels.char_hiyuki: {'cls': Hiyuki, 'char_type': CharType.MAIN_DPS, 'ring_index': Elements.ICE},
+    Labels.char_hsin: {'cls': Hsin, 'char_type': CharType.MAIN_DPS, 'ring_index': Elements.ELECTRIC},
     Labels.char_lucilla: {'cls': Lucilla, 'char_type': CharType.SUB_DPS, 'ring_index': Elements.ICE,
                           'target_box_short_combat_check': True},
     Labels.char_lucy: {'cls': Lucy, 'char_type': CharType.MAIN_DPS, 'ring_index': Elements.SPECTRO},

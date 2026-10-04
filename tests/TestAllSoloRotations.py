@@ -24,6 +24,7 @@ from src.char.Xiangliyao import Xiangliyao
 
 def task_stub():
     return SimpleNamespace(chars=[], char_config={}, config={}, use_liberation=True,
+                           solo_rotation_enabled=True,
                            in_liberation=False, debug=False, mouse_up=Mock(), mouse_down=Mock(),
                            send_key=Mock(), get_current_char=Mock(), has_char=Mock(return_value=None))
 
@@ -81,6 +82,15 @@ class TestAllSoloRotations(unittest.TestCase):
         char.do_perform = Mock()
         BaseChar.perform_solo(char)
         char.do_perform.assert_called_once()
+
+    def test_solo_rotation_requires_dedicated_task(self):
+        char = solo()
+        char.task.solo_rotation_enabled = False
+        char.perform_solo = Mock()
+        char.do_perform = Mock()
+        char.perform()
+        char.do_perform.assert_called_once()
+        char.perform_solo.assert_not_called()
 
     def test_generic_output_uses_skills_without_waiting_for_intro_or_switch(self):
         char = solo()

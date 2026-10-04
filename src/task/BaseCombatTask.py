@@ -788,7 +788,7 @@ class BaseCombatTask(CombatCheck):
                 current_char, current_char, has_intro, 'no_candidate_above_no_priority')
 
         state = self.__dict__.get('_rotation_state')
-        if state and state.main_due(self.chars, current_char):
+        if state and not getattr(self, 'use_original_multi_rotation', False) and state.main_due(self.chars, current_char):
             mains = [char for _, char in prioritized_candidates
                      if char.is_main_dps and not self._target_has_switch_cd(char)]
             if mains:

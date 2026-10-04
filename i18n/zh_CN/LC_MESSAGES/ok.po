@@ -2143,3 +2143,12 @@ msgstr "异常恢复中"
 
 msgid "等待游戏窗口/截图恢复"
 msgstr "等待游戏窗口/截图恢复"
+
+msgid "Hsin"
+msgstr "心"
+
+msgid "⚔️ Solo Auto Combat"
+msgstr "⚔️ 单人自动战斗"
+
+msgid "Fight automatically only with a verified one-member party."
+msgstr "仅在确认单人编队时自动战斗。"

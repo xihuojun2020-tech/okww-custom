@@ -84,5 +84,22 @@
     "local_customizations": [
       "shared_heavy_click_forte_finally_release"
     ]
+  },
+  "Hsin": {
+    "upstream_repository": "ok-oldking/ok-wuthering-waves",
+    "upstream_commit": "a1c9e550d2008bedd6c8384d294d3add42ffee08",
+    "source_path": "src/char/Hsin.py",
+    "labels": [
+      "char_hsin",
+      "hsin_h1",
+      "hsin_h2",
+      "hsin_lib1",
+      "hsin_lib2"
+    ],
+    "local_release": "1.94.00",
+    "local_customizations": [
+      "isolated_coco_template_canvases",
+      "solo_hud_numeric_hp_fallback"
+    ]
   }
 }

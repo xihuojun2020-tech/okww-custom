@@ -107,6 +107,14 @@ class TestTrioCombatRecovery(unittest.TestCase):
         self.assertFalse(healer.has_buff())
         self.assertFalse(sub.has_buff())
 
+    def test_background_multi_uses_upstream_priority_instead_of_local_budget(self):
+        task = combat_task()
+        main, healer, sub = task.chars
+        task.use_original_multi_rotation = True
+        task._rotation_state.support_attempts = {healer.index, sub.index}
+        self.assertEqual(healer.get_switch_priority(sub, False), SwitchPriority.MUST)
+        self.assertIs(task._choose_switch_target(sub, False), healer)
+
     def test_recovery_respects_no_priority_and_switch_cooldown(self):
         for blocked in ('priority', 'cooldown'):
             task = combat_task()
