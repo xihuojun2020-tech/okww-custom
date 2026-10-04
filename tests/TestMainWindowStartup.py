@@ -157,6 +157,7 @@ class Launcher { static void Main(string[] args) {
         window.app = Mock()
         window.app.start_controller.start = Mock()
         window.app.start = Mock()
+        window.executor = Mock()
         window.handler = Mock()
         window.show_startup_version_change_notice = Mock()
         window.__dict__.update(attrs)
@@ -206,6 +207,13 @@ class Launcher { static void Main(string[] args) {
         self.assertTrue(window._startup_post_show_complete)
         window._review_account_integrity_before_start.assert_called_once_with()
         window._check_okscript_args.assert_called_once_with()
+        window.executor.start.assert_called_once_with()
+
+    def test_post_show_starts_run_controller_without_enabling_helpers(self):
+        window = self._window()
+        window._run_post_show_startup()
+        window.executor.start.assert_called_once_with()
+        window.app.start_controller.start.assert_not_called()
 
 
 if __name__ == "__main__":

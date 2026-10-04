@@ -28,7 +28,7 @@ class TestLanUpdateUI(unittest.TestCase):
     @patch("custom_ok.ok.gui.MainWindow.subprocess.Popen")
     def test_schedule_starts_helper_before_quitting(self, popen):
         popen.return_value.poll.return_value = None
-        window = SimpleNamespace(app=Mock())
+        window = SimpleNamespace(app=Mock(), executor=Mock())
         with tempfile.TemporaryDirectory() as temp:
             request = Path(temp) / "apply-request.json"
             request.write_text("{}", encoding="utf-8")
@@ -41,6 +41,7 @@ class TestLanUpdateUI(unittest.TestCase):
         from src.update import lan_service
         self.assertEqual(str(Path(lan_service.__file__).resolve().parents[2]), popen.call_args.kwargs['cwd'])
         window.app.quit.assert_called_once_with()
+        window.executor.pause.assert_called_once_with()
 
     @patch('custom_ok.ok.gui.MainWindow.InfoBar.error')
     @patch('custom_ok.ok.gui.MainWindow.subprocess.Popen')
@@ -62,6 +63,23 @@ class TestLanUpdateUI(unittest.TestCase):
             (root / 'update-result.json').write_text(json.dumps(dict(from_version='1.92.01', to_version='1.92.02', message='校验失败')))
             card = LanUpdateCard(root / 'lan_update.json', '1.92.01', SimpleNamespace(current_task=None))
             self.assertIn('校验失败', card.status.text())
+            card.deleteLater()
+
+    def test_running_trigger_does_not_block_requested_install(self):
+        from src.gui.LanUpdateCard import LanUpdateCard
+        with tempfile.TemporaryDirectory() as temp:
+            card = LanUpdateCard(Path(temp) / 'lan_update.json', '1.96.00',
+                                 SimpleNamespace(current_task=object()))
+            card.release = SimpleNamespace(version='1.97.00')
+            card.service = Mock()
+            card.service.create_apply_request.return_value = Path(temp) / 'apply-request.json'
+            requested = []
+            card.apply_requested.connect(requested.append)
+            def finish(work, complete, *_args, **_kwargs):
+                complete(work())
+            card.operation.start = Mock(side_effect=finish)
+            card._download()
+            self.assertEqual(requested, [Path(temp) / 'apply-request.json'])
             card.deleteLater()
 
     @patch("custom_ok.ok.gui.MainWindow.subprocess.Popen", side_effect=OSError("blocked"))

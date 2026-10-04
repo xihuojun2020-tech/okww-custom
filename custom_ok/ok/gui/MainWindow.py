@@ -515,6 +515,9 @@ class MainWindow(FluentWindow):
         def check_ready(attempt=0):
             code = helper.poll()
             if code is None and ready.is_file():
+                executor = getattr(self, 'executor', None)
+                if executor is not None:
+                    executor.pause()
                 self.app.quit()
                 return
             if code is not None or attempt >= 150:
@@ -672,8 +675,9 @@ class MainWindow(FluentWindow):
             task_index = args.get('task') - 1
             logger.info(f'start with params {task_index} {args.get("exit")}')
             self.app.start_controller.start(task_index, exit_after=args.get('exit'))
-        elif self.basic_global_config.get('Auto Start Game When App Starts'):
-            self.app.start_controller.start()
+        else:
+            # The run controller starts with the app; each helper keeps its own saved enable switch.
+            self.executor.start()
         # Check for .okscript file in command line arguments only after the
         # integrity gate has completed.
         self._check_okscript_args()

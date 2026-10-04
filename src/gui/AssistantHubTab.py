@@ -8,7 +8,7 @@ from src.gui.SectionPanel import SectionPanel
 class AssistantHubTab(CustomTab):
     def __init__(self, start_panel):
         super().__init__()
-        self.run_section = SectionPanel('自动辅助', '开关决定启用哪些辅助；点击开始后才会运行。暂停不改变已保存的开关。', self.view)
+        self.run_section = SectionPanel('自动辅助', '程序打开后自动开始；各辅助开关决定实际运行哪些功能。暂停不改变已保存的开关。', self.view)
         self.run_section.title_label.setProperty('role', 'pageTitle')
         self.run_section.add_widget(start_panel.start_card)
         self.add_widget(self.run_section)
