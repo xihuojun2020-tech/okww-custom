@@ -114,6 +114,37 @@ class TestDailyRunConfirmation(unittest.TestCase):
             self.assertEqual(task.config['Daily Profile'], 'A3')
             task._confirm_standalone_profile.assert_not_called()
 
+    def test_material_entry_uses_daily_confirmation_and_cleans_binding_on_cancel_or_change(self):
+        for answer in ('cancel', 'changed', 'accept'):
+            with self.subTest(answer=answer), tempfile.TemporaryDirectory() as temp:
+                env = make_account_environment(temp)
+                task = object.__new__(DailyTask)
+                task.integrity_service = env.integrity
+                task.config = {'Daily Profile': 'A1'}
+                task._executor = SimpleNamespace()
+                task._publish_daily_stage = task.log_info = Mock()
+                task.validate_daily_tasks = Mock(side_effect=AssertionError('unrelated validation'))
+                task._runtime_overrides = {}
+                def confirm():
+                    if answer == 'changed':
+                        p = env.repository.list_profiles()[0]
+                        env.repository.publish_profile(ProfileEditScope(p.profile_id, p.revision), {
+                            'account': p.account, 'tasks': {**p.tasks, 'Which Tacet Suppression to Farm': 7}})
+                    return answer != 'cancel'
+                task._confirm_standalone_profile = Mock(side_effect=confirm)
+                expected = TaskDisabledException if answer == 'cancel' else ConfigIntegrityBlocked if answer == 'changed' else RuntimeError
+                with patch('src.task.DailyTask.require_account_runtime_for_task'), \
+                        patch('src.task.DailyTask.get_default_repository', return_value=env.repository), \
+                        patch('src.task.DailyTask.WWOneTimeTask.run', side_effect=RuntimeError('before-game')) as entry:
+                    with self.assertRaises(expected):
+                        task.run_world_boss_material_only('world_crownless', 1)
+                    self.assertEqual(entry.call_count, 1 if answer == 'accept' else 0)
+                task._confirm_standalone_profile.assert_called_once()
+                task.validate_daily_tasks.assert_not_called()
+                self.assertIsNone(task._verified_profile_id)
+                self.assertIsNone(task._verified_profile_snapshot)
+                self.assertEqual({}, task._runtime_overrides)
+
 
 if __name__ == '__main__':
     unittest.main()

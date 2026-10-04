@@ -47,7 +47,7 @@ def task_category(task):
     if getattr(task, 'navigation_section', '') == ACTIVITIES or getattr(task, 'group_name', '') in ('限时活动', '常驻活动'):
         return '活动'
     name = type(task).__name__
-    if name in ('DailyTask', 'MultiAccountDailyTask'):
+    if name in ('DailyTask', 'MultiAccountDailyTask', 'WorldBossMaterialTask'):
         return '每日执行'
     if name in ('WeeklyBossTask', 'GardenTask', 'MultiAccountWeeklyGardenTask', 'AutoAbyssTask', 'AutoSeaRuinsTask'):
         return '每周任务'

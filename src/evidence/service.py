@@ -99,9 +99,12 @@ def begin_daily_run(task):
         identity = getattr(task, '_verified_profile_id', None)
         if not isinstance(service, EvidenceService) or not identity:
             return None
+        overrides = getattr(task, '_runtime_overrides', None) or {}
+        scope = ('world_boss_material' if overrides.get('_world_boss_material_only') else
+                 'weekly_boss' if overrides.get('_weekly_boss_only') else 'daily')
         record = dict(run_id=str(uuid4()), profile_id=identity, started_at=now_iso(),
                       finished_at=None, result='running', video_paths=[],
-                      scope='weekly_boss' if (getattr(task, '_runtime_overrides', None) or {}).get('_weekly_boss_only') else 'daily')
+                      scope=scope)
         service.submit(record, None, run=True)
         return record
     except Exception:
@@ -136,6 +139,12 @@ def bound_profile(executor):
         verified = getattr(daily, '_verified_profile_id', None)
         if verified and verified == getattr(task, '_current_profile_id', None):
             return verified
+    if type(task).__name__ == 'WorldBossMaterialTask':
+        from src.task.DailyTask import DailyTask
+        daily = task.get_task_by_class(DailyTask)
+        if (getattr(daily, '_profile_run_active', False)
+                and (getattr(daily, '_runtime_overrides', None) or {}).get('_world_boss_material_only')):
+            return getattr(daily, '_verified_profile_id', None)
     return None
 
 

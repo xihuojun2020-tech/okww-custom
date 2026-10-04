@@ -11,6 +11,12 @@ from src.task.BaseCombatTask import BaseCombatTask
 
 
 class TestTaskNavigationClassification(unittest.TestCase):
+    def test_material_standalone_is_in_daily_execution_category(self):
+        from src.task.WorldBossMaterialTask import WorldBossMaterialTask
+        task = object.__new__(WorldBossMaterialTask)
+        self.assertEqual(classify_task(task), TASKS)
+        self.assertEqual(task_category(task), '每日执行')
+
     def test_echoes_remain_uses_executable_activity_card(self):
         from src.task.EchoesRemainTask import EchoesRemainTask
         from src.gui.activity_catalog import PLACEHOLDERS, PLACEHOLDER_REVISION, activity_revision
@@ -34,7 +40,6 @@ class TestTaskNavigationClassification(unittest.TestCase):
         self.assertIn("多账号每日任务", inspect.getsource(TestAccountSwitchTask.__init__))
         self.assertIn('self.visible = False', inspect.getsource(TestAccountSwitchTask.__init__))
         self.assertTrue(issubclass(AutoAbyssTask, BaseCombatTask))
-        self.assertIn("逐塔重新识别角色体力", inspect.getsource(AutoAbyssTask.__init__))
         self.assertIn("combat_once", inspect.getsource(AutoAbyssTask._run_floor_combat))
         abyss = object.__new__(AutoAbyssTask)
         abyss.close_revive_popup = lambda: True

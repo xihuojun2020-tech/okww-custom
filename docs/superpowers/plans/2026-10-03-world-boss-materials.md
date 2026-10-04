@@ -10,7 +10,7 @@
 
 **Tech Stack:** Python 3.12、ok-script、PySide6、现有ConfigIntegrityService和账号UUID、既有OCR与图像特征、unittest。
 
-**Spec:** [完整设计](../specs/2026-10-03-world-boss-materials-design.md)。状态：已实施为1.93.00，离线验证完成，实机验收待使用端；基线1.92.02 / b5edc564。
+**Spec:** [完整设计](../specs/2026-10-03-world-boss-materials-design.md)。状态：已实施为1.93.00，离线验证及GitHub/NAS发布完成，实机验收待使用端；基线1.92.02 / b5edc564。
 
 代码框中的省略号仅声明未来接口签名，不是待填实现；每个接口的行为、测试及实施步骤在对应任务中定义。进入实施阶段前先阅读完整设计。
 
@@ -242,8 +242,8 @@ progress.resolve(event_id, True)
 - [x] 修正具体失败并只重复相关风险测试，确认原自动战斗偏好和账号切换链路未变。
 - [x] 按实施时基线升中等版本（当前拟1.93.00），同步发布说明和使用手册，记录目标上限是历史累计数，首次老账号默认关闭。
 - [x] 审阅git diff，stage只含本功能文件；构建源码更新包并对上一发布标签做verify_update_package校验，确认configs/监控证据不在包内。
-- [ ] 一次功能发布提交，创建匹配固定宽度注释标签，推送GitHub；发布至唯一当前NAS。读回latest.json与远端包SHA-256，经生产下载链路复验。
-- [ ] 最终报告包含实现版本、验证项、实机限制、GitHub/NAS发布结果；本文状态改“已实施”，不能仅因写完代码就填写全流程实机通过。
+- [x] 一次功能发布提交，创建匹配固定宽度注释标签，推送GitHub；发布至唯一当前NAS。读回latest.json与远端包SHA-256，经生产下载链路复验。
+- [x] 最终报告包含实现版本、验证项、实机限制、GitHub/NAS发布结果；本文状态改“已实施”，不能仅因写完代码就填写全流程实机通过。
 
 ## 计划自检
 
@@ -263,3 +263,5 @@ progress.resolve(event_id, True)
 原4C单轮回归集中于TestWorldBossMaterialTask并复跑TestFarmEcho。每日入口返回实际执行目标或None；消费完成以确认扣除为准，复用原余额验证，未另造结算页的私有接口。发布结果以发布核验报告为准。
 
 [实施报告](../../reviews/2026-10-03-world-boss-materials-implementation.md) · [使用说明](../../references/world-boss-materials.md)
+
+发布核验完成：代码提交672aeef7，注释标签v1.93.00，NAS生产链路重新下载及SHA-256一致。GitHub CI安装器于核验时仍在构建；详见 [发布核验](../../reviews/world-boss-materials-1.93.00-publish-verification.md)。

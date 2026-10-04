@@ -58,6 +58,23 @@ def _load_pth_paths():
 _load_pth_paths()
 
 
+def _create_ok(config):
+    from ok import OK
+    from config import version
+
+    class SourceVersionOK(OK):
+        def do_init(self):
+            # OK.__init__ replaces config['version'] with launcher metadata.
+            # NAS updates the working source; restore its version before any App/UI.
+            import logging
+            logging.getLogger(__name__).info(
+                '实际运行版本：%s（启动器提供：%s）', version, self.config.get('version'))
+            self.config['version'] = version
+            return super().do_init()
+
+    return SourceVersionOK(config)
+
+
 def _sync_custom_ok():
     """把 custom_ok 里的定制框架文件同步到 site-packages 的 ok 包（缺才补，每次启动检查）。"""
     try:
@@ -329,12 +346,11 @@ if __name__ == '__main__':
         raise RuntimeError(f'account integrity start hook unavailable: {_integrity_hook_error}')
 
     from config import config
-    from ok import OK
 
     config = config
     ok = None
     try:
-        ok = OK(config)
+        ok = _create_ok(config)
         attach_framework_hooks()
         ok.start()
     except Exception as e:

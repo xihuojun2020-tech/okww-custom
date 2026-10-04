@@ -76,6 +76,10 @@ class TestCompletionCheckUI(unittest.TestCase):
                 text = '\n'.join(label.text() for label in page._run_panel.findChildren(QLabel))
                 self.assertIn('正常返回（不代表全部完成）', text)
                 self.assertIn('最近开始时间：无记录', text)
+                page._run_record['scope'] = 'world_boss_material'
+                page._display_records()
+                text = '\n'.join(label.text() for label in page._run_panel.findChildren(QLabel))
+                self.assertIn('最近执行范围：首领材料单独执行', text)
                 self.assertFalse(hasattr(page, 'reminders_only'))
                 other = '00000000-0000-4000-8000-000000000002'
                 page._profiles[other] = 'A2-测试-19910000002'

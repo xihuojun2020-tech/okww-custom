@@ -30,7 +30,7 @@ class TestBaseCombatTask(unittest.TestCase):
         task._last_combat_error = None
         task._last_combat_error_log = 0
         task._suppressed_combat_errors = 0
-        task._executor = SimpleNamespace(check_enabled=Mock(), _frame=None)
+        task._executor = SimpleNamespace(check_enabled=Mock(), _frame=None, frame=None)
         task.next_frame = Mock()
         task.in_combat = Mock(return_value=True)
         task.is_expected_combat_end = Mock(return_value=False)
@@ -78,6 +78,63 @@ class TestBaseCombatTask(unittest.TestCase):
         self.assertEqual(2, char.perform.call_count)
         task.load_chars.assert_called_once_with(force_full_scan=True)
         self.assertFalse(task._rotation_recovering)
+
+    def test_death_rejection_requires_gray_portrait_and_explicit_no_revival_message(self):
+        from types import SimpleNamespace
+        task = self.recovery_task()
+        char = SimpleNamespace(index=2, has_intro=True, has_sub_dps_intro=True)
+        task._switch_portrait_gray = Mock(return_value=True)
+        task.ocr = Mock(return_value=[SimpleNamespace(name='暂无可用的意识恢复物品')])
+        task.log_warning = Mock()
+        self.assertTrue(task._switch_rejected_by_death(char))
+        self.assertTrue(char._switch_unrevivable)
+        self.assertFalse(char.has_intro)
+        self.assertFalse(char.has_sub_dps_intro)
+        task._switch_portrait_gray.return_value = False
+        self.assertFalse(task._unrevivable_switch_target(char))
+        self.assertFalse(char._switch_unrevivable)
+        for gray, message in ((True, '切换冷却中'), (False, '暂无可用的意识恢复物品'),
+                              (None, '暂无可用的意识恢复物品')):
+            task._switch_portrait_gray.return_value = gray
+            task.ocr.return_value = [SimpleNamespace(name=message)]
+            self.assertFalse(task._switch_rejected_by_death(char))
+            self.assertFalse(char._switch_unrevivable)
+
+    def test_dead_switch_yields_after_first_rejected_input_and_next_rotation_uses_survivor(self):
+        from src.char.BaseChar import BaseChar, CharType
+        task = self.recovery_task()
+        current = BaseChar(task, 0, char_type=CharType.MAIN_DPS)
+        dead = BaseChar(task, 1, char_type=CharType.SUB_DPS)
+        live = BaseChar(task, 2, char_type=CharType.HEALER)
+        task.chars = [current, dead, live]
+        task.update_lib_portrait_icon = Mock()
+        task.check_combat = Mock()
+        task._wait_switch_team = Mock(return_value=(True, 0, 3))
+        current.get_current_con = Mock(return_value=0)
+        current.is_con_full = Mock(return_value=False)
+        dead.wait_switch = Mock(return_value=False)
+        task.send_key = task.click = task.log_debug = Mock()
+        task._choose_switch_target = Mock(return_value=dead)
+        task._switch_portrait_gray = Mock(return_value=True)
+        task.ocr = Mock(return_value=[Mock(name='banner')])
+        task.ocr.return_value[0].name = '暂无可用的意识恢复物品'
+        task.log_warning = Mock()
+        post = Mock()
+        task.switch_next_char(current, post_action=post)
+        self.assertTrue(dead._switch_unrevivable)
+        self.assertEqual(1, len([c for c in task.send_key.call_args_list if c.args == (2,)]))
+        post.assert_not_called()
+        task.next_frame.assert_not_called()
+        del task._choose_switch_target
+        for char in (current, dead, live):
+            char.healer_full_con_switch_locked = Mock(return_value=False)
+            char.get_switch_priority = Mock(return_value=200)
+        self.assertIs(live, task._choose_switch_target(current, False))
+        live._switch_unrevivable = True
+        self.assertIs(current, task._choose_switch_target(current, False))
+        current.continues_normal_attack = Mock()
+        task.switch_next_char(current)
+        current.continues_normal_attack.assert_called_once_with(.2)
 
     def test_rotation_leaving_combat_cannot_retry_blindly(self):
         task = self.recovery_task()

@@ -1767,7 +1767,7 @@ class BaseWWTask(BaseTask):
             return False
         titles = ''.join(str(b.name) for b in self.ocr(.02, .025, .36, .10, frame=frame))
         patterns = {
-            'gray_book_quest': r'活跃行迹|活躍行跡|Activity',
+            'gray_book_quest': r'活[跃躍]行[迹跡]|Activity',
             'gray_book_boss': r'素材获取|素材獲取|Forgery|Materials',
             'gray_book_all_monsters': r'敌迹探寻|敵跡探尋|Echo.*Hunt|Echo.*Hunting',
         }

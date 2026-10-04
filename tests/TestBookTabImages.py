@@ -6,6 +6,13 @@ from src.task.BaseWWTask import BaseWWTask
 class TestBookTabImages(TaskTestCase):
     task_class=BaseWWTask
     config=config
+    def test_actual_material_failure_activity_header_is_accepted(self):
+        self.set_image('tests/images/material_boss_entry/activity_mixed_script.png')
+        frame = self.task.frame
+        self.assertIsNotNone(self.task._guidebook_tab('gray_book_quest', frame))
+        self.assertTrue(self.task._guidebook_content('gray_book_quest', frame))
+        self.assertFalse(self.task._guidebook_content('gray_book_boss', frame))
+
     def test_forgery_selected_other_tabs_unselected(self):
         for stamp in ('17_02_22','17_02_46','17_03_02','17_03_16'):
             self.set_image(f'tests/images/materials/{stamp}.png')

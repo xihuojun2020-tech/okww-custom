@@ -767,7 +767,7 @@ class BaseCombatTask(CombatCheck):
     def _choose_switch_target(self, current_char, has_intro, target_low_con=False):
         candidates = [
             char for char in self.chars
-            if char is not None and char != current_char
+            if char is not None and char != current_char and not self._unrevivable_switch_target(char)
         ]
         if not candidates:
             return current_char
@@ -830,6 +830,40 @@ class BaseCombatTask(CombatCheck):
     def _apply_intro_flags(self, current_char, switch_to, has_intro):
         switch_to.has_intro = has_intro
         switch_to.has_sub_dps_intro = has_intro and current_char.is_sub_dps
+
+    def _switch_portrait_gray(self, char, frame=None):
+        frame = self.frame if frame is None else frame
+        if frame is None:
+            return None
+        box = self.get_box_by_name(f'box_char_{char.index + 1}')
+        # Use the face interior; portrait borders include the colored world behind it.
+        crop = frame[box.y + int(box.height * .20):box.y + int(box.height * .80),
+                     box.x + int(box.width * .20):box.x + int(box.width * .75)]
+        if not crop.size:
+            return None
+        hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+        return bool(np.mean(hsv[:, :, 1] > 30) < .03)
+
+    def _unrevivable_switch_target(self, char):
+        if not char.__dict__.get('_switch_unrevivable', False):
+            return False
+        if self._switch_portrait_gray(char) is False:
+            char._switch_unrevivable = False  # Revived teammates become eligible again.
+            return False
+        return True
+
+    def _switch_rejected_by_death(self, char):
+        frame = self.frame
+        if self._switch_portrait_gray(char, frame) is not True:
+            return False
+        messages = self.ocr(.25, .14, .75, .25, frame=frame)
+        if not any(re.sub(r'\s+', '', b.name) in ('暂无可用的意识恢复物品', '暫無可用的意識恢復物品')
+                   for b in messages):
+            return False
+        char._switch_unrevivable = True
+        char.has_intro = char.has_sub_dps_intro = False
+        self.log_warning(f'切人被游戏拒绝：{char}已阵亡且无意识恢复物品，继续使用可用队友')
+        return True
 
     def switch_next_char(self, current_char, post_action=None, free_intro=False, target_low_con=False):
         """切换到下一个最优角色。
@@ -930,6 +964,8 @@ class BaseCombatTask(CombatCheck):
                     self.add_freeze_duration(current_time, switch_to.intro_motion_freeze_duration, -100)
                     current_char.last_outro_time = current_time
                 break
+            if current_index == current_char.index and self._switch_rejected_by_death(switch_to):
+                return  # Yield to the next rotation instead of retrying a dead slot for ten seconds.
             self.next_frame()
 
         if post_action:

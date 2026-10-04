@@ -189,6 +189,16 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
         if not pickup_echo:
             return FarmCycleResult(bool(entered), False, False)
 
+        dropped = self.pickup_dropped_echo()
+        if not self.bypass_end_wait:
+            if dropped and not self._has_treasure:
+                self.wait_until(self.in_combat, raise_if_not_found=False, time_out=5)
+            else:
+                self.wait_until(self.in_combat, raise_if_not_found=False, time_out=1)
+        return FarmCycleResult(bool(entered), False, bool(dropped))
+
+    def pickup_dropped_echo(self):
+        """Shared bounded drop search, without restarting a battle or spending stamina."""
         if self.pick_echo():
             logger.info(f'farm echo on the face')
             dropped = True
@@ -204,12 +214,7 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
             dropped = self.walk_find_echo()
             logger.info(f'farm echo walk_find_echo {dropped}')
         self.incr_drop(dropped)
-        if not self.bypass_end_wait:
-            if dropped and not self._has_treasure:
-                self.wait_until(self.in_combat, raise_if_not_found=False, time_out=5)
-            else:
-                self.wait_until(self.in_combat, raise_if_not_found=False, time_out=1)
-        return FarmCycleResult(bool(entered), False, bool(dropped))
+        return bool(dropped)
 
     def execute_treasure_hunt(self):
         if not self.in_combat() and self.find_treasure_icon() and self.walk_to_treasure_and_restart():

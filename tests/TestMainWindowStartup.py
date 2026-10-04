@@ -19,6 +19,43 @@ from custom_ok.ok.gui.MainWindow import MainWindow
 class TestMainWindowStartup(unittest.TestCase):
     """Regression tests for the post-show integrity gate."""
 
+    def test_source_version_wins_before_runtime_init_with_real_framework_constructor(self):
+        import ok
+        import pyappify
+        from ok.util.config import Config
+        from config import version
+        from main import _create_ok
+        for launcher_version in (None, 'v1.92.02', f'v{version}', 'v9.99.99'):
+            with self.subTest(launcher=launcher_version), tempfile.TemporaryDirectory() as temp:
+                settings = {'version': version, 'check_mutex': False, 'config_folder': temp}
+                seen = []
+                def initialize(runtime):
+                    # This is the real OK.__init__ -> do_init boundary, before App
+                    # reads config['version'] for Qt/title/About/task creation.
+                    seen.append(runtime.config['version'])
+                    self.assertEqual(launcher_version, pyappify.app_version)
+                    self.assertEqual('China', runtime.config['profile'])
+                    return True
+                resolves = {'check_mutex': Mock(), 'config_logger': Mock(), 'GlobalConfig': Mock(),
+                            'register_app_launcher_options': Mock(), 'register_basic_options': Mock(),
+                            'register_notification_options': Mock(), 'parse_arguments_to_map': lambda: {},
+                            'WINDOWS_START_METHOD_START': 'start', 'windows_graphics_available': lambda: False}
+                with patch('ok._resolve', side_effect=resolves.__getitem__), \
+                        patch.object(ok.OK, 'do_init', autospec=True, side_effect=initialize) as entry, \
+                        patch.object(ok, 'logger', Mock()), patch.object(Config, 'config_folder', temp), \
+                        patch.object(ok.og, 'set_use_dml'), patch.object(ok.og, 'ok'), \
+                        patch.object(ok.og, 'config'), patch.object(ok.og, 'global_config'), \
+                        patch.object(pyappify, 'app_version', launcher_version), \
+                        patch.object(pyappify, 'app_profile', 'China'), patch.object(pyappify, 'logger'), \
+                        patch.dict(os.environ, {'PYAPPIFY_APP_VERSION': launcher_version or ''}), \
+                        patch('ctypes.windll.shcore.SetProcessDpiAwareness'):
+                    runtime = _create_ok(settings)
+                    self.assertIsInstance(runtime, ok.OK)
+                    self.assertEqual([version], seen)
+                    self.assertEqual(version, runtime.config['version'])
+                    self.assertEqual(launcher_version or '', os.environ['PYAPPIFY_APP_VERSION'])
+                    entry.assert_called_once_with(runtime)
+
     def test_exit_cleanup_preserves_bound_lan_update_helper(self):
         from main import _exit_cleanup
         root = Path(__file__).resolve().parents[1]

@@ -34,6 +34,92 @@ def example_task(name='周本挑战'):
 
 
 class TestFlatUI(unittest.TestCase):
+    def test_registered_material_entry_remains_on_task_page_after_refresh(self):
+        from config import config
+        from src.gui.TaskHubTab import TaskHubTab
+        from src.gui.navigation_sections import task_category
+        from src.task.WorldBossMaterialTask import WorldBossMaterialTask
+        self.assertEqual(1, config['onetime_tasks'].count(
+            ['src.task.WorldBossMaterialTask', 'WorldBossMaterialTask']))
+        owner = SimpleNamespace(scene=None, text_fix={}, remove_onetime_task=Mock(), _wake_executor=Mock(),
+                                global_config=SimpleNamespace(get_config=lambda _: {}))
+        source = WorldBossMaterialTask(executor=owner, app=None)
+        self.assertTrue(source.visible)
+        task = type('WorldBossMaterialTask', (), {})()
+        task.__dict__.update(vars(example_task()))
+        for key in ('name', 'description', 'instructions', 'default_config', 'config_description',
+                    'config_type', 'visible', 'navigation_section', 'group_name'):
+            setattr(task, key, getattr(source, key))
+        task.config = MemoryConfig({**source.default_config, '首领关卡': '海之女', '领取次数': 2})
+        with patch.object(og, 'app', SimpleNamespace(tr=str)), \
+                patch.object(og, 'executor', SimpleNamespace(onetime_tasks=[task], current_task=None,
+                                                            waiting_for_task=lambda _: '')), \
+                patch.object(og, 'task_manager', SimpleNamespace(imported_scripts={})):
+            page = TaskHubTab()
+            try:
+                for _ in range(2):
+                    self.assertEqual([task], page.task_tab.tasks)
+                    self.assertEqual('每日执行', task_category(task))
+                    card = page.task_tab.card_widgets[0]
+                    self.assertIsNotNone(card.start_button)
+                    self.assertEqual('海之女', card.config_widget_by_key['首领关卡'].combo_box.currentText())
+                    self.assertEqual(2, card.config_widget_by_key['领取次数'].spin_box.value())
+                    page.task_tab.refresh_ui()
+                page.resize(1100, 840)
+                page.show()
+                QApplication.processEvents()
+                destination = Path('test_out/material-entry-19601.png')
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                self.assertTrue(page.grab().save(str(destination)))
+            finally:
+                page.task_tab.timer.stop()
+                page.close()
+                page.deleteLater()
+
+    def test_material_entry_selects_boss_and_claim_count_with_relevant_combat_controls(self):
+        from ok.gui.tasks.TaskCard import TaskCard
+        from src.task.WorldBossMaterialTask import WorldBossMaterialTask
+        owner = SimpleNamespace(scene=None, text_fix={}, remove_onetime_task=Mock(), _wake_executor=Mock(),
+                                global_config=SimpleNamespace(get_config=lambda _: {}))
+        source = WorldBossMaterialTask(executor=owner, app=None)
+        self.assertTrue(source.visible)
+        task = type('WorldBossMaterialTask', (), {})()
+        task.__dict__.update(vars(example_task()))
+        for key in ('name', 'description', 'instructions', 'default_config', 'config_description', 'config_type'):
+            setattr(task, key, getattr(source, key))
+        task.config = MemoryConfig(source.default_config)
+        with patch.object(og, 'app', SimpleNamespace(tr=str)), \
+                patch.object(og, 'executor', SimpleNamespace(waiting_for_task=lambda _: '')):
+            card = TaskCard(task, True, fluent_sample=True)
+            try:
+                self.assertIsNotNone(card.start_button)
+                self.assertEqual({'首领关卡', '领取次数', 'Use Liberation', 'Switch to Healer before and after Combat'},
+                                 set(card.config_widget_by_key))
+                bosses = card.config_widget_by_key['首领关卡'].combo_box
+                claims = card.config_widget_by_key['领取次数'].spin_box
+                self.assertEqual(23, bosses.count())
+                self.assertEqual('天傀劫煞', bosses.itemText(0))
+                self.assertEqual('万囚牢·朽躯', bosses.itemText(1))
+                self.assertEqual('梦魔亚当·重锤', bosses.itemText(2))
+                self.assertEqual('聚械机偶', bosses.itemText(22))
+                self.assertEqual('无冠者', bosses.currentText())
+                self.assertEqual((1, 9999, 1), (claims.minimum(), claims.maximum(), claims.value()))
+                bosses.setCurrentIndex(bosses.findText('云闪之鳞'))
+                claims.setValue(3)
+                self.assertEqual('云闪之鳞', task.config['首领关卡'])
+                self.assertEqual(3, task.config['领取次数'])
+                self.assertIn('当前账号', card.card.contentLabel.text())
+                card.setExpand(True)
+                card.resize(1000, card.sizeHint().height())
+                card.show()
+                QApplication.processEvents()
+                destination = Path('test_out/material-standalone-card.png')
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                self.assertTrue(card.grab().save(str(destination)))
+            finally:
+                card.close()
+                card.deleteLater()
+
     def test_resonance_executable_card_exposes_combat_controls_and_evidence(self):
         from ok.gui.tasks.TaskCard import TaskCard
         from src.task.ResonanceSimulationTask import ResonanceSimulationTask
@@ -652,6 +738,7 @@ class TestFlatUI(unittest.TestCase):
 
     def test_settings_header_action_and_account_groups(self):
         from src.gui.FlatSettingGroup import FlatActionSettingCard
+        from src.task.weekly_boss_plan import WEEKLY_PLAN
         from PySide6.QtTest import QTest
         card = FlatActionSettingCard('导出', None, '账号配置', '范围说明')
         callback = Mock()
@@ -670,7 +757,7 @@ class TestFlatUI(unittest.TestCase):
             self.assertTrue(all(not section.toggle_button.isChecked() for section in tab.form_sections.values()))
             self.assertEqual(tab.form_sections[0].title, '日常与声骸')
             self.assertEqual(tab.form_sections[1].title, '周常安排')
-            self.assertTrue(tab.form_sections[1].isAncestorOf(tab.form_widgets['Weekly Boss Target']))
+            self.assertTrue(tab.form_sections[1].isAncestorOf(tab.form_widgets[WEEKLY_PLAN]))
             self.assertTrue(tab.identity_group.isAncestorOf(tab.sequence_group))
             tab.deleteLater()
 
