@@ -424,6 +424,97 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         self.assertFalse(task._has_treasure)
         self.assertFalse(task._material_reenter)
 
+    def test_sea_boss_two_claims_run_real_cycle_after_delayed_retry_spawn(self):
+        task = self.claim_task('confirm')
+        del task.farm_cycle
+        task.in_realm_check = Mock()
+        task.log_debug = task.log_info = task.sleep = Mock()
+        task.combat_wait_time = 0
+        task.is_revived = False
+        task.in_world = Mock(return_value=False)
+        task.wait_click_feature = Mock(side_effect=AssertionError('unexpected realm exit confirmation'))
+        active = True
+        def enter():
+            task._in_realm = task._just_entered_boss_realm = True
+        task.teleport_to_configured_boss_and_prepare.side_effect = enter
+        task.in_combat = Mock(side_effect=lambda **kw: active)
+        def approach(probe, *args, **kwargs):
+            nonlocal active
+            self.assertEqual(('w',), args)
+            active = True
+            self.assertTrue(probe())
+        task.run_until = Mock(side_effect=approach)
+        def fight(**kwargs):
+            nonlocal active
+            self.assertTrue(active)
+            task._material_name_verified = True
+            task.out_of_combat_reason = task.TARGET_GONE_END_REASON
+            active = False
+            return True
+        task.combat_once = Mock(side_effect=fight)
+        task.check_boss_name = Mock()
+        self.assertEqual(MaterialRunResult(2, 120, 'complete'), task.run_for_profile(
+            'account-a', lambda: self.tasks, Mock(), self.service,
+            activity_ready=True, used_stamina=0, request=('world_lady_of_the_sea', 2)))
+        self.assertEqual([True, False], [call.args[0] for call in task._leave_settlement.call_args_list])
+        self.assertEqual(2, task.combat_once.call_count)
+        task.run_until.assert_called_once()
+        task.teleport_to_configured_boss_and_prepare.assert_called_once()
+        self.assertEqual({'world_lady_of_the_sea': 2}, self.progress.counts())
+        self.assertEqual(2, task.pickup_dropped_echo.call_count)
+        self.assertEqual(2, task.click_box.call_count)
+        self.assertEqual(['f', 'f'], [call.args[0] for call in task.send_key.call_args_list])
+        task.in_world.assert_not_called()
+        task.wait_click_feature.assert_not_called()
+
+    def test_material_realm_already_in_combat_never_reopens_echo_boss_menu(self):
+        task = self.runner()
+        task._in_realm = True
+        task.config['Boss'] = 'Lady of the Sea'
+        task.in_combat = Mock(return_value=True)
+        task.run_until = Mock()
+        with patch.object(FarmEchoTask, 'manage_boss_interactions') as echo_menu:
+            task.manage_boss_interactions()
+        echo_menu.assert_not_called()
+        task.run_until.assert_not_called()
+
+    def test_material_realm_waits_then_approaches_target_without_echo_menu(self):
+        task = self.runner()
+        task._in_realm = True
+        task.in_combat = Mock(return_value=False)
+        task.run_until = Mock()
+        with patch.object(FarmEchoTask, 'manage_boss_interactions') as echo_menu:
+            task.manage_boss_interactions()
+        echo_menu.assert_not_called()
+        task.run_until.assert_called_once()
+        self.assertEqual(('w',), task.run_until.call_args.args[1:])
+        self.assertTrue(task.run_until.call_args.kwargs['target'])
+        self.assertEqual(10, task.run_until.call_args.kwargs['time_out'])
+        task._release_movement.assert_called_once()
+
+    def test_material_realm_approach_failure_and_stop_release_movement_keep_claim(self):
+        for error in (RuntimeError('enemy did not appear'), TaskDisabledException('manual stop')):
+            with self.subTest(error=type(error).__name__):
+                self.progress.correct(A, 1)
+                task = self.runner()
+                task._in_realm = True
+                task.in_combat = Mock(return_value=False)
+                task.run_until = Mock(side_effect=error)
+                with patch.object(FarmEchoTask, 'manage_boss_interactions') as echo_menu:
+                    with self.assertRaises(type(error)):
+                        task.manage_boss_interactions()
+                echo_menu.assert_not_called()
+                task._release_movement.assert_called_once()
+                self.assertEqual({A: 1}, self.progress.counts())
+                self.assertEqual({}, self.progress.pending())
+
+    def test_material_overworld_keeps_existing_boss_interactions(self):
+        task = self.runner()
+        task._in_realm = False
+        with patch.object(FarmEchoTask, 'manage_boss_interactions') as echo_menu:
+            task.manage_boss_interactions()
+        echo_menu.assert_called_once_with()
+
     def test_completed_target_exits_then_enters_second_boss_normally(self):
         task = self.claim_task('confirm')
         self.tasks = plan((1, 1, 0))

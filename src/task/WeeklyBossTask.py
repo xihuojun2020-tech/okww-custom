@@ -436,8 +436,7 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
             self.send_key_up(key)
         self.mouse_up(key='right')
 
-    def _fight(self):
-        self._stage('周本自动战斗')
+    def _approach_challenge_enemy(self):
         # Reuse the normal boss targeting/rotation. Only approach if no target
         # appears after loading; never run the overworld teleport/restart loop.
         if not self.wait_until(lambda: self.in_combat(target=True), time_out=5,
@@ -447,6 +446,10 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
                                running=True, target=True, raise_if_not_found=True)
             finally:
                 self._release_movement()
+
+    def _fight(self):
+        self._stage('周本自动战斗')
+        self._approach_challenge_enemy()
         while True:
             self.skip_combat_check = False
             combat_error = None

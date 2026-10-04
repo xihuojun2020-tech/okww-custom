@@ -110,6 +110,15 @@ class WorldBossMaterialTask(FarmEchoTask):
             self._verify_material_boss_title()
         return super().perform_combat_rotation()
 
+    def manage_boss_interactions(self):
+        if self._in_realm:
+            # Challenge entry/retry is already confirmed. FarmEcho's sea-boss
+            # menu branch would press Esc while the next enemy is still spawning.
+            self._stage('副本等待首领出现，必要时短距离靠近')
+            WeeklyBossTask._approach_challenge_enemy(self)
+            return
+        return super().manage_boss_interactions()
+
     def _task_hint_phase(self):
         if self._in_realm:
             phase = WeeklyBossTask._task_hint_phase(self)
