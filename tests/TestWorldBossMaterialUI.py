@@ -18,7 +18,7 @@ from src.task.world_boss_material_progress import WorldBossMaterialProgress
 from src.task.world_boss_materials import WORLD_BOSS_TARGETS
 from tests.fixture_support import make_account_environment
 
-BOSSES = [b.key for b in WORLD_BOSS_TARGETS[:3]]
+BOSSES = ['world_crownless', 'world_tempest', 'world_thundering']
 ROWS = [{'boss': b, 'limit': n} for b, n in zip(BOSSES, (2, 3, 4))]
 
 
@@ -37,6 +37,22 @@ class TestWorldBossMaterialUI(unittest.TestCase):
     def dispose(self, widget):
         self.addCleanup(widget.deleteLater)
         return widget
+
+    def test_screenshot_catalog_order_preserves_saved_targets_and_cumulative_progress(self):
+        expected = ['天傀劫煞', '万囚牢·朽躯', '梦魔亚当·重锤', '无铭探索者', '海维夏',
+                    '炉芯机骸', '海之女', '伪作的神王', '芬莱克', '荣耀狮像', '叹息古龙',
+                    '罗蕾莱', '异构武装', '无归的谬误', '无冠者', '朔雷之鳞', '云闪之鳞',
+                    '燎照之骑', '飞廉之猩', '哀声鸷', '无常凶鹭', '辉萤军势', '聚械机偶']
+        self.progress.correct(BOSSES[0], 1)
+        pending = self.progress.begin(BOSSES[1], 60, 'previous-version')
+        widget = self.dispose(WorldBossMaterialPlanWidget({MATERIAL_TARGETS: ROWS}, self.env.integrity, self.identity))
+        for row, (target, limit, _) in zip(ROWS, widget.rows):
+            self.assertEqual(['无', *expected], [target.itemText(i) for i in range(target.count())])
+            self.assertEqual(row['boss'], target.currentData())
+        self.assertEqual(ROWS, widget.values())
+        self.assertEqual({BOSSES[0]: 1}, self.progress.counts())
+        self.assertIn(pending, self.progress.pending())
+        self.assertEqual(expected, [target.name for target in WORLD_BOSS_TARGETS])
 
     def test_finite_values_invalid_duplicates_and_template_has_no_progress(self):
         widget = self.dispose(WorldBossMaterialPlanWidget({MATERIAL_TARGETS: ROWS}))

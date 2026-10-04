@@ -15,21 +15,29 @@ class WorldBossTarget:
 
 
 WORLD_BOSS_TARGETS = (
+    WorldBossTarget('world_puppet_calamity', '天傀劫煞'),
+    WorldBossTarget('world_prison_husk', '万囚牢·朽躯'),
+    WorldBossTarget('world_adam_smasher', '梦魔亚当·重锤'),
+    WorldBossTarget('world_explorer', '无铭探索者', farm_profile='Nameless Explorer'),
+    WorldBossTarget('world_hyvatia', '海维夏', farm_profile='Hyvatia'),
+    WorldBossTarget('world_furnace', '炉芯机骸'),
+    WorldBossTarget('world_lady_of_the_sea', '海之女', farm_profile='Lady of the Sea'),
+    WorldBossTarget('world_false_sovereign', '伪作的神王'),
+    WorldBossTarget('world_fenrico', '芬莱克', farm_profile='Fenrico'),
+    WorldBossTarget('world_lioness', '荣耀狮像', ('亚狮诺索',), 'Lioness of Glory'),
+    WorldBossTarget('world_dragon', '叹息古龙'),
+    WorldBossTarget('world_lorelei', '罗蕾莱', ('夜之女皇',), 'Lorelei'),
+    WorldBossTarget('world_sentry', '异构武装', ('加尔古耶',), 'Sentry Construct'),
+    WorldBossTarget('world_fallacy', '无归的谬误', farm_profile='Fallacy of No Return'),
     WorldBossTarget('world_crownless', '无冠者'),
-    WorldBossTarget('world_tempest', '云闪之鳞'),
     WorldBossTarget('world_thundering', '朔雷之鳞'),
+    WorldBossTarget('world_tempest', '云闪之鳞'),
     WorldBossTarget('world_inferno', '燎照之骑'),
-    WorldBossTarget('world_heron', '无常凶鹭'),
     WorldBossTarget('world_feilian', '飞廉之猩'),
     WorldBossTarget('world_mourning', '哀声鸷'),
-    WorldBossTarget('world_mech', '聚械机偶'),
+    WorldBossTarget('world_heron', '无常凶鹭'),
     WorldBossTarget('world_lampylumen', '辉萤军势'),
-    WorldBossTarget('world_fallacy', '无归的谬误', farm_profile='Fallacy of No Return'),
-    WorldBossTarget('world_dragon', '叹息古龙'),
-    WorldBossTarget('world_sentry', '异构武装', ('加尔古耶',), 'Sentry Construct'),
-    WorldBossTarget('world_lioness', '荣耀狮像', ('亚狮诺索',), 'Lioness of Glory'),
-    WorldBossTarget('world_hyvatia', '海维夏', farm_profile='Hyvatia'),
-    WorldBossTarget('world_explorer', '无铭探索者', farm_profile='Nameless Explorer'),
+    WorldBossTarget('world_mech', '聚械机偶'),
 )
 TARGETS_BY_ID = {target.key: target for target in WORLD_BOSS_TARGETS}
 

@@ -49,7 +49,7 @@ class WorldBossMaterialTask(FarmEchoTask):
         for key in self.default_config.keys() | self.config_type.keys():
             if key not in ('Use Liberation', 'Switch to Healer before and after Combat'):
                 self.config_type[key] = {'hidden': True}
-        self.default_config.update({'首领关卡': WORLD_BOSS_TARGETS[0].name, '领取次数': 1})
+        self.default_config.update({'首领关卡': TARGETS_BY_ID['world_crownless'].name, '领取次数': 1})
         self.config_type.update({
             '首领关卡': {'type': 'drop_down', 'options': [target.name for target in WORLD_BOSS_TARGETS]},
             '领取次数': {'min': 1, 'max': 9999},

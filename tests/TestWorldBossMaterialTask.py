@@ -15,11 +15,11 @@ from src.task.MaterialPlannerTask import MaterialPlannerTask, MATERIAL_PLANNER
 from src.task.TacetTask import TacetTask
 from src.task.ForgeryTask import ForgeryTask
 from src.task.SimulationTask import SimulationTask
-from src.task.world_boss_materials import WORLD_BOSS_TARGETS, material_target_button, matches_health_title
+from src.task.world_boss_materials import TARGETS_BY_ID, material_target_button, matches_health_title
 from src.task.world_boss_material_plan import MATERIAL_TARGETS
 from src.task.world_boss_material_progress import WorldBossMaterialProgress
 
-A, B, C = [b.key for b in WORLD_BOSS_TARGETS[:3]]
+A, B, C = 'world_crownless', 'world_tempest', 'world_thundering'
 
 
 def plan(limits=(2, 1, 0)):
@@ -68,7 +68,7 @@ class TestWorldBossMaterialTask(unittest.TestCase):
 
     def claim_task(self, shape='selection'):
         task = self.runner()
-        task._material_target = WORLD_BOSS_TARGETS[0]
+        task._material_target = TARGETS_BY_ID[A]
         task._material_progress = self.progress
         task._material_balance = (180, 100, 280)
         task._seek_reward_interaction = Mock()
@@ -212,7 +212,7 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         task.send_key.assert_called_once_with('esc')
 
     def test_name_matching_own_row_fragmented_alias_and_rejects_nightmare(self):
-        target = WORLD_BOSS_TARGETS[0]
+        target = TARGETS_BY_ID[A]
         title, action = box(target.name), box('前往', 800, 320)
         self.assertIs(action, material_target_button([box('其他首领', y=200), title, action], target, 1080))
         self.assertIsNone(material_target_button([title, box('前往', 800, 480)], target, 1080))
@@ -220,7 +220,7 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         self.assertIs(action, material_target_button([box('无', width=25), box('冠者', x=426, width=55), action], target, 1080))
         self.assertTrue(matches_health_title('无冠者 Lv.90', target))
         self.assertFalse(matches_health_title('梦魇·无冠者 Lv.90', target))
-        self.assertTrue(matches_health_title('异构武装·加尔古耶', WORLD_BOSS_TARGETS[11]))
+        self.assertTrue(matches_health_title('异构武装·加尔古耶', TARGETS_BY_ID['world_sentry']))
 
     def test_boss_identity_probe_does_not_recurse_into_combat_check(self):
         task = self.runner()
@@ -443,7 +443,7 @@ class TestWorldBossMaterialTask(unittest.TestCase):
 
     def test_visible_entry_delegates_to_production_daily_boundary(self):
         task = object.__new__(WorldBossMaterialTask)
-        task.config = {'首领关卡': WORLD_BOSS_TARGETS[1].name, '领取次数': 3}
+        task.config = {'首领关卡': TARGETS_BY_ID[B].name, '领取次数': 3}
         daily = Mock()
         daily.run_world_boss_material_only.return_value = MaterialRunResult(1, 60, 'complete')
         task.get_task_by_class = Mock(return_value=daily)
@@ -464,8 +464,8 @@ class TestWorldBossMaterialTask(unittest.TestCase):
             self.assertTrue(task._confirm_standalone_profile())
         text = bridge.confirm.call_args.args[1]
         self.assertIn('本次只执行世界首领突破材料', text)
-        self.assertIn(WORLD_BOSS_TARGETS[1].name, text)
-        self.assertNotIn(WORLD_BOSS_TARGETS[0].name, text)
+        self.assertIn(TARGETS_BY_ID[B].name, text)
+        self.assertNotIn(TARGETS_BY_ID[A].name, text)
         self.assertIn('本次领取 3 次', text)
         self.assertIn('不修改每日三目标计划', text)
         self.assertIn('实际消耗体力', text)

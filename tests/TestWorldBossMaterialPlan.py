@@ -6,9 +6,7 @@ from unittest.mock import patch
 from src.config_integrity import ConfigIntegrityService
 from src.task.world_boss_material_plan import MATERIAL_TARGETS, material_plan, choose_material_target
 from src.task.world_boss_material_progress import WorldBossMaterialProgress, preserve_material_progress
-from src.task.world_boss_materials import WORLD_BOSS_TARGETS
-
-A, B, C = [target.key for target in WORLD_BOSS_TARGETS[:3]]
+A, B, C = 'world_crownless', 'world_tempest', 'world_thundering'
 
 
 class TestWorldBossMaterialPlan(unittest.TestCase):
