@@ -66,7 +66,7 @@ class TestAutoAbyssTask(unittest.TestCase):
         task.config = {'Tower Priority': '两侧塔优先', 'Left Favored': '热熔'}
         task._set_status = lambda *_: None
         task._run_towers({name: () for name in ('残响之塔','深境之塔','回音之塔')})
-        self.assertEqual(task._abyss_rules['Left'].favored, ('导电',))
+        self.assertEqual(task._abyss_rules['Left'].favored, ('气动',))
         self.assertEqual(task._abyss_rules['Center Lower'].hard, '冷凝')
         self.assertEqual(task._abyss_rules['Center Upper'].hard, '衍射')
 

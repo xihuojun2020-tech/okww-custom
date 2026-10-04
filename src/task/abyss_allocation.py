@@ -24,13 +24,13 @@ CONFIG_FIELDS = {
          ("Resisted 1", "逆属性1（禁止主C和副C）"), ("Resisted 2", "逆属性2（主C尽量避开）")))
 }
 
-# Version-owned season rules, captured from the installed client on 2026-09-13.
+# Version-owned season rules, supplied with the installed-client screenshots on 2026-10-04.
 # Saved per-device element settings are intentionally not consulted by production.
 SEASON_CONFIG = {
-    'Left Favored': '导电', 'Left Resisted': '热熔',
-    'Right Favored': '冷凝', 'Right Resisted': '湮灭',
-    'Center Lower Favored 1': '热熔', 'Center Lower Favored 2': '气动',
-    'Center Lower Resisted 1': '冷凝', 'Center Lower Resisted 2': '导电',
+    'Left Favored': '气动', 'Left Resisted': '导电',
+    'Right Favored': '湮灭', 'Right Resisted': '冷凝',
+    'Center Lower Favored 1': '导电', 'Center Lower Favored 2': '热熔',
+    'Center Lower Resisted 1': '冷凝', 'Center Lower Resisted 2': '湮灭',
     'Center Upper Favored 1': '无', 'Center Upper Favored 2': '无',
     'Center Upper Resisted 1': '衍射', 'Center Upper Resisted 2': '衍射',
 }
@@ -87,11 +87,11 @@ def team_preference(plan, rule):
     return main_resisted, sub_resisted, -favored
 
 
-def recognized_roster(records):
+def recognized_roster(records, *, require_level=True):
     roster = {}
     for record in records:
         identity = effective_character_id(record)
-        if record.energy is None or record.level is None or record.energy <= 0 or record.level <= 60:
+        if record.energy is None or record.energy <= 0 or (require_level and (record.level is None or record.level <= 60)):
             continue
         if identity not in char_dict and identity not in (ROVER_AERO, ROVER_HAVOC, ROVER_SPECTRO):
             continue
@@ -158,18 +158,20 @@ class Allocation:
     approximate: bool
 
 
-def allocate(records, floors, *, beam_width=256, checkpoint=lambda: None):
+def allocate(records, floors, *, beam_width=256, checkpoint=lambda: None,
+             candidates=None, require_level=True):
     """Beam search over shared energy. Report pruning; never claim impossibility from it.
 
     A skipped floor blocks the rest of that tower. The ledger is shared by every
     candidate, and both center halves participate before any battle starts.
     """
-    roster = recognized_roster(records)
+    roster = recognized_roster(records, require_level=require_level)
     identities = sorted(roster)
     positions = {x: i for i, x in enumerate(identities)}
     if beam_width < 1:
         raise ValueError("beam_width must be positive")
-    candidates = candidate_teams(records, checkpoint, include_flexible=True)
+    candidates = (candidate_teams(records, checkpoint, include_flexible=True)
+                  if candidates is None else candidates)
     indexed = [(p, tuple(positions[x] for x in p.members)) for p in candidates]
     # score, energy ledger, blocked towers, previous members, assignments
     states = [((0,) * 9, tuple(roster[x].energy for x in identities), frozenset(), (), ())]

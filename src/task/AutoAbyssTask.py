@@ -20,6 +20,7 @@ from src.task.abyss_team_planner import (
     effective_character_id,
     role_for_character,
     plan_team,
+    TeamPlan, TeamPreset,
 )
 from src.task.BaseCombatTask import BaseCombatTask, CharDeadException, CombatStateUnknown
 from src.task.WWOneTimeTask import WWOneTimeTask
@@ -92,6 +93,31 @@ class CharacterScanRecord:
     @property
     def available(self):
         return self.energy is not None and self.level is not None and self.energy > 0 and self.level > 60
+
+
+@dataclass(frozen=True)
+class AbyssSavedPreset:
+    number: int
+    members: tuple[str, str, str]
+    energies: tuple[int, int, int]
+
+    @property
+    def plan(self):
+        preset = TeamPreset(self.number, self.members, self.members)
+        return TeamPlan(preset, self.members, self.members, (), True, True, False, '游戏预设编队')
+
+
+def current_preset_energy(text):
+    """The value left of the arrow is current; the right value is after this floor."""
+    values = re.findall(r'\d+', str(text))
+    if len(values) == 1 and 0 <= int(values[0]) <= 10:
+        return int(values[0])
+    # The lightning glyph on the left sometimes becomes an OCR 1 or 4.
+    if len(values) == 1 and values[0] in ('110', '410'):
+        return 10
+    if len(values) == 2 and re.search(r'[>»＞→]', str(text)) and 0 <= int(values[1]) <= int(values[0]) <= 10:
+        return int(values[0])
+    return None
 
 
 def _center_y(box):
@@ -615,7 +641,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         super().__init__(*args, **kwargs)
         self.name = "自动深塔"
         self.description = (
-            "扫描逆境深塔三座塔的关卡状态，按设置的顺序逐塔重新识别角色体力、自动编队并战斗。"
+            "扫描逆境深塔三座塔的关卡状态，按设置的顺序识别游戏预设编队及当前疲劳值并战斗。"
             "成功后继续下一层，失败时跳过当前塔剩余关卡。"
         )
         self.group_name = ""
@@ -641,11 +667,14 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         self._avatar_orb = cv2.ORB_create(nfeatures=300, edgeThreshold=5, fastThreshold=5)
         self._avatar_matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
         self._character_descriptors = None
+        self._saved_presets = {}
+        self._preset_mode = False
+        self._active_preset_plan = None
 
     def run(self):
         WWOneTimeTask.run(self)
         self._abyss_run_config = dict(self.config)
-        self.log_info("自动深渊开始：先扫描三塔，再按设置逐塔扫描体力、编队和挑战")
+        self.log_info("自动深渊开始：先扫描三塔，再按设置逐塔扫描预设、疲劳值和挑战")
         try:
             self._validate_runtime_resolution()
             self._set_status("进入深塔", "打开 F2 周期挑战")
@@ -753,6 +782,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
 
     def _allocate_remaining(self, records):
         tower, index, remaining, priority = self._allocation_context
+        preset_mode = getattr(self, '_preset_mode', False)
         incomplete_energy = sorted(
             record.display_name for record in records
             if record.energy is None and record.level is not None and record.level > 60
@@ -776,10 +806,12 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                     "Left" if name == TOWER_NAMES[0] else "Right")
                 preferred = (name == TOWER_NAMES[1]) == (priority == CENTER_TOWER_FIRST)
                 floors.append(FloorRequest(name, layer, floor_energy_cost(name, layer), self._abyss_rules[group], preferred))
-        allocation = allocate(records, floors, checkpoint=lambda: self.sleep(0.001))
+        candidates = tuple(preset.plan for preset in self._saved_presets.values()) if preset_mode else None
+        allocation = allocate(records, floors, checkpoint=lambda: self.sleep(0.001),
+                              candidates=candidates, require_level=not preset_mode)
         self._scheduled_teams = {(f.tower, f.index): p for f, p in allocation.assignments}
         lines = []
-        candidates = candidate_teams(records, include_flexible=True)
+        candidates = candidates if candidates is not None else candidate_teams(records, include_flexible=True)
         for group, rule in self._abyss_rules.items():
             excluded = sum(team_preference(p, rule) is None for p in candidates)
             lines.append(
@@ -853,6 +885,11 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         return "；".join(parts)
 
     def _plan_and_form_team(self, records, minimum_energy=1):
+        if getattr(self, '_preset_mode', False):
+            plan = self._allocate_remaining(records)
+            self.info_set('编队计划', self._format_team_plan(plan, records))
+            self._apply_saved_preset(plan)
+            return plan
         merged, available = merge_character_records(records)
         self._character_scan_results[self._current_scan_key()] = {
             "all": merged,
@@ -1138,8 +1175,13 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             if self._abyss_environment_hint(frame) is not None:
                 return None
             titles = self.ocr(.01,.01,.22,.16,frame=frame)
-            if exact_ocr_box(titles, '编辑队伍') is None:
+            if (exact_ocr_box(titles, '编辑队伍') is None and
+                    exact_ocr_box(self.ocr(.04,.10,.40,.20,frame=frame), '预设编队') is None):
                 return None
+            if getattr(self, '_preset_mode', False) and getattr(self, '_active_preset_plan', None) is not None:
+                if not self._selected_preset_matches(frame, self._active_preset_plan):
+                    self.screenshot('abyss_team_changed_before_start', frame=frame)
+                    raise RuntimeError('开启挑战前预设队伍与计划不一致')
             return exact_ocr_box(self.ocr(.75,.82,.98,.98,frame=frame), '开启挑战')
         def dispatch(button):
             nonlocal submitted
@@ -1222,6 +1264,15 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         for floor_index in range(first_floor_index, len(FLOOR_ROWS)):
             floor_number = floor_index + 1
             self._set_status("开启挑战", f"正在确认并进入{tower_name}第 {floor_number} 层")
+            if getattr(self, '_preset_mode', False) and floor_index > first_floor_index:
+                self.next_frame()
+                frame = self.require_game_frame()
+                if exact_ocr_box(self.ocr(.21,.10,.40,.20,frame=frame), '预设编队') is not None:
+                    plan = self._scheduled_teams.get((tower_name, floor_index))
+                    if plan is None:
+                        raise RuntimeError('续关后没有对应的预设编队计划')
+                    if not self._selected_preset_matches(frame, plan):
+                        self._apply_saved_preset(plan)
             self._click_start_challenge()
             self._prepare_challenge_map(tower_name, floor_number)
             state, button = self._run_combat_and_wait_result(tower_name, floor_number)
@@ -1280,7 +1331,8 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         if (exact_ocr_box(self.ocr(.054,.035,.18,.10,frame=frame), '详情') is not None and
                 exact_ocr_box(self.ocr(.76,.84,.97,.99,frame=frame), '完成') is not None):
             return 0
-        if (exact_ocr_box(titles, '编辑队伍') is not None and
+        if ((exact_ocr_box(titles, '编辑队伍') is not None or
+             exact_ocr_box(self.ocr(.04,.10,.40,.20,frame=frame), '预设编队') is not None) and
                 exact_ocr_box(self.ocr(.75,.82,.98,.98,frame=frame), '开启挑战') is not None):
             return 1
         # The floor detail title may be one OCR box, e.g. "深境区·回音之塔".
@@ -1339,30 +1391,154 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             name=f"{tower_name}第{floor_index + 1}层",
         )
 
-        self._set_status("进入编辑队伍", "正在确认并点击挑战开始")
+        self._set_status("进入预设编队", "正在确认并点击挑战开始")
         challenge_start = self._wait_exact_text("挑战开始", (0.70, 0.80, 0.96, 0.98), 8)
         if challenge_start is None:
             self.screenshot("abyss_challenge_start_not_found")
             raise Exception("未找到关卡详情页右下角的挑战开始")
         self.click_box(challenge_start, after_sleep=1)
 
-        self._wait_exact_text_or_fail("编辑队伍", (0.01, 0.01, 0.22, 0.16), 8, "未进入编辑队伍页面")
-        quick = self._wait_exact_text_or_fail(
-            "快速编队", (0.55, 0.82, 0.77, 0.98), 6, "未找到快速编队按钮"
-        )
-        self._wait_exact_text_or_fail(
-            "开启挑战", (0.75, 0.82, 0.98, 0.98), 4, "编辑队伍页面结构异常"
-        )
-        self._set_status("打开快速编队", "正在打开快速编队角色列表")
-        self.click_box(quick, after_sleep=1)
-        self._wait_character_list_page()
+        self._wait_exact_text_or_fail('角色列表', (.04, .10, .25, .20), 8, '未进入新版深塔编队页')
+        preset_tab = self._wait_exact_text_or_fail('预设编队', (.21, .10, .40, .20), 6,
+                                                   '未找到预设编队页签')
+        self._wait_exact_text_or_fail('开启挑战', (.68, .82, .95, .98), 4,
+                                      '深塔编队页结构异常')
+        self.click_box(preset_tab, after_sleep=.4)
+        self._preset_mode = True
+        self._saved_presets = {}
+        self._active_preset_plan = None
+        return self._scan_saved_presets()
 
-        self._set_status("截取角色", "正在截取角色列表第 1 屏")
-        first = self._wait_stable_character_frame()
-        return self._scan_character_pages(
-            first,
-            minimum_energy=floor_energy_cost(tower_name, floor_index),
-        )
+    def _preset_page_rows(self, frame):
+        """Read only fully visible numbered rows on the left preset list."""
+        rows = []
+        for box in self.ocr(.045, .18, .105, .91, frame=frame):
+            number = parse_ocr_number(str(box.name), minimum=1, maximum=50)
+            if number is None or not str(box.name).strip().isdigit():
+                continue
+            top = (box.y + box.height / 2) / self.height - .095
+            if .17 <= top and top + .18 <= .86:
+                rows.append((number, top))
+        return sorted(set(rows))
+
+    def _preset_energy(self, frame, x, top):
+        readings = []
+        for offset in (0, .004, -.004):
+            crop = _relative_crop(frame, (x + .005, top + .108 + offset,
+                                          x + .043, top + .140 + offset))
+            if crop is None or not crop.size:
+                continue
+            enlarged = cv2.resize(crop, None, fx=5, fy=5, interpolation=cv2.INTER_CUBIC)
+            text = ' '.join(str(box.name) for box in self.ocr(0, 0, 1, 1, frame=enlarged))
+            value = current_preset_energy(text)
+            if value is not None:
+                readings.append(value)
+        return readings[0] if readings and len(set(readings)) == 1 else None
+
+    def _preset_on_row(self, frame, number, top):
+        members, energies = [], []
+        for x in (.121, .207, .294):
+            avatar = _relative_crop(frame, (x, top + .005, x + .078, top + .115))
+            if avatar is None or avatar.size == 0 or float(np.std(avatar)) < 38:
+                return None
+            hit = self._identify_character(avatar) if avatar is not None and avatar.size else None
+            energy = self._preset_energy(frame, x, top)
+            if hit is None or energy is None:
+                return None
+            identity = hit[0]
+            if identity in ROVER_CHARACTER_IDS:
+                icon = _relative_crop(frame, (x, top + .006, x + .024, top + .040))
+                identity, _confidence = classify_rover_element_crop(icon)
+                if identity == ROVER_UNKNOWN:
+                    return None
+            members.append(identity)
+            energies.append(energy)
+        if len(set(members)) != 3:
+            return None
+        return AbyssSavedPreset(number, tuple(members), tuple(energies))
+
+    def _scan_saved_presets(self):
+        self.scroll_relative(.20, .48, 30)
+        self.sleep(.4)
+        found, previous, repeats = {}, None, 0
+        for page in range(24):
+            frame = self._wait_stable_preset_frame()
+            for number, top in self._preset_page_rows(frame):
+                preset = self._preset_on_row(frame, number, top)
+                if preset is None:
+                    self.log_warning(f'预设{number}成员或疲劳值不完整，跳过')
+                    continue
+                old = found.get(number)
+                if old is not None and old != preset:
+                    self.screenshot('abyss_preset_conflict', frame=frame)
+                    raise RuntimeError(f'预设{number}跨页识别矛盾')
+                found[number] = preset
+            image = cv2.resize(_relative_crop(frame, (.04,.18,.39,.85)), (96, 120))
+            repeats = repeats + 1 if previous is not None and np.mean(cv2.absdiff(previous, image)) < 1.5 else 0
+            if repeats >= 2:
+                break
+            previous = image
+            self.scroll_relative(.20, .48, -2)
+            self.sleep(.35)
+        else:
+            raise RuntimeError('深塔预设列表扫描超过24屏，未确认到底')
+        if not found:
+            self.screenshot('abyss_no_verified_presets')
+        energies = {}
+        for preset in found.values():
+            for member, energy in zip(preset.members, preset.energies):
+                if member in energies and energies[member] != energy:
+                    raise RuntimeError(f'预设间角色疲劳值矛盾：{member}')
+                energies[member] = energy
+        self._saved_presets = found
+        self.log_info(f'已识别深塔预设：{[(p.number,p.members,p.energies) for p in found.values()]}')
+        return [CharacterScanRecord(
+            identity,
+            character_display_name(char_dict[identity]['cls']) if identity in char_dict else identity,
+            energy, None, 1., 0, 0,
+        ) for identity, energy in energies.items()]
+
+    def _wait_stable_preset_frame(self):
+        self.next_frame()
+        self.sleep(.15)
+        self.next_frame()
+        return self.require_game_frame().copy()
+
+    def _selected_preset_matches(self, frame, plan):
+        if exact_ocr_box(self.ocr(.68,.82,.95,.98,frame=frame), '开启挑战') is None:
+            return False
+        observed = []
+        for x in (.512, .584, .648):
+            avatar = _relative_crop(frame, (x, .726, x + .055, .827))
+            hit = self._identify_character(avatar) if avatar is not None and avatar.size else None
+            identity = hit[0] if hit else None
+            if identity in ROVER_CHARACTER_IDS:
+                icon = _relative_crop(frame, (x, .728, x + .018, .757))
+                identity, _confidence = classify_rover_element_crop(icon)
+            observed.append(identity)
+        return tuple(observed) == plan.members
+
+    def _apply_saved_preset(self, plan):
+        self.scroll_relative(.20, .48, 30)
+        self.sleep(.4)
+        for _ in range(24):
+            frame = self._wait_stable_preset_frame()
+            for number, top in self._preset_page_rows(frame):
+                if number != plan.preset.queue:
+                    continue
+                if self._preset_on_row(frame, number, top) != self._saved_presets[number]:
+                    raise RuntimeError(f'预设{number}回位后成员或疲劳值变化，停止点击')
+                self.click_relative(.08, top + .09, after_sleep=.5)
+                if not self.wait_until(lambda: self._selected_preset_matches(self.require_game_frame(), plan),
+                                       time_out=5, raise_if_not_found=False):
+                    self.screenshot('abyss_preset_selection_unknown')
+                    raise RuntimeError('预设点击后下方三人头像顺序未确认')
+                self.log_info(f'已选择并核对游戏预设{number}：{plan.members}')
+                self._active_preset_plan = plan
+                return
+            self.scroll_relative(.20, .48, -2)
+            self.sleep(.3)
+        raise RuntimeError(f'未找回游戏预设{plan.preset.queue}')
 
     def _scan_character_pages(self, first, minimum_energy=1):
         # Start at a proven top, even when the game remembers a previous scroll offset.
