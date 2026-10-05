@@ -26,7 +26,7 @@ def _status_owner(task):
     return getattr(executor, "current_task", None) or task
 
 
-def publish_task_status(task, *, account=None, stage=None, detail=None):
+def publish_task_status(task, *, account=None, stage=None, detail=None, profile_id=None, task_id=None, run_id=None):
     """Publish status without allowing an optional UI failure to stop a task."""
     try:
         owner = _status_owner(task)
@@ -35,10 +35,15 @@ def publish_task_status(task, *, account=None, stage=None, detail=None):
             (STATUS_ACCOUNT, account),
             (STATUS_STAGE, stage),
             (STATUS_DETAIL, detail),
+            ('Status Profile ID', profile_id),
+            ('Status Task ID', task_id),
+            ('Status Run ID', run_id),
         ):
             if value is None:
                 continue
-            if callable(setter):
+            if key in ('Status Profile ID', 'Status Task ID', 'Status Run ID'):
+                owner.info[key] = value
+            elif callable(setter):
                 setter(key, value)
             else:
                 owner.info[key] = value

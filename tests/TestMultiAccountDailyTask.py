@@ -145,6 +145,10 @@ class TestPersistentDailyRetry(unittest.TestCase):
             key = task._failure_key('A3')
             self.assertEqual(task._load_failed_accounts()[key]['status'], 'pending')
             failed_at = datetime.fromisoformat(task.failed_accounts[key]['failed_at'])
+            # Compare historical completions, not a success timestamp in the future.
+            failed_at -= timedelta(seconds=10)
+            task.failed_accounts[key]['failed_at'] = failed_at.isoformat()
+            task._save_failed_accounts()
             for offset, resolved in [(-1, False), (0, False), (1, True)]:
                 env.integrity.record_completion(key, 'Daily Task', (failed_at + timedelta(seconds=offset)).isoformat())
                 task.failed_accounts = task._load_failed_accounts()

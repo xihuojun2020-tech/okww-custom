@@ -129,6 +129,19 @@ class TestAbyssTeamPlanner(unittest.TestCase):
 
 
 class TestAbyssAllocation(unittest.TestCase):
+    def test_failed_team_is_excluded_only_for_its_floor(self):
+        from src.task.abyss_cycle_progress import team_key
+        first = self.team(Labels.char_qingxiao, Labels.char_denia, Labels.char_verina)
+        second = replace(self.team(Labels.yangyang_sp, 'rover_havoc', Labels.char_sanhua),
+                         preset=replace(TEAM_PRESETS[0], queue=2))
+        floors = [FloorRequest('Left', 3, 4, ElementRule(), True)]
+        records = [record(c, energy=10) for c in first.members + second.members]
+        result = allocate(records, floors, candidates=(first, second), excluded={('Left', 3): {team_key(first)}})
+        self.assertEqual(result.assignments[0][1], second)
+        result = allocate(records, floors, candidates=(first, second),
+                          excluded={('Left', 3): {team_key(first), team_key(second)}})
+        self.assertIsNone(result.assignments[0][1])
+
     def test_restarted_left_fourth_floor_keeps_affordable_favored_preset(self):
         first = self.team(Labels.char_qingxiao, Labels.char_denia, Labels.char_verina)
         second = replace(self.team(Labels.yangyang_sp, 'rover_havoc', Labels.char_sanhua),

@@ -343,6 +343,22 @@ class CompletionCheckTab(QWidget):
             return projection, repository.profiles(), repository.get_preference('selected_account')
         self.load_operation.start(work, self._accounts_loaded, self._error)
 
+    def select_account_project(self, profile_id, task_id):
+        mapping = {'nightmare_nest': 'nightmare_nest', 'daily_activity': 'daily_activity',
+                   'weekly_boss': 'weekly_boss', 'weekly_garden': 'weekly_garden',
+                   'adversity_tower': 'adversity_tower'}
+        self._selected = profile_id
+        self.sequence.setCurrentIndex(0)
+        self.search.clear()
+        self.pending_only.setChecked(False)
+        self.mode.setCurrentIndex(max(0, self.mode.findData('current')))
+        project = mapping.get(task_id, task_id if self.project_filter.findData(task_id) >= 0 else None)
+        self.project_filter.setCurrentIndex(max(0, self.project_filter.findData(project)))
+        if self._loaded:
+            self._filter_accounts()
+        else:
+            self.reload_accounts()
+
     def _accounts_loaded(self, result):
         projection, archived, preferred = result
         profiles = projection.get('profiles', {})

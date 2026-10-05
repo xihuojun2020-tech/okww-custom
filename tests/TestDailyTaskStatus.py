@@ -15,7 +15,7 @@ class TestDailyTaskStatus(unittest.TestCase):
             task,
             account='A3',
             stage='清理体力',
-            detail='无音区',
+            detail='无音区', profile_id='', task_id='', run_id='',
         )
 
     def test_publish_daily_stage_prefers_multi_account_runtime_label(self):
@@ -28,7 +28,7 @@ class TestDailyTaskStatus(unittest.TestCase):
             task,
             account='A4',
             stage='每日任务',
-            detail='正在领取奖励',
+            detail='正在领取奖励', profile_id='', task_id='', run_id='',
         )
 
     def test_refresh_gui_never_updates_qt_widgets_from_worker_thread(self):

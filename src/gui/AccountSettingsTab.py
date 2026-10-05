@@ -1,6 +1,7 @@
 """The single account-plan and sequence editor."""
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, Qt
+from PySide6.QtWidgets import QLayout
 from qfluentwidgets import FluentIcon
 
 from ok.gui.widget.CustomTab import CustomTab
@@ -19,14 +20,15 @@ class AccountSettingsTab(CustomTab):
         self.sequence_tab = SequenceManagementTab()
         self.account_tab.changed.connect(self._on_account_changed)
         self.sequence_tab.changed.connect(self._on_account_changed)
-        self.section_panels = []
-        for title, widget in (
-                ("账号配置", self.account_tab),
-                ("账号序列", self.sequence_tab)):
-            section = SectionPanel(title, parent=self.view)
-            section.add_embedded_widget(widget)
-            self.section_panels.append(section)
-            self.add_widget(section)
+        section = SectionPanel('账号序列', parent=self.account_tab.settings_host)
+        section.add_embedded_widget(self.sequence_tab)
+        self.section_panels = [section]
+        self.account_tab.settings_layout.addWidget(section)
+        self.account_tab._sequence_panel = section
+        section.hide()
+        self.add_widget(self.account_tab, stretch=1)
+        self.vBoxLayout.setSizeConstraint(QLayout.SetDefaultConstraint)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         from src.gui.compact_settings import compact_settings
         compact_settings(self, account=True)
 

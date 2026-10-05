@@ -645,7 +645,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         self.name = "自动深塔"
         self.description = (
             "扫描逆境深塔三座塔的关卡状态，按设置的顺序识别游戏预设编队及当前疲劳值并战斗。"
-            "成功后继续下一层，失败时跳过当前塔剩余关卡。"
+            "通过特征码核验账号；成功后继续下一层，失败后尝试其他符合条件队伍，无法继续时处理其他塔。"
         )
         self.group_name = ""
         self.default_config = {TOWER_PRIORITY: SIDE_TOWERS_FIRST}
@@ -676,9 +676,28 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
 
     def run(self):
         WWOneTimeTask.run(self)
+        self._abyss_feature_run = None
+        self._abyss_journal = None
         self._abyss_run_config = dict(self.config)
         self.log_info("自动深渊开始：先扫描三塔，再按设置逐塔扫描预设、疲劳值和挑战")
         try:
+            self.ensure_main(time_out=30)
+            from src.account_repository import get_default_repository
+            from src.task.account_feature_verification import FeatureRun, expected_profile
+            from src.task.abyss_cycle_progress import AbyssCycleProgress
+            repository = get_default_repository()
+            if repository is None:
+                raise RuntimeError('账号仓库未就绪，深塔需要先绑定特征码')
+            self._abyss_feature_run = FeatureRun(self, repository, expected_profile(self)).begin()
+            self._verified_profile_id = self._abyss_feature_run.profile_id
+            from src.account_reminders import get_task_reminders
+            deep = get_task_reminders(self._abyss_feature_run.record.account).get('adversity_tower', {})
+            self._abyss_target_towers = deep.get('towers', list(TOWER_NAMES))
+            if deep.get('priority'):
+                self._abyss_run_config[TOWER_PRIORITY] = deep['priority']
+            self._abyss_journal = AbyssCycleProgress(repository.integrity_service, self._verified_profile_id,
+                                                   guard=self._abyss_feature_run.guard,
+                                                   run_id=self._abyss_feature_run.run_id)
             self._validate_runtime_resolution()
             self._set_status("进入深塔", "打开 F2 周期挑战")
             self.openF2Book()
@@ -686,11 +705,20 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             self._select_adversity_tower()
             self._open_adversity_tower()
 
+            countdown = ' '.join(str(box.name) for box in self.ocr())
+            if not self._abyss_journal.observe_cycle(countdown):
+                self.log_warning('深塔赛期倒计时未确认；只使用本次运行的失败队伍记录，不跨运行跳过')
+
             results = self._scan_all_towers()
             summary = "；".join(f"{tower}: {', '.join(states)}" for tower, states in results.items())
             self.info_set("扫描结果", summary)
             self.log_info(f"深塔关卡扫描完成：{summary}", notify=True)
             outcomes = self._run_towers(results)
+            self.ensure_main(time_out=30)
+            verified = self._abyss_feature_run.finish() == 'verified'
+            self._abyss_journal.verify_run(verified)
+            if not verified:
+                raise RuntimeError('深塔结束特征码核验未通过，本轮关卡结果待核验')
             outcome_text = "；".join(f"{tower}: {result}" for tower, result in outcomes.items())
             self.info_set("挑战结果", outcome_text)
             self._set_status("自动深渊完成", outcome_text)
@@ -698,7 +726,10 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         except Exception as exc:
             message = str(exc)
             self.info_set("Error", message)
-            self._set_status("自动深渊失败", message)
+            try:
+                self._set_status("自动深渊失败", message)
+            except Exception:
+                pass  # Never mask the original identity/capture failure.
             raise
 
     def _validate_runtime_resolution(self):
@@ -715,9 +746,22 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         results = {}
         star_totals = self._read_tower_star_totals()
         for tower_name in TOWER_NAMES:
+            if tower_name not in getattr(self, '_abyss_target_towers', TOWER_NAMES):
+                results[tower_name] = ()
+                continue
             self._set_status("扫描关卡", f"正在扫描 {tower_name}")
             self._open_tower(tower_name)
             results[tower_name] = self._scan_tower_floors(tower_name, star_totals.get(tower_name))
+            journal = getattr(self, '_abyss_journal', None)
+            if journal:
+                states = list(results[tower_name])
+                for index, state in enumerate(results[tower_name]):
+                    previous = journal.floor(tower_name, index)
+                    if previous.get('status') == 'completed' and previous.get('verified') and state != COMPLETED:
+                        states[index] = UNKNOWN
+                    journal.write_floor(tower_name, index,
+                                        'completed' if state == COMPLETED else 'unknown' if state == UNKNOWN else 'available' if state == AVAILABLE else 'locked')
+                results[tower_name] = tuple(states)
             self._return_to_towers()
         return results
 
@@ -729,6 +773,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         remaining = dict(scan_results)
         self._allocation_context = None
         self._scheduled_teams = {}
+        self._abyss_failed_teams = {}
         for tower_name in tower_order(priority):
             states = scan_results[tower_name]
             if UNKNOWN in states:
@@ -761,12 +806,27 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                 self._allocation_context = (tower_name, current_floor, remaining, priority)
                 try:
                     plan = self._plan_and_form_team(records, minimum_energy=required_energy)
+                    journal = getattr(self, '_abyss_journal', None)
+                    failure_key = (tower_name, current_floor)
+                    if journal:
+                        from src.task.abyss_cycle_progress import team_key
+                        if team_key(plan) in self._abyss_failed_teams.get(failure_key, set()):
+                            self._return_from_team_to_towers()
+                            outcomes[tower_name] = '本期受阻：编队结果重复已失败队伍'
+                            break
+                    self._current_abyss_plan = plan
                     team_energy = self._planned_team_energy(plan, records)
                 except AbyssTeamUnavailable as exc:
                     outcomes[tower_name] = (
                         f"本轮已处理，已通过{total_cleared}层；无法继续：{exc}"
                     )
                     self._set_status("跳过本塔", f"{tower_name}：{exc}")
+                    journal = getattr(self, '_abyss_journal', None)
+                    if journal:
+                        exhausted = (getattr(self, '_abyss_candidate_pool', {}).get((tower_name, current_floor)) == set()
+                                     and bool(journal.failed_teams(tower_name, current_floor))
+                                     and not getattr(self, '_preset_scan_incomplete', False))
+                        journal.write_floor(tower_name, current_floor, 'blocked' if exhausted else 'unknown', reason=str(exc))
                     self._return_from_team_to_towers()
                     break
                 except AbyssCenterUnavailable:
@@ -775,6 +835,18 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
 
                 result, cleared = self._fight_selected_tower(tower_name, current_floor, team_energy)
                 total_cleared += cleared
+                if result == '失败' and getattr(self, '_abyss_journal', None):
+                    from src.task.abyss_cycle_progress import team_key
+                    failed_floor = current_floor + cleared
+                    failed_plan = getattr(self, '_current_abyss_plan', plan)
+                    self._abyss_journal.write_floor(tower_name, failed_floor, 'failed', plan=failed_plan,
+                                                    reason='挑战失败，换符合条件的其他队伍')
+                    self._abyss_failed_teams.setdefault((tower_name, failed_floor), set()).add(team_key(failed_plan))
+                    current_floor = failed_floor
+                    current_states = tuple(COMPLETED if i < current_floor else AVAILABLE if i == current_floor else state
+                                           for i, state in enumerate(current_states))
+                    self._set_status('失败后换队', f'{tower_name}第{current_floor + 1}关排除失败队伍，重新扫描其他候选')
+                    continue
                 if result != "需要重新编队":
                     outcomes[tower_name] = f"{result}（{total_cleared}层）"
                     break
@@ -823,9 +895,23 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                                if all(member in roster for member in preset.members))
             self.log_info(f"完整可用预设{len(candidates)}队；"
                           f"疲劳值为0、未确认或身份不可用的预设{len(self._saved_presets) - len(candidates)}队已排除")
+        excluded = {}
+        journal = getattr(self, '_abyss_journal', None)
+        if journal:
+            from src.task.abyss_cycle_progress import team_key
+            candidates = tuple(candidates if candidates is not None else candidate_teams(records, include_flexible=True))
+            roster = recognized_roster(records, require_level=not preset_mode)
+            self._abyss_candidate_pool = {}
+            for floor in floors:
+                key = (floor.tower, floor.index)
+                excluded[key] = journal.failed_teams(*key) | self._abyss_failed_teams.get(key, set())
+                self._abyss_candidate_pool[key] = {team_key(p) for p in candidates
+                                                  if team_key(p) not in excluded[key]
+                                                  and team_preference(p, floor.rule) is not None
+                                                  and all(member in roster and roster[member].energy >= floor.cost for member in p.members)}
         allocation = allocate(records, floors, checkpoint=lambda: self.sleep(0.001),
                               candidates=candidates, require_level=not preset_mode,
-                              prefer_current_attributes=preset_mode)
+                              prefer_current_attributes=preset_mode, excluded=excluded)
         self._scheduled_teams = {(f.tower, f.index): p for f, p in allocation.assignments}
         lines = []
         candidates = candidates if candidates is not None else candidate_teams(records, include_flexible=True)
@@ -869,8 +955,13 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         return plan
 
     def _set_status(self, stage, detail):
+        feature_run = getattr(self, '_abyss_feature_run', None)
+        if feature_run:
+            feature_run.guard()
         self.info_set("状态", detail)
-        publish_task_status(self, stage=stage, detail=detail)
+        publish_task_status(self, stage=stage, detail=detail,
+                            profile_id=feature_run.profile_id if feature_run else '',
+                            task_id='adversity_tower', run_id=feature_run.run_id if feature_run else '')
 
     @staticmethod
     def _identity_display_names(plan, records):
@@ -1303,6 +1394,9 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             self._click_start_challenge()
             self._prepare_challenge_map(tower_name, floor_number)
             state, button = self._run_combat_and_wait_result(tower_name, floor_number)
+            journal = getattr(self, '_abyss_journal', None)
+            if journal and state in ('continue', 'tower_complete'):
+                journal.write_floor(tower_name, floor_index, 'completed')
             if state == "continue":
                 cleared += 1
                 if floor_index + 1 >= len(FLOOR_ROWS):
@@ -1348,7 +1442,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                 self._return_from_result(tower_name, floor_number)
                 return "完成", cleared
             if state == "failed":
-                self._set_status("挑战失败", f"{tower_name}第 {floor_number} 层失败，跳过本塔剩余关卡")
+                self._set_status("挑战失败", f"{tower_name}第 {floor_number} 层失败，返回后评估其他符合条件的队伍")
                 self._return_from_result(tower_name, floor_number)
                 return "失败", cleared
             raise Exception(f"未知深塔结算状态：{state}")
@@ -1527,12 +1621,18 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         self.scroll_relative(.20, .48, 30)
         self.sleep(.4)
         found, previous, repeats = {}, None, 0
+        self._preset_scan_incomplete = False
+        visited = set()
+        warned = set()
         for page in range(24):
             frame = self._wait_stable_preset_frame()
             for number, top in self._preset_page_rows(frame):
                 preset = self._preset_on_row(frame, number, top)
                 if preset is None:
-                    self.log_warning(f'预设{number}成员或疲劳值不完整，跳过')
+                    self._preset_scan_incomplete = True
+                    if number not in warned:
+                        self.log_warning(f'预设{number}成员或疲劳值不完整，跳过')
+                        warned.add(number)
                     continue
                 old = found.get(number)
                 if old is not None and old != preset:
@@ -1543,6 +1643,11 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             repeats = repeats + 1 if previous is not None and np.mean(cv2.absdiff(previous, image)) < 1.5 else 0
             if repeats >= 2:
                 break
+            import hashlib
+            signature = hashlib.sha256((image // 8).tobytes()).digest()
+            if repeats == 0 and signature in visited:
+                raise RuntimeError('深塔预设列表出现循环，无法确认到底；不将识别故障记为队伍不足')
+            visited.add(signature)
             previous = image
             self.scroll_relative(.20, .48, -2)
             self.sleep(.35)

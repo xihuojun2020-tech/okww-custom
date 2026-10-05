@@ -61,11 +61,11 @@ def period_for(project_id, when=None):
         when = datetime.fromisoformat(when)
     if when.tzinfo is None:
         raise ValueError('证据时间必须包含时区')
-    day = (when.astimezone(GAME_ZONE) - timedelta(hours=4)).date()
+    from src.game_period import game_day_key, game_week_key
     if rule == 'day':
-        return f'day:{day}'
+        return f'day:{game_day_key(when)}'
     if rule == 'week':
-        return f'week:{day - timedelta(days=day.weekday())}'
+        return f'week:{game_week_key(when)}'
     return None
 
 

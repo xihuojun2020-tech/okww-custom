@@ -733,8 +733,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
     # ==================== 断点持久化（今日已完成账号） ====================
 
     def _today(self):
-        from datetime import datetime
-        return getattr(self, '_progress_date', None) or datetime.now().strftime('%Y-%m-%d')
+        from src.game_period import game_day_key
+        return getattr(self, '_progress_date', None) or game_day_key()
 
     def _progress_namespace(self):
         return 'multi_account'
@@ -743,25 +743,29 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         return self._today()
 
     def _current_progress_period(self):
-        from datetime import datetime
-        return datetime.now().strftime('%Y-%m-%d')
+        from src.game_period import game_day_key
+        return game_day_key()
 
     def _completion_key(self):
         return 'Daily Task'
 
     def _progress_key(self):
-        return f'{self._progress_namespace()}:{self._progress_period()}'
+        namespace = self._progress_namespace()
+        if namespace == 'multi_account':
+            namespace = 'multi_account_game_day_v1'
+        return f'{namespace}:{self._progress_period()}'
 
     def _failures_key(self):
         namespace = self._progress_namespace()
+        if namespace == 'multi_account':
+            namespace = 'multi_account_game_day_v1'
         return f'{namespace}_failures:{self._progress_period()}'
 
     def _progress_file_key(self):
-        return self._today() if self._progress_namespace() == 'multi_account' else self._progress_key()
+        return self._progress_key()
 
     def _failures_file_key(self):
-        return (f'failures:{self._today()}' if self._progress_namespace() == 'multi_account'
-                else self._failures_key())
+        return self._failures_key()
 
     def _progress_path(self):
         return PROGRESS_FILE
@@ -808,9 +812,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                           if self.integrity_service is not None else
                           ((self._load_profiles().get(account) or {}).get('last_completed') or {}).get('Daily Task'))
             try:
-                later = (str(completion).startswith(self._today()) and
-                         datetime.fromisoformat(completion).timestamp() >
-                         datetime.fromisoformat(record['failed_at']).timestamp())
+                from src.game_period import completed_in_period, parse_legacy_time
+                later = (completed_in_period(completion, self._today()) and
+                         parse_legacy_time(completion) > parse_legacy_time(record['failed_at']))
             except (KeyError, TypeError, ValueError):
                 later = False
             if later:
@@ -875,7 +879,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def run(self):
         from datetime import datetime
-        self._progress_date = datetime.now().strftime('%Y-%m-%d')
+        from src.game_period import game_day_key
+        self._progress_date = game_day_key()
         self._account_attempts = {}
         self._retry_phase = False
         self._weekly_attempted = set()
@@ -1229,7 +1234,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             profiles = self._load_profiles()
             profile = profiles.get(account) or {}
             completion = self.integrity_service.get_completion(identity, self._completion_key())
-            return bool(str(completion or '').startswith(self._today()))
+            from src.game_period import completed_in_period
+            return completed_in_period(completion, self._today())
         identity = account
         if account in self.done_set or identity in self.done_set:
             return True
@@ -1238,8 +1244,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             profiles = self._load_profiles()
             profile = profiles.get(account) or {}
             lc = profile.get('last_completed') or {}
-            today = datetime.now().strftime('%Y-%m-%d')
-            if str(lc.get(self._completion_key(), '')).startswith(today):
+            from src.game_period import completed_in_period
+            if completed_in_period(lc.get(self._completion_key()), self._today()):
                 return True
         except Exception:
             pass

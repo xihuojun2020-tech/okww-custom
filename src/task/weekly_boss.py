@@ -17,8 +17,9 @@ def weekly_check_window(now=None):
     now = now or datetime.now(timezone(timedelta(hours=8)))
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone(timedelta(hours=8)))
-    day = (now.astimezone(timezone(timedelta(hours=8))) - timedelta(hours=4)).date()
-    return (day - timedelta(days=day.weekday()),
+    from src.game_period import game_day_key, game_week_key
+    day = datetime.fromisoformat(game_day_key(now)).date()
+    return (datetime.fromisoformat(game_week_key(now)).date(),
             WEEKLY_SUNDAY if day.weekday() == 6 else WEEKLY_MONDAY)
 
 

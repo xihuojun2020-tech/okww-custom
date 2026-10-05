@@ -115,6 +115,10 @@ def codex_style_sheet() -> str:
         border: 0; border-bottom: 1px solid {COLORS['border']}; padding: 8px;
     }}
     QRadioButton, QCheckBox {{ spacing: 8px; min-height: 28px; }}
+    QTreeWidget#accountTaskNavigation {{ background: {COLORS['panel']}; border: 0; }}
+    QTreeWidget#accountTaskNavigation::item {{ min-height: 32px; padding: 4px 6px; }}
+    QTreeWidget#accountTaskNavigation::item:selected {{ background: {COLORS['hover']};
+        color: {COLORS['accent']}; border-left: 3px solid {COLORS['accent']}; }}
     QToolTip {{ background: {COLORS['text']}; color: {COLORS['panel']}; border: 0; }}
     """
 

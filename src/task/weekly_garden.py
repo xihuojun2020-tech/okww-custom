@@ -40,11 +40,8 @@ def _beijing_now(now=None):
 
 def garden_week_key(now=None):
     """Return the Beijing game-week start (Monday 04:00) as an ISO timestamp."""
-    current = _beijing_now(now)
-    start = (current - timedelta(days=current.weekday())).replace(
-        hour=4, minute=0, second=0, microsecond=0)
-    if current < start:
-        start -= timedelta(days=7)
+    from src.game_period import game_week_key
+    start = datetime.fromisoformat(game_week_key(_beijing_now(now))).replace(tzinfo=BEIJING, hour=4)
     return start.isoformat(timespec='seconds')
 
 

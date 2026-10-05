@@ -6,11 +6,12 @@ import logging
 from time import perf_counter
 from functools import partial
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtWidgets import (QCheckBox, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout, QLabel,
                                QMessageBox, QPlainTextEdit, QPushButton, QInputDialog, QDialog,
                                QDialogButtonBox,
-                               QVBoxLayout, QWidget, QLineEdit, QSizePolicy, QScrollArea)
+                               QVBoxLayout, QWidget, QLineEdit, QSizePolicy, QScrollArea,
+                               QTreeWidget, QTreeWidgetItem, QStackedWidget, QLayout)
 from qfluentwidgets import BodyLabel, FluentIcon
 
 from ok.gui.widget.CustomTab import CustomTab
@@ -376,7 +377,7 @@ class AccountConfigTab(CustomTab):
 
     def __init__(self, editor=None):
         super().__init__()
-        repository = get_default_repository() or AccountRepository()
+        repository = editor.repository if editor is not None else (get_default_repository() or AccountRepository())
         self.editor = editor or AccountConfigEditor(repository)
         self.rebind_service = AccountRebindService(self.editor.repository)
         self.draft = None
@@ -463,6 +464,69 @@ class AccountConfigTab(CustomTab):
         layout.addWidget(maintenance)
         self.status = BodyLabel("等待操作")
         layout.insertWidget(3, self.status)
+        # Keep the existing account header; move only lower settings into the routed body.
+        self.maintenance = maintenance
+        self.settings_host = QWidget(root)
+        self.settings_layout = QVBoxLayout(self.settings_host)
+        self.settings_layout.setContentsMargins(0, 0, 0, 0)
+        self.settings_layout.setAlignment(Qt.AlignTop)
+        for widget in (self.identity_group, self.reminder_panel, self.form_host, maintenance):
+            layout.removeWidget(widget)
+            self.settings_layout.addWidget(widget)
+        self.settings_scroll = QScrollArea(root)
+        self.settings_scroll.setWidgetResizable(True)
+        self.settings_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.settings_scroll.setWidget(self.settings_host)
+        self.daily_help = QLabel('每日活跃度：开头读取一次并领取已完成小任务积分；按账号选择执行周本、全部聚落、首领材料、凝素／无音区；所有耗体力安排结束后领取宝箱并复核。\n实际不足 100 或无法确认时保留错误，由你处理；未选择模块不会被推断为活跃度不足。', self.settings_host)
+        self.daily_help.setWordWrap(True)
+        self.settings_layout.addWidget(self.daily_help)
+        self.daily_help.hide()
+        body = QHBoxLayout()
+        self.navigation = QTreeWidget(root)
+        self.navigation.setHeaderHidden(True)
+        self.navigation.setMinimumWidth(180)
+        self.navigation.setMaximumWidth(220)
+        self.navigation.setObjectName('accountTaskNavigation')
+        self.navigation.setIndentation(16)
+        body.addWidget(self.navigation)
+        self.content_stack = QStackedWidget(root)
+        from src.gui.AccountTaskOverview import AccountTaskOverview
+        self.overview = AccountTaskOverview(repository, self._overview_live, root)
+        self.content_stack.addWidget(self.overview)
+        self.content_stack.addWidget(self.settings_scroll)
+        body.addWidget(self.content_stack, 1)
+        layout.addLayout(body, 1)
+        root.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.vBoxLayout.setSizeConstraint(QLayout.SetDefaultConstraint)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._route = 'overview'
+        self._nav_items = {}
+        for route, title, children in (
+                ('overview', '总览', ()), ('identity', '账号识别信息', ()), ('reminders', '待办提醒', ()),
+                ('daily', '日常与声骸', (('nightmare_nest', '残像聚落'), ('world_boss', '讨伐强敌'),
+                                       ('forgery', '凝素领域'), ('tacet', '无音区'), ('daily_activity', '活跃度与奖励'))),
+                ('weekly', '周常安排', (('weekly_boss', '战歌重奏'), ('weekly_garden', '每周乐园'), ('merge_echo', '声骸合成'))),
+                ('adversity_tower', '深塔（单独启动）', ()), ('manual', '海墟与活动提醒', ()),
+                ('sequences', '账号序列', ()), ('closing', '收尾行为', ()),
+                ('recording', '截图与录像', ()), ('advanced', '高级设置', ())):
+            item = QTreeWidgetItem([title])
+            item.setData(0, Qt.UserRole, route)
+            self.navigation.addTopLevelItem(item)
+            self._nav_items[route] = item
+            for key, label in children:
+                child = QTreeWidgetItem(item, [label])
+                child.setData(0, Qt.UserRole, key)
+                self._nav_items[key] = child
+        from src.account_reminders import TASK_REMINDERS
+        for key, label in TASK_REMINDERS.items():
+            if key != 'adversity_tower':
+                item = QTreeWidgetItem(self._nav_items['manual'], [label])
+                item.setData(0, Qt.UserRole, 'reminder:' + key)
+                self._nav_items['reminder:' + key] = item
+        self.navigation.currentItemChanged.connect(lambda item, _: self._navigate(item.data(0, Qt.UserRole)) if item else None)
+        self.overview.navigate.connect(self._select_route)
+        self.overview.records.connect(self._open_records)
+        self.overview.launch_page.connect(self._open_task_page)
         self.add_widget(root, stretch=1)
         self.profile_combo.currentIndexChanged.connect(self._load_selected)
         self.preview_button.clicked.connect(self.preview)
@@ -477,6 +541,96 @@ class AccountConfigTab(CustomTab):
             self.new_button, self.discard_button, self.preview_button,
             self.form_host, self.task_editor, self.sequence_group, self.json_button, self.reminder_panel))
         self.refresh()
+        self.navigation.setCurrentItem(self._nav_items['overview'])
+
+    def _overview_live(self):
+        import time
+        from ok import og
+        executor = getattr(og, 'executor', None) or self.executor
+        task = getattr(executor, 'current_task', None)
+        if task is None or not getattr(task, 'running', False):
+            return {}
+        info = dict(getattr(task, 'info', {}) or {})
+        return {'profile_id': str(info.get('Status Profile ID') or ''),
+                'task_id': str(info.get('Status Task ID') or ''),
+                'run_id': str(info.get('Status Run ID') or ''),
+                'detail': str(info.get('Status Detail') or ''),
+                'elapsed': max(0, int(time.time() - getattr(task, 'start_time', time.time())))}
+
+    def _select_route(self, route):
+        route = route if route in self._nav_items else 'daily'
+        item = self._nav_items[route]
+        if item.parent():
+            item.parent().setExpanded(True)
+        self.navigation.setCurrentItem(item)
+        self._navigate(route)
+
+    def _navigate(self, route):
+        self._route = route
+        self.content_stack.setCurrentWidget(self.overview if route == 'overview' else self.settings_scroll)
+        self.identity_group.setVisible(route == 'identity')
+        reminder_route = route in ('reminders', 'manual', 'adversity_tower') or route.startswith('reminder:')
+        self.reminder_panel.setVisible(reminder_route)
+        if reminder_route:
+            self.reminder_panel.set_expanded(True)
+            self.reminder_panel.deep_settings.setVisible(route in ('reminders', 'adversity_tower'))
+            for widget in (self.reminder_panel.host, self.reminder_panel.note_label, self.reminder_panel.note):
+                widget.setVisible(route == 'reminders')
+            key_filter = 'adversity_tower' if route == 'adversity_tower' else route.partition(':')[2] if route.startswith('reminder:') else None
+            for key, (box, rule, date) in self.reminder_panel.task_choices.items():
+                visible = key == key_filter if key_filter else (key != 'adversity_tower' if route == 'manual' else True)
+                box.setVisible(visible)
+                rule.setVisible(visible)
+                date.setVisible(visible and rule.currentData() == 'custom')
+        if route == 'identity':
+            self.identity_group.set_expanded(True)
+        self.maintenance.setVisible(route == 'advanced')
+        if hasattr(self, '_sequence_panel'):
+            self._sequence_panel.setVisible(route == 'sequences')
+        if route == 'advanced':
+            self.maintenance.set_expanded(True)
+        groups = {'daily': 0, 'weekly': 1, 'closing': 2, 'advanced': 3, 'recording': 4,
+                  'nightmare_nest': 0, 'world_boss': 0, 'forgery': 0, 'tacet': 0, 'daily_activity': 0,
+                  'weekly_boss': 1, 'weekly_garden': 1, 'merge_echo': 1}
+        filters = {'nightmare_nest': {'Tacet Discord Nests to Farm'}, 'world_boss': {MATERIAL_TARGETS},
+                   'forgery': {FORGERY_GOALS, 'Which to Farm', 'Which Forgery Challenge to Farm'},
+                   'tacet': {'Which to Farm', 'Which Tacet Suppression to Farm'},
+                   'weekly_boss': {WEEKLY_PLAN},
+                   'weekly_garden': {'Garden Execution Mode', 'Weekly Garden Check Day'},
+                   'merge_echo': {'Merge Echo on Sunday'}, 'daily_activity': set()}
+        group = groups.get(route)
+        self.form_host.setVisible(group is not None)
+        for key, section in getattr(self, 'form_sections', {}).items():
+            section.setVisible(key == group)
+            if key == group:
+                section.set_expanded(True)
+        for key, widget in getattr(self, 'form_rows', {}).items():
+            widget.setVisible(key in filters[route] if route in filters else True)
+        self.daily_help.setVisible(route == 'daily_activity')
+        if hasattr(self, '_weekly_status_host'):
+            self._weekly_status_host.setVisible(route in ('weekly', 'weekly_boss'))
+        if route == 'overview':
+            self.overview.refresh(force=True)
+
+    def _open_records(self, key):
+        from ok import og
+        page = getattr(getattr(og, 'main_window', None), 'completion_check_tab', None)
+        if page is None:
+            self.status.setText('完成检查页尚未就绪')
+            return
+        page.select_account_project(self.selected_profile_id, key)
+        og.main_window.switchTo(page)
+
+    def _open_task_page(self, class_name):
+        from ok import og
+        window = getattr(og, 'main_window', None)
+        task = next((task for task in getattr(getattr(og, 'executor', None), 'onetime_tasks', [])
+                     if type(task).__name__ == class_name), None)
+        if window is not None and task is not None and hasattr(window, 'edit_task_tab'):
+            window.edit_task_tab.load_task(task)
+            window.switchTo(window.edit_task_tab)
+        else:
+            self.status.setText('请在“任务 → 每周任务”打开自动深塔；本页不会直接启动。')
 
     def edit_json(self):
         if self.operation.busy or self.draft is None:
@@ -613,6 +767,7 @@ class AccountConfigTab(CustomTab):
         self._loaded_sequences = tuple(name for name, box in self.sequence_widgets.items() if box.isChecked())
         self.status.setText("已载入独立草稿")
         self.draft_status.setText('尚未编辑')
+        self.overview.set_profile(profile_id)
 
     def _mark_draft_edited(self, *_):
         self.draft_status.setText('草稿已编辑，尚未保存')
@@ -716,6 +871,7 @@ class AccountConfigTab(CustomTab):
             self.form_layout.removeRow(0)
         self.form_sections = {}
         self.form_widgets.clear()
+        self.form_rows = {}
         while self.identity_task_layout.count():
             item = self.identity_task_layout.takeAt(0)
             if item.widget(): item.widget().deleteLater()
@@ -783,8 +939,9 @@ class AccountConfigTab(CustomTab):
                                                                   self.identity_task_fields))
             elif isinstance(widget, (ForgeryQuotaWidget, WeeklyBossPlanWidget, WorldBossMaterialPlanWidget)):
                 heading.add_widget(widget)
+                self.form_rows[field.key] = widget
             else:
-                heading.add_row(field.label, widget, field.help_text)
+                self.form_rows[field.key] = heading.add_row(field.label, widget, field.help_text)
             if isinstance(widget, (NestSelection, ForgeryQuotaWidget, WeeklyBossPlanWidget, WorldBossMaterialPlanWidget)):
                 widget.changed.connect(self._mark_draft_edited)
             elif isinstance(widget, QCheckBox):
@@ -816,6 +973,7 @@ class AccountConfigTab(CustomTab):
         _link_garden_controls(self.form_widgets)
         from src.gui.compact_settings import compact_settings
         compact_settings(self, account=True)
+        self._navigate(self._route)
 
     def _render_weekly_status(self):
         from src.config_integrity import get_default_service
@@ -842,6 +1000,7 @@ class AccountConfigTab(CustomTab):
         else:
             rows = [('周本记录', '服务未就绪', '')]
         host = QWidget(self.form_host)
+        self._weekly_status_host = host
         grid = QGridLayout(host)
         grid.setContentsMargins(8, 6, 8, 6)
         grid.setHorizontalSpacing(16)
@@ -1083,6 +1242,9 @@ class AccountConfigTab(CustomTab):
         self._loaded_account = copy.deepcopy(self.draft.account)
         self._loaded_sequences = tuple(sequence_ids)
         self.draft_status.setText('尚未编辑')
+
+        self.overview.refresh(force=True)
+        self._navigate(self._route)
 
     def _submit_action(self, work, success_text, event=None, *, submitted=None, refresh=True,
                        saved_sequences=None):

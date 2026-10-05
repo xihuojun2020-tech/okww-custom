@@ -381,6 +381,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             with self.account_input_guard(self._guard_bound_profile_identity):
                 result = self._run_daily_inner()
         except BaseException as error:
+            DailyTask._overview_event(self, getattr(self, '_overview_task_id', '') or 'daily_run',
+                                 'failed', reason=str(error))
             from src.evidence.service import finish_daily_run
             finish_daily_run(self, 'stopped' if isinstance(error, TaskDisabledException) else 'failed')
             raise
@@ -456,6 +458,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             self.validate_daily_tasks()
         from src.evidence.service import begin_daily_run
         self._completion_run_record = begin_daily_run(self)
+        from uuid import uuid4
+        self._overview_run_id = str(uuid4())
         self.log_info(f'开始执行{run_name}（账号：{self.get_active_profile_name()}）', notify=True)
 
         WWOneTimeTask.run(self)
@@ -476,6 +480,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
         verified_id = getattr(self, '_verified_profile_id', None)
         self._publish_daily_stage('每日任务', '读取活跃度和体力任务进度')
+        DailyTask._overview_event(self, 'daily_activity', 'running')
         used_stamina, daily_reward_ready = self.open_daily()
         self.ensure_main(time_out=180)
         self.check_weekly_boss()
@@ -489,13 +494,16 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 task = self.get_task_by_class(NightmareNestTask)
                 self._configure_nightmare_task(task)
                 self._publish_daily_stage('刷聚落', '核对并完成全部已选聚落')
+                DailyTask._overview_event(self, 'nightmare_nest', 'running')
                 self.run_task_by_class(NightmareNestTask)
                 self.record_last_completed('Nightmare Nest', profile_id=verified_id)
                 self.record_last_completed(checkpoint, profile_id=verified_id)
+                DailyTask._overview_event(self, 'nightmare_nest', 'completed')
             except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked, GameProcessLost, FrameUnavailable):
                 raise
             except Exception as error:
                 nightmare_error = error
+                DailyTask._overview_event(self, 'nightmare_nest', 'failed', reason=str(error))
                 self.log_error('所选聚落未完整完成', error)
                 self.screenshot('NightmareNestTask')
                 self.ensure_main(time_out=180)
@@ -558,13 +566,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
     def _nightmare_checkpoint_key(self, auto_farm):
         # Reuse the validated profile's completion store. Legacy generic
         # completion stamps cannot prove capture vs full-clear or target scope.
-        intent = [bool(auto_farm),
-                  sorted(self._profile_get(FARM_TACET_DISCORD_NESTS, DEFAULT_NEST_NAMES)),
-                  sorted(self._profile_get(FARM_NIGHTMARE_SETTLEMENTS, []))]
-        digest = hashlib.sha256(json.dumps(intent, ensure_ascii=False).encode()).hexdigest()[:20]
-        # Ordinal-based clears cannot prove all selected locations after the list changed.
-        version = 4 if auto_farm else 2
-        return f'daily_step_v{version}:nightmare:{digest}'
+        from src.game_period import nightmare_checkpoint
+        return nightmare_checkpoint({FARM_TACET_DISCORD_NESTS: self._profile_get(FARM_TACET_DISCORD_NESTS, DEFAULT_NEST_NAMES),
+                                     FARM_NIGHTMARE_SETTLEMENTS: self._profile_get(FARM_NIGHTMARE_SETTLEMENTS, [])}, auto_farm)
 
     def _daily_objective(self, kind, already_open=False):
         from src.task.daily_observation import objective_progress
@@ -606,10 +610,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         if not stamp:
             return False
         try:
-            completed = datetime.fromisoformat(str(stamp))
-            now = now or datetime.now()
-            # Daily game rewards reset at 04:00, including an overnight retry.
-            return completed <= now and (completed - timedelta(hours=4)).date() == (now - timedelta(hours=4)).date()
+            from src.game_period import completed_in_period
+            return completed_in_period(stamp, now=now)
         except (ValueError, TypeError):
             return False
 
@@ -667,20 +669,30 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             return None
         from src.task.forgery_quota_plan import forgery_plan
         if target == self.support_tasks[1] and forgery_plan(config):
+            DailyTask._overview_event(self, 'forgery', 'running')
             status = self.get_task_by_class(ForgeryTask).farm_quota(
                 profile_id, self._material_plan_tasks, service, self._guard_bound_profile_identity,
                 activity_ready=activity_ready, used_stamina=used_stamina)
             if status == 'complete':
+                DailyTask._overview_event(self, 'forgery', 'completed')
                 self.info_set('凝素目标', '全部完成，接下来刷本账号配置的无音区')
+                DailyTask._overview_event(self, 'tacet', 'running')
                 self.get_task_by_class(TacetTask).farm_tacet(daily=True, config=config,
                     activity_ready=activity_ready, used_stamina=used_stamina)
+                self.record_last_completed('Tacet Suppression', profile_id=profile_id)
+                DailyTask._overview_event(self, 'tacet', 'returned')
+            else:
+                DailyTask._overview_event(self, 'forgery', 'resource_shortfall')
             return target
         methods = {self.support_tasks[0]: (TacetTask, 'farm_tacet'),
                    self.support_tasks[1]: (ForgeryTask, 'farm_forgery'),
                    self.support_tasks[2]: (SimulationTask, 'farm_simulation')}
         cls, method = methods[target]
+        task_id = {'Tacet Suppression': 'tacet', 'Forgery Challenge': 'forgery', 'Simulation Challenge': 'simulation'}[target]
+        DailyTask._overview_event(self, task_id, 'running')
         getattr(self.get_task_by_class(cls), method)(daily=True, config=config,
             activity_ready=activity_ready, used_stamina=used_stamina)
+        DailyTask._overview_event(self, task_id, 'returned')
         return target
 
     def _close_completed_material_plan(self, expected):
@@ -711,6 +723,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         from src.task.WorldBossMaterialTask import WorldBossMaterialTask
         request = (getattr(self, '_runtime_overrides', None) or {}).get('_world_boss_material_request')
         self._publish_daily_stage('刷首领材料', '按本次选择的关卡和领取次数执行' if request else '按账号累计领奖目标执行')
+        DailyTask._overview_event(self, 'world_boss', 'running')
         result = self.get_task_by_class(WorldBossMaterialTask).run_for_profile(
             self._active_profile_id(), self._material_plan_tasks,
             self._guard_bound_profile_identity, self.integrity_service,
@@ -720,6 +733,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         message = f'{statuses.get(result.status, result.status)}；本轮领取 {result.claimed} 次'
         self.info_set('首领材料结果', message)
         self.log_info(message)
+        DailyTask._overview_event(self, 'world_boss', 'completed' if result.status == 'complete' else result.status,
+                             reason=message)
         return result
 
     @staticmethod
@@ -730,6 +745,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
     def _finish_daily_rewards(self, daily_reward_ready):
         """先领取所有已达成奖励，再决定账号能否标记完成。"""
         self._publish_daily_stage('每日任务', '正在领取每日奖励')
+        DailyTask._overview_event(self, 'daily_activity', 'running')
         self.log_info('正在领取每日任务奖励...')
         daily_reward_ready = self.claim_daily()
         if daily_reward_ready is None:
@@ -748,6 +764,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             error = DailyActivityIncomplete(message)
             error.retryable = False
             raise error
+        DailyTask._overview_event(self, 'daily_activity', 'completed', actual_points=getattr(self, '_overview_daily_points', None),
+                             rewards_claimed=True)
         return True
 
     def _claim_and_recheck_daily_activity(self):
@@ -763,7 +781,18 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             account = account or short_profile_name(self.get_active_profile_name()) or '账号'
         except Exception:
             account = account or '账号'
-        publish_task_status(self, account=account, stage=stage, detail=detail)
+        publish_task_status(self, account=account, stage=stage, detail=detail,
+                            profile_id=str(getattr(self, '_verified_profile_id', '') or ''),
+                            task_id=getattr(self, '_overview_task_id', '') or '',
+                            run_id=getattr(self, '_overview_run_id', '') or '')
+
+    def _overview_event(self, task_id, result, **details):
+        from src.account_task_state import record_task_event
+        self._overview_task_id = task_id if result == 'running' else ''
+        record_task_event(self, task_id, result, **details)
+        publish_task_status(self, profile_id=str(getattr(self, '_verified_profile_id', '') or ''),
+                            task_id=self._overview_task_id,
+                            run_id=getattr(self, '_overview_run_id', '') or '')
 
     def _logout_pc_after_daily(self):
         """复用正式多账号退登状态机，避免维护第二套点击实现。"""
@@ -1893,7 +1922,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         if normalize_weekday(self._profile_get(GARDEN_CHECK_DAY, '无')) in WEEKDAYS:
             self.check_weekly_garden()
         # 声骸融合：每周日运行一次
-        if self._profile_get(MERGE_ECHO_ON_SUNDAY) and WEEKDAYS[datetime.now().weekday()] == WEEKDAYS[6]:
+        from src.game_period import beijing_now
+        if self._profile_get(MERGE_ECHO_ON_SUNDAY) and (beijing_now(datetime.now(timezone(timedelta(hours=8)))) - timedelta(hours=4)).weekday() == 6:
             self.check_discarded_echo()
 
     def check_weekly_boss(self):
@@ -1911,6 +1941,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         profile_id = self._active_profile_id()
         self.log_info(f'周本检查：账号={profile_id}，目标={target}，检查周期={window}')
         self._publish_daily_stage('清理体力', '优先检查每周周本')
+        DailyTask._overview_event(self, 'weekly_boss', 'running')
         try:
             result = self.get_task_by_class(WeeklyBossTask).run_for_plan(
                 profile_id, self._weekly_plan_tasks, self.integrity_service)
@@ -1922,6 +1953,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 self.info_set('周本检查结果', status)
                 self._record_weekly_outcome(target, status, result.remaining)
                 self.log_info(status)
+                DailyTask._overview_event(self, 'weekly_boss', 'resource_shortfall', reason=status)
                 return True
             if result is None or not result.complete:
                 raise RuntimeError('周本尚未确认剩余次数为零')
@@ -1934,12 +1966,14 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 self.record_last_completed(window[1], profile_id=profile_id)
             self.info_set('周本检查结果', '已确认次数耗尽')
             self._record_weekly_outcome(target, '已确认次数耗尽', result.remaining)
+            DailyTask._overview_event(self, 'weekly_boss', 'completed')
         except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked,
                 GameProcessLost, FrameUnavailable):
             raise
         except Exception as error:
             detail = str(error) or f'{type(error).__name__}（周本阶段未完成）'
             self.info_set('周本检查结果', f'待补检：{detail}')
+            DailyTask._overview_event(self, 'weekly_boss', 'failed', reason=detail)
             weekly = self.get_task_by_class(WeeklyBossTask)
             last = getattr(weekly, 'last_result', None)
             remaining = getattr(last, 'remaining', None)
@@ -2034,9 +2068,11 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             raise ConfigIntegrityBlocked('乐园执行安排无效')
 
         started_week = garden_week_key()
+        DailyTask._overview_event(self, 'weekly_garden', 'running')
         previous = self.get_last_completed('Weekly Garden')
         if garden_completed_this_week(previous):
             self._refresh_weekly_garden_consumers()
+            DailyTask._overview_event(self, 'weekly_garden', 'completed')
             return GardenRunResult('already_completed', started_week, 6000, True)
 
         garden = self.get_task_by_class(GardenTask)
@@ -2112,6 +2148,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             pass
 
     def check_discarded_echo(self):
+        DailyTask._overview_event(self, 'merge_echo', 'running')
         self.info_set('current task', 'check discarded echo')
         self.log_info('check discarded echo')
         merge_echo_task = self.get_task_by_class(MergeEchoTask)
@@ -2120,6 +2157,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             merge_echo_task.notify_if_not_enough = False
             self.run_task_by_class(MergeEchoTask)
             self.record_last_completed('Merge Echo', profile_id=getattr(self, '_verified_profile_id', None))
+            DailyTask._overview_event(self, 'merge_echo', 'completed')
         except TaskDisabledException:
             raise
         except (ConfigIntegrityBlocked, ConfigWriteBlocked):
@@ -2321,6 +2359,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         current = progress[0] if progress is not None and progress[1] == 180 else None
         self.info_set('current daily progress', current)
         points = self.get_total_daily_points()
+        self._overview_daily_points = points
         policy = getattr(self.executor, '_daily_reserve_policy', None)
         if policy is not None:
             identity = str(getattr(self, '_verified_profile_id', '') or '')
@@ -2476,6 +2515,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self.log_info(f'每日奖励领取已核验：本次领取档位={claimed}，当前无可领取红点')
         points = self.get_total_daily_points()
         self.ensure_main(time_out=10)
+        self._overview_daily_points = points
         return None if points is None else points >= 100
 
     def claim_mail(self):

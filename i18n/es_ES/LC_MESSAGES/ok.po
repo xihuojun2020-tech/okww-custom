@@ -1922,3 +1922,7 @@ msgstr ""
 
 msgid "Forgery Material Goals"
 msgstr "Objetivos de materiales de forja"
+
+
+msgid "扫描逆境深塔三座塔的关卡状态，按设置的顺序识别游戏预设编队及当前疲劳值并战斗。通过特征码核验账号；成功后继续下一层，失败后尝试其他符合条件队伍，无法继续时处理其他塔。"
+msgstr "Comprueba el progreso de las tres torres y utiliza las formaciones guardadas y la energía disponible en el orden configurado. Verifica la cuenta con su código de identificación. Tras ganar, continúa al siguiente piso; tras perder, prueba otro equipo válido. Si no puede continuar, pasa a otra torre."

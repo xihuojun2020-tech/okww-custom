@@ -275,7 +275,7 @@ class TestDailyMergeEchoTask(unittest.TestCase):
         daily_task.check_discarded_echo = Mock()
 
         with patch('src.task.DailyTask.datetime') as fake_datetime:
-            fake_datetime.now.return_value.weekday.return_value = 6
+            fake_datetime.now.return_value = datetime(2026, 10, 4, 12, 0)
             daily_task.run_weekly_tasks()
 
         daily_task.check_weekly_garden.assert_called_once_with()
@@ -288,11 +288,24 @@ class TestDailyMergeEchoTask(unittest.TestCase):
         daily_task.check_discarded_echo = Mock()
 
         with patch('src.task.DailyTask.datetime') as fake_datetime:
-            fake_datetime.now.return_value.weekday.return_value = 6
+            fake_datetime.now.return_value = datetime(2026, 10, 4, 12, 0)
             daily_task.run_weekly_tasks()
 
         daily_task.check_weekly_garden.assert_called_once_with()
         daily_task.check_discarded_echo.assert_not_called()
+
+    def test_merge_echo_uses_four_am_game_day(self):
+        for stamp, expected in ((datetime(2026, 10, 4, 3, 59), False),
+                                (datetime(2026, 10, 5, 3, 59), True),
+                                (datetime(2026, 10, 5, 4, 0), False)):
+            with self.subTest(stamp=stamp):
+                daily_task = DailyTask.__new__(DailyTask)
+                daily_task.config = {MERGE_ECHO_ON_SUNDAY: True, GARDEN_CHECK_DAY: '无'}
+                daily_task.check_discarded_echo = Mock()
+                with patch('src.task.DailyTask.datetime') as fake_datetime:
+                    fake_datetime.now.return_value = stamp
+                    daily_task.run_weekly_tasks()
+                self.assertEqual(daily_task.check_discarded_echo.called, expected)
 
     def test_daily_does_not_call_disabled_weekly_garden(self):
         daily_task = DailyTask.__new__(DailyTask)

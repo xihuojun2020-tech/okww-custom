@@ -159,7 +159,7 @@ class Allocation:
 
 
 def allocate(records, floors, *, beam_width=256, checkpoint=lambda: None,
-             candidates=None, require_level=True, prefer_current_attributes=False):
+             candidates=None, require_level=True, prefer_current_attributes=False, excluded=None):
     """Beam search over shared energy. Report pruning; never claim impossibility from it.
 
     A skipped floor blocks the rest of that tower. The ledger is shared by every
@@ -181,6 +181,10 @@ def allocate(records, floors, *, beam_width=256, checkpoint=lambda: None,
         checkpoint()
         legal = [(p, indices, preference) for p, indices in indexed
                  if (preference := team_preference(p, floor.rule)) is not None]
+        if excluded:
+            from src.task.abyss_cycle_progress import team_key
+            legal = [(p, indices, preference) for p, indices, preference in legal
+                     if team_key(p) not in excluded.get((floor.tower, floor.index), set())]
         if len(legal) > beam_width:
             # Preserve a route for each character before filling with locally
             # preferred teams. This keeps rare center DPS and alternate healers.
