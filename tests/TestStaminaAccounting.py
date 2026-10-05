@@ -5,6 +5,18 @@ from src.task.BaseWWTask import BaseWWTask
 
 class TestStaminaAccounting(unittest.TestCase):
 
+    def test_bare_full_requires_resource_bar_anchor_and_unique_values(self):
+        from types import SimpleNamespace
+        from src.task.daily_observation import full_stamina_bar
+        def box(text, x):
+            return SimpleNamespace(name=text, x=x, width=20)
+        valid = [box('480', 1080), box('240', 1380), box('+', 1480)]
+        self.assertEqual((240, 480), full_stamina_bar(valid, 1920))
+        for invalid in (valid[:-1], valid + [box('200', 1400)],
+                        [box('240', 1080), box('480', 1380), box('+', 1480)],
+                        [box('480', 1080), box('240/240', 1380), box('+', 1480)]):
+            self.assertIsNone(full_stamina_bar(invalid, 1920))
+
     @staticmethod
     def _stamina_task(current, backup, *, backup_prompt=False):
         class FakeTask:

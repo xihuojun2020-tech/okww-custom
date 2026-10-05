@@ -125,14 +125,14 @@ class TestDailyRegressionFlow(unittest.TestCase):
         task.chars = []
         task.switch_healer_enabled.return_value = False
         task.in_combat.side_effect = [True, True, False]
-        task.get_current_char.return_value.perform.side_effect = [CharRevivedInPlace(), None]
+        task.perform_combat_rotation.side_effect = [CharRevivedInPlace(), None]
         task.load_chars.return_value = True
         task.combat_once = MethodType(BaseCombatTask.combat_once, task)
         task.executor = SimpleNamespace(check_enabled=Mock(), next_frame=Mock())
         task._domain_reward_state.return_value = 'claim'
         task.recover_failed_challenge.return_value = None
         self.assertEqual(DomainTask._finish_domain_combat(task), 'claim')
-        self.assertEqual(task.get_current_char.return_value.perform.call_count, 2)
+        self.assertEqual(task.perform_combat_rotation.call_count, 2)
         task.make_sure_in_world.assert_not_called()
         task.revive_action.assert_not_called()
         task.use_stamina.assert_not_called()
@@ -170,19 +170,19 @@ class TestDailyRegressionFlow(unittest.TestCase):
         task.switch_healer_enabled.return_value = False
         task.in_combat.return_value = True
         task.load_chars.return_value = True
-        task.get_current_char.return_value.perform.side_effect = CharRevivedInPlace()
+        task.perform_combat_rotation.side_effect = CharRevivedInPlace()
         with self.assertRaises(CombatStateUnknown):
             BaseCombatTask.combat_once(task)
-        self.assertEqual(task.get_current_char.return_value.perform.call_count, 4)
+        self.assertEqual(task.perform_combat_rotation.call_count, 4)
 
     def test_digit_range_and_unknown(self):
-        for value in (0, 20, 90, 100, 110, 180, 181, -1, 'unknown'):
+        for value in (0, 20, 90, 100, 110, 180, 181, 200, 240, 300, -1, 'unknown'):
             task = Mock(spec=DailyTask)
             task.ocr.return_value = [SimpleNamespace(name=str(value))]
             with patch('src.evidence.service.evidence_frame', return_value=None), \
                     patch('src.evidence.service.record_task_evidence'):
                 self.assertEqual(DailyTask.get_total_daily_points(task, attempts=1),
-                                 value if isinstance(value,int) and 0 <= value <= 180 else None)
+                                 value if isinstance(value,int) and 0 <= value <= 999 else None)
 
 
 if __name__ == '__main__':

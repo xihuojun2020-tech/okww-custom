@@ -7,9 +7,24 @@ from ok import TaskDisabledException
 from src.task.BaseWWTask import BaseWWTask
 from src.task.DomainTask import DomainTask
 from src.task.DailyTask import DailyTask
+from src.task.MultiAccountDailyTask import MultiAccountDailyTask, AccountRecoveryBlocked
 
 
 class TestDailyFailureRecovery(unittest.TestCase):
+    def test_pending_claim_blocks_account_logout_and_restart(self):
+        task = Mock()
+        task.frame = None
+        task._game_window_available.return_value = True
+        task.do_find_account_drop_down.return_value = None
+        task.recover_failed_challenge.return_value = None
+        task.has_claim_stamina.return_value = True
+        with self.assertRaises(AccountRecoveryBlocked):
+            MultiAccountDailyTask._prepare_login_after_account_failure(task, 'A1', RuntimeError('claim'))
+        task.ensure_main.assert_not_called()
+        task._switch_to_login.assert_not_called()
+        task._restart_game_once.assert_not_called()
+        task.screenshot.assert_called_once()
+
     def stamina_task(self, values):
         task = Mock(spec=BaseWWTask)
         task.executor = Mock()

@@ -34,7 +34,7 @@
 | 原图 | SHA-256 |
 | --- | --- |
 | `14-06-46.233_世界首领突破材料_original.png` | `95db6c8ff0328b3d7f6922f9c0910fed6c7b9791a5db78a00330c50e1bfadd23` |
-| `14-07-08.431_combat_recovery_original.png` | `2cc673d32022e27d8e0c1254e5040fad18080812259b539c13673b18049ac55c` |
+| `14-07-08.431_combat_recovery_original.png` | `2cc673d32022e27d8e0c1254e5040fad[REDACTED_PHONE]b539c13673b18049ac55c` |
 | `14-07-49.847_combat_recovery_original.png` | `69f9dd4a758bc7ca0f8cb4177fcd05212c5ffa612b8b9cf0fd7688ab5f4cfea7` |
 
 首张原图离线OCR将血条拆成`LV.`及`85海之女·荣光的灰烬`，因此只新增全名仍不够。后两张分别输出完整的`LV.85 海之女·荣光的灰烬`和`Lv.85海之女·荣光的灰烬`。灰色头像脸部内部彩色像素比例约0.003—0.012，存活头像约0.656—0.800；使用头像内部避开带有场景颜色的边框。

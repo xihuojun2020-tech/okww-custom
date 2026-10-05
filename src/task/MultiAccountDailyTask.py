@@ -142,6 +142,10 @@ def _is_login_identity(task, name):
     return bool(callable(matcher) and matcher(value) is not None)
 
 
+class AccountRecoveryBlocked(RuntimeError):
+    """A reward or active challenge must not be discarded by account logout."""
+
+
 class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def __init__(self, *args, **kwargs):
@@ -2213,10 +2217,22 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 recovered = self.recover_failed_challenge()
                 if recovered is False:
                     raise GameProcessLost('挑战失败页无法安全退出，停止切换账号')
+                in_challenge = self.in_realm()
+                if (self.has_claim_stamina() or self.get_settlement_stamina() >= 0
+                        or (in_challenge and (self.has_challenge_success()
+                                              or self.has_target() or self.check_health_bar()))):
+                    try:
+                        self.screenshot('account_recovery_pending_challenge', frame=self.frame)
+                    except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked):
+                        raise
+                    except Exception as evidence_error:
+                        self.log_warning(f'挑战现场截图未保存，仍阻止切换账号：{evidence_error}')
+                    raise AccountRecoveryBlocked('挑战或领奖状态待核验，保留当前账号现场，不切换账号')
                 self.ensure_main(time_out=100)
                 self._switch_to_login()
                 return True
-            except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked, GameProcessLost):
+            except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked,
+                    GameProcessLost, AccountRecoveryBlocked):
                 raise
             except Exception as recovery_error:
                 self.log_error(

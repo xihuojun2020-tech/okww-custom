@@ -85,33 +85,41 @@ class TestDomainRecoveryLoop(unittest.TestCase):
             task.has_target.return_value = target
             task.check_health_bar.return_value = False
             task.has_claim_stamina.return_value = False
+            task.has_challenge_success.return_value = False
             task.find_f_with_claim_text.return_value = False
             task.find_treasure_icon.return_value = False
             self.assertEqual(DomainTask._domain_reward_state(task), 'combat' if target else 'unknown')
         task.has_claim_stamina.return_value = True
         self.assertEqual(DomainTask._domain_reward_state(task), 'claim')
 
-    def test_same_challenge_recovers_only_once(self):
+    def test_same_challenge_continues_past_old_two_attempt_limit(self):
         from types import SimpleNamespace
         from unittest.mock import Mock
         from src.task.BaseCombatTask import CombatStateUnknown
         import threading
-        for states, success in ((['combat', 'claim'], True), (['combat', 'combat'], False)):
-            task = Mock(spec=DomainTask)
-            task.recover_failed_challenge.return_value = None
-            task.executor = SimpleNamespace(check_enabled=Mock(), next_frame=Mock(), exit_event=threading.Event())
-            task.combat_once.side_effect = CombatStateUnknown('switch')
-            task._domain_reward_state.side_effect = states
-            task.in_team.return_value = (True, 0, 3)
-            task.frame = None
-            if success:
-                self.assertEqual(DomainTask._finish_domain_combat(task), 'claim')
-            else:
-                with self.assertRaises(CombatStateUnknown):
-                    DomainTask._finish_domain_combat(task)
-            self.assertEqual(task.combat_once.call_count, 2)
-            task.walk_until_f.assert_not_called()
-            task.use_stamina.assert_not_called()
+        task = Mock(spec=DomainTask)
+        task.recover_failed_challenge.return_value = None
+        task.executor = SimpleNamespace(check_enabled=Mock(), next_frame=Mock(), exit_event=threading.Event())
+        task.combat_once.side_effect = CombatStateUnknown('switch')
+        task._domain_reward_state.side_effect = ['combat', 'combat', 'claim']
+        task.in_team.return_value = (True, 0, 3)
+        task.frame = None
+        self.assertEqual(DomainTask._finish_domain_combat(task), 'claim')
+        self.assertEqual(task.combat_once.call_count, 3)
+        task.walk_until_f.assert_not_called()
+        task.use_stamina.assert_not_called()
+
+    def test_victory_animation_waits_without_starting_another_combat(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        import threading
+        task = Mock(spec=DomainTask)
+        task.recover_failed_challenge.return_value = None
+        task.executor = SimpleNamespace(check_enabled=Mock(), next_frame=Mock(), exit_event=threading.Event())
+        task._domain_reward_state.side_effect = ['victory_transition', 'claim']
+        self.assertEqual(DomainTask._finish_domain_combat(task), 'claim')
+        task.combat_once.assert_called_once()
+        task.use_stamina.assert_not_called()
 
     def test_claim_skips_treasure_and_unknown_does_not_spend(self):
         from unittest.mock import Mock

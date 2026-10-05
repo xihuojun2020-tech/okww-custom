@@ -53,7 +53,7 @@ class Mortefi(BuiltinMortefi):
 
         self.assertIs(load_custom_char_class(Mortefi), Mortefi)
 
-    def test_custom_rotation_keeps_precedence_over_inherited_solo(self):
+    def test_custom_rotation_and_explicit_solo_honor_mode(self):
         code = '''from src.char.Qingxiao import Qingxiao as Builtin
 class Qingxiao(Builtin):
     def do_perform(self):
@@ -65,7 +65,7 @@ class Qingxiao(Builtin):
                 if explicit_solo:
                     source += "    def perform_solo(self):\n        self.used = 'solo'\n"
                 save_custom_char_code(Qingxiao, source)
-                task = SimpleNamespace(chars=[])
+                task = SimpleNamespace(chars=[], solo_rotation_enabled=explicit_solo)
                 char = load_custom_char_class(Qingxiao)(task, 0)
                 task.chars = [char]
                 char.perform()

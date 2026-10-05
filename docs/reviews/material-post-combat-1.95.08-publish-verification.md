@@ -2,7 +2,7 @@
 
 核验时间：2026-10-04T07:08:15.253784+00:00（UTC）。
 
-- GitHub功能提交：`cc6a9e1745df24a13261597926e689dbe0650e41`。
+- GitHub功能提交：`cc6a9e1745df24a[REDACTED_PHONE]e689dbe0650e41`。
 - 分支：`codex/combat-roster-refresh-20260927`；分支及注释标签v1.95.08推送成功，远端分支和剥离标签与功能提交一致。
 - NAS清单：`\\192.168.3.173\羲火君 共享给我\AI诊断\OKWW-Updates\stable\latest.json`；版本1.95.08。
 - 源码更新包：`\\192.168.3.173\羲火君 共享给我\AI诊断\OKWW-Updates\stable\releases\v1.95.08\okww_update_v1.95.08.zip`。

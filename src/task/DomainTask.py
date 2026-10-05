@@ -198,10 +198,12 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
 
     def _domain_reward_state(self):
         # Absence of enemies is not proof of completion. Positive reward evidence is required.
-        if self.has_target() or self.check_health_bar():
-            return 'combat'
         if self.has_claim_stamina():
             return 'claim'
+        if self.has_challenge_success():
+            return 'victory_transition'
+        if self.has_target() or self.check_health_bar():
+            return 'combat'
         if self.find_f_with_claim_text() or self.find_treasure_icon():
             return 'treasure'
         return 'unknown'
@@ -210,9 +212,11 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
         return self._domain_reward_state() in ('claim', 'treasure')
 
     def _finish_domain_combat(self):
-        for attempt in range(2):
+        started = time.monotonic()
+        recovery = 0
+        while time.monotonic() - started < 600:
             try:
-                self.combat_once(**({'wait_combat_time': 3} if attempt else {}))
+                self.combat_once(**({'wait_combat_time': 3} if recovery else {}))
             except CombatStateUnknown as error:
                 self.log_warning(f'领域战斗状态异常，重新核对当前画面：{error}')
             recovered = self.recover_failed_challenge()
@@ -221,8 +225,9 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
                     '领域挑战失败，已退出并保留补跑' if recovered else
                     '领域挑战失败页无法安全退出，停止输入并保留补跑')
             deadline = time.monotonic() + 5
+            transition_deadline = None
             state = 'unknown'
-            while time.monotonic() < deadline:
+            while time.monotonic() < (transition_deadline or deadline):
                 self.executor.check_enabled()
                 self.executor.next_frame(time_out=min(1, max(0.01, deadline - time.monotonic())))
                 recovered = self.recover_failed_challenge()
@@ -233,12 +238,17 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
                 state = self._domain_reward_state()
                 if state in ('claim', 'treasure'):
                     return state
+                if state == 'victory_transition' and transition_deadline is None:
+                    transition_deadline = time.monotonic() + 30
                 if state == 'combat' and self.in_team()[0]:
                     break
                 if self.executor.exit_event.wait(0.1):
                     self.executor.check_enabled()
                     raise CombatStateUnknown('领域状态等待已退出')
-            if state != 'combat' or attempt == 1 or not self.in_team()[0]:
+            if state != 'combat' or not self.in_team()[0]:
                 self.screenshot('domain_state_unknown', frame=self.frame)
-                raise CombatStateUnknown(f'领域未确认完成：state={state}, recovery_used={attempt}')
-            self.log_warning('领域目标仍在，尝试一次原地战斗恢复；不重新开启挑战')
+                raise CombatStateUnknown(f'领域未确认完成：state={state}, recovery_used={recovery}')
+            recovery += 1
+            self.log_warning('领域目标仍在，继续同一次挑战；不重新开启挑战')
+        self.screenshot('domain_combat_watchdog', frame=self.frame)
+        raise CombatStateUnknown('领域持续战斗超过10分钟，保留现场供恢复；自动战斗启用状态不变')

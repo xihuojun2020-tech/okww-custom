@@ -1,6 +1,8 @@
 
+import time
+
 from ok import Logger
-from src.task.BaseCombatTask import BaseCombatTask, CharRevivedException
+from src.task.BaseCombatTask import BaseCombatTask, CharRevivedException, CombatStateUnknown
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.tacet_targets import TACET_STRUCTURE, TACET_NAMES, TACET_OPTIONS, TACET_BUTTON_LABELS, tacet_serial
 from src.task.ui_transition import TargetUnavailable
@@ -86,16 +88,18 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
             index = target_id - 1
             self.teleport_to_tacet(index)
             self.click_team_challenge()
+            self._tacet_retry_pending = False
             while True:
-                self.wait_in_team_and_world(time_out=120)
-                self.combat_once(target=True)
-                self.walk_to_treasure()
-                self.pick_f(handle_claim=False)
+                stage = self._wait_tacet_combat_or_reward()
+                if stage == 'combat':
+                    self.combat_once(target=True)
+                if not self.has_claim_stamina():
+                    self.walk_to_treasure()
+                    self.pick_f(handle_claim=False)
                 self.sleep(2)
                 if not self.has_claim_stamina():
-                    self.esc_cancel()
-                    self.log_info('is not claim treasure, restart challenge')
-                    continue
+                    self.screenshot('tacet_claim_unconfirmed', frame=self.frame)
+                    raise CombatStateUnknown('无音区领奖入口未确认，保留现场，不重新开启挑战')
                 policy = getattr(self.executor, '_daily_reserve_policy', None)
                 if policy is not None:
                     policy.observe(None)
@@ -105,13 +109,55 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
                 self.sleep(4)
                 if not can_continue:
                     self.click_relative(0.365, 0.853, hcenter=True)
-                    self.wait_in_team_and_world(time_out=120)
-                    self.refresh_daily_reserve_after_exit()
+                    self._leave_tacet_after_claim()
                     return None
                 else:
+                    self._tacet_retry_pending = True
                     self.click_relative(0.640, 0.851, hcenter=True, after_sleep=0.2)
                     self.wait_click_skip_dialog_confirm()
                 must_use -= used
+
+    def _wait_tacet_combat_or_reward(self):
+        """Inspect the current challenge before requiring an open-world HUD."""
+        deadline = time.monotonic() + 35
+        retries = 0
+        victory_seen = False
+        while time.monotonic() < deadline:
+            self.executor.check_enabled()
+            self.next_frame()
+            if self.has_claim_stamina():
+                return 'claim'
+            failed = self.recover_failed_challenge()
+            if failed is not None:
+                raise CombatStateUnknown('无音区挑战失败，已退出并保留补跑' if failed else
+                                         '无音区挑战失败页无法确认退出，保留现场')
+            if self.get_settlement_stamina() >= 0:
+                if not self._tacet_retry_pending or retries >= 2:
+                    self.screenshot('tacet_settlement_pending', frame=self.frame)
+                    raise CombatStateUnknown('无音区停在结算页，领奖或重试状态待核验')
+                retries += 1
+                self.click_relative(0.640, 0.851, hcenter=True, after_sleep=0.2)
+                continue
+            if self.find_f_with_claim_text() or self.find_treasure_icon():
+                return 'treasure'
+            victory_seen = victory_seen or self.has_challenge_success()
+            if not victory_seen and self.in_team_and_world():
+                self._tacet_retry_pending = False
+                return 'combat'
+            self.sleep(.3)
+        self.screenshot('tacet_scene_unconfirmed', frame=self.frame)
+        raise CombatStateUnknown('无音区成功动画或加载页面未进入可确认状态，保留现场')
+
+    def _leave_tacet_after_claim(self):
+        for _ in range(3):
+            if self.wait_in_team_and_world(time_out=15, raise_if_not_found=False):
+                self.refresh_daily_reserve_after_exit()
+                return
+            if self.get_settlement_stamina() < 0:
+                break
+            self.click_relative(0.365, 0.853, hcenter=True)
+        self.screenshot('tacet_exit_unconfirmed', frame=self.frame)
+        raise CombatStateUnknown('无音区已确认领奖，但退出结算页未确认；保留现场')
 
     def not_enough_stamina(self, back=True):
         self.log_info(f"used all stamina")

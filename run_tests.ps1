@@ -15,7 +15,7 @@ $Python = if (Test-Path ".\.venv\Scripts\python.exe") {
 
 $groups = @{
   unit = @(
-    "TestWorldBossMaterialPlan.py", "TestWorldBossMaterialTask.py",
+    "TestWorldBossMaterialPlan.py", "TestWorldBossMaterialTask.py", "TestWorldBossMaterialNavigation.py", "TestCombatTaskModes.py",
     "TestTrioCombatRecovery.py", "TestTacetRewardRecovery.py", "TestTacetTargets.py",
     "TestStorySkip.py",
     "TestStorySkipRecovery.py",
@@ -43,7 +43,7 @@ $groups = @{
     "test_extract_issue_log.py", "TestAccountConfigEditor.py", "TestAccountDirectoryAssessment.py",
     "TestAccountFieldMetadata.py", "TestAccountGraphStore.py", "TestAccountIdentity.py",
     "TestAccountIdentityProtection.py", "TestAccountProfileStore.py", "TestAccountRepositoryRuntime.py",
-    "TestAbyssEnergyRecovery.py",
+    "TestAbyssEnergyRecovery.py", "TestHsinSupport.py",
     "TestAccountRuntimeBootstrap.py", "TestAccountSwitch.py", "TestAbyssTeamPlanner.py", "TestAutoAbyssTask.py",
     "TestBaseCombatTask.py", "TestConfig.py", "TestCustomCharLoader.py", "TestDiagnosisRetention.py",
     "TestDiagnosisTask.py", "TestDomainRecoveryLoop.py", "TestForgeryDomainLabels.py",
@@ -69,7 +69,7 @@ $groups = @{
     "TestAccountSwitchEvidence.py", "TestMultiAccountDailyTask.py", "TestAccountRepositoryMigrationScenario.py"
   )
   ui = @(
-    "TestWorldBossMaterialUI.py",
+    "TestWorldBossMaterialUI.py", "TestAbyssPresetUI.py",
     "TestDiagnosticDetailsUI.py",
     "TestTaskInfoSnapshot.py",
     "TestFlatUI.py",
@@ -82,13 +82,13 @@ $groups = @{
     "TestSkipDialogWideMode.py", "TestTaskStatusWindow.py", "TestUsabilityUI.py"
   )
   image = @(
-    "TestStorySkipImages.py",
+    "TestStorySkipImages.py", "TestMaterialCombatImages.py", "TestWorldBossMaterialEntryImages.py",
     "TestDailyClaimStabilityImages.py", "TestSeaRuinsImages.py",
     "TestResonanceSimulationImages.py",
-    "TestDailyFollowupImages.py", "TestDailyRegressionImages.py",
-    "TestAbyssReturnImages.py", "TestBookTabImages.py", "TestEchoesContinuationImages.py",
+    "TestDailyFollowupImages.py", "TestDailyRegressionImages.py", "TestFullStaminaImage.py",
+    "TestAbyssReturnImages.py", "TestAbyssSeasonImages.py", "TestBookTabImages.py", "TestEchoesContinuationImages.py",
     "TestEchoesRemainImages.py", "TestQingxiaoSoloImages.py",
-    "TestDailyRecoveryImages.py",
+    "TestDailyRecoveryImages.py", "TestDailyNasImages.py", "TestWeeklyNasImages.py", "TestNightmareNasImages.py",
     "TestMaterialVision.py",
     "TestCharacterTrialImages.py",
     "TestWeeklyBossImages.py", "TestGardenPageImages.py", "TestRosterConfirmationImages.py", "TestResidualNestImages.py", "TestNewBookEntryImages.py",

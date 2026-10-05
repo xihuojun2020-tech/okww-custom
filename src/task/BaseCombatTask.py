@@ -845,6 +845,11 @@ class BaseCombatTask(CombatCheck):
         return bool(np.mean(hsv[:, :, 1] > 30) < .03)
 
     def _unrevivable_switch_target(self, char):
+        cooldown_until = char.__dict__.get('_switch_cooldown_until', 0)
+        if cooldown_until:
+            if time.monotonic() < cooldown_until:
+                return True
+            char._switch_cooldown_until = 0
         if not char.__dict__.get('_switch_unrevivable', False):
             return False
         if self._switch_portrait_gray(char) is False:
@@ -854,9 +859,18 @@ class BaseCombatTask(CombatCheck):
 
     def _switch_rejected_by_death(self, char):
         frame = self.frame
+        messages = self.ocr(.25, .14, .75, .25, frame=frame)
+        for box in messages:
+            message = re.sub(r'\s+', '', str(box.name))
+            if re.search(r'(?:意识恢复物品|意識恢復物品).{0,8}(?:冷却中|冷卻中)', message):
+                seconds = re.search(r'(\d{1,3})秒', message)
+                wait = min(120, int(seconds.group(1))) if seconds else 10
+                char._switch_cooldown_until = time.monotonic() + max(1, wait)
+                char.has_intro = char.has_sub_dps_intro = False
+                self.log_warning(f'切人被复活物品冷却拒绝：{char}，{wait}秒后重新核验')
+                return True
         if self._switch_portrait_gray(char, frame) is not True:
             return False
-        messages = self.ocr(.25, .14, .75, .25, frame=frame)
         if not any(re.sub(r'\s+', '', b.name) in ('暂无可用的意识恢复物品', '暫無可用的意識恢復物品')
                    for b in messages):
             return False

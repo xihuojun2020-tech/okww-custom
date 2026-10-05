@@ -61,7 +61,7 @@ class TestDiagnosticArchive(unittest.TestCase):
             for pid, process, spool in ((12345, owned, root), (12346, other, root / 'other')):
                 process.pid = pid
                 process.info = {'cmdline': ['python', '-m', 'src.runtime.diagnostic_uploader', '--root', str(spool)],
-                                'exe': str(REPO / '.venv/Scripts/python.exe')}
+                                'exe': str(REPO / 'owned-python.exe')}
                 process.cwd.return_value = str(REPO)
                 process.children.return_value = []
             with patch('psutil.process_iter', return_value=[owned, other]), patch('psutil.wait_procs', return_value=([], [])):

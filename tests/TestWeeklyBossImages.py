@@ -21,13 +21,16 @@ class TestWeeklyBossImages(TaskTestCase):
         self.set_image(f'tests/images/weekly_boss/{name}.png')
 
     def test_guidebook_names_and_counts(self):
-        for page, indices in ((1, (0, 1, 2)), (2, (3, 4, 5)), (3, (6, 7, 8, 9))):
+        pages = ((1, ('失坠困咎之庭', '虚妄诞生之种', '星海迷途之扉')),
+                 (2, ('烬夜天启之章', '命途断章之轮', '彼世猩红之幕')),
+                 (3, ('时序命定之争', '无冠巨像之心', '无序边境之火', '昔日咏叹之钟')))
+        for page, names in pages:
             self.load(f'list{page}')
             self.assertEqual(self.task._weekly_book_remaining(), 3)
             boxes = self.task._ocr(self.task.LIST)
-            for index in indices:
-                with self.subTest(page=page, target=WEEKLY_BOSSES[index].name):
-                    self.assertIsNotNone(match_target_button(boxes, WEEKLY_BOSSES[index].name, self.task.height),
+            for name in names:
+                with self.subTest(page=page, target=name):
+                    self.assertIsNotNone(match_target_button(boxes, name, self.task.height),
                                          [b.name for b in boxes])
 
     def test_double_reward_header_reads_weekly_row(self):
@@ -42,7 +45,7 @@ class TestWeeklyBossImages(TaskTestCase):
 
     def test_detail_preserves_default_difficulty(self):
         self.load('detail')
-        self.assertTrue(self.task._detail_ready(WEEKLY_BOSSES[1]))
+        self.assertTrue(self.task._detail_ready(next(b for b in WEEKLY_BOSSES if b.key == 'weekly_false_god')))
         self.assertEqual(parse_remaining(self.task._text(self.task.DETAIL_COUNT)), 3)
         self.assertEqual(parse_cost(self.task._text(self.task.COST)), 60)
         self.assertEqual(parse_stamina(self.task._text(self.task.STAMINA)), 228)
@@ -121,7 +124,7 @@ class TestWeeklyBossImages(TaskTestCase):
                             cost, stamina, button = self.task._claim_confirmation()
                             self.assertEqual((cost, stamina, button.name), (60, 123, '确认'))
                         else:
-                            self.assertTrue(self.task._detail_ready(WEEKLY_BOSSES[1]))
+                            self.assertTrue(self.task._detail_ready(next(b for b in WEEKLY_BOSSES if b.key == 'weekly_false_god')))
                             self.assertEqual(parse_remaining(self.task._text(self.task.DETAIL_COUNT)), 3)
 
     def test_chinese_dropdown_uses_names_not_internal_ids(self):

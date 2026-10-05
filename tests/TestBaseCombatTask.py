@@ -100,6 +100,23 @@ class TestBaseCombatTask(unittest.TestCase):
             self.assertFalse(task._switch_rejected_by_death(char))
             self.assertFalse(char._switch_unrevivable)
 
+    def test_revival_item_cooldown_temporarily_skips_rejected_switch(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        task = self.recovery_task()
+        char = SimpleNamespace(index=1, has_intro=True, has_sub_dps_intro=True)
+        task._switch_portrait_gray = Mock(return_value=False)
+        task.ocr = Mock(return_value=[SimpleNamespace(name='意识恢复物品冷却中，请等待21秒后再使用')])
+        task.log_warning = Mock()
+        with patch('src.task.BaseCombatTask.time.monotonic', return_value=100):
+            self.assertTrue(task._switch_rejected_by_death(char))
+            self.assertTrue(task._unrevivable_switch_target(char))
+        self.assertFalse(char.has_intro)
+        self.assertFalse(char.has_sub_dps_intro)
+        self.assertFalse(char.__dict__.get('_switch_unrevivable', False))
+        with patch('src.task.BaseCombatTask.time.monotonic', return_value=122):
+            self.assertFalse(task._unrevivable_switch_target(char))
+
     def test_dead_switch_yields_after_first_rejected_input_and_next_rotation_uses_survivor(self):
         from src.char.BaseChar import BaseChar, CharType
         task = self.recovery_task()

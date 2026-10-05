@@ -651,7 +651,7 @@ class BaseWWTask(BaseTask):
             if screenshot_on_failure:
                 self.screenshot('stamina_error')
             return -1, -1, -1
-        from src.task.daily_observation import resource_values
+        from src.task.daily_observation import resource_values, full_stamina_bar
         current, back_up, total = resource_values(boxes, self.width)
         if current < 0:
             # The fraction can lose its slash at native scale. Keep the reserve
@@ -679,6 +679,17 @@ class BaseWWTask(BaseTask):
                     if len(reserves) == 2 and reserves[0] == reserves[1]:
                         corrected.append(SimpleNamespace(name=str(reserves[0]), x=.58*self.width, width=.02*self.width))
                 current, back_up, total = resource_values(corrected, self.width)
+            if current < 0:
+                # Some full bars render only "240". Require the adjacent plus,
+                # one reserve value, and agreement on a fresh frame.
+                first = full_stamina_bar(self.ocr(.49, 0, .92, .10, frame=frame) or [], self.width)
+                if first is not None:
+                    self.next_frame()
+                    fresh = self.require_game_frame()
+                    second = full_stamina_bar(self.ocr(.49, 0, .92, .10, frame=fresh) or [], self.width)
+                    if second == first:
+                        current, back_up = first
+                        total = current + back_up
         self.info_set('current_stamina', current)
         self.info_set('back_up_stamina', back_up)
         return current, back_up, total
@@ -1266,6 +1277,16 @@ class BaseWWTask(BaseTask):
             return True
         self.log_warning('点击挑战失败页退出按钮后仍未确认大世界')
         return False
+
+    def has_challenge_success(self, frame=None):
+        """Victory is a transition signal, never proof that rewards were claimed."""
+        frame = self.require_game_frame() if frame is None else frame
+        if self.ocr(.15, .05, .85, .70, frame=frame, match=re.compile(
+                r'挑战成功|挑戰成功|Challenge\s+(?:Success|Completed)|Victory', re.I)):
+            return True
+        objectives = self.ocr(0, .18, .25, .36, frame=frame) or []
+        return any(re.search(r'(?:限时击败敌人|限時擊敗敵人|Defeat\s+Enemies).*?([1-9]\d?)/\1\b',
+                             str(box.name), re.I) for box in objectives)
 
     def click_dialog_right_button(self):
         confirm = self.find_one([

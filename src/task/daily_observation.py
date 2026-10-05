@@ -36,6 +36,23 @@ def resource_values(boxes, width):
     return a, b, a + b
 
 
+def full_stamina_bar(boxes, width):
+    """Accept bare 240 only beside its resource-bar plus and one reserve value."""
+    current, reserve, plus = set(), set(), set()
+    for box in boxes:
+        value = re.sub(r'\s+', '', str(box.name))
+        x = (box.x + box.width / 2) / width
+        if .68 <= x <= .76 and re.fullmatch(r'\d{1,3}(?:/240)?', value):
+            current.add(value)
+        elif .50 <= x < .68 and re.fullmatch(r'\d{1,4}', value):
+            reserve.add(int(value))
+        elif .76 < x <= .84 and value == '+':
+            plus.add(value)
+    if current == {'240'} and len(reserve) == 1 and plus:
+        return 240, reserve.pop()
+    return None
+
+
 def claimable_tiers(frame):
     """Red notification diamonds above each fixed daily reward chest."""
     h, w = frame.shape[:2]
