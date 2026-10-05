@@ -73,6 +73,37 @@ class TestAccountManagementTabs(unittest.TestCase):
         with self.assertRaises(ValueError):
             dialog.tasks()
         dialog.deleteLater()
+
+    def test_forgery_template_shows_names_and_keeps_integer_values(self):
+        from src.gui.AccountConfigTab import AccountTemplateDialog
+        from src.task.forgery_targets import FORGERY_DOMAIN_NAMES
+        for value in (1, 5, 20):
+            dialog = AccountTemplateDialog({'Which Forgery Challenge to Farm': value})
+            control = dialog._widgets['Which Forgery Challenge to Farm']
+            self.assertEqual(20, control.count())
+            self.assertEqual(FORGERY_DOMAIN_NAMES[value], control.currentText())
+            self.assertEqual(value, dialog.tasks()['Which Forgery Challenge to Farm'])
+            dialog.deleteLater()
+        dialog = AccountTemplateDialog({'Which Forgery Challenge to Farm': 21})
+        self.assertEqual(-1, dialog._widgets['Which Forgery Challenge to Farm'].currentIndex())
+        with self.assertRaises(ValueError):
+            dialog.tasks()
+        dialog.deleteLater()
+
+    def test_forgery_profile_form_uses_named_choices(self):
+        from src.task.forgery_targets import FORGERY_DOMAIN_NAMES
+        with tempfile.TemporaryDirectory() as temp:
+            env = make_account_environment(Path(temp))
+            tab = AccountConfigTab(AccountConfigEditor(env.repository))
+            try:
+                control = tab.form_widgets['Which Forgery Challenge to Farm']
+                self.assertIsInstance(control, ClickOnlyComboBox)
+                self.assertEqual(20, control.count())
+                self.assertEqual(FORGERY_DOMAIN_NAMES[1], control.currentText())
+                control.setCurrentIndex(control.findData(5))
+                self.assertEqual(FORGERY_DOMAIN_NAMES[5], control.currentText())
+            finally:
+                tab.deleteLater()
     def test_fifth_nest_is_available_without_changing_legacy_template(self):
         from src.gui.AccountConfigTab import AccountTemplateDialog
         from src.nightmare_nests import NEST_NAMES
