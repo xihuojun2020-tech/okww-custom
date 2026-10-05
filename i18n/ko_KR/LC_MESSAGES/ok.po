@@ -1875,3 +1875,6 @@ msgstr "⚔️ 솔로 자동 전투"
 
 msgid "Fight automatically only with a verified one-member party."
 msgstr "확인된 1인 파티에서만 자동으로 전투합니다."
+
+msgid "Forgery Material Goals"
+msgstr "응소 재료 목표"

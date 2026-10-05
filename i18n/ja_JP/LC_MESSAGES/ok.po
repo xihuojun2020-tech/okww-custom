@@ -1858,3 +1858,6 @@ msgstr "⚔️ ソロ自動戦闘"
 
 msgid "Fight automatically only with a verified one-member party."
 msgstr "確認済みの1人編成でのみ自動戦闘します。"
+
+msgid "Forgery Material Goals"
+msgstr "凝素材料目標"

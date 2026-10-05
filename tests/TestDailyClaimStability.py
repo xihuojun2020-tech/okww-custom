@@ -8,6 +8,7 @@ from src.task.DailyTask import DailyTask, DailyActivityIncomplete
 class TestDailyClaimStability(unittest.TestCase):
     def task(self):
         task = Mock(spec=DailyTask)
+        task.ocr.return_value = []
         task._restore_daily_claim_page = MethodType(DailyTask._restore_daily_claim_page, task)
         task._daily_reward_overlay.return_value = None
         task._daily_objective_claim_buttons.return_value = []

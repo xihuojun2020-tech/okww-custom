@@ -18,6 +18,8 @@ from src.account_config_editor import AccountConfigEditor, ProfileDraft, sanitiz
 from src.account_display import account_display_label
 from src.account_rebind_service import AccountRebindService, rebind_confirmation_identity
 from src.account_repository import AccountRepository, AccountRepositoryError, get_default_repository
+from src.gui.ForgeryQuotaWidget import ForgeryQuotaWidget
+from src.task.forgery_quota_plan import FORGERY_GOALS
 from src.gui.WorldBossMaterialPlanWidget import WorldBossMaterialPlanWidget
 from src.task.world_boss_material_plan import MATERIAL_TARGETS, material_plan
 from src.gui.WeeklyBossPlanWidget import WeeklyBossPlanWidget
@@ -206,6 +208,7 @@ class AccountTemplateDialog(QDialog):
         self._tasks = dict(tasks)
         self._tasks.setdefault(WEEKLY_PLAN, [])
         self._tasks.setdefault(MATERIAL_TARGETS, [])
+        self._tasks.setdefault(FORGERY_GOALS, [])
         self._tasks.setdefault('Garden Execution Mode', 'closed')
         from src.recording_policy import RECORDING_PAGES
         self._tasks['Record Pages'] = list(RECORDING_PAGES)
@@ -220,12 +223,15 @@ class AccountTemplateDialog(QDialog):
         content = QWidget(scroll)
         form = QVBoxLayout(content)
         for field in account_field_metadata(self._tasks):
-            if field.key in ('Nightmare Which to Farm', 'Nightmare Settlements to Farm', 'Weekly Boss Target'):
+            if field.key in ('Nightmare Which to Farm', 'Nightmare Settlements to Farm', 'Weekly Boss Target',
+                             'Material Planner Enabled', 'Auto Farm all Nightmare Nest', 'Farm Nightmare Nest for Daily Echo'):
                 continue
             if field.affects_identity or field.key in ("备用识别名称", "备用识别名称内容"):
                 continue
             value = self._tasks.get(field.key)
-            if field.key == MATERIAL_TARGETS:
+            if field.key == FORGERY_GOALS:
+                widget = ForgeryQuotaWidget(self._tasks, parent=self)
+            elif field.key == MATERIAL_TARGETS:
                 widget = WorldBossMaterialPlanWidget(self._tasks, parent=self)
             elif field.key == WEEKLY_PLAN:
                 widget = WeeklyBossPlanWidget(self._tasks, parent=self)
@@ -247,7 +253,7 @@ class AccountTemplateDialog(QDialog):
                 widget.setText(json.dumps(display, ensure_ascii=False)
                                if isinstance(display, (list, dict)) else str(display))
             self._widgets[field.key] = widget
-            if isinstance(widget, (WeeklyBossPlanWidget, WorldBossMaterialPlanWidget)):
+            if isinstance(widget, (ForgeryQuotaWidget, WeeklyBossPlanWidget, WorldBossMaterialPlanWidget)):
                 form.addWidget(QLabel(field.label, content))
                 form.addWidget(widget)
             else:
@@ -268,7 +274,9 @@ class AccountTemplateDialog(QDialog):
     def tasks(self):
         result = dict(self._tasks)
         for key, widget in self._widgets.items():
-            if isinstance(widget, WorldBossMaterialPlanWidget):
+            if isinstance(widget, ForgeryQuotaWidget):
+                result[key] = widget.values()
+            elif isinstance(widget, WorldBossMaterialPlanWidget):
                 rows = widget.values()
                 if result.get(key) != [] or rows != material_plan(result):
                     result[key] = rows
@@ -623,7 +631,9 @@ class AccountConfigTab(CustomTab):
         for key, widget in self.form_widgets.items():
             if not widget.isEnabled():
                 continue
-            if isinstance(widget, WorldBossMaterialPlanWidget):
+            if isinstance(widget, ForgeryQuotaWidget):
+                self.draft.tasks[key] = widget.values()
+            elif isinstance(widget, WorldBossMaterialPlanWidget):
                 rows = widget.values()
                 if self.draft.tasks.get(key) != [] or rows != material_plan(self.draft.tasks):
                     self.draft.tasks[key] = rows
@@ -709,7 +719,7 @@ class AccountConfigTab(CustomTab):
         while self.identity_task_layout.count():
             item = self.identity_task_layout.takeAt(0)
             if item.widget(): item.widget().deleteLater()
-        stamina = {MATERIAL_TARGETS, 'Material Planner Enabled', 'Which to Farm', 'Which Tacet Suppression to Farm', 'Which Forgery Challenge to Farm',
+        stamina = {FORGERY_GOALS, MATERIAL_TARGETS, 'Material Planner Enabled', 'Which to Farm', 'Which Tacet Suppression to Farm', 'Which Forgery Challenge to Farm',
                    'Material Selection'}
         daily = {'Farm Nightmare Nest for Daily Echo', 'Nightmare Which to Farm', 'Tacet Discord Nests to Farm',
                  'Nightmare Settlements to Farm', 'Auto Farm all Nightmare Nest'}
@@ -725,7 +735,8 @@ class AccountConfigTab(CustomTab):
         last_group = None
         fields = sorted(account_field_metadata(self.draft.tasks), key=group)
         for field in fields:
-            if field.key in ('Nightmare Which to Farm', 'Nightmare Settlements to Farm', 'Weekly Boss Target'):
+            if field.key in ('Nightmare Which to Farm', 'Nightmare Settlements to Farm', 'Weekly Boss Target',
+                             'Material Planner Enabled', 'Auto Farm all Nightmare Nest', 'Farm Nightmare Nest for Daily Echo'):
                 continue
             identity_field = field.key in ('备用识别名称', '备用识别名称内容')
             if not identity_field and group(field) != last_group:
@@ -736,7 +747,10 @@ class AccountConfigTab(CustomTab):
                 self.form_sections[last_group] = heading
                 self.form_layout.addRow(heading)
             value = self.draft.tasks.get(field.key)
-            if field.key == MATERIAL_TARGETS:
+            if field.key == FORGERY_GOALS:
+                widget = ForgeryQuotaWidget(self.draft.tasks, self.editor.repository.integrity_service,
+                                            self.draft.profile_id, self.form_host)
+            elif field.key == MATERIAL_TARGETS:
                 widget = WorldBossMaterialPlanWidget(self.draft.tasks, self.editor.repository.integrity_service,
                                                      self.draft.profile_id, self.form_host)
             elif field.key == WEEKLY_PLAN:
@@ -767,11 +781,11 @@ class AccountConfigTab(CustomTab):
             if identity_field:
                 self.identity_task_layout.addWidget(FlatSettingRow(field.label, widget, field.help_text,
                                                                   self.identity_task_fields))
-            elif isinstance(widget, (WeeklyBossPlanWidget, WorldBossMaterialPlanWidget)):
+            elif isinstance(widget, (ForgeryQuotaWidget, WeeklyBossPlanWidget, WorldBossMaterialPlanWidget)):
                 heading.add_widget(widget)
             else:
                 heading.add_row(field.label, widget, field.help_text)
-            if isinstance(widget, (NestSelection, WeeklyBossPlanWidget, WorldBossMaterialPlanWidget)):
+            if isinstance(widget, (NestSelection, ForgeryQuotaWidget, WeeklyBossPlanWidget, WorldBossMaterialPlanWidget)):
                 widget.changed.connect(self._mark_draft_edited)
             elif isinstance(widget, QCheckBox):
                 widget.toggled.connect(self._mark_draft_edited)

@@ -15,6 +15,7 @@ $Python = if (Test-Path ".\.venv\Scripts\python.exe") {
 
 $groups = @{
   unit = @(
+    "TestForgeryQuotaPlan.py", "TestForgeryQuotaProgress.py",
     "TestWorldBossMaterialPlan.py", "TestWorldBossMaterialTask.py", "TestWorldBossMaterialNavigation.py", "TestCombatTaskModes.py",
     "TestTrioCombatRecovery.py", "TestTacetRewardRecovery.py", "TestTacetTargets.py",
     "TestStorySkip.py",
@@ -57,6 +58,7 @@ $groups = @{
     "TestWin32LoginInput.py"
   )
   integration = @(
+    "TestForgeryQuotaIntegration.py",
     "TestDiagnosticArchive.py", "TestDiagnosticArchiveRetention.py", "TestDiagnosticDetails.py",
     "TestStorageBootstrap.py",
     "TestMaterialIntegration.py",
@@ -69,6 +71,7 @@ $groups = @{
     "TestAccountSwitchEvidence.py", "TestMultiAccountDailyTask.py", "TestAccountRepositoryMigrationScenario.py"
   )
   ui = @(
+    "TestForgeryQuotaUI.py",
     "TestWorldBossMaterialUI.py", "TestAbyssPresetUI.py",
     "TestDiagnosticDetailsUI.py",
     "TestTaskInfoSnapshot.py",

@@ -268,16 +268,11 @@ class WorldBossMaterialTask(FarmEchoTask):
     def _resources_for_claim(self, cost, activity_ready, used_stamina):
         self.openF2Book('gray_book_boss')
         budget = self.daily_stamina_budget(activity_ready, cost, used_stamina)
-        balance = self.prepare_daily_reserve(cost, budget)
-        self.back(after_sleep=.5)
-        policy = getattr(self.executor, '_daily_reserve_policy', None)
-        if balance[0] < cost and policy and callable(policy.refresh):
-            policy.refresh()
+        before = self.get_verified_stamina()
+        balance = self.prepare_daily_stamina(cost, budget)
+        if before[0] < cost:
             self._material_reenter = True
-            self.openF2Book('gray_book_boss')
-            ready = policy.activity_ready
-            balance = self.prepare_daily_reserve(cost, self.daily_stamina_budget(ready, cost, used_stamina))
-            self.back(after_sleep=.5)
+        self.back(after_sleep=.5)
         self._material_balance = balance
         return balance[0] >= cost
 

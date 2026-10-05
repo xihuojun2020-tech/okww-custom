@@ -128,6 +128,7 @@ class TestDailyOutcomeRecovery(unittest.TestCase):
         task.check_weekly_boss=Mock()
         task._daily_step_completed=Mock(return_value=True)
         task.open_daily=Mock(return_value=(180,False))
+        task.claim_daily.return_value=True
         task._daily_objective=Mock(side_effect=lambda kind:(0,1) if kind=='echo' else (180,180))
         child=Mock();child.config={}
         task.get_task_by_class=Mock(return_value=child)
@@ -140,24 +141,23 @@ class TestDailyOutcomeRecovery(unittest.TestCase):
                 patch.object(DailyTask,'logged_in',False):
             task._run_daily_inner()
 
-    def test_stale_checkpoint_is_overruled_and_local_capture_error_can_recover(self):
-        task,child,_=self.daily_flow()
-        def capture(**kwargs):
-            if child.run_capture_mode.call_count==1:
-                raise DailyActivityIncomplete('candidate did not acquire echo')
-            task._daily_objective.side_effect=lambda kind:(1,1) if kind=='echo' else (180,180)
-            task.open_daily.return_value=(180,True)
-            self.assertTrue(kwargs['verify_capture']())
-        child.run_capture_mode.side_effect=capture
+    def test_empty_selection_uses_actual_activity_and_never_capture_fallback(self):
+        task,child,flags=self.daily_flow()
+        flags['Tacet Discord Nests to Farm']=[]
+        task.claim_daily.return_value=True
         self.run_daily_flow(task)
-        self.assertEqual(child.run_capture_mode.call_count,2)
-        task.claim_daily.assert_called_once()
+        child.run_capture_mode.assert_not_called()
+        task.open_daily.assert_called_once()
         self.assertIn('Daily Task',[c.args[0] for c in task.record_last_completed.call_args_list])
 
-    def test_local_capture_failure_still_claims_partial_but_never_marks_daily_done(self):
-        task,child,_=self.daily_flow()
-        child.run_capture_mode.side_effect=DailyActivityIncomplete('still 0/1')
-        with self.assertRaises(DailyActivityIncomplete):self.run_daily_flow(task)
+    def test_final_incomplete_claims_partial_and_leaves_resolution_to_user(self):
+        task,child,flags=self.daily_flow()
+        flags['Tacet Discord Nests to Farm']=[]
+        task.claim_daily.return_value=False
+        with self.assertRaises(DailyActivityIncomplete) as raised:
+            self.run_daily_flow(task)
+        self.assertFalse(raised.exception.retryable)
+        child.run_capture_mode.assert_not_called()
         task.claim_daily.assert_called_once()
         self.assertNotIn('Daily Task',[c.args[0] for c in task.record_last_completed.call_args_list])
 
@@ -201,6 +201,7 @@ class TestDailyOutcomeRecovery(unittest.TestCase):
                 flags['Record After Daily Task'] = True
                 task.open_daily.return_value = (180, True)
                 task.claim_daily = MethodType(DailyTask.claim_daily, task)
+                task.get_total_daily_points = Mock(return_value=100)
                 events = []
                 state = {'chest': True, 'overlay': False}
                 for name in ('_open_daily_page', '_claim_daily_objectives', 'next_frame'):

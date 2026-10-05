@@ -2152,3 +2152,6 @@ msgstr "⚔️ 单人自动战斗"
 
 msgid "Fight automatically only with a verified one-member party."
 msgstr "仅在确认单人编队时自动战斗。"
+
+msgid "Forgery Material Goals"
+msgstr "凝素材料目标"

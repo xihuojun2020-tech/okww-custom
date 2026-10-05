@@ -16,6 +16,7 @@ class TestDailyRegressionFlow(unittest.TestCase):
         state = {'pending': [20, 60, 20, 20], 'points': 0, 'chests': []}
         task.require_game_frame.return_value = np.zeros((90, 160, 3), np.uint8)
         task._daily_page_ready.return_value = True
+        task.ocr.return_value = []
         task._restore_daily_claim_page.return_value = task.require_game_frame.return_value
         task._daily_objective_claim_buttons.side_effect = lambda: [
             SimpleNamespace(y=200+i*100, name='领取') for i in range(len(state['pending']))]
@@ -56,6 +57,7 @@ class TestDailyRegressionFlow(unittest.TestCase):
     def test_objective_claim_filter_excludes_go_and_already_claimed(self):
         task = Mock(spec=DailyTask)
         task._daily_page_ready.return_value = True
+        task.ocr.return_value = []
         task.ocr.return_value = [SimpleNamespace(name=name, y=i) for i,name in enumerate(
             ['前往', '已领取', 'Claimed', '领取', 'Claim', '領取'])]
         self.assertEqual([b.name for b in DailyTask._daily_objective_claim_buttons(task)],
@@ -67,7 +69,8 @@ class TestDailyRegressionFlow(unittest.TestCase):
         policy = DailyReservePolicy('synthetic', remaining=180)
         task.executor = SimpleNamespace(_daily_reserve_policy=policy)
         task._verified_profile_id = 'synthetic'
-        task._daily_objective.return_value = (0, 180)
+        task._claim_daily_objectives = Mock(return_value=(0, 180))
+        state['points'] = 120
         self.assertEqual(DailyTask.open_daily(task), (0, True))
         self.assertTrue(policy.full_seen)
         self.assertEqual(policy.allowance(0, 180), 0)
@@ -76,6 +79,7 @@ class TestDailyRegressionFlow(unittest.TestCase):
     def test_claim_modal_restored_before_next_action(self):
         task = Mock(spec=DailyTask)
         task._daily_page_ready.return_value = True
+        task.ocr.return_value = []
         task._daily_reward_overlay.side_effect = lambda f: None if task.click_relative.called else 'ready'
         DailyTask._restore_daily_claim_page(task)
         task.click_relative.assert_called_once_with(.50, .78, after_sleep=.5)

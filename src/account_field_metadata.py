@@ -40,13 +40,14 @@ class AccountFieldMetadata:
 
 
 _LABELS = {
+    'Forgery Material Goals': ('凝素材料目标', '输入本轮还需刷出的金、紫、蓝、绿数量；按27/9/3/1折算，完成两组后自动刷本账号无音区。'),
     'World Boss Material Targets': ('世界首领突破材料', '按1→2→3累计领奖，0跳过；全部达标后跟随本账号体力用途。次数跨日保留，只计成功领取，不计材料产出数量。'),
     'Material Planner Enabled': ('养成材料规划', '按游戏培养目标刷凝素，材料满足后刷声骸；每周校准仓库，收益原图和统计永久保留。首版仅简体中文16:9。'),
     'Screenshot After Daily Task': ('每日任务后截图', '依次保存四页到完成检查；关闭录像仍可截图。'),
     'Record After Daily Task': ('每日任务后录像', ''),
     'Record Pages': ('录像页面（固定全选）', ''),
     'Record Duration': ('每页录像时长（秒）', ''),
-    "Weekly Boss Target": ("每周周本", "无表示关闭；周一检查、周二至周六补检、周日独立复检。优先使用当前体力。"),
+    "Weekly Boss Target": ("每周周本", "无表示关闭；仅周一执行、周日独立复核，其他日期跳过。优先使用当前体力。"),
     "Weekly Boss Targets": ("周本优先级", "累计领取次数跨周保留；全部达标后领取游戏列表第一项。0跳过，不限保留旧行为。"),
     "Which to Farm": ("体力用途", "每天优先消耗体力的副本类型。不会影响账号识别。"),
     "Which Tacet Suppression to Farm": ("无音区选择", "选择要刷取的无音区。旧账号选择保留原关卡；前往后不可快速到达时，请先解锁地图。"),
@@ -68,13 +69,14 @@ _OPTIONS = {
     'Which Tacet Suppression to Farm': TACET_IDS,
     'Which Forgery Challenge to Farm': tuple(value for value, _ in FORGERY_DOMAIN_OPTIONS),
     "Weekly Boss Target": ("无", WEEKLY_AUTO, *(boss.key for boss in WEEKLY_BOSSES)),
-    "Which to Farm": ("Tacet Suppression", "Forgery Challenge", "Simulation Challenge"),
+    "Which to Farm": ("Tacet Suppression", "Forgery Challenge", "Simulation Challenge", "无"),
     "Material Selection": ("Resonator EXP", "Weapon EXP", "Shell Credit"),
     "Weekly Garden Check Day": ("无", *WEEKDAYS),
     "Garden Execution Mode": GARDEN_EXECUTION_MODES,
     "备用识别名称": ("无", "使用"),
 }
 _VALUE_LABELS = {
+    'Forgery Material Goals': ('凝素材料目标', '输入本轮还需刷出的金、紫、蓝、绿数量；按27/9/3/1折算，完成两组后自动刷本账号无音区。'),
     **{boss.key: boss.name for boss in WEEKLY_BOSSES},
     **dict(zip(WEEKDAYS, ('星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'))),
     "Tacet Suppression": "无音区",

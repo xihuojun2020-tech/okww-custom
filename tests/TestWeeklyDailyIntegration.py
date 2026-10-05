@@ -225,7 +225,7 @@ class TestWeeklyDailyIntegration(unittest.TestCase):
         target = WEEKLY_BOSSES[0].key
         for day in range(7, 13):
             now = datetime(2026, 9, day, 12)
-            self.assertTrue(weekly_check_due(target, None, now))
+            self.assertEqual(day == 7, weekly_check_due(target, None, now))
             self.assertFalse(weekly_check_due(target, '2026-09-07T12:00:00+08:00', now))
         sunday = datetime(2026, 9, 13, 12)
         self.assertTrue(weekly_check_due(target, '2026-09-07T12:00:00+08:00', sunday))
@@ -244,7 +244,7 @@ class TestWeeklyDailyIntegration(unittest.TestCase):
         with self.assertRaises(ValueError):
             weekly_check_due('invalid', None)
         self.assertTrue(weekly_check_due(WEEKLY_BOSSES[0].key, 'broken'))
-        self.assertTrue(weekly_check_due(WEEKLY_BOSSES[0].key, '2026-09-09T14:00:00+08:00',
+        self.assertFalse(weekly_check_due(WEEKLY_BOSSES[0].key, '2026-09-09T14:00:00+08:00',
                                         datetime(2026, 9, 9, 12)))
 
     def daily(self, result=WeeklyBossResult(3, 3, 0)):
@@ -361,22 +361,22 @@ class TestWeeklyDailyIntegration(unittest.TestCase):
         task.get_active_profile_name = Mock(return_value='A1')
         task._readonly_profile_config = Mock(return_value={})
         task._profile_get = lambda key, default=None: ('Tacet Suppression' if key == 'Which to Farm'
-                                                      else False if 'Nightmare' in key and isinstance(default, bool) else default)
+                                                      else [] if key == 'Tacet Discord Nests to Farm' else False if 'Nightmare' in key and isinstance(default, bool) else default)
         task.get_last_completed = Mock(return_value=None)
         reads = iter([(0, False), (180, True), (180, True)])
         task.open_daily = lambda: (events.append('read'), next(reads))[1]
         task.check_weekly_boss = lambda: events.append('weekly') or True
         def farm(**kwargs):
             events.append('farm')
-            self.assertTrue(kwargs['activity_ready'])
-            self.assertEqual(kwargs['used_stamina'], 180)
+            self.assertFalse(kwargs['activity_ready'])
+            self.assertEqual(kwargs['used_stamina'], 0)
             raise RuntimeError('test reached refreshed farming')
         task.get_task_by_class = Mock(return_value=SimpleNamespace(farm_tacet=farm))
         with patch('src.task.DailyTask.require_account_runtime_for_task'), \
                 patch('src.task.DailyTask.WWOneTimeTask.run'), patch.object(DailyTask, 'logged_in', False):
             with self.assertRaisesRegex(RuntimeError, 'test reached refreshed farming'):
                 task._run_daily_inner()
-        self.assertEqual(events, ['read', 'weekly', 'read', 'read', 'farm'])
+        self.assertEqual(events, ['read', 'weekly', 'farm'])
 
     def test_target_wrapper_preserves_standalone_config_and_restores_state(self):
         from src.task.WeeklyBossTask import WeeklyBossTask

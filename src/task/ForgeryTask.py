@@ -44,6 +44,7 @@ class ForgeryTask(DomainTask):
             must_use, teleport_once,
             activity_ready=activity_ready if daily else None,
             stamina_budget=must_use,
+            exhaust_current=daily,
         )
 
     def purification_material(self):
@@ -59,6 +60,70 @@ class ForgeryTask(DomainTask):
             self.click_box(target, after_sleep=1)
         self.click_relative(0.75, 0.90, after_sleep=1)
         self.ensure_main()
+
+    def farm_quota(self, profile_id, read_tasks, service, guard, *, activity_ready=False, used_stamina=0):
+        from src.task.forgery_quota_plan import forgery_plan, next_forgery_goal, claim_width
+        from src.task.forgery_quota_progress import ForgeryQuotaProgress
+        from src.config_integrity import fingerprint
+        progress = ForgeryQuotaProgress(service, profile_id)
+        task = self
+
+        class ClaimTracker:
+            def __init__(self, row, rows, width):
+                self.row, self.rows, self.max_claims = row, rows, width
+                self.event_id = None
+
+            def begin_claim(self):
+                guard()
+                current_tasks = read_tasks()
+                if (current_tasks.get('Which to Farm', 'Forgery Challenge') != 'Forgery Challenge'
+                        or forgery_plan(current_tasks) != self.rows):
+                    raise RuntimeError('凝素目标已修改，停止本次领奖，请重新运行')
+                if progress.pending():
+                    raise RuntimeError('凝素领奖待核验，请先在账号设置核对')
+                self.event_id = progress.begin(self.row['goal_id'], self.row['domain'],
+                                              self.max_claims * 40, fingerprint(self.rows))
+
+            def collect_claim(self, used):
+                progress.resolve(self.event_id, used)
+
+            def capture_failure(self):
+                task.screenshot('forgery_quota_pending')
+
+        try:
+            while True:
+                guard()
+                if progress.pending():
+                    raise RuntimeError('凝素领奖待核验，请先在账号设置核对')
+                current_tasks = read_tasks()
+                if current_tasks.get('Which to Farm', 'Forgery Challenge') != 'Forgery Challenge':
+                    return 'disabled'
+                rows = forgery_plan(current_tasks)
+                choice = next_forgery_goal(rows, progress.earned())
+                if choice is None:
+                    return 'complete' if rows else 'disabled'
+                row, remaining = choice
+                policy = getattr(self.executor, '_daily_reserve_policy', None)
+                consumed = policy.stamina_used if policy is not None else used_stamina
+                ready = policy.activity_ready if policy is not None else activity_ready
+                budget = self.daily_stamina_budget(ready, 40, consumed)
+                self.open_F2_book_and_get_stamina()
+                current, _, total = self.prepare_daily_stamina(40, budget)
+                width = claim_width(remaining, current)
+                if not width:
+                    self._note_daily_resource_shortfall(total, max(40, budget))
+                    self.back()
+                    return 'resource_shortfall'
+                self.claim_tracker = ClaimTracker(row, rows, width)
+                before = progress.earned()
+                self.info_set('凝素目标', f'领域 {row["domain"]}，剩余 {remaining} 绿色当量，本次 {width * 40} 体力')
+                self.farm_domain_with_recovery_loop(budget,
+                    lambda: self.teleport_into_domain(row['domain'], True),
+                    activity_ready=ready, stamina_budget=budget, exhaust_current=True)
+                if progress.earned() == before:
+                    return 'resource_shortfall'
+        finally:
+            self.claim_tracker = None
 
     def teleport_into_domain(self, serial_number, daily=False):
         self.open_boss_book('ningsu')

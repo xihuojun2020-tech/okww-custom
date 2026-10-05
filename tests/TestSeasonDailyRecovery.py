@@ -138,7 +138,7 @@ class TestSeasonDailyRecovery(unittest.TestCase):
         self.assertEqual((41, 60), policy.resource_shortfall)
         task = Mock(spec=DailyTask)
         task.executor = Box(_daily_reserve_policy=policy)
-        task.open_daily.return_value = (60, False)
+        task.claim_daily.return_value = False
         with self.assertRaises(DailyResourceInsufficient) as caught:
             DailyTask._finish_daily_rewards(task, False)
         multi = Mock(spec=MultiAccountDailyTask)

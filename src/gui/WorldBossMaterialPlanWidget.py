@@ -42,6 +42,10 @@ class WorldBossMaterialPlanWidget(QWidget):
             for column, widget in enumerate((QLabel(str(index + 1), self), target, limit,
                                             QLabel('次', self), label, correct)):
                 layout.addWidget(widget, index + 1, column)
+            add = QPushButton('新增次数', self)
+            add.setEnabled(self.progress is not None)
+            add.clicked.connect(lambda checked=False, target=target, limit=limit: self._add_round(target, limit))
+            layout.addWidget(add, index + 1, 6)
             self.rows.append((target, limit, label))
             target.currentIndexChanged.connect(self._edited)
             limit.textEdited.connect(self._edited)
@@ -90,13 +94,13 @@ class WorldBossMaterialPlanWidget(QWidget):
                 label.setText(f'已领 {count}/{row["limit"]} · {status}')
             names = {'Tacet Suppression': '无音区', 'Forgery Challenge': '凝素领域',
                      'Simulation Challenge': '模拟训练'}
-            fallback = '材料规划' if self.planner_enabled else names.get(self.fallback, str(self.fallback))
+            fallback = names.get(self.fallback, str(self.fallback))
             choice = choose_material_target(rows, counts)
             status = (f'下一目标：{TARGETS_BY_ID[choice[0]].name}，还需 {choice[1]} 次。' if choice else
                       '全部启用目标已达标。' if any(r['boss'] != 'none' and r['limit'] > 0 for r in rows) else
                       '首领材料计划未启用。')
             self.summary.setText(('有材料领奖待核验，核对前暂停该账号体力消费。' if pending else status) +
-                                 f'\n累计跨日跨周保留；达标后跟随账号的{fallback}安排。')
+                                 f'\n累计跨日跨周保留；全部达标自动关闭，再跟随账号的{fallback}安排。')
         except Exception as error:
             self.summary.setText(f'首领材料配置或进度待核对：{error}')
 
@@ -106,6 +110,23 @@ class WorldBossMaterialPlanWidget(QWidget):
             QMessageBox.information(self, '请先停止任务', '停止当前任务后再校正或核对领取记录。')
             return False
         return self.progress is not None
+
+    def _add_round(self, target, limit):
+        if not self._editable_progress() or target.currentData() == 'none':
+            return
+        try:
+            if self.progress.pending():
+                raise ValueError('请先核对未确认的材料领取')
+            count = self.progress.counts().get(target.currentData(), 0)
+            amount, accepted = QInputDialog.getInt(self, '本轮新增领取次数',
+                f'{target.currentText()}：本轮还要领取多少次？', 1, 1, max(1, 9999 - count))
+            if accepted:
+                if count + amount > 9999:
+                    raise ValueError('累计上限不能超过9999')
+                limit.setText(str(count + amount))
+                self._edited()
+        except Exception as error:
+            QMessageBox.warning(self, '设置失败', str(error))
 
     def _correct(self, target):
         if not self._editable_progress() or target.currentData() == 'none':

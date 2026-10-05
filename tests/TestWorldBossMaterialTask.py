@@ -711,15 +711,16 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         del task._resources_for_claim
         task.openF2Book = Mock()
         task.daily_stamina_budget = BaseWWTask.daily_stamina_budget
-        task.prepare_daily_reserve = Mock(side_effect=[(20, 60, 80), (60, 20, 80)])
+        task.get_verified_stamina = Mock(return_value=(20, 60, 80))
+        task.prepare_daily_stamina = Mock(return_value=(60, 20, 80))
         policy = SimpleNamespace(refresh=Mock(), activity_ready=False)
         with patch.object(WorldBossMaterialTask, 'executor', new_callable=PropertyMock,
                           return_value=SimpleNamespace(_daily_reserve_policy=policy)):
             self.assertTrue(task._resources_for_claim(60, False, 120))
-        policy.refresh.assert_called_once()
+        task.prepare_daily_stamina.assert_called_once_with(60, 60)
         self.assertTrue(task._material_reenter)
         self.assertEqual((60, 20, 80), task._material_balance)
-        self.assertEqual(2, task.prepare_daily_reserve.call_count)
+        policy.refresh.assert_not_called()
 
     def test_second_daily_entry_same_uuid_sees_committed_claim_other_uuid_is_empty(self):
         self.tasks = plan((1, 0, 0))
@@ -766,6 +767,7 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         task._verified_profile_id = 'account-a'
         task.integrity_service = self.service
         task._active_profile_id = Mock(return_value='account-a')
+        task._close_completed_material_plan = Mock()
         task._material_plan_tasks = Mock(side_effect=lambda: self.tasks)
         task._profile_get = Mock(side_effect=lambda key, default=None: self.tasks.get(key, default))
         task._guard_bound_profile_identity = Mock()
@@ -785,20 +787,21 @@ class TestWorldBossMaterialTask(unittest.TestCase):
                 children[WorldBossMaterialTask].run_for_profile.return_value = MaterialRunResult(2, 120, 'complete')
                 self.assertEqual(target, task._run_profile_stamina(self.tasks, activity_ready=False, used_stamina=0))
                 getattr(children[cls], method).assert_called_once_with(daily=True, config=self.tasks,
-                                                                       activity_ready=True, used_stamina=120)
+                                                                       activity_ready=False, used_stamina=120)
                 self.assertEqual('account-a', children[WorldBossMaterialTask].run_for_profile.call_args.args[0])
         self.tasks[MATERIAL_PLANNER] = True
         task, children = self.daily()
         children[WorldBossMaterialTask].run_for_profile.return_value = MaterialRunResult(0, 0, 'complete')
-        self.assertIsNone(task._run_profile_stamina(self.tasks, activity_ready=True, used_stamina=180))
-        children[MaterialPlannerTask].run_for_profile.assert_called_once()
-        children[SimulationTask].farm_simulation.assert_not_called()
+        self.assertEqual('Simulation Challenge', task._run_profile_stamina(self.tasks, activity_ready=True, used_stamina=180))
+        children[MaterialPlannerTask].run_for_profile.assert_not_called()
+        children[SimulationTask].farm_simulation.assert_called_once()
 
     def test_daily_shortfall_has_no_normal_fallback_and_disabled_pending_reaches_guard(self):
         task, children = self.daily()
         children[WorldBossMaterialTask].run_for_profile.return_value = MaterialRunResult(1, 60, 'resource_shortfall')
-        self.assertIsNone(task._run_profile_stamina(self.tasks, activity_ready=False, used_stamina=0))
-        children[TacetTask].farm_tacet.assert_not_called()
+        self.assertEqual('Tacet Suppression', task._run_profile_stamina(self.tasks, activity_ready=False, used_stamina=0))
+        children[TacetTask].farm_tacet.assert_called_once()
+        task.open_daily.assert_not_called()
         self.tasks = {MATERIAL_TARGETS: []}
         self.progress.begin(A, 60, 'test')
         children[WorldBossMaterialTask].run_for_profile.side_effect = RuntimeError('待核验')
@@ -899,7 +902,8 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         material = self.runner()
         task, _ = self.standalone_daily(material)
         material.openF2Book = Mock()
-        material.prepare_daily_reserve = Mock(return_value=(59, 500, 559))
+        material.get_verified_stamina = Mock(return_value=(59, 500, 559))
+        material.prepare_daily_stamina = Mock(return_value=(59, 500, 559))
         def resources(cost, ready, used):
             self.assertTrue(ready)
             self.assertIsNone(used)
@@ -910,7 +914,7 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         material._resources_for_claim.side_effect = resources
         result = self.standalone_run(task)
         self.assertEqual(MaterialRunResult(0, 0, 'resource_shortfall'), result)
-        material.prepare_daily_reserve.assert_called_once_with(60, 0)
+        material.prepare_daily_stamina.assert_called_once_with(60, 0)
         task.open_daily.assert_not_called()
         self.assertEqual('previous', task.executor._daily_reserve_policy)
 

@@ -63,6 +63,7 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
             if stamina_budget < self.stamina_once:
                 return
             must_use = stamina_budget - stamina_budget % self.stamina_once
+        exhaust_current = daily and stamina_budget is None
         allow_backup = False
         backup_policy_decided = not daily
         self.info_incr('used stamina', 0)
@@ -70,8 +71,8 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
             self.sleep(1)
             self.openF2Book("gray_book_boss")
             current, back_up, total = self.get_verified_stamina()
-            if daily and current < self.stamina_once and must_use > 0:
-                current, back_up, total = self.prepare_daily_reserve(self.stamina_once, must_use)
+            if daily and current < self.stamina_once and (must_use > 0 or exhaust_current):
+                current, back_up, total = (self.prepare_daily_stamina if exhaust_current else self.prepare_daily_reserve)(self.stamina_once, must_use)
             if not backup_policy_decided:
                 allow_backup = self.should_use_backup_stamina(
                     activity_ready, current, back_up, must_use)
@@ -104,18 +105,24 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
                 if policy is not None:
                     policy.observe(None)
                 can_continue, used = self.use_stamina(
-                    once=self.stamina_once, must_use=must_use, allow_backup=allow_backup)
+                    once=self.stamina_once, must_use=must_use, allow_backup=allow_backup,
+                    **({'exhaust_current': True} if exhaust_current else {}))
+                must_use -= used
                 self.info_incr('used stamina', used)
                 self.sleep(4)
                 if not can_continue:
                     self.click_relative(0.365, 0.853, hcenter=True)
+                    if exhaust_current:
+                        self._leave_tacet_after_claim(refresh_activity=False)
+                        if not used:
+                            return None
+                        break
                     self._leave_tacet_after_claim()
                     return None
                 else:
                     self._tacet_retry_pending = True
                     self.click_relative(0.640, 0.851, hcenter=True, after_sleep=0.2)
                     self.wait_click_skip_dialog_confirm()
-                must_use -= used
 
     def _wait_tacet_combat_or_reward(self):
         """Inspect the current challenge before requiring an open-world HUD."""
@@ -148,10 +155,11 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
         self.screenshot('tacet_scene_unconfirmed', frame=self.frame)
         raise CombatStateUnknown('无音区成功动画或加载页面未进入可确认状态，保留现场')
 
-    def _leave_tacet_after_claim(self):
+    def _leave_tacet_after_claim(self, refresh_activity=True):
         for _ in range(3):
             if self.wait_in_team_and_world(time_out=15, raise_if_not_found=False):
-                self.refresh_daily_reserve_after_exit()
+                if refresh_activity:
+                    self.refresh_daily_reserve_after_exit()
                 return
             if self.get_settlement_stamina() < 0:
                 break

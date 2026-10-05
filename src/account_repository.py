@@ -300,6 +300,7 @@ class AccountRepository:
         tasks.setdefault(WEEKLY_PLAN, [])
         tasks.setdefault('Material Planner Enabled', False)
         tasks.setdefault('World Boss Material Targets', [])
+        tasks.setdefault('Forgery Material Goals', [])
         return ProfileRecord(profile_id, self._revision(raw), profile, copy.deepcopy(tasks))
 
     def load_profile_template(self, fallback_profile_id: str | None = None) -> ProfileTemplateRecord:
@@ -316,6 +317,7 @@ class AccountRepository:
         tasks.setdefault(WEEKLY_PLAN, [])
         tasks.setdefault('Material Planner Enabled', False)
         tasks.setdefault('World Boss Material Targets', [])
+        tasks.setdefault('Forgery Material Goals', [])
         tasks.setdefault('Garden Execution Mode', 'closed')
         # Login aliases identify an account and must never leak from the template.
         tasks["备用识别名称"] = "无"
@@ -360,6 +362,8 @@ class AccountRepository:
                 raise AccountRepositoryError("账号序列不存在")
             profile_id = str(uuid.uuid4())
             task_config = copy.deepcopy(dict(tasks))
+            from src.task.forgery_quota_plan import FORGERY_GOALS, fresh_forgery_goals, forgery_plan
+            task_config[FORGERY_GOALS] = fresh_forgery_goals(forgery_plan(task_config))
             # New accounts always start closed, even when the shared template enables garden runs.
             task_config['Garden Execution Mode'] = 'closed'
             profile = {

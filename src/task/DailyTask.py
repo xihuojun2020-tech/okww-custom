@@ -188,6 +188,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             'Material Selection': 'Shell Credit',
             MATERIAL_PLANNER: False,
             MATERIAL_TARGETS: [],
+            'Forgery Material Goals': [],
             'Farm Nightmare Nest for Daily Echo': True,
             AUTO_FARM_NIGHTMARE_NEST: False,
             'Nightmare Which to Farm': ['Tacet Discord Nest'],
@@ -264,7 +265,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             # IMPORT_PROFILES: {'type': 'button', 'text': 'Import Account Config', 'callback': self.import_account_config},
             'Which to Farm': {
                 'type': "drop_down",
-                'options': self.support_tasks,
+                'options': [*self.support_tasks, '无'],
                 'sub_configs': {
                     'Tacet Suppression': ['Which Tacet Suppression to Farm', LC_TACET],
                     'Forgery Challenge': ['Which Forgery Challenge to Farm', LC_FORGERY],
@@ -473,127 +474,37 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         if self._runtime_overrides.get('_weekly_boss_only', False):
             return self.check_weekly_boss()
 
-        auto_farm = self._profile_get(AUTO_FARM_NIGHTMARE_NEST, False)
-        daily_echo = self._profile_get('Farm Nightmare Nest for Daily Echo', False)
-        verified_id = str(getattr(self, '_verified_profile_id', '') or '')
-        self.log_info(
-            f'本次执行配置：账号={getattr(self, "_verified_profile_name", None) or self.get_active_profile_name()} '
-            f'profile_id={verified_id[:8] or "无"} 自动梦魇={bool(auto_farm)} '
-            f'每日声骸={bool(daily_echo)} 体力用途={self._profile_get("Which to Farm", self.support_tasks[0])}'
-        )
-
-        self._publish_daily_stage('每日任务', '正在检查每日奖励和体力进度')
-        self.log_info('正在领取每日奖励并检查体力进度...')
+        verified_id = getattr(self, '_verified_profile_id', None)
+        self._publish_daily_stage('每日任务', '读取活跃度和体力任务进度')
         used_stamina, daily_reward_ready = self.open_daily()
-        if daily_reward_ready is None:
-            _, daily_reward_ready = self._claim_and_recheck_daily_activity()
+        self.ensure_main(time_out=180)
         self.check_weekly_boss()
-        used_stamina, daily_reward_ready = self.open_daily()
-        if daily_reward_ready is None:
-            _, daily_reward_ready = self._claim_and_recheck_daily_activity()
-        stamina_activity_ready = self._stamina_policy_activity_ready(daily_reward_ready)
-        # 活跃度满后仍清理现有体力；是否允许备用体力由子任务按本轮预算决定。
-        need_stamina = True
-        need_nightmare = auto_farm or (
-                daily_echo
-                and daily_reward_ready is False
-                and self._profile_get('Which to Farm', self.support_tasks[0]) != self.support_tasks[0]
-        )
 
-        nightmare_checkpoint = self._nightmare_checkpoint_key(auto_farm)
-        nightmare_done = self._daily_step_completed(nightmare_checkpoint)
-        if need_nightmare and not auto_farm:
-            observed_done = self._daily_objective('echo') == (1, 1)
-            if nightmare_done and not observed_done:
-                self.log_warning('声骸检查点与当前任务结果不一致，重新完成本步骤')
-            nightmare_done = observed_done
-        if need_nightmare and nightmare_done:
-            self.log_info('每日补跑：本账号当前配置的梦魇步骤已确认完成，跳过；体力与活跃度仍重新检查')
-            need_nightmare = False
-
+        selected = bool(self._profile_get(FARM_TACET_DISCORD_NESTS, DEFAULT_NEST_NAMES)
+                        or self._profile_get(FARM_NIGHTMARE_SETTLEMENTS, []))
+        checkpoint = self._nightmare_checkpoint_key(True)
         nightmare_error = None
-        nightmare_attempted = nightmare_done
-        if need_nightmare:
-            nightmare_attempted = True
+        if selected and not self._daily_step_completed(checkpoint):
             try:
-                # 把合并到每日任务模块的梦魇配置同步给 NightmareNestTask
-                nightmare_task = self.get_task_by_class(NightmareNestTask)
-                self._configure_nightmare_task(nightmare_task)
-                if auto_farm:
-                    self._publish_daily_stage('刷梦魇巢穴', '正在打开梦魇页面')
-                    self.log_info('开始刷梦魇巢穴（打梦魇聚落）', notify=True)
-                    self.run_task_by_class(NightmareNestTask)
-                elif daily_echo:
-                    self._publish_daily_stage('刷梦魇巢穴', '正在打开梦魇页面')
-                    self.log_info('开始刷梦魇巢穴（打梦魇聚落）', notify=True)
-                    nightmare_task.run_capture_mode(verify_capture=lambda: self._daily_objective('echo') == (1, 1))
-                    self._verify_daily_echo()
-                self.record_last_completed('Nightmare Nest', profile_id=getattr(self, '_verified_profile_id', None))
-                self.record_last_completed(nightmare_checkpoint, profile_id=verified_id)
-            except TaskDisabledException:
-                raise
-            except (ConfigIntegrityBlocked, ConfigWriteBlocked):
-                raise
-            except (GameProcessLost, FrameUnavailable):
-                raise
-            except Exception as e:
-                nightmare_error = e
-                self.log_error("NightmareNestTask Failed", e)
-                self.screenshot('NightmareNestTask')
-                self.ensure_main(time_out=180)
-        if need_stamina:
-            # Nightmare rewards may have completed activity since the earlier observation.
-            used_stamina, daily_reward_ready = self.open_daily()
-            stamina_activity_ready = self._stamina_policy_activity_ready(daily_reward_ready)
-            target = self._profile_get('Which to Farm', self.support_tasks[0])
-            stamina_labels = {
-                self.support_tasks[0]: '无音区',
-                self.support_tasks[1]: '凝素领域',
-                self.support_tasks[2]: '模拟领域',
-            }
-            self._publish_daily_stage('清理体力', stamina_labels.get(target, str(target)))
-            self.log_info(f'开始清体力（打 {target}）', notify=True)
-            normal_target = self._run_profile_stamina(profile_runtime_config,
-                activity_ready=stamina_activity_ready, used_stamina=used_stamina)
-            self.sleep(4)
-            if normal_target:
-                self.record_last_completed(normal_target, profile_id=getattr(self, '_verified_profile_id', None))
-
-        _, daily_reward_ready = self.open_daily()
-        if daily_reward_ready is None:
-            _, daily_reward_ready = self._claim_and_recheck_daily_activity()
-        if daily_reward_ready is False and daily_echo and not nightmare_attempted and nightmare_error is None:
-            self._publish_daily_stage('补充活跃度', '体力任务不足，尝试获取每日声骸')
-            self.log_info('体力刷取后活跃度仍未满，尝试每日声骸任务', notify=True)
-            try:
-                nightmare_task = self.get_task_by_class(NightmareNestTask)
-                self._configure_nightmare_task(nightmare_task)
-                nightmare_task.run_capture_mode(verify_capture=lambda: self._daily_objective('echo') == (1, 1))
-                self._verify_daily_echo()
-                nightmare_attempted = True
-                self.record_last_completed(
-                    'Nightmare Nest', profile_id=getattr(self, '_verified_profile_id', None))
-                self.record_last_completed(self._nightmare_checkpoint_key(False), profile_id=verified_id)
-                _, daily_reward_ready = self.open_daily()
+                task = self.get_task_by_class(NightmareNestTask)
+                self._configure_nightmare_task(task)
+                self._publish_daily_stage('刷聚落', '核对并完成全部已选聚落')
+                self.run_task_by_class(NightmareNestTask)
+                self.record_last_completed('Nightmare Nest', profile_id=verified_id)
+                self.record_last_completed(checkpoint, profile_id=verified_id)
             except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked, GameProcessLost, FrameUnavailable):
                 raise
             except Exception as error:
                 nightmare_error = error
-                self.log_error('补充活跃度的每日声骸任务失败', error)
-
-        if daily_reward_ready is False and daily_echo:
-            try:
-                daily_reward_ready = self._complete_missing_daily_echo(daily_reward_ready)
-            except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked, GameProcessLost, FrameUnavailable):
-                raise
-            except Exception as error:
-                nightmare_error = nightmare_error or error
-                self.log_warning(f'声骸局部补齐失败，仍领取已达成档位：{error}')
+                self.log_error('所选聚落未完整完成', error)
+                self.screenshot('NightmareNestTask')
                 self.ensure_main(time_out=180)
-                _, daily_reward_ready = self.open_daily()
-        if nightmare_error is not None and not auto_farm and self._daily_objective('echo') == (1, 1):
-            nightmare_error = None  # Only a recovered capture, never a failed full clear.
-        daily_reward_ready = self._complete_missing_daily_stamina(daily_reward_ready, profile_runtime_config)
+
+        self._publish_daily_stage('清理体力', '执行本账号选择的材料与无音区安排')
+        normal_target = self._run_profile_stamina(profile_runtime_config,
+            activity_ready=self._stamina_policy_activity_ready(daily_reward_ready), used_stamina=used_stamina)
+        if normal_target:
+            self.record_last_completed(normal_target, profile_id=verified_id)
         self._finish_daily_rewards(daily_reward_ready)
 
         self._publish_daily_stage('每日任务', '正在领取邮件')
@@ -652,14 +563,15 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                   sorted(self._profile_get(FARM_NIGHTMARE_SETTLEMENTS, []))]
         digest = hashlib.sha256(json.dumps(intent, ensure_ascii=False).encode()).hexdigest()[:20]
         # Ordinal-based clears cannot prove all selected locations after the list changed.
-        version = 3 if auto_farm and intent[1] else 2
+        version = 4 if auto_farm else 2
         return f'daily_step_v{version}:nightmare:{digest}'
 
-    def _daily_objective(self, kind):
+    def _daily_objective(self, kind, already_open=False):
         from src.task.daily_observation import objective_progress
         pattern = (r'获得任意1个声骸|獲得任意1個聲骸|Obtain.*Echo' if kind == 'echo'
                    else r'消耗180|消耗.*180|Spend.*180')
-        self._open_daily_page()
+        if not already_open:
+            self._open_daily_page()
         self.scroll_relative(.65, .45, 20)
         self.sleep(.5)
         for _ in range(6):
@@ -735,35 +647,65 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _run_profile_stamina(self, config, *, activity_ready, used_stamina):
         from src.task.world_boss_material_progress import WorldBossMaterialProgress
+        from src.task.forgery_quota_progress import ForgeryQuotaProgress
         rows = material_plan(config)
         enabled = any(row['boss'] != 'none' and row['limit'] > 0 for row in rows)
         profile_id = getattr(self, '_verified_profile_id', None)
         service = getattr(self, 'integrity_service', None)
+        if profile_id and service and ForgeryQuotaProgress(service, profile_id).pending():
+            raise RuntimeError('凝素领奖待核验，请先在账号设置核对；本账号体力消费暂停')
         pending = bool(profile_id and service and WorldBossMaterialProgress(service, profile_id).pending())
         if enabled or pending:
             result = self._run_world_boss_materials(activity_ready=activity_ready, used_stamina=used_stamina)
-            if result.status == 'resource_shortfall':
-                self.log_info('首领材料体力不足，累计已保存，下次继续当前目标')
-                return None
-            if result.spent:
-                used_stamina, ready = self.open_daily()
-                activity_ready = self._stamina_policy_activity_ready(ready)
-                self.ensure_main()
+            if result.status == 'complete':
+                self._close_completed_material_plan(rows)
+            if used_stamina is not None:
+                used_stamina += result.spent
             config = {**config, **self._material_plan_tasks()}
         target = config.get('Which to Farm', self._profile_get('Which to Farm', self.support_tasks[0]))
+        if target == '无':
+            return None
+        from src.task.forgery_quota_plan import forgery_plan
+        if target == self.support_tasks[1] and forgery_plan(config):
+            status = self.get_task_by_class(ForgeryTask).farm_quota(
+                profile_id, self._material_plan_tasks, service, self._guard_bound_profile_identity,
+                activity_ready=activity_ready, used_stamina=used_stamina)
+            if status == 'complete':
+                self.info_set('凝素目标', '全部完成，接下来刷本账号配置的无音区')
+                self.get_task_by_class(TacetTask).farm_tacet(daily=True, config=config,
+                    activity_ready=activity_ready, used_stamina=used_stamina)
+            return target
         methods = {self.support_tasks[0]: (TacetTask, 'farm_tacet'),
                    self.support_tasks[1]: (ForgeryTask, 'farm_forgery'),
                    self.support_tasks[2]: (SimulationTask, 'farm_simulation')}
-        planner_enabled = config.get(MATERIAL_PLANNER, self._profile_get(MATERIAL_PLANNER, False))
-        if planner_enabled:
-            self.get_task_by_class(MaterialPlannerTask).run_for_profile(
-                self._active_profile_id(), config, self._guard_bound_profile_identity,
-                activity_ready=activity_ready, report=self.info_set, used_stamina=used_stamina)
-        else:
-            cls, method = methods[target]
-            getattr(self.get_task_by_class(cls), method)(daily=True, config=config,
-                activity_ready=activity_ready, used_stamina=used_stamina)
-        return None if planner_enabled else target
+        cls, method = methods[target]
+        getattr(self.get_task_by_class(cls), method)(daily=True, config=config,
+            activity_ready=activity_ready, used_stamina=used_stamina)
+        return target
+
+    def _close_completed_material_plan(self, expected):
+        from src.task.world_boss_material_progress import WorldBossMaterialProgress
+        from src.task.world_boss_material_plan import choose_material_target
+        from src.account_repository import ProfileEditScope, ProfileRevisionConflict
+        service = self.integrity_service
+        identity = self._active_profile_id()
+        repository = AccountRepository(paths=service.paths, integrity_service=service)
+        record = repository.load_profile(identity)
+        progress = WorldBossMaterialProgress(service, identity)
+        if (material_plan(record.tasks) != expected or progress.pending()
+                or choose_material_target(expected, progress.counts())):
+            return False
+        self._guard_bound_profile_identity()
+        tasks = dict(record.tasks)
+        tasks[MATERIAL_TARGETS] = [dict(row, limit=0) for row in expected]
+        try:
+            repository.publish_profile(ProfileEditScope(identity, record.revision),
+                                       {'account': record.account, 'tasks': tasks})
+        except ProfileRevisionConflict:
+            self.log_warning('首领目标已完成，配置刚被修改，保留新设置')
+            return False
+        self.log_info('首领材料目标全部完成，已自动关闭本组')
+        return True
 
     def _run_world_boss_materials(self, *, activity_ready, used_stamina):
         from src.task.WorldBossMaterialTask import WorldBossMaterialTask
@@ -789,10 +731,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         """先领取所有已达成奖励，再决定账号能否标记完成。"""
         self._publish_daily_stage('每日任务', '正在领取每日奖励')
         self.log_info('正在领取每日任务奖励...')
-        self.claim_daily()
-
-        if daily_reward_ready is not True:
-            _, daily_reward_ready = self.open_daily()
+        daily_reward_ready = self.claim_daily()
         if daily_reward_ready is None:
             message = '每日奖励已尝试领取，但活跃度数值仍无法识别；账号不会标记为完成'
             self._publish_daily_stage('每日任务', message)
@@ -806,7 +745,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             shortfall = getattr(policy, 'resource_shortfall', None)
             if shortfall is not None:
                 raise DailyResourceInsufficient(f'{message}；待补充体力：{shortfall}；本轮不整账号重复补跑')
-            raise DailyActivityIncomplete(message)
+            error = DailyActivityIncomplete(message)
+            error.retryable = False
+            raise error
         return True
 
     def _claim_and_recheck_daily_activity(self):
@@ -897,7 +838,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         """Return a detached execution mapping for child task compatibility."""
         result = dict(self.config)
         for key in PROFILE_KEYS:
-            result[key] = copy.deepcopy(self._profile_get(key,{MATERIAL_PLANNER:False,WEEKLY_TARGET:WEEKLY_AUTO}.get(key)))
+            result[key] = copy.deepcopy(self._profile_get(key,{MATERIAL_PLANNER:False,WEEKLY_TARGET:WEEKLY_AUTO,
+                                                              'Forgery Material Goals': []}.get(key)))
         return result
 
     def bind_verified_profile(self, profile_name, expected_profile_id=None, *, snapshot_profile=None):
@@ -1944,15 +1886,6 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         return None
 
     def validate_daily_tasks(self):
-        if self._profile_get(AUTO_FARM_NIGHTMARE_NEST) and not (
-                self._profile_get(FARM_TACET_DISCORD_NESTS, DEFAULT_NEST_NAMES)
-                or self._profile_get(FARM_NIGHTMARE_SETTLEMENTS, [])):
-            # NightmareNestTask 已整合进每日任务模块，校验基于每日任务里的可见配置
-            raise Exception(
-                self.tr(
-                    '自动刷取所选目标至少需要勾选一个残象聚落或梦魇聚落。'
-                )
-            )
         return True
 
     def run_weekly_tasks(self):
@@ -2384,8 +2317,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self._open_daily_page()
         # Completed objectives do not contribute points until explicitly claimed.
         # This must precede every reserve authorization and missing-objective check.
-        self._claim_daily_objectives()
-        progress = self._daily_objective('stamina')
+        progress = self._claim_daily_objectives()
         current = progress[0] if progress is not None and progress[1] == 180 else None
         self.info_set('current daily progress', current)
         points = self.get_total_daily_points()
@@ -2395,6 +2327,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             if policy.profile_id and policy.profile_id != identity:
                 raise RuntimeError('体力策略账号发生变化，停止消费')
             policy.profile_id = identity
+            policy.stamina_used = current
             policy.observe(None if points is None else points >= 100)
             text = ('活跃度满：禁止备用' if policy.full_seen else
                     '未知：禁止备用' if points is None else '活跃度未满：转换前须复核数量与剩余额度')
@@ -2479,15 +2412,21 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         raise DailyActivityIncomplete('每日领奖遮罩未关闭或每日页面未稳定恢复，后续环节未执行，保留补跑')
 
     def _claim_daily_objectives(self):
+        from src.task.daily_observation import objective_progress
         self.scroll_relative(.65, .45, 20)
         self.sleep(.4)
         clicks = 0
         stalled = 0
+        stamina_progress = None
         for page in range(3):
             while True:
                 # Scroll/page animations may temporarily hide an anchor. Reuse
                 # the bounded, overlay-aware stable-page gate before any click.
                 self._restore_daily_claim_page()
+                observed = objective_progress(self.ocr(.20, .18, .79, .79, frame=self.require_game_frame()) or [],
+                                              r'消耗180|消耗.*180|Spend.*180')
+                if observed is not None:
+                    stamina_progress = observed
                 buttons = self._daily_objective_claim_buttons()
                 if not buttons:
                     break
@@ -2508,6 +2447,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 self.scroll_relative(.65, .55, -4)
                 self.sleep(.4)
         self.log_info(f'每日任务积分领取：本次点击 {clicks} 次')
+        return stamina_progress
 
     def claim_daily(self):
         from src.task.daily_observation import CHESTS, claimable_tiers
@@ -2534,7 +2474,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             raise DailyActivityIncomplete('每日奖励领取状态未稳定确认，保留补跑')
         self.info_set('已核验领取档位', claimed)
         self.log_info(f'每日奖励领取已核验：本次领取档位={claimed}，当前无可领取红点')
+        points = self.get_total_daily_points()
         self.ensure_main(time_out=10)
+        return None if points is None else points >= 100
 
     def claim_mail(self):
         self.info_set('current task', 'claim mail')

@@ -120,6 +120,7 @@ class TestDailyActivityFlow(unittest.TestCase):
 
             def claim_daily(self):
                 self.events.append('claim')
+                return verified_ready
 
             def open_daily(self):
                 self.events.append('verify')
@@ -134,7 +135,7 @@ class TestDailyActivityFlow(unittest.TestCase):
         task = self._finish_task(True)
 
         self.assertTrue(DailyTask._finish_daily_rewards(task, None))
-        self.assertLess(task.events.index('claim'), task.events.index('verify'))
+        self.assertNotIn('verify', task.events)
 
     def test_confirmed_incomplete_claims_before_raising(self):
         task = self._finish_task(False)
@@ -154,6 +155,7 @@ class TestDailyActivityFlow(unittest.TestCase):
 
     def claim_task(self):
         task = Mock(spec=DailyTask)
+        task.get_total_daily_points.return_value = 100
         task.require_game_frame.return_value = np.zeros((90,160,3),np.uint8)
         task._daily_page_ready.return_value = True
         task._restore_daily_claim_page.return_value = task.require_game_frame.return_value

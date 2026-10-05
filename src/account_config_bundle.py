@@ -648,6 +648,8 @@ class AccountConfigBundleService:
             runtime = preserve_weekly_progress(runtime, previous_runtime or {})
             from src.task.world_boss_material_progress import preserve_material_progress
             runtime = preserve_material_progress(runtime, previous_runtime or {})
+            from src.task.forgery_quota_progress import preserve_forgery_progress
+            runtime = preserve_forgery_progress(runtime, previous_runtime or {})
             runtime["accepted_master_fingerprint"] = ci.fingerprint(ci.normalize_master(master))
             runtime["last_bundle_import"] = datetime.now(timezone.utc).isoformat()
             ci.atomic_write_json(self.paths.runtime, runtime)

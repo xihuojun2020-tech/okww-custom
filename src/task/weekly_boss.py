@@ -27,6 +27,11 @@ def weekly_check_due(target, completed, now=None):
         return False
     if target != WEEKLY_AUTO and target not in {boss.key for boss in WEEKLY_BOSSES}:
         raise ValueError('请选择有效的账号周本目标')
+    zone = timezone(timedelta(hours=8))
+    current = now or datetime.now(zone)
+    current = current.replace(tzinfo=zone) if current.tzinfo is None else current.astimezone(zone)
+    if (current - timedelta(hours=4)).weekday() not in (0, 6):
+        return False
     if not completed:
         return True
     try:

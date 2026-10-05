@@ -323,7 +323,7 @@ class TestDailyMergeEchoTask(unittest.TestCase):
         daily_task.run_task_by_class.assert_called_once_with(MergeEchoTask)
         self.assertTrue(merge_echo_task.notify_if_not_enough)
 
-    def test_daily_rejects_nightmare_without_selection(self):
+    def test_daily_accepts_empty_nest_selection(self):
         daily_task = DailyTask.__new__(DailyTask)
         daily_task.config = {
             AUTO_FARM_NIGHTMARE_NEST: True,
@@ -332,9 +332,7 @@ class TestDailyMergeEchoTask(unittest.TestCase):
         }
         daily_task.tr = lambda message: message
 
-        message = '自动刷取所选目标至少需要勾选一个残象聚落或梦魇聚落。'
-        with self.assertRaisesRegex(Exception, message):
-            daily_task.validate_daily_tasks()
+        self.assertTrue(daily_task.validate_daily_tasks())
 
     def test_daily_accepts_valid_nightmare_config(self):
         daily_task = DailyTask.__new__(DailyTask)

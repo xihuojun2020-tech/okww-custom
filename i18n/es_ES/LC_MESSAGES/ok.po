@@ -1917,4 +1917,8 @@ msgid "⚔️ Solo Auto Combat"
 msgstr "⚔️ Combate automático en solitario"
 
 msgid "Fight automatically only with a verified one-member party."
-msgstr "Combate automáticamente solo con un equipo confirmado de un personaje."
+msgstr ""
+"Combate automáticamente solo con un equipo confirmado de un personaje."
+
+msgid "Forgery Material Goals"
+msgstr "Objetivos de materiales de forja"

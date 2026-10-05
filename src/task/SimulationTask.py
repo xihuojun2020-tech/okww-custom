@@ -43,6 +43,7 @@ class SimulationTask(DomainTask):
             must_use, teleport_once,
             activity_ready=activity_ready if daily else None,
             stamina_budget=must_use,
+            exhaust_current=daily,
         )
 
     def teleport_into_domain(self, selection):

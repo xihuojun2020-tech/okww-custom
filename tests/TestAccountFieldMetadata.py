@@ -43,7 +43,7 @@ class TestAccountFieldMetadata(unittest.TestCase):
             "Which to Farm": "Tacet Suppression", "Material Selection": "Shell Credit",
         })}
         self.assertEqual(fields["Which to Farm"].option_labels,
-                         ("无音区", "凝素领域", "模拟领域"))
+                         ("无音区", "凝素领域", "模拟领域", "无"))
         self.assertEqual(fields["Material Selection"].options,
                          ("Resonator EXP", "Weapon EXP", "Shell Credit"))
         self.assertEqual(fields["Material Selection"].option_labels,

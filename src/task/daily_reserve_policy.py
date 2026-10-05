@@ -12,6 +12,7 @@ class DailyReservePolicy:
     observed_at: float = 0
     remaining: int = 0
     consumed: int = 0
+    stamina_used: int | None = None
     refresh_required: bool = False
     refresh: object = None
     pending_conversion: bool = False
@@ -31,6 +32,8 @@ class DailyReservePolicy:
 
     def spend(self, amount):
         self.consumed += amount
+        if self.stamina_used is not None:
+            self.stamina_used = min(180, self.stamina_used + amount)
         self.remaining=max(0,self.remaining-amount)
 
 

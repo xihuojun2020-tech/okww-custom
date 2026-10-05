@@ -255,7 +255,11 @@ class ConfigBackupService:
                     from .config_integrity import _atomic_write_json_unchecked
                     incoming = json.loads(staged_runtime.read_text(encoding='utf-8'))
                     current = json.loads(live_runtime.read_text(encoding='utf-8'))
-                    _atomic_write_json_unchecked(staged_runtime, preserve_weekly_progress(incoming, current))
+                    from .task.world_boss_material_progress import preserve_material_progress
+                    from .task.forgery_quota_progress import preserve_forgery_progress
+                    incoming = preserve_weekly_progress(incoming, current)
+                    incoming = preserve_material_progress(incoming, current)
+                    _atomic_write_json_unchecked(staged_runtime, preserve_forgery_progress(incoming, current))
                 journal['phase'] = 'verified'
                 self._write_restore_journal(journal)
                 if self.config_dir.exists():

@@ -726,6 +726,24 @@ class BaseWWTask(BaseTask):
         remaining = max(0, 180 - int(used_stamina))
         return ((remaining + int(once) - 1) // int(once)) * int(once)
 
+    def prepare_daily_stamina(self, once, budget):
+        """Fresh activity is read only when a reserve conversion is possible."""
+        balance = self.get_verified_stamina()
+        current, reserve, _ = balance
+        policy = getattr(getattr(self, 'executor', None), '_daily_reserve_policy', None)
+        if policy is None or current >= once or reserve < once - current:
+            return balance
+        if policy.pending_conversion:
+            raise RuntimeError('备用转换结果尚未确认，禁止重复消费')
+        if (policy.full_seen or policy.stamina_used is not None and policy.stamina_used >= 180
+                or not policy.profile_id or not callable(policy.refresh)):
+            return balance
+        policy.refresh_required = False
+        policy.refresh()
+        budget = self.daily_stamina_budget(policy.activity_ready, once, policy.stamina_used)
+        self.openF2Book('gray_book_boss')
+        return self.prepare_daily_reserve(once, budget)
+
     def prepare_daily_reserve(self, once, budget):
         """Convert only a freshly authorized shortfall, before combat changes activity."""
         from src.task.daily_reserve_policy import conversion_amount, conversion_matches
@@ -804,7 +822,7 @@ class BaseWWTask(BaseTask):
             if policy.resource_shortfall:
                 self.info_set('体力待补充', f'可用总量 {total}，完成当前缺项需 {budget}')
 
-    def use_stamina(self, once=60, must_use=0, allow_backup=False, max_claims=2):
+    def use_stamina(self, once=60, must_use=0, allow_backup=False, max_claims=2, exhaust_current=False):
         if max_claims not in (1, 2):
             raise ValueError('max_claims must be 1 or 2')
         self.sleep(1)
@@ -833,7 +851,7 @@ class BaseWWTask(BaseTask):
             self.log_info(f'体力消费停止：current={current}, reserve={back_up}, allow_backup={allow_backup}, remaining={must_use}')
             self.back(after_sleep=1)  # Close the claim prompt before the caller exits.
             return False, 0
-        if max_claims == 2 and current >= once * 2 and (must_use <= 0 or must_use >= once * 2):
+        if max_claims == 2 and current >= once * 2 and (exhaust_current or must_use <= 0 or must_use >= once * 2):
             used = once * 2
             use_double = True
             logger.info(f"当前体力大于等于双倍, {current} >= {once * 2}")
@@ -914,7 +932,7 @@ class BaseWWTask(BaseTask):
         if policy is not None:
             policy.spend(used)
         logger.info(f'confirmed stamina: current={current} back_up={back_up} total={total}; projected={projected}')
-        if requested_before > 0 and must_use <= 0:
+        if not exhaust_current and requested_before > 0 and must_use <= 0:
             can_continue = False
             logger.info('daily stamina budget completed')
         elif (current if not allow_backup else total) < once:

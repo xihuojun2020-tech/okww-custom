@@ -1984,3 +1984,6 @@ msgstr "⚔️ 單人自動戰鬥"
 
 msgid "Fight automatically only with a verified one-member party."
 msgstr "僅在確認單人編隊時自動戰鬥。"
+
+msgid "Forgery Material Goals"
+msgstr "凝素材料目標"

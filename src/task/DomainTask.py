@@ -66,7 +66,7 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
 
     def farm_domain_with_recovery_loop(self, must_use, teleport_into_domain_once,
                                        activity_ready=None, stamina_budget=0, max_recovery_retries=3,
-                                       max_entry_retries=1):
+                                       max_entry_retries=1, *, exhaust_current=False):
         """包装副本刷取循环：死亡恢复后自动从 F2 重新进入，并限制重试次数。"""
         recovery_retries = 0
         entry_retries = 0
@@ -74,8 +74,8 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
         backup_policy_decided = activity_ready is None
         while True:
             current, back_up, total = self.open_F2_book_and_get_stamina()
-            if current < self.stamina_once and getattr(self.executor, '_daily_reserve_policy', None) is not None and must_use > 0:
-                current, back_up, total = self.prepare_daily_reserve(self.stamina_once, must_use)
+            if current < self.stamina_once and getattr(self.executor, '_daily_reserve_policy', None) is not None and (must_use > 0 or exhaust_current):
+                current, back_up, total = (self.prepare_daily_stamina if exhaust_current else self.prepare_daily_reserve)(self.stamina_once, must_use)
             if not backup_policy_decided:
                 allow_backup = self.should_use_backup_stamina(
                     activity_ready, current, back_up, stamina_budget)
@@ -106,9 +106,13 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
                 continue
             entry_retries = 0
             self.sleep(1)
-            finished, must_use = self.farm_in_domain(must_use=must_use, allow_backup=allow_backup)
+            options = {'exhaust_current': True} if exhaust_current else {}
+            previous_budget = must_use
+            finished, must_use = self.farm_in_domain(must_use=must_use, allow_backup=allow_backup, **options)
             if finished:
-                return
+                if getattr(self, 'claim_tracker', None) or not exhaust_current or must_use == previous_budget:
+                    return
+                continue
             recovery_retries += 1
             if recovery_retries >= max_recovery_retries:
                 self.log_info(f'farm_domain: exceeded recovery retries ({max_recovery_retries}), stop farming',
@@ -118,7 +122,7 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
             self.log_info('farm_domain: death recovered, re-enter from F2 book')
             self.sleep(1)
 
-    def farm_in_domain(self, must_use=0, allow_backup=True):
+    def farm_in_domain(self, must_use=0, allow_backup=True, exhaust_current=False):
         """刷本循环；返回 (是否整段正常结束, 剩余 must_use)。
 
         第二项在死亡提前退出时仍会带上本局内已扣过的额度，供外层恢复循环继续传参。
@@ -145,7 +149,7 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
                 self.log_info('farm_in_domain: death recovered, exiting domain')
                 self.make_sure_in_world()
                 return False, must_use
-            planner = getattr(self, 'material_planner', None)
+            planner = getattr(self, 'claim_tracker', None) or getattr(self, 'material_planner', None)
             policy = getattr(self.executor, '_daily_reserve_policy', None)
             if policy is not None:
                 # Combat can itself complete an activity objective. A pre-combat
@@ -155,11 +159,13 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
                 planner.begin_claim()
             try:
                 options = {'max_claims': planner.max_claims} if planner else {}
+                if exhaust_current:
+                    options['exhaust_current'] = True
                 can_continue, used = self.use_stamina(
                     once=self.stamina_once, must_use=must_use, allow_backup=allow_backup, **options)
                 if planner:
                     planner.collect_claim(used)
-                    can_continue = False  # Refresh cultivation counts before spending again.
+                    can_continue = False  # Reload the confirmed plan before another claim.
             except (TaskDisabledException, FrameUnavailable, GameProcessLost, ConfigIntegrityBlocked, ConfigWriteBlocked):
                 raise
             except Exception:
@@ -193,7 +199,8 @@ class DomainTask(WWOneTimeTask, BaseCombatTask):
         #
         self.click(0.42, 0.84, after_sleep=2)  # back to world
         self.make_sure_in_world()
-        self.refresh_daily_reserve_after_exit()
+        if not exhaust_current:
+            self.refresh_daily_reserve_after_exit()
         return True, must_use
 
     def _domain_reward_state(self):
