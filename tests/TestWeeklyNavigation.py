@@ -21,7 +21,7 @@ class TestWeeklyNavigation(unittest.TestCase):
     def test_missing_limited_target_never_chooses_existing_boss(self):
         task = self.task()
         boss = next(b for b in WEEKLY_BOSSES if b.key == 'weekly_order_law')
-        task._ocr = Mock(return_value=self.rows(WEEKLY_BOSSES[0]))
+        task._ocr = Mock(return_value=self.rows(WEEKLY_BOSSES[1]))
         with self.assertRaises(WeeklyPageTimeout):
             WeeklyBossTask._select_target(task, boss)
         task._open_weekly_target.assert_not_called()
