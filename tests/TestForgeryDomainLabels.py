@@ -20,6 +20,10 @@ class TestForgeryDomainLabels(unittest.TestCase):
     def test_dropdown_keeps_all_legacy_integer_positions(self):
         self.assertEqual(len(FORGERY_DOMAIN_OPTIONS), 20)
         self.assertEqual([value for value, _label in FORGERY_DOMAIN_OPTIONS], list(range(1, 21)))
+        self.assertEqual(len(FORGERY_DOMAIN_NAMES), 20)
+        self.assertEqual(FORGERY_DOMAIN_OPTIONS[4][1], '沉熄云渊-武器及技能材料：佩枪')
+        self.assertEqual(FORGERY_DOMAIN_OPTIONS[19][1], '欲燃之森-武器及技能材料：佩枪')
+        self.assertTrue(all('待命名' not in label for _, label in FORGERY_DOMAIN_OPTIONS))
         source = inspect.getsource(__import__(
             "src.task.DailyTask", fromlist=["DailyTask"]).DailyTask.__init__)
         self.assertIn("'type': 'integer_drop_down'", source)

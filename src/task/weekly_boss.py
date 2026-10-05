@@ -49,6 +49,7 @@ class WeeklyBoss:
 
 
 WEEKLY_BOSSES = (
+    WeeklyBoss('weekly_order_law', '定序诸理之律'),
     WeeklyBoss('weekly_fallen_court', '失坠困咎之庭'),
     WeeklyBoss('weekly_false_god', '虚妄诞生之种'),
     WeeklyBoss('weekly_star_gate', '星海迷途之扉'),
@@ -59,7 +60,6 @@ WEEKLY_BOSSES = (
     WeeklyBoss('weekly_crownless', '无冠巨像之心'),
     WeeklyBoss('weekly_border_flame', '无序边境之火'),
     WeeklyBoss('weekly_bell', '昔日咏叹之钟'),
-    WeeklyBoss('weekly_order_law', '定序诸理之律'),
 )
 
 
