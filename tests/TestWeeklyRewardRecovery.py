@@ -12,7 +12,7 @@ class TestWeeklyRewardRecovery(unittest.TestCase):
         task.info = {}
         task._executor = SimpleNamespace(frame=None)
         for name in ('next_frame', 'sleep', '_release_movement', 'send_key', '_stage',
-                     'scroll_relative', 'do_walk_to_box', 'log_info'):
+                     'scroll_relative', 'do_walk_to_box', 'log_info', 'screenshot'):
             setattr(task, name, Mock())
         task.in_team_and_world = Mock(return_value=True)
         task._reward_available = Mock(return_value=None)
@@ -111,7 +111,7 @@ class TestWeeklyRewardRecovery(unittest.TestCase):
 
     def test_marker_walk_is_segmented_and_does_not_press_f(self):
         task = self.task()
-        task.find_treasure_icon.return_value = object()
+        task.find_treasure_icon.return_value = SimpleNamespace(x=100, y=200)
         task._reward_available.side_effect = [None, True, True]
         task._seek_reward_interaction()
         self.assertLessEqual(task.do_walk_to_box.call_args.kwargs['time_out'], 1)
@@ -126,6 +126,34 @@ class TestWeeklyRewardRecovery(unittest.TestCase):
         task.send_key.assert_not_called()
         task.find_f_with_text.assert_not_called()
         task.do_walk_to_box.assert_not_called()
+
+    def test_confirmation_phase_is_saved_before_click(self):
+        task = self.task()
+        phases = []
+        task._claim_progress = SimpleNamespace(set_phase=lambda event, phase: phases.append(phase))
+        task._claim_event = 'event'
+        task._claim_confirmation.return_value = (60, 171, 'confirm')
+        task._wait_for = lambda read, *args: read() or read()
+        task.click_box = lambda button: self.assertEqual(phases[-1], 'confirm_sent')
+        task._confirm_claim_if_needed(60)
+        self.assertEqual(phases[-1], 'confirm_sent')
+
+    def test_unconfirmed_cancel_requires_same_week_and_unchanged_allowance(self):
+        from src.task.weekly_boss import weekly_check_window
+        for phase, remaining, resolved in [('dialog_seen',3,True),('dialog_seen',2,False),
+                                            ('confirm_sent',3,False),(None,3,False)]:
+            task=self.task()
+            progress=Mock()
+            progress.pending.return_value={'event':dict(phase=phase,week=str(weekly_check_window()[0]),remaining_before=3)}
+            task._claim_progress=progress; task._claim_event='event'
+            task._text.return_value='领取奖励'
+            task._button=Mock(return_value='cancel')
+            task.click_box=Mock(); task._wait_for=Mock(return_value=True)
+            task._open_weekly_book=Mock(); task._read_remaining=Mock(return_value=remaining)
+            task._cancel_unconfirmed_claim()
+            self.assertEqual(progress.resolve.called,resolved)
+            if resolved: progress.resolve.assert_called_once_with('event',False)
+            if phase != 'dialog_seen': task.click_box.assert_not_called()
 
     def test_retry_never_sends_f_for_absorb_or_unavailable_world(self):
         for world, reward in ((True, None), (False, True)):

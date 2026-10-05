@@ -20,7 +20,8 @@
 - Every change that modifies code must update the version in `config.py` in the same release.
 - Version text uses fixed-width `X.YY.ZZ` (for example `1.04.02`).
 - Small fixes increment the third component.
-- Medium changes increment the second component and reset the third component to `00`.
+- Routine fixes and incremental improvements should conservatively increment the third component, including fixes spanning multiple modules. Increment the second component only when explicitly requested by the user.
+- Reserve `2.00.00` for a release where all product features are substantially complete; do not advance to it automatically. The NAS daily-task repair planned on 2026-10-05 is explicitly assigned `1.97.05` by the user.
 - Major changes increment the first component and reset both later components to `00`; do this only when the user explicitly requests a major version change.
 - Keep product-facing version text and release notes synchronized with `config.py`.
 - After a verified version change, commit it, create the matching annotated `vX.YY.ZZ` tag, and push both the branch and tag to GitHub unless the user explicitly asks to keep the change local.

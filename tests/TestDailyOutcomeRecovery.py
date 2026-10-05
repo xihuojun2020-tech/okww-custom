@@ -70,6 +70,8 @@ class TestDailyOutcomeRecovery(unittest.TestCase):
         task._profile_get.side_effect=lambda key,default=None:'Forgery Challenge' if key=='Which to Farm' else default
         task._daily_objective.side_effect=progress
         task.open_daily.return_value=(None,ready)
+        from types import MethodType
+        task._run_profile_stamina = MethodType(DailyTask._run_profile_stamina, task)
         return task
 
     def test_local_stamina_repair_continues_only_on_progress_and_is_bounded(self):

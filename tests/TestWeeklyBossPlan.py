@@ -32,6 +32,19 @@ class TestWeeklyBossPlan(unittest.TestCase):
                          choose_weekly_target(rows, {A: 6, B: 4, C: 3}))
         self.assertIsNone(choose_weekly_target(self.rows((0, 0, 0)), {}))
 
+    def test_claim_phases_persist_without_changing_counts(self):
+        event = self.progress.begin(A, 'week', 3, 'rev')
+        self.assertNotIn('phase', self.progress.pending()[event])
+        for phase in ('interaction_sent', 'dialog_seen', 'confirm_sent'):
+            self.progress.set_phase(event, phase)
+            self.assertEqual(phase, self.progress.pending()[event]['phase'])
+            self.assertEqual({}, self.progress.counts())
+        with self.assertRaises(ValueError):
+            self.progress.set_phase(event, 'dialog_seen')
+        self.progress.resolve(event, True)
+        self.progress.resolve(event, True)
+        self.assertEqual({A: 1}, self.progress.counts())
+
     def test_legacy_and_validation(self):
         self.assertEqual({'boss': A, 'limit': -1}, weekly_plan({WEEKLY_TARGET: A})[0])
         self.assertIsNone(choose_weekly_target(weekly_plan({WEEKLY_TARGET: '无'}), {}))

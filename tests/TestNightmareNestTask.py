@@ -282,13 +282,31 @@ class TestNightmareNestTask(unittest.TestCase):
         task.log_info = lambda *args, **kwargs: None
         task.height_of_screen = lambda value: 1000 * value
         task.width_of_screen = lambda value: 2000 * value
-        boxes = [FakeBox('0/36', y=200), FakeBox('0/36', y=300)]
+        task.require_game_frame = lambda: object()
+        task._reset_progress_tracking()
+        boxes = [FakeBox('0/36', y=200), FakeBox('千殁沉岛梦魇聚落', y=260),
+                 FakeBox('0/36', y=280), FakeBox('前往', x=1800, y=290),
+                 FakeBox('三王峰梦魇聚落', y=400), FakeBox('0/36', y=420),
+                 FakeBox('前往', x=1800, y=430)]
         task.ocr = lambda *args, **kwargs: boxes
 
         target = task.find_nest()
 
         self.assertEqual(target.display_name, '三王峰梦魇聚落')
-        self.assertIs(target.box, boxes[1])
+        self.assertIs(target.box, boxes[-1])
+
+    def test_nightmare_partial_and_duplicate_titles_are_not_entries(self):
+        task = NightmareNestTask.__new__(NightmareNestTask)
+        task.count_re = re.compile(r'(\d{1,2})/(\d{1,2})')
+        task.height_of_screen = lambda value: 1000 * value
+        task.width_of_screen = lambda value: 2000 * value
+        task._nightmare_filter_open = lambda frame: False
+        name = '三王峰梦魇聚落'
+        for boxes in ([FakeBox('0/36', y=200), FakeBox('前往', x=1800, y=210)],
+                      [FakeBox(name,y=300),FakeBox('0/36',y=320),FakeBox('前往',x=1800,y=330),
+                       FakeBox(name,y=500),FakeBox('0/36',y=520),FakeBox('前往',x=1800,y=530)]):
+            task.ocr = lambda *args, **kwargs: boxes
+            self.assertEqual({}, task._nightmare_rows(object()))
 
     def test_find_nest_keeps_partially_completed_row(self):
         task = NightmareNestTask.__new__(NightmareNestTask)

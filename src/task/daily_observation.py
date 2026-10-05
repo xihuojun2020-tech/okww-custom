@@ -7,6 +7,13 @@ import numpy as np
 CHESTS = ((20, .392), (40, .526), (60, .660), (80, .794), (100, .927))
 
 
+def activity_points(boxes):
+    """One unambiguous score in the anchored activity region, not objective progress."""
+    values = {int(text) for box in boxes
+              if re.fullmatch(r'\d{1,3}', text := str(box.name).strip())}
+    return next(iter(values)) if len(values) == 1 else None
+
+
 def activity_digits_image(image):
     """Isolate bright score digits from the textured guidebook background."""
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)

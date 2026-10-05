@@ -116,7 +116,7 @@ def parse_cost(text):
 
 def parse_stamina(text):
     match = re.fullmatch(r'(\d{1,4})/240', compact(text))
-    return int(match[1]) if match else None
+    return int(match[1]) if match and 0 <= int(match[1]) <= 240 else None
 
 
 def combat_phase(text):

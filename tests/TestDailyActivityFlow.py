@@ -11,6 +11,13 @@ from src.task.DailyTask import (
 
 
 class TestDailyActivityFlow(unittest.TestCase):
+    def test_high_activity_and_ambiguous_readings(self):
+        from src.task.daily_observation import activity_points
+        for value in (0, 80, 100, 180, 200, 240, 300):
+            self.assertEqual(activity_points([SimpleNamespace(name=str(value))]), value)
+        self.assertIsNone(activity_points([SimpleNamespace(name='100'), SimpleNamespace(name='300')]))
+        self.assertIsNone(activity_points([SimpleNamespace(name='180/180')]))
+
     def test_daily_points_ocr_miss_is_unknown_instead_of_zero(self):
         class FakeTask:
             def __init__(self):
@@ -60,10 +67,10 @@ class TestDailyActivityFlow(unittest.TestCase):
         self.assertEqual(100, DailyTask.get_total_daily_points(task))
         self.assertEqual(('total daily points', 100), task.info)
 
-    def test_daily_points_accept_completed_values_up_to_180(self):
+    def test_daily_points_accept_high_scores_and_reject_ambiguous_frame(self):
         responses = iter([
             [SimpleNamespace(name='110', confidence=0.9)],
-            [SimpleNamespace(name='120', confidence=0.9)],
+            [SimpleNamespace(name='300', confidence=0.9)],
             [SimpleNamespace(name='180', confidence=0.9),
              SimpleNamespace(name='181', confidence=0.9)],
         ])
@@ -83,8 +90,8 @@ class TestDailyActivityFlow(unittest.TestCase):
 
         task = FakeTask()
 
-        self.assertEqual(180, DailyTask.get_total_daily_points(task))
-        self.assertEqual(('total daily points', 180), task.info)
+        self.assertEqual(300, DailyTask.get_total_daily_points(task))
+        self.assertEqual(('total daily points', 300), task.info)
 
     def test_unknown_activity_disables_backup_for_stamina_policy(self):
         policy = DailyTask._stamina_policy_activity_ready

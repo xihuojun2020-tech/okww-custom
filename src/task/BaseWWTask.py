@@ -624,6 +624,26 @@ class BaseWWTask(BaseTask):
         else:
             return True
 
+    def _read_current_stamina(self, frame, region):
+        """Re-read the anchored fraction; never repair arbitrary OCR digits."""
+        from src.task.weekly_boss import parse_stamina
+        if frame is None or not hasattr(frame, 'shape'):
+            return None
+        h, w = frame.shape[:2]
+        x, y, right, bottom = region
+        crop = frame[round(y*h):round(bottom*h), round(x*w):round(right*w)]
+        if not crop.size:
+            return None
+        values = []
+        for scale in (2, 3):
+            enlarged = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+            boxes = self.ocr(0, 0, 1, 1, frame=enlarged) or []
+            fractions = {value for box in boxes if (value := parse_stamina(str(box.name))) is not None}
+            if len(fractions) != 1:
+                return None
+            values.append(fractions.pop())
+        return values[0] if len(set(values)) == 1 else None
+
     def get_stamina(self, time_out=0, screenshot_on_failure=True):
         boxes = self.wait_ocr(0.49, 0.0, 0.92, 0.10, raise_if_not_found=False,
                               match=[number_re, stamina_re], time_out=time_out)
@@ -633,6 +653,32 @@ class BaseWWTask(BaseTask):
             return -1, -1, -1
         from src.task.daily_observation import resource_values
         current, back_up, total = resource_values(boxes, self.width)
+        if current < 0:
+            # The fraction can lose its slash at native scale. Keep the reserve
+            # from its own anchored boxes and require two exact fraction reads.
+            frame = self.require_game_frame()
+            current_read = self._read_current_stamina(frame, (.68, .025, .90, .085))
+            if current_read is not None:
+                from types import SimpleNamespace
+                corrected = [b for b in boxes if (b.x + b.width / 2) / self.width < .68]
+                corrected.append(SimpleNamespace(name=f'{current_read}/240',
+                                                 x=.75*self.width, width=.10*self.width))
+                # A native-scale zero reserve can be missed entirely. Re-read
+                # only its number area and require agreement at both scales.
+                if not any(re.fullmatch(r'\d{1,4}', str(b.name).strip()) for b in corrected[:-1]):
+                    h, w = frame.shape[:2]
+                    crop = frame[round(.035*h):round(.080*h), round(.57*w):round(.61*w)]
+                    reserves = []
+                    for scale in (2, 3):
+                        enlarged = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+                        readings = {int(str(b.name).strip()) for b in (self.ocr(0, 0, 1, 1, frame=enlarged) or [])
+                                    if re.fullmatch(r'\d{1,4}', str(b.name).strip())}
+                        if len(readings) != 1:
+                            break
+                        reserves.append(readings.pop())
+                    if len(reserves) == 2 and reserves[0] == reserves[1]:
+                        corrected.append(SimpleNamespace(name=str(reserves[0]), x=.58*self.width, width=.02*self.width))
+                current, back_up, total = resource_values(corrected, self.width)
         self.info_set('current_stamina', current)
         self.info_set('back_up_stamina', back_up)
         return current, back_up, total

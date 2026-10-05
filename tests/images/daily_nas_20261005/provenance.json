@@ -1,0 +1,130 @@
+{
+  "samples": [
+    {
+      "file": "activity_300.png",
+      "original_sha256": "bad117cd612ea943b1a2e24a2533f2ca5c65697de49adfa600e74ed6bcde6d8b",
+      "sanitized_sha256": "9a29688e8fe4442371b2a74bba8f6346fa4dc3872cd27d8772685bcc814fa070",
+      "mask": [
+        0.78,
+        0.965,
+        1,
+        1
+      ],
+      "sources": [
+        {
+          "zip": "okww诊断证据_20261005_手动_134132_0d3263b6.zip",
+          "incident": "8a897b1abf764ef4b86d70508dd1e922",
+          "frame": {
+            "path": "E:\\AI work\\ok-wuthering-waves-master\\test_out\\nas_daily_20261005\\activity5-0.png",
+            "entry": "batches/20261005-123821-7c860cb422a3--131856-b3ba71317f61/截图/okww-custom/2026-10-05/20261005-123821-7c860cb422a3/131856-b3ba71317f61/bd5a7df0c095417098f0f8d2312f592e.png",
+            "relative": -0.015,
+            "sha256": "bad117cd612ea943b1a2e24a2533f2ca5c65697de49adfa600e74ed6bcde6d8b"
+          }
+        }
+      ]
+    },
+    {
+      "file": "activity_240.png",
+      "original_sha256": "e211d6caff0c17a2698c7a8162c16fc3725edd513ee52bb935b8d7f780e90cd7",
+      "sanitized_sha256": "b25456690134d34734428608126616eeef336535b5c0e78c673b420e8c6443b8",
+      "mask": [
+        0.78,
+        0.965,
+        1,
+        1
+      ],
+      "sources": [
+        {
+          "zip": "okww诊断证据_20261003_手动_160336_b882a553.zip",
+          "incident": "ee901408173746f2bc6358fd9fcd7913",
+          "frame": {
+            "path": "E:\\AI work\\ok-wuthering-waves-master\\test_out\\nas_daily_20261005\\activity3-0.png",
+            "entry": "batches/20261003-131343-1131e90a1420--150011-ef9cbaca82b4/截图/okww-custom/2026-10-03/20261003-131343-1131e90a1420/150011-ef9cbaca82b4/2ffe9eb052bb434c924235ba23b12725.png",
+            "relative": 0.344,
+            "sha256": "e211d6caff0c17a2698c7a8162c16fc3725edd513ee52bb935b8d7f780e90cd7"
+          }
+        }
+      ]
+    },
+    {
+      "file": "weekly_claim_171.png",
+      "original_sha256": "a3fb42febdb5b60a7e7acbafdbb0fddbf348ba86174834694e470ec0f55d28d4",
+      "sanitized_sha256": "c6852b0b2a23937d396249cde95950f6c2e03fd024d3226eaa33f5133226d76d",
+      "mask": [
+        0.78,
+        0.965,
+        1,
+        1
+      ],
+      "sources": [
+        {
+          "zip": "okww诊断证据_20261005_手动_134132_0d3263b6.zip",
+          "incident": "10bca0ff3b084c7993c39c6d4cc48989",
+          "frame": {
+            "path": "E:\\AI work\\ok-wuthering-waves-master\\test_out\\nas_daily_20261005\\weekly5-0.png",
+            "entry": "batches/20261005-103112-cecd70fb19c1--111046-08602ae0b58f/截图/okww-custom/2026-10-05/20261005-103112-cecd70fb19c1/111046-08602ae0b58f/ec6403ba361643a1b74374b33070c567.png",
+            "relative": 0.079,
+            "sha256": "a3fb42febdb5b60a7e7acbafdbb0fddbf348ba86174834694e470ec0f55d28d4"
+          }
+        }
+      ]
+    },
+    {
+      "file": "resource_234.png",
+      "original_sha256": "1cc5e8d59dc3f89b89a647a8432ccda838eb7e589712a90e029408608d33fe39",
+      "sanitized_sha256": "89ce1f0ac4143248e34bac1751a4fe33a7468eb85e9f84d2f1b132445e8e5ab7",
+      "mask": [
+        0.78,
+        0.965,
+        1,
+        1
+      ],
+      "sources": [
+        {
+          "zip": "okww诊断证据_20261003_手动_130223_f00c618c.zip",
+          "incident": "063d8907aa4545828e39d38347fd1633",
+          "frame": {
+            "path": "E:\\AI work\\ok-wuthering-waves-master\\test_out\\nas_daily_20261005\\stamina3-0.png",
+            "entry": "batches/20261003-121959-bc655c2e82cd--130108-8e0450fdc96a/截图/okww-custom/2026-10-03/20261003-121959-bc655c2e82cd/130108-8e0450fdc96a/c7029f82c0724bca9886a77af879fd5c.png",
+            "relative": 0.125,
+            "sha256": "1cc5e8d59dc3f89b89a647a8432ccda838eb7e589712a90e029408608d33fe39"
+          }
+        }
+      ]
+    },
+    {
+      "file": "nightmare_filter_open.png",
+      "original_sha256": "7e52da9b3db3afaf620fd1271ceb13e289e313e444ee3bb1d7bba0db03ec3a70",
+      "sanitized_sha256": "62350d83dc48043306af46114daafa4c6a6d7c1ccb77a7690afdd0ff48d23ade",
+      "mask": [
+        0.78,
+        0.965,
+        1,
+        1
+      ],
+      "sources": []
+    }
+  ],
+  "archives": [
+    {
+      "name": "okww诊断证据_20261005_手动_134132_0d3263b6.zip",
+      "sha256": "65ebb4c916b35a5ada38dae372a9df1ff9c920e6650fb257dfd4e447de0478fc"
+    },
+    {
+      "name": "okww诊断证据_20261003_自动_105401_1ce49a3f.zip",
+      "sha256": "9303af8ad8277986d63b0aec7dd81aefa03478aa793cd5a401e544fd3d9aa882"
+    },
+    {
+      "name": "okww诊断证据_20261003_手动_160336_b882a553.zip",
+      "sha256": "3bb8ca64b0de1c03b940aea90b36fada045822b08d253215439c8678d56b27b6"
+    },
+    {
+      "name": "okww诊断证据_20260930_自动_155454_c8165ef7.zip",
+      "sha256": "5fca168ad637c156f3f31cbd84fc76fef91db8a0a735ddd357294613b80d1759"
+    },
+    {
+      "name": "okww诊断证据_20261003_手动_130223_f00c618c.zip",
+      "sha256": "c136584d231c618136400f44bb72000cc47fe2b5a8bd09e92f795dfd2140ab4a"
+    }
+  ]
+}

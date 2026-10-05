@@ -2298,10 +2298,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                     from src.task.daily_observation import activity_digits_image
                     boxes = self.ocr(.188, .84, .285, .895, match=DAILY_POINTS_RE,
                                      frame=frame, frame_processor=activity_digits_image) or []
-                values = [int(box.name.strip()) for box in boxes
-                          if DAILY_POINTS_RE.fullmatch(box.name.strip()) and 0 <= int(box.name.strip()) <= 180]
-                if values:
-                    points = max(values)
+                from src.task.daily_observation import activity_points
+                points = activity_points(boxes)
+                if points is not None:
                     status = 'completed' if points >= 100 else 'partial'
                     reason = f'收尾活跃度识别为 {points}，达标阈值 100；不代表奖励已领取'
                     progress = dict(points=points, target=100)
@@ -2416,7 +2415,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         return current, None if points is None else points >= 100
 
     def get_total_daily_points(self, attempts=3):
-        from src.task.daily_observation import activity_digits_image
+        from src.task.daily_observation import activity_digits_image, activity_points
         attempts = max(int(attempts), 1)
         candidates = []
         raw_candidates = []
@@ -2427,18 +2426,14 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             if not points_boxes:
                 points_boxes = self.ocr(.188, .84, .285, .895, match=DAILY_POINTS_RE,
                                         frame_processor=activity_digits_image) or []
-            for box in points_boxes:
-                text = str(getattr(box, 'name', '')).strip()
-                raw_candidates.append(text)
-                if not DAILY_POINTS_RE.fullmatch(text):
-                    continue
-                value = int(text)
-                if 0 <= value <= 180:
-                    candidates.append(value)
-                    if value > evidence_points:
-                        evidence_points = value
-                        from src.evidence.service import evidence_frame as copy_evidence_frame
-                        evidence_frame = copy_evidence_frame(self)
+            raw_candidates.extend(str(box.name).strip() for box in points_boxes)
+            value = activity_points(points_boxes)
+            if value is not None:
+                candidates.append(value)
+                if value > evidence_points:
+                    evidence_points = value
+                    from src.evidence.service import evidence_frame as copy_evidence_frame
+                    evidence_frame = copy_evidence_frame(self)
             if attempt + 1 < attempts:
                 self.next_frame()
         points = max(candidates) if candidates else None

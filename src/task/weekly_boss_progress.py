@@ -66,6 +66,20 @@ class WeeklyBossProgress:
             event['resolved_at'] = datetime.now(timezone.utc).isoformat()
         self._update(change)
 
+    def set_phase(self, event_id, phase):
+        phases = ('interaction_sent', 'dialog_seen', 'confirm_sent')
+        if phase not in phases:
+            raise ValueError('周本领取阶段无效')
+        def change(value):
+            event = value['events'][event_id]
+            if event['state'] != 'pending':
+                return
+            previous = event.get('phase')
+            if previous in phases and phases.index(phase) < phases.index(previous):
+                raise ValueError('周本领取阶段不能回退')
+            event['phase'] = phase
+        self._update(change)
+
     def correct(self, boss, count):
         if type(count) is not int or not 0 <= count <= 999999:
             raise ValueError('累计次数需为非负整数')

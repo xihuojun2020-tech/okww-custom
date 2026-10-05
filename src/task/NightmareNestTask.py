@@ -14,7 +14,7 @@ CONFIRM_FEATURES = ['confirm_btn_hcenter_vcenter', 'confirm_btn_highlight_hcente
 
 # 残象聚落（Tacet Discord Nest）名称，按游戏内 F2 残象页面从上到下的顺序
 from src.nightmare_nests import (NEST_NAMES, DEFAULT_NEST_NAMES, NIGHTMARE_NAMES, NEST_TOTALS_BY_NAME,
-                                 canonical_nest_name)
+                                 canonical_nest_name, normalize_nest_text)
 # 每个位置的聚落怪物总数（用于校验行位置是否对应正确，48 出现两次所以不能单独用总数定位）
 NEST_TOTAL_BY_POSITION = list(NEST_TOTALS_BY_NAME.values())
 # 可识别的聚落总数（保留 36 以兼容旧版本/历史数据）
@@ -129,30 +129,35 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
 
     def _enter_nest(self, nest):
         residual = isinstance(nest, NestTarget) and nest.cache_key.startswith('residual:')
+        nightmare = isinstance(nest, NestTarget) and nest.cache_key.startswith('nightmare:')
         button = nest.box if isinstance(nest, NestTarget) else nest
         for attempt in range(3):
-            if residual:
+            if residual or nightmare:
                 frame = self.require_game_frame()
                 try:
-                    rows = self._residual_rows(frame, {nest.display_name})
+                    if nightmare:
+                        self._close_nightmare_filter(frame)
+                        frame = self.require_game_frame()
+                    rows = (self._nightmare_rows(frame) if nightmare else
+                            self._residual_rows(frame, {nest.display_name}))
                     current, total, button = rows[nest.display_name]
                     if current == total:
                         self._nest_completed.add(nest.display_name)
                         return None
                     if button is None:
                         raise ValueError('前往按钮不唯一')
-                    self.log_info(f'残像入口 {attempt + 1}/3：{nest.display_name} '
+                    self.log_info(f'聚落入口 {attempt + 1}/3：{nest.display_name} '
                                   f'{current}/{total}，按钮=({button.x},{button.y})')
                 except (ValueError, KeyError) as error:
                     self.screenshot('nest_entry_source_unknown', frame=frame)
-                    raise RuntimeError('残像入口源页无法确认，停止重复点击') from error
+                    raise RuntimeError(f'{nest.display_name}入口源页无法确认，停止重复点击') from error
             self.click(button, after_sleep=2)
             try:
                 return self.wait_book_target_state()
             except WaitFailedException:
-                if not residual or attempt == 2:
+                if not (residual or nightmare) or attempt == 2:
                     raise
-                self.log_warning(f'残像入口未切换，重新核对同一目标后重试 {attempt + 1}/2')
+                self.log_warning(f'{nest.display_name}入口未切换，重新核对同一目标后重试 {attempt + 1}/2')
 
     def combat_nest(self, nest):
         target_name = nest.display_name if isinstance(nest, NestTarget) else '当前目标'
@@ -327,11 +332,16 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
 
     def go_nightmare(self):
         self.open_boss_book('mengyan')
+        self._close_nightmare_filter(self.require_game_frame())
+        self.scroll_relative(.75, .5, 20)
+        self.sleep(.3)
         self.log_info('go nightmare')
 
     def go_nightmare_scroll(self):
         self.open_boss_book('mengyan')
-        self.click(3737 / 3840, 0.54, after_sleep=1)
+        self._close_nightmare_filter(self.require_game_frame())
+        self.scroll_relative(.75, .5, -20)
+        self.sleep(.3)
         self.log_info('go nightmare scroll')
 
     def go_nest(self):
@@ -435,7 +445,70 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
         self.screenshot('residual_nest_identification_failed', frame=frame)
         raise RuntimeError(f'残像聚落识别失败：{detail}')
 
+    def _nightmare_filter_open(self, frame):
+        names = {'熔山裂谷', '彻空冥雷', '啸谷长风', '沉日劫明', '凌冽决断之心', '此间永驻之光'}
+        observed = {normalize_nest_text(b.name) for b in (self.ocr(.72, .20, .97, .72, frame=frame) or [])}
+        return len(names & observed) >= 3
+
+    def _close_nightmare_filter(self, frame):
+        if self._nightmare_filter_open(frame):
+            self.click_relative(.60, .11, after_sleep=.3)
+            if self._nightmare_filter_open(self.require_game_frame()):
+                raise RuntimeError('梦魇合鸣筛选菜单未关闭，未点击目标入口')
+
+    def _nightmare_rows(self, frame):
+        if self._nightmare_filter_open(frame):
+            raise ValueError('梦魇列表被合鸣筛选菜单遮挡')
+        boxes = self.ocr(.35, .19, .97, .94, frame=frame) or []
+        titles = [(b, normalize_nest_text(b.name)) for b in boxes
+                  if normalize_nest_text(b.name).endswith('梦魇聚落')]
+        rows = {}
+        for title, name in titles:
+            if title.y < self.height_of_screen(.19):
+                continue
+            bottom = min((b.y for b, _ in titles if b.y > title.y), default=self.height_of_screen(.94))
+            counts = [(b, m) for b in boxes if title.y <= b.y < bottom
+                      and b.y - title.y < self.height_of_screen(.12)
+                      for m in [self.count_re.search(b.name)] if m]
+            buttons = [b for b in boxes if title.y <= b.y < bottom
+                       and str(b.name).strip() in ('前往', '前往挑战', '直接挑战', '单人挑战')
+                       and b.x >= self.width_of_screen(.80)]
+            if len(counts) != 1 or sum(n == name for _, n in titles) != 1:
+                continue
+            current, total = map(int, counts[0][1].groups())
+            if total != 36 or not 0 <= current <= total:
+                continue
+            rows[name] = (current, total, buttons[0] if len(buttons) == 1 else None)
+        return rows
+
+    def _find_nightmare_nest(self):
+        selected = set(self.config.get(FARM_NIGHTMARE_SETTLEMENTS) or [])
+        if not selected:
+            return None
+        frame = self.require_game_frame()
+        self._close_nightmare_filter(frame)
+        frame = self.require_game_frame()
+        rows = self._nightmare_rows(frame)
+        for name in NIGHTMARE_NAMES:
+            if name not in selected or name not in rows:
+                continue
+            current, total, button = rows[name]
+            key = 'nightmare:' + name
+            if current == total:
+                self._nest_completed.add(name)
+                self._clear_target_progress(key)
+                continue
+            self._record_target_progress(key, name, current, total)
+            if key in self._unreachable_nests:
+                continue
+            if button is None:
+                self.screenshot('nightmare_entry_incomplete', frame=frame)
+                raise RuntimeError(f'{name}完整入口按钮未确认，未使用估算坐标')
+            return NestTarget(button, key, name, NIGHTMARE_NAMES.index(name)+1, current, total)
+
     def find_nest(self):
+        if self.queues and self.queues[0].__name__ in ('go_nightmare', 'go_nightmare_scroll'):
+            return self._find_nightmare_nest()
         if self.queues and self.queues[0].__name__ in ('go_nest', 'go_nest_scroll'):
             return self._find_residual_nest()
         counts = self.ocr(0.35, 0.13, 1, 0.96, match=self.count_re)
@@ -527,6 +600,10 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
             missing = self._selected_residual_names() - self._nest_completed
             if missing:
                 raise RuntimeError('所选残像聚落未确认完成：' + '、'.join(sorted(missing)))
+        if 'Nightmare Purification' in quests:
+            missing = set(self.config.get(FARM_NIGHTMARE_SETTLEMENTS) or []) - getattr(self, '_nest_completed', set())
+            if missing:
+                raise RuntimeError('所选梦魇聚落未确认完成：' + '、'.join(sorted(missing)))
         incomplete = list(getattr(self, '_incomplete_targets', {}).values())
         if not incomplete:
             return

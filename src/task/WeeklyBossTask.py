@@ -378,6 +378,7 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
                 if remaining <= 0:
                     break
                 if marker:
+                    self.log_info(f'周本战后奖励标记：({marker.x}, {marker.y})，短段接近后复读交互')
                     # Short segments discard stale heading/target positions.
                     # Skip the generic initial static wait: we have this frame's marker.
                     self.do_walk_to_box(lambda: self.find_treasure_icon() or marker,
@@ -393,6 +394,8 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
                 self.sleep(0.2)
         finally:
             self._release_movement()
+        self._task_hint_phase(log=True)
+        self.screenshot('weekly_reward_interaction_unconfirmed')
         raise WeeklyPageTimeout('战后未找到领取奖励交互（已尝试吸收、交互选择及有限重新定位）')
 
     def _task_hint_phase(self, log=False):
@@ -510,6 +513,8 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         confirm = self._button(self.CLAIM_CONFIRM, '确认', frame)
         cancel = self._button(self.CLAIM_CANCEL, '取消', frame)
         stamina = parse_stamina(self._text(self.CLAIM_STAMINA, frame))
+        if stamina is None:
+            stamina = self._read_current_stamina(frame, self.CLAIM_STAMINA)
         if match and 0 < int(match[1]) <= 240 and confirm and cancel and stamina is not None:
             return int(match[1]), stamina, confirm
         return None
@@ -526,6 +531,8 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
             if self._settlement():
                 return ('settled', None)
             dialog = self._claim_confirmation()
+            if dialog or compact(self._text(self.CLAIM_TITLE)) == '领取奖励':
+                self._record_claim_phase('dialog_seen')
             resources = dialog[:2] if dialog else None
             stable = resources is not None and resources == previous
             previous = resources
@@ -553,7 +560,39 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         if stamina < actual_cost:
             raise RuntimeError(f'领奖体力不足：当前 {stamina}，需要 {actual_cost}；未确认领取')
         self.log_info(f'周本领奖确认：费用 {actual_cost}，当前体力 {stamina}；仅点击一次确认')
+        self._record_claim_phase('confirm_sent')
         self.click_box(button)
+
+    def _record_claim_phase(self, phase):
+        progress = getattr(self, '_claim_progress', None)
+        event = getattr(self, '_claim_event', None)
+        if progress is not None and event:
+            progress.set_phase(event, phase)
+
+    def _cancel_unconfirmed_claim(self):
+        """Only a cancelled visible dialog and unchanged allowance prove no claim."""
+        from src.task.weekly_boss import weekly_check_window
+        progress = getattr(self, '_claim_progress', None)
+        event_id = getattr(self, '_claim_event', None)
+        if progress is None or not event_id:
+            return
+        event = progress.pending().get(event_id, {})
+        if event.get('phase') != 'dialog_seen' or str(weekly_check_window()[0]) != event.get('week'):
+            return
+        if compact(self._text(self.CLAIM_TITLE)) != '领取奖励':
+            return
+        cancel = self._button(self.CLAIM_CANCEL, '取消', self.frame)
+        if not cancel:
+            return
+        self.click_box(cancel)
+        self._wait_for(lambda: self.in_team_and_world() and compact(self._text(self.CLAIM_TITLE)) != '领取奖励',
+                       '领奖取消结果未知，保留待核验事件', 8)
+        self._open_weekly_book()
+        remaining = self._read_remaining()
+        if remaining == event.get('remaining_before') and str(weekly_check_window()[0]) == event.get('week'):
+            progress.resolve(event_id, False)
+            self._claim_event = None
+            self.log_info('领奖未发送确认，已取消且本周次数未减少；累计次数保持不变')
 
     def _fight_and_claim(self, cost):
         self._fight()
@@ -564,10 +603,18 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
             self._claim_event = progress.begin(self._entry_boss.key, self._claim_week,
                                                 self._claim_remaining, self._claim_revision)
             self._stage(f'周本待确认领取：{self._entry_boss.key}；事件={self._claim_event}；本周领取前剩余={self._claim_remaining}')
+        self._record_claim_phase('interaction_sent')
         self.send_key('f')
         # Only the verified current-stamina confirmation is supported. Never
         # use the generic cancellation handler or click replenishment dialogs.
-        self._confirm_claim_if_needed(cost, retry_interaction=True)
+        try:
+            self._confirm_claim_if_needed(cost, retry_interaction=True)
+        except (WeeklyPageTimeout, RuntimeError):
+            try:
+                self._cancel_unconfirmed_claim()
+            except (WeeklyPageTimeout, RuntimeError) as recovery_error:
+                self.log_info(f'领奖取消核验失败，保留待核验事件：{recovery_error}')
+            raise
         self._stage('等待领奖结算，不重复确认')
         self._wait_for(self._settlement, '领奖结果未确认，停止再次挑战', 20)
         if progress is not None:
