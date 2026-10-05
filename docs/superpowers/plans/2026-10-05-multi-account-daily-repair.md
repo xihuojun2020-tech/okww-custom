@@ -147,7 +147,7 @@ $taskPython = 'E:/AI work/ok-wuthering-waves-master/.venv/Scripts/python.exe'
 - [x] Task 3：按完整名称配对进度与按钮，关闭筛选复读，点击前重新核验；上下列表使用有限滚动，未确认目标不能假报完成。
 - [x] Task 4：当前体力分数及备用0真实图回归，领取阶段持久化，未确认取消需剩余次数证明；旧pending不清空。
 - [x] Task 5：既有检查点、单账号／多账号、资源不足与自动战斗启用规则通过回归；补充战后交互失败截图和标记坐标。未触及账号切换实现。
-- [ ] Task 6：测试汇总、GitHub/NAS发布及升级核验结果见`docs/reviews/daily-repair-1.97.05-verification.md`。
+- [x] Task 6：测试汇总、GitHub/NAS发布及升级核验结果见`docs/reviews/daily-repair-1.97.05-verification.md`。
 - [ ] 实机消费验收及下一批诊断对比：离线测试无法代替真实游戏验证；A4旧待核验记录需要人工核对。
 
 上方细项是原设计验收清单；以此实施状态和核验报告记录实际交付，未声称每项实机标准已经满足。
