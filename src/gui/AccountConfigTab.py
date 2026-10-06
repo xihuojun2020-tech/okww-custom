@@ -486,6 +486,7 @@ class AccountConfigTab(CustomTab):
         self.settings_layout = QVBoxLayout(self.settings_host)
         self.settings_layout.setContentsMargins(0, 0, 0, 0)
         self.settings_layout.setAlignment(Qt.AlignTop)
+        self.settings_layout.setSpacing(16)
         for widget in (self.identity_group, self.reminder_panel, self.form_host, maintenance):
             layout.removeWidget(widget)
             self.settings_layout.addWidget(widget)
@@ -498,19 +499,22 @@ class AccountConfigTab(CustomTab):
         self.settings_layout.addWidget(self.daily_help)
         self.daily_help.hide()
         body = QHBoxLayout()
+        body.setSpacing(20)
         self.navigation = QTreeWidget(root)
         self.navigation.setHeaderHidden(True)
         self.navigation.setMinimumWidth(180)
-        self.navigation.setMaximumWidth(220)
+        self.navigation.setMaximumWidth(208)
+        self.navigation.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.navigation.setObjectName('accountTaskNavigation')
         self.navigation.setIndentation(16)
+        self.navigation.setRootIsDecorated(False)
         body.addWidget(self.navigation)
         self.content_stack = QStackedWidget(root)
         from src.gui.AccountTaskOverview import AccountTaskOverview
         self.overview = AccountTaskOverview(repository, self._overview_live, root)
         from src.gui.AccountSlotEditor import AccountSlotEditor
         self.slot_editor = AccountSlotEditor(self.overview)
-        self.overview.layout().insertWidget(0, self.slot_editor)
+        self.overview.layout().insertWidget(1, self.slot_editor)
         self.slot_editor.edited.connect(self._mark_draft_edited)
         self.slot_editor.order_requested.connect(lambda: self._select_route('sequence_order'))
         self.content_stack.addWidget(self.overview)
@@ -540,12 +544,18 @@ class AccountConfigTab(CustomTab):
                 child = QTreeWidgetItem(item, [label])
                 child.setData(0, Qt.UserRole, key)
                 self._nav_items[key] = child
+            if children:
+                item.setIcon(0, FluentIcon.CHEVRON_RIGHT.icon())
         from src.account_reminders import TASK_REMINDERS
         for key, label in TASK_REMINDERS.items():
             if key != 'adversity_tower':
                 item = QTreeWidgetItem(self._nav_items['manual'], [label])
                 item.setData(0, Qt.UserRole, 'reminder:' + key)
                 self._nav_items['reminder:' + key] = item
+        self._nav_items['manual'].setIcon(0, FluentIcon.CHEVRON_RIGHT.icon())
+        self.navigation.itemExpanded.connect(lambda item: item.setIcon(0, FluentIcon.ARROW_DOWN.icon()))
+        self.navigation.itemCollapsed.connect(lambda item: item.setIcon(0, FluentIcon.CHEVRON_RIGHT.icon()))
+        self.navigation.itemClicked.connect(lambda item, _: item.setExpanded(not item.isExpanded()) if item.childCount() else None)
         self.navigation.currentItemChanged.connect(lambda item, _: self._navigate(item.data(0, Qt.UserRole)) if item else None)
         self.overview.navigate.connect(self._select_route)
         self.overview.records.connect(self._open_records)

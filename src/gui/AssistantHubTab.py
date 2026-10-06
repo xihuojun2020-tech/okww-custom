@@ -14,6 +14,7 @@ class AssistantHubTab(CustomTab):
         self.add_widget(self.run_section)
         self.trigger_panel = TriggerTaskTab()
         section = SectionPanel('辅助功能', parent=self.view)
+        section.set_flat()
         section.title_label.hide()
         section.layout().setContentsMargins(0, 4, 0, 8)
         section.add_embedded_widget(self.trigger_panel)

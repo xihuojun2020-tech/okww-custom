@@ -21,6 +21,8 @@ class AccountSettingsTab(CustomTab):
         self.account_tab.changed.connect(self._on_account_changed)
         self.sequence_tab.changed.connect(self._on_account_changed)
         section = SectionPanel('账号序列', parent=self.account_tab.settings_host)
+        section.set_flat()
+        section.title_label.setProperty('role', 'pageTitle')
         section.add_embedded_widget(self.sequence_tab)
         self.section_panels = [section]
         self.account_tab.settings_layout.addWidget(section)
@@ -28,6 +30,8 @@ class AccountSettingsTab(CustomTab):
         section.hide()
         self.order_tab = SequenceManagementTab(self.sequence_tab.service, readonly=True)
         order_section = SectionPanel('账号执行顺序', parent=self.account_tab.settings_host)
+        order_section.set_flat()
+        order_section.title_label.setProperty('role', 'pageTitle')
         order_section.add_embedded_widget(self.order_tab)
         self.account_tab.settings_layout.addWidget(order_section)
         self.account_tab._order_panel = order_section

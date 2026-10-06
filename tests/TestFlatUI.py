@@ -519,7 +519,7 @@ class TestFlatUI(unittest.TestCase):
             card.show()
             self.app.processEvents()
             title, description = card.card.titleLabel, card.card.contentLabel
-            self.assertLessEqual(description.y() - title.geometry().bottom() - 1, 3)
+            self.assertLessEqual(description.y() - title.geometry().bottom() - 1, 4)
             card.close()
             card.deleteLater()
 

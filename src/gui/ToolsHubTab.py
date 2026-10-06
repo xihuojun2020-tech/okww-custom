@@ -12,6 +12,7 @@ class ToolsHubTab(CustomTab):
     def __init__(self, start_panel):
         super().__init__()
         title = SectionPanel('工具', parent=self.view)
+        title.set_flat()
         title.title_label.setProperty('role', 'pageTitle')
         self.add_widget(title)
         self.diagnostic_panel = DiagnosticStatusCard(self.view)
@@ -22,6 +23,7 @@ class ToolsHubTab(CustomTab):
         self.add_widget(self.diagnostic_panel)
         self.maintenance_tab = SettingTab(account_maintenance_only=True)
         maintenance = SectionPanel('数据维护', parent=self.view)
+        maintenance.set_flat()
         maintenance.title_label.hide()
         maintenance.add_embedded_widget(self.maintenance_tab)
         self.add_widget(maintenance)

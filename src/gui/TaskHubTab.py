@@ -12,9 +12,7 @@ class TaskHubTab(CustomTab):
         self.section_panels = [SectionPanel("任务", parent=self.view)]
         self.section_panels[0].add_embedded_widget(self.task_tab)
         self.section_panels[0].title_label.setProperty('role', 'pageTitle')
-        self.section_panels[0].layout().setContentsMargins(0, 0, 0, 0)
-        self.section_panels[0].layout().setSpacing(8)
-        self.section_panels[0].setStyleSheet('QWidget#codexSection { border: 0; }')
+        self.section_panels[0].set_flat()
         self.add_widget(self.section_panels[0])
 
     @property

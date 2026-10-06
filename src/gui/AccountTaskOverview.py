@@ -2,7 +2,7 @@
 from time import monotonic
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton, QGridLayout, QScrollArea, QSizePolicy
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QPushButton, QGridLayout, QScrollArea, QSizePolicy, QHBoxLayout, QBoxLayout
 
 from src.gui.BackgroundOperation import BackgroundOperation
 from src.gui.SectionPanel import SectionPanel
@@ -31,8 +31,19 @@ class AccountTaskOverview(QWidget):
         self._stale = False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(16)
+        self.heading = QHBoxLayout()
+        title = QLabel('任务总览', self)
+        title.setProperty('role', 'pageTitle')
+        self.heading.addWidget(title, 1)
+        self.recent = QLabel('尚无成功完成记录', self)
+        self.recent.setProperty('role', 'description')
+        self.recent.setWordWrap(False)
+        self.heading.addWidget(self.recent)
+        layout.addLayout(self.heading)
         self.summary = QLabel('请选择账号', self)
         self.summary.setWordWrap(True)
+        self.summary.setProperty('role', 'description')
         layout.addWidget(self.summary)
         self.notice = QLabel('', self)
         self.notice.setWordWrap(True)
@@ -45,6 +56,7 @@ class AccountTaskOverview(QWidget):
         self.host = QWidget(self.scroll)
         self.groups_layout = QVBoxLayout(self.host)
         self.groups_layout.setContentsMargins(0, 0, 4, 0)
+        self.groups_layout.setSpacing(16)
         self.groups_layout.setAlignment(Qt.AlignTop)
         self.scroll.setWidget(self.host)
         layout.addWidget(self.scroll, 1)
@@ -53,15 +65,15 @@ class AccountTaskOverview(QWidget):
         self.filters = QGridLayout(self.filter_host)
         self.filters.setContentsMargins(0, 0, 0, 0)
         self.filter_buttons = {}
-        for state, title in ((None, '全部'), ('running', '运行中'), ('attention', '需处理'),
-                             ('pending', '待执行'), ('waiting', '等待'), ('completed', '已完成')):
+        for state, title in ((None, '全部'), ('pending', '待完成'), ('attention', '需要处理'), ('completed', '已完成')):
             button = QPushButton(title, self)
             button.setCheckable(True)
+            button.setProperty('role', 'filter')
             button.clicked.connect(lambda *_, state=state: self._set_filter(state))
             index = len(self.filter_buttons)
             self.filters.addWidget(button, index // 3, index % 3)
             self.filter_buttons[state] = button
-        layout.insertWidget(2, self.filter_host)
+        layout.insertWidget(3, self.filter_host)
         self.loading = BackgroundOperation(self)
         self.marking = BackgroundOperation(self)
         self.marking.busy_changed.connect(self._update_writable)
@@ -70,7 +82,8 @@ class AccountTaskOverview(QWidget):
         self.timer.start(1000)
 
     def resizeEvent(self, event):
-        columns = 6 if self.width() >= 680 else 3
+        self.heading.setDirection(QBoxLayout.TopToBottom if self.width() < 600 else QBoxLayout.LeftToRight)
+        columns = 4 if self.width() >= 600 else 2
         if columns != getattr(self, '_filter_columns', None):
             self._filter_columns = columns
             for index, button in enumerate(self.filter_buttons.values()):
@@ -86,6 +99,7 @@ class AccountTaskOverview(QWidget):
         # Remove previous account data immediately, before asynchronous reads finish.
         self._cards = []
         self.summary.setText('正在读取当前账号的任务…')
+        self.recent.setText('正在读取完成记录…')
         self.notice.clear()
         self._clear()
         self.refresh(force=True)
@@ -152,11 +166,27 @@ class AccountTaskOverview(QWidget):
         self._apply_filter()
 
     def _apply_filter(self):
-        for state, group in self._groups.items():
-            group.setVisible(any(c.state == state for c in self._cards) and
-                             (self._filter is None or state == self._filter))
+        visible_groups = set()
+        for card in self._cards:
+            visible = self._filter is None or (card.state != 'completed' if self._filter == 'pending' else
+                                               card.state == self._filter)
+            self._rows[card.task_id].setVisible(visible)
+            if visible:
+                visible_groups.add(self._group_key(card))
+        for key, group in self._groups.items():
+            group.setVisible(key in visible_groups)
         for state, button in self.filter_buttons.items():
             button.setChecked(state == self._filter)
+
+    @staticmethod
+    def _group_key(card):
+        if card.state in ('running', 'attention', 'completed'):
+            return card.state
+        if card.manual:
+            return 'manual'
+        if card.task_id in ('weekly_boss', 'weekly_garden', 'merge_echo', 'adversity_tower'):
+            return 'weekly'
+        return 'daily'
 
     def _update_writable(self, *_):
         for row in self._rows.values():
@@ -172,32 +202,44 @@ class AccountTaskOverview(QWidget):
         self.notice.setText('其他账号正在执行；本页只展示当前所选账号。'
                            if live.get('profile_id') and live['profile_id'] != self.profile_id else '')
         self.notice.setVisible(bool(self.notice.text()))
-        titles = {'running': '运行中', 'attention': '需要处理', 'pending': '待执行／待办',
-                  'waiting': '等待中', 'completed': '已完成'}
-        for state, title in titles.items():
-            count = sum(c.state == state for c in cards)
-            if state not in self._groups:
-                group = SectionPanel(title, parent=self.host, collapsible=state == 'completed')
-                self._groups[state] = group
+        stamps = [parse_legacy_time(c.completed_at) for c in cards if c.completed_at and not c.manual]
+        stamps = [stamp for stamp in stamps if stamp is not None]
+        self.recent.setText('最近完成记录：' + max(stamps).strftime('%m-%d %H:%M') if stamps else '尚无成功完成记录')
+        titles = {'running': '运行中', 'attention': '需要处理', 'daily': '本日任务',
+                  'weekly': '周常与独立任务', 'manual': '手动提醒', 'completed': '已完成'}
+        for key, title in titles.items():
+            count = sum(self._group_key(c) == key for c in cards)
+            if key not in self._groups:
+                group = SectionPanel(title, parent=self.host, collapsible=key == 'completed')
+                group.set_flat()
+                self._groups[key] = group
                 self.groups_layout.addWidget(group)
-            group = self._groups[state]
+            group = self._groups[key]
             group.title_label.setText(f'{title}（{count}）')
             group.header.titleLabel.setText(f'{title}（{count}）')
-            group.set_summary('展开查看完成时间与记录' if state == 'completed' else '')
-            self.filter_buttons[state].setText(f'{title.split("／")[0]} {count}')
+            group.set_summary('展开查看完成时间与记录' if key == 'completed' else '')
+        self.filter_buttons['pending'].setText(f'待完成 {sum(c.state != "completed" for c in cards)}')
+        self.filter_buttons['attention'].setText(f'需要处理 {sum(c.state == "attention" for c in cards)}')
+        self.filter_buttons['completed'].setText(f'已完成 {sum(c.state == "completed" for c in cards)}')
         for key in set(self._rows) - {c.task_id for c in cards}:
             self._rows.pop(key).deleteLater()
         for card in cards:
             row = self._rows.get(card.task_id)
             if row is None:
                 row = self._rows[card.task_id] = TaskOverviewRow(self, card)
+                if card.state == 'running':
+                    row.update_card(card, live)
             elif row.card != card or card.state == 'running':
                 row.update_card(card, live)
-            group = self._groups[card.state]
+            group = self._groups[self._group_key(card)]
             if row.parentWidget() != group.content:
                 group.add_widget(row)
-        for state, group in self._groups.items():
-            for index, card in enumerate(c for c in cards if c.state == state):
+        for key, group in self._groups.items():
+            order = {'nightmare_nest': 0, 'world_boss': 1, 'forgery': 2, 'simulation': 3, 'tacet': 4,
+                     'daily_activity': 5, 'daily_run': 6, 'weekly_boss': 0, 'weekly_garden': 1,
+                     'merge_echo': 2, 'adversity_tower': 3}
+            grouped = sorted((c for c in cards if self._group_key(c) == key), key=lambda c: order.get(c.task_id, 100))
+            for index, card in enumerate(grouped):
                 row = self._rows[card.task_id]
                 if group.content_layout.indexOf(row) != index + 1:
                     group.content_layout.insertWidget(index + 1, row)

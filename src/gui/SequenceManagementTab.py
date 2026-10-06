@@ -3,7 +3,7 @@
 from functools import partial
 from PySide6.QtCore import Qt, Signal, QSignalBlocker, QSize, QTimer
 from PySide6.QtWidgets import (QAbstractScrollArea, QHBoxLayout, QInputDialog, QListWidget,
-                               QMessageBox, QPushButton, QVBoxLayout, QWidget, QListWidgetItem)
+                               QMessageBox, QPushButton, QVBoxLayout, QWidget, QListWidgetItem, QButtonGroup)
 from PySide6.QtWidgets import QSizePolicy
 from qfluentwidgets import BodyLabel, FluentIcon
 
@@ -14,6 +14,7 @@ from src.sequence_repository import SequenceRepository
 from src.gui.AccountChangeEvent import AccountChangeEvent
 from src.gui.BackgroundOperation import BackgroundOperation
 from src.gui.SectionPanel import SectionPanel
+from src.gui.ChoiceControls import QtComboBox
 
 
 class SequenceManagementTab(CustomTab):
@@ -28,6 +29,8 @@ class SequenceManagementTab(CustomTab):
         root = QWidget(self.view)
         root.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         layout = QVBoxLayout(root)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
         layout.setAlignment(Qt.AlignTop)
         self.help = BodyLabel('固定顺序 A1 → A10 / B1 → B10；空槽位与未参与账号跳过。双击账号可设置归属。')
         self.help.setWordWrap(True)
@@ -42,6 +45,9 @@ class SequenceManagementTab(CustomTab):
         layout.addWidget(self.enabled_button)
         self.sequences = QListWidget(root)
         self.members = QListWidget(root)
+        self.members.setObjectName('sequenceMembers')
+        from src.gui.SequenceSlotDelegate import SequenceSlotDelegate
+        self.members.setItemDelegate(SequenceSlotDelegate(self.members))
         self.sequences.setAccessibleName('当前序列')
         self.members.setAccessibleName('序列账号顺序')
         # The account-settings hub embeds this page flat; keep both short
@@ -54,8 +60,27 @@ class SequenceManagementTab(CustomTab):
         self.members.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.members.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
         self.members.setMinimumHeight(32)
-        layout.addWidget(BodyLabel("当前序列"))
+        self.sequence_choices = QWidget(root)
+        self.choice_layout = QHBoxLayout(self.sequence_choices)
+        self.choice_layout.setContentsMargins(0, 0, 0, 0)
+        self.choice_layout.setSpacing(8)
+        self.choice_group = QButtonGroup(self)
+        self.choice_group.setExclusive(True)
+        self.choice_buttons = {}
+        self.legacy_choice = QtComboBox(root)
+        self.legacy_choice.setAccessibleName('旧自定义序列')
+        self.legacy_choice.currentIndexChanged.connect(lambda *_: self.sequences.setCurrentRow(self.legacy_choice.currentData())
+                                                       if self.legacy_choice.currentData() is not None else None)
+        self.legacy_choice.setMinimumWidth(180)
+        self.legacy_choice.setMaximumWidth(240)
+        self.choice_layout.addStretch(1)
+        layout.addWidget(self.sequence_choices)
+        layout.addWidget(self.legacy_choice, 0, Qt.AlignLeft)
         layout.addWidget(self.sequences)
+        self.chain = BodyLabel('', root)
+        self.chain.setWordWrap(True)
+        self.chain.setProperty('role', 'sectionTitle')
+        layout.addWidget(self.chain)
         self.order_section = SectionPanel('固定槽位' if self.readonly else '账号执行顺序', parent=root, collapsible=True)
         self.order_section.add_widget(self.members)
         layout.addWidget(self.order_section)
@@ -72,7 +97,9 @@ class SequenceManagementTab(CustomTab):
         member_actions.addWidget(self.up_button)
         member_actions.addWidget(self.down_button)
         self.order_section.content_layout.addLayout(member_actions)
-        self.status = BodyLabel("等待操作")
+        self.status = BodyLabel("执行顺序固定；本页只读。" if readonly else "参与选择即时保存；账号归属在总览设置。")
+        self.status.setProperty('role', 'description')
+        self.status.setWordWrap(True)
         layout.addWidget(self.status)
         self.add_widget(root)
         self.sequences.currentRowChanged.connect(self._show_members)
@@ -83,6 +110,7 @@ class SequenceManagementTab(CustomTab):
         self.operation = BackgroundOperation(self, (self.create_button, self.delete_button,
                                                     self.up_button, self.down_button, self.members, self.sequences,
                                                     self.enabled_button))
+        self.operation.busy_changed.connect(lambda busy: self.sequence_choices.setEnabled(not busy))
         self.members.itemChanged.connect(self._membership_changed)
         self.members.itemDoubleClicked.connect(lambda item: self.account_requested.emit(item.data(Qt.UserRole))
                                                if item.data(Qt.UserRole) else None)
@@ -149,6 +177,7 @@ class SequenceManagementTab(CustomTab):
             if self._drafts:
                 names = [item.sequence_id for item in self._drafts]
                 self.sequences.setCurrentRow(names.index(selected) if selected in names else 0)
+        self._refresh_choices()
         row_height = self.sequences.sizeHintForRow(0) if self.sequences.count() else 24
         self.sequences.setFixedHeight(max(32, row_height * self.sequences.count() + 8))
         if self._drafts:
@@ -161,6 +190,34 @@ class SequenceManagementTab(CustomTab):
         row = self.sequences.currentRow()
         return self._drafts[row] if 0 <= row < len(self._drafts) else None
 
+    def _refresh_choices(self):
+        from src.account_slots import FIXED_SEQUENCES
+        for button in self.choice_buttons.values():
+            self.choice_group.removeButton(button)
+            self.choice_layout.removeWidget(button)
+            button.deleteLater()
+        self.choice_buttons = {}
+        with QSignalBlocker(self.legacy_choice):
+            self.legacy_choice.clear()
+            self.legacy_choice.addItem('旧自定义序列', None)
+            for index, item in enumerate(self._drafts):
+                if item.sequence_id not in FIXED_SEQUENCES:
+                    self.legacy_choice.addItem(item.sequence_id, index)
+        for index, item in enumerate(self._drafts):
+            if item.sequence_id not in FIXED_SEQUENCES:
+                continue
+            title, prefix = FIXED_SEQUENCES[item.sequence_id]
+            button = QPushButton(f'{title}  {prefix}1–{prefix}10', self.sequence_choices)
+            button.setProperty('role', 'sequenceChoice')
+            button.setCheckable(True)
+            self.choice_group.addButton(button)
+            button.clicked.connect(lambda *_, index=index: self.sequences.setCurrentRow(index))
+            self.choice_layout.insertWidget(len(self.choice_buttons), button)
+            self.choice_buttons[item.sequence_id] = button
+        self.sequences.hide()
+        self.legacy_choice.setVisible(self.legacy_choice.count() > 1)
+        self.sequence_choices.setVisible(bool(self.choice_buttons))
+
     def _show_members(self, *_args):
         blocker = QSignalBlocker(self.members)
         self.members.clear()
@@ -170,6 +227,26 @@ class SequenceManagementTab(CustomTab):
             self.order_section.set_summary('尚未选择序列。')
             return
         profiles = self._profile_labels
+        with QSignalBlocker(self.legacy_choice):
+            self.legacy_choice.setCurrentIndex(max(0, self.legacy_choice.findData(self.sequences.currentRow())))
+        if item.sequence_id in self.choice_buttons:
+            self.choice_buttons[item.sequence_id].setChecked(True)
+        else:
+            self.choice_group.setExclusive(False)
+            for button in self.choice_buttons.values():
+                button.setChecked(False)
+            self.choice_group.setExclusive(True)
+        from src.account_slots import account_slot
+        chain = []
+        for identity in item.profile_ids:
+            if identity in self._accounts:
+                try:
+                    slot = account_slot(self._accounts[identity])
+                    chain.append(slot['slot'] if slot else profiles[identity])
+                except ValueError:
+                    chain.append('归属待核对')
+        self.chain.setText(('有效执行顺序：' + ' → '.join(chain)) if item.enabled and chain else
+                           '序列已停用' if not item.enabled else '暂无参与账号；启动时跳过空槽位和未参与账号。')
         self.enabled_button.setText('停用序列' if item.enabled else '启用序列')
         from src.account_slots import FIXED_SEQUENCES, slot_owners, slots_for
         fixed = item.sequence_id in FIXED_SEQUENCES
@@ -192,7 +269,10 @@ class SequenceManagementTab(CustomTab):
                     row.setToolTip(text)
                     row.setData(Qt.UserRole, identity)
                     row.setData(Qt.UserRole + 1, text)
-                    row.setSizeHint(QSize(0, 48 if not self.readonly else 40))
+                    row.setData(Qt.UserRole + 2, dict(slot=slot, label=profiles[identity] if identity else
+                                                    '槽位冲突，请核对' if identities else '空槽位', status=status if identity else '跳过',
+                                                    summary=self._task_summaries.get(identity, ''), selected=selected))
+                    row.setSizeHint(QSize(0, 64))
                     if identity:
                         row.setCheckState(Qt.Checked if selected else Qt.Unchecked)
                         row.setFlags(row.flags() & ~Qt.ItemIsUserCheckable if self.readonly else
@@ -202,7 +282,7 @@ class SequenceManagementTab(CustomTab):
                 self.order_section.set_description('勾选表示参与执行；槽位归属在对应账号的任务总览设置。'
                                                    if not self.readonly else '执行顺序固定；此页只读。')
                 self.order_section.set_summary(f'{FIXED_SEQUENCES[item.sequence_id][0]} · {len(item.profile_ids)} 个参与账号')
-                self.members.setFixedHeight(488 if not self.readonly else 408)
+                self.members.setFixedHeight(648)
             except ValueError as error:
                 self.status.setText(str(error))
             self._show_snapshot()
@@ -256,6 +336,9 @@ class SequenceManagementTab(CustomTab):
                              ' · 下个账号' if pending and identity == pending[0] else ' · 本轮待执行')
                 if row.text() != base + state:
                     row.setText(base + state)
+                metadata = row.data(Qt.UserRole + 2)
+                if metadata is not None and metadata.get('live', '') != state.removeprefix(' · '):
+                    row.setData(Qt.UserRole + 2, dict(metadata, live=state.removeprefix(' · ')))
 
     def _membership_changed(self, *_):
         if self.readonly or self.operation.busy:

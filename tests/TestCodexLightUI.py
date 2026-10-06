@@ -11,10 +11,10 @@ class TestCodexLightUI(unittest.TestCase):
     def test_theme_tokens_are_fixed_light(self):
         from src.gui.CodexTheme import COLORS, codex_style_sheet
 
-        self.assertEqual(COLORS["window"], "#FAFAFA")
+        self.assertEqual(COLORS["window"], "#F5F7FA")
         self.assertEqual(COLORS["panel"], "#FFFFFF")
-        self.assertEqual(COLORS["border"], "#E5E7EB")
-        self.assertEqual(COLORS["accent"], "#0969DA")
+        self.assertEqual(COLORS["border"], "#E3E8EF")
+        self.assertEqual(COLORS["accent"], "#356CE7")
         self.assertNotIn("dark", codex_style_sheet().lower())
 
     def test_hubs_do_not_create_nested_tab_widgets(self):

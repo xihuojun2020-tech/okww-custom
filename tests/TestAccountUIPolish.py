@@ -226,6 +226,7 @@ class TestAccountUIPolish(unittest.TestCase):
                         for _ in range(5):
                             self.app.processEvents()
                         expanded_height = editor.view.height()
+                        self.assertLessEqual(editor.order_section.header.height(), 72)
                         editor.order_section.set_expanded(False)
                         for _ in range(5):
                             self.app.processEvents()
@@ -233,7 +234,7 @@ class TestAccountUIPolish(unittest.TestCase):
                         page.grab().save(f'test_out/sequence-collapse-{route}-{width}-scale-{scale}.png')
                         section = editor.order_section
                         self.assertLessEqual(section.header.height(), 72, (route, width, section.header.height()))
-                        self.assertLessEqual(section.height(), section.header.height() + 16, (route, width, section.height()))
+                        self.assertLessEqual(section.height(), section.header.height() + 34, (route, width, section.height()))
                         self.assertLessEqual(editor.help.height(), editor.help.sizeHint().height() + 4)
                         self.assertGreaterEqual(expanded_height - editor.view.height(), 300,
                                                 (route, width, expanded_height, editor.view.height()))
@@ -250,6 +251,93 @@ class TestAccountUIPolish(unittest.TestCase):
                         self.assertEqual(editor.members.count(), 10)
             finally:
                 self.cleanup_page(page)
+
+    def test_bookshelf_filters_include_waiting_and_keep_manual_actions_explicit(self):
+        with tempfile.TemporaryDirectory() as root:
+            env = make_account_environment(root)
+            page = AccountTaskOverview(env.repository, lambda: {})
+            page.resize(1100, 850)
+            page.show()
+            page.timer.stop()
+            try:
+                cards = [AccountTaskCard('nightmare_nest', '残像聚落', 'pending', '所选聚落 1 / 2', route='nightmare_nest'),
+                         AccountTaskCard('forgery', '凝素领域', 'running', '绿色当量 25 / 125', route='forgery'),
+                         AccountTaskCard('tacet', '无音区', 'waiting', '等待前序任务', route='tacet'),
+                         AccountTaskCard('weekly_boss', '战歌重奏', 'completed', completed_at='2026-10-06T08:00:00+08:00'),
+                         AccountTaskCard('adversity_tower', '深塔', 'attention', '本期受阻关卡 1 个', route='adversity_tower'),
+                         AccountTaskCard('manual', '海墟提醒', 'pending', route='manual', manual=True)]
+                page._cards = cards
+                page._render(cards, beijing_now(), {'elapsed': 42})
+                self.app.processEvents()
+                self.assertFalse(page._groups['completed'].content.isVisible())
+                self.assertIn('42', page._rows['forgery'].time_label.text())
+                page._set_filter('pending')
+                self.app.processEvents()
+                self.assertTrue(page._rows['tacet'].isVisible())
+                self.assertTrue(page._rows['forgery'].isVisible())
+                self.assertFalse(page._rows['weekly_boss'].isVisible())
+                page._set_filter('attention')
+                self.assertTrue(page._rows['adversity_tower'].isVisible())
+                self.assertFalse(page._rows['manual'].isVisible())
+                page._set_filter('completed')
+                self.assertTrue(page._groups['completed'].content.isVisible())
+                page._set_filter(None)
+                launch = []
+                page.launch_page.connect(launch.append)
+                with patch.object(page, '_mark') as mark:
+                    page._rows['manual'].primary.click()
+                    mark.assert_called_once_with('manual', True)
+                self.assertFalse(launch)
+                self.assertEqual(page._rows['adversity_tower'].primary.text(), '单独启动')
+                self.assertIn('08:00', page.recent.text())
+                self.app.processEvents()
+                page.grab().save('test_out/bookshelf-overview-states.png')
+            finally:
+                self.cleanup_page(page)
+
+    def test_slot_delegate_preserves_native_keyboard_checks_and_readonly_order(self):
+        from PySide6.QtTest import QTest
+        with tempfile.TemporaryDirectory() as root:
+            env = make_account_environment(root)
+            env.repository.migrate_fixed_account_slots()
+            editor = SequenceManagementTab(SequenceRepository(env.repository))
+            readonly = SequenceManagementTab(editor.service, readonly=True)
+            editor.resize(1150, 1000)
+            editor.show()
+            try:
+                editor.choice_buttons['序列2'].click()
+                self.assertEqual(editor._selected().sequence_id, '序列2')
+                editor.choice_buttons['序列1'].click()
+                item = editor.members.item(2)
+                identity = item.data(Qt.UserRole)
+                checked = item.checkState() == Qt.Checked
+                editor.members.setCurrentRow(2)
+                editor.members.setFocus()
+                self.app.processEvents()
+                QTest.keyClick(editor.members, Qt.Key_Space)
+                self.drain(lambda: not editor.operation.busy)
+                selected = env.repository.load_sequence('序列1').profile_ids
+                self.assertEqual(identity in selected, not checked)
+                readonly.refresh()
+                readonly.members.setCurrentRow(2)
+                QTest.keyClick(readonly.members, Qt.Key_Space)
+                self.app.processEvents()
+                self.assertEqual(env.repository.load_sequence('序列1').profile_ids, selected)
+                self.assertIsNone(readonly.members.item(2).data(Qt.CheckStateRole))
+                legacy = editor.legacy_choice.findText('S1')
+                self.assertGreaterEqual(legacy, 0)
+                editor.legacy_choice.setCurrentIndex(legacy)
+                self.assertEqual(editor._selected().sequence_id, 'S1')
+                editor.choice_buttons['序列1'].click()
+                self.app.processEvents()
+                editor.grab().save('test_out/bookshelf-sequence-native.png')
+            finally:
+                for page in (editor, readonly):
+                    page.live_timer.stop()
+                    page.close()
+                    page.deleteLater()
+                QThreadPool.globalInstance().waitForDone(5000)
+                self.app.processEvents()
 
 
 if __name__ == '__main__':

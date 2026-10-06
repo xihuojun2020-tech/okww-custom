@@ -36,7 +36,9 @@ class DiagnosticDetails(QDialog):
         self.root=Path(root);self.index=DiagnosticIndex(root, REPO);self.snapshot={};self.page=0;self.rows=[]
         layout=QVBoxLayout(self)
         layout.setContentsMargins(16,16,16,16)
-        layout.setSpacing(SPACING['section'])
+        # This evidence dialog has several fixed controls around its tables;
+        # keep the compact rhythm so 640px windows still expose the actions.
+        layout.setSpacing(SPACING['row'])
         title=QLabel('日志与截图上传明细',self);title.setProperty('role','pageTitle');layout.addWidget(title)
         self.overview=SectionPanel('传输概览',parent=self,collapsible=True)
         layout.addWidget(self.overview)

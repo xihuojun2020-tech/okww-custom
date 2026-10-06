@@ -170,7 +170,7 @@ class TaskCard(ConfigCard):
         self.view.setObjectName('fluentTaskDetails')
         self.setStyleSheet(f'''
             QWidget#fluentTaskSample {{ background: {COLORS['panel']};
-                border: 1px solid {COLORS['border']}; border-radius: 8px; }}
+                border: 1px solid {COLORS['border']}; border-radius: 12px; }}
             QWidget#fluentTaskSample QWidget#disclosureHeader {{
                 background: transparent; border: 0; border-radius: 8px; }}
             QWidget#fluentTaskSample QWidget#disclosureHeader:hover {{

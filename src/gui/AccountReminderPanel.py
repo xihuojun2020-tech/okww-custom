@@ -32,9 +32,13 @@ class AccountReminderPanel(SectionPanel):
         self.note_label = QLabel('备注', self)
         self.add_widget(self.note_label)
         self.add_widget(self.note)
-        self.add_widget(QLabel('具体任务提醒（勾选仅展示；深塔单独启动，其他项目手动标记）', self))
+        help_label = QLabel('具体任务提醒（勾选仅展示；深塔单独启动，其他项目手动标记）', self)
+        help_label.setWordWrap(True)
+        help_label.setProperty('role', 'description')
+        self.add_widget(help_label)
         self.task_host = QWidget(self)
         task_grid = QGridLayout(self.task_host)
+        self.task_grid = task_grid
         task_grid.setContentsMargins(0, 0, 0, 0)
         self.task_choices = {}
         for index, (key, title) in enumerate(TASK_REMINDERS.items()):
@@ -66,8 +70,8 @@ class AccountReminderPanel(SectionPanel):
         for value in ('两侧塔优先', '中间塔优先'):
             self.deep_priority.addItem(value, value)
         self.deep_priority.currentIndexChanged.connect(self.edited)
-        deep_grid.addWidget(QLabel('深塔挑战顺序（单独启动时生效）', self), 0, 0)
-        deep_grid.addWidget(self.deep_priority, 0, 1)
+        from src.gui.FlatSettingRow import FlatSettingRow
+        deep_grid.addWidget(FlatSettingRow('深塔挑战顺序', self.deep_priority, '单独启动时生效', self), 0, 0, 1, 2)
         self.deep_towers = {}
         for index, title in enumerate(('残响之塔', '深境之塔', '回音之塔'), 1):
             box = QCheckBox(title, self)
@@ -86,6 +90,20 @@ class AccountReminderPanel(SectionPanel):
             self.grid.addWidget(checkbox, index // columns, index % columns)
         for column in range(columns):
             self.grid.setColumnStretch(column, 1)
+        narrow = self.content.width() < 600
+        if narrow != getattr(self, '_task_narrow', None):
+            self._task_narrow = narrow
+            while self.task_grid.count():
+                self.task_grid.takeAt(0)
+            for index, (box, rule, date) in enumerate(self.task_choices.values()):
+                if narrow:
+                    self.task_grid.addWidget(box, index * 3, 0, 1, 3)
+                    self.task_grid.addWidget(rule, index * 3 + 1, 0, 1, 3)
+                    self.task_grid.addWidget(date, index * 3 + 2, 0, 1, 3)
+                else:
+                    self.task_grid.addWidget(box, index, 0)
+                    self.task_grid.addWidget(rule, index, 1)
+                    self.task_grid.addWidget(date, index, 2)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

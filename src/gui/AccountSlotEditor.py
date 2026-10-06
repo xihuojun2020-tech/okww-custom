@@ -1,5 +1,5 @@
 """Draft-only fixed-slot ownership editor; never writes on navigation."""
-from PySide6.QtCore import Signal, QSignalBlocker
+from PySide6.QtCore import Signal, QSignalBlocker, Qt
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QCheckBox, QPushButton
 from src.gui.ChoiceControls import QtComboBox
 from src.account_slots import FIXED_SEQUENCES, SLOT_KEY, account_slot, slots_for, slot_owners
@@ -12,8 +12,27 @@ class AccountSlotEditor(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName('accountOwnership')
+        self.setAttribute(Qt.WA_StyledBackground)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(16, 10, 16, 10)
+        header = QHBoxLayout()
+        self.summary = QLabel('未分配序列', self)
+        self.summary.setWordWrap(True)
+        self.summary.setProperty('role', 'sectionTitle')
+        header.addWidget(self.summary, 1)
+        self.toggle = QPushButton('归属设置', self)
+        self.toggle.setProperty('role', 'link')
+        self.toggle.setCheckable(True)
+        self.toggle.setAccessibleName('展开或收起当前账号的序列归属设置')
+        header.addWidget(self.toggle)
+        layout.addLayout(header)
+        self.details = QWidget(self)
+        detail_layout = QVBoxLayout(self.details)
+        detail_layout.setContentsMargins(0, 8, 0, 0)
+        layout.addWidget(self.details)
+        self.details.hide()
+        self.toggle.toggled.connect(self.details.setVisible)
         row = QHBoxLayout()
         row.addWidget(QLabel('账号归属', self))
         self.sequence = QtComboBox(self)
@@ -28,13 +47,13 @@ class AccountSlotEditor(QWidget):
         row.addStretch(1)
         order = QPushButton('查看执行顺序', self)
         order.clicked.connect(self.order_requested)
-        layout.addLayout(row)
+        detail_layout.addLayout(row)
         self.participating = QCheckBox('参与该序列执行', self)
         footer = QHBoxLayout()
         footer.addWidget(self.participating)
         footer.addStretch(1)
         footer.addWidget(order)
-        layout.addLayout(footer)
+        detail_layout.addLayout(footer)
         self.error = QLabel('', self)
         self.error.setWordWrap(True)
         self.error.setProperty('role', 'error')
@@ -56,6 +75,7 @@ class AccountSlotEditor(QWidget):
             self._populate(assignment['slot'] if assignment else None)
             self.participating.setChecked(bool(assignment and assignment['sequence'] in memberships))
         self._validate()
+        self._update_summary()
 
     def _populate(self, selected=None):
         with QSignalBlocker(self.slot):
@@ -85,11 +105,21 @@ class AccountSlotEditor(QWidget):
                 error = str(exc)
         self.error.setText(error)
         self.error.setVisible(bool(error))
+        if error:
+            self.toggle.setChecked(True)
         return error
+
+    def _update_summary(self):
+        assignment = self.assignment()
+        text = f"{FIXED_SEQUENCES[assignment['sequence']][0]} · {assignment['slot']}" if assignment else '未分配序列'
+        if assignment:
+            text += ' · ' + ('参与执行' if self.participating.isChecked() else '未参与执行')
+        self.summary.setText(text + (' · 草稿' if self._changed else ''))
 
     def _edit(self, *_):
         self._changed = True
         self._validate()
+        self._update_summary()
         self.edited.emit()
 
     def assignment(self):

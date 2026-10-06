@@ -29,9 +29,10 @@ class SectionPanel(QWidget):
         self.content = QWidget(self)
         self.content_layout = QVBoxLayout(self.content)
         self.content_layout.setContentsMargins(0, 0, 0, 0)
-        self.content_layout.setSpacing(2)
+        self.content_layout.setSpacing(SPACING['row'])
+        self.content_layout.setAlignment(Qt.AlignTop)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, SPACING['row'])
+        layout.setContentsMargins(*(SPACING['panel'],) * 4)
         layout.setSpacing(SPACING['row'])
         self.header = DisclosureHeader(title, self)
         self.toggle_button = self.header.expandButton
@@ -45,6 +46,13 @@ class SectionPanel(QWidget):
         self.description_label.setVisible(bool(description))
         layout.addWidget(self.content)
         self.set_expanded(expanded if collapsible else True)
+
+    def set_flat(self):
+        """Use for page wrappers and task groups containing their own panels."""
+        self.setProperty('flat', True)
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.style().unpolish(self)
+        self.style().polish(self)
 
     def set_expanded(self, expanded):
         expanded = bool(expanded or not self.collapsible)
