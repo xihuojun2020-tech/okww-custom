@@ -7,12 +7,13 @@ from time import perf_counter
 from functools import partial
 
 from PySide6.QtCore import Qt, Signal, QTimer, QSignalBlocker
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (QCheckBox, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout, QLabel,
                                QMessageBox, QPlainTextEdit, QPushButton, QInputDialog, QDialog,
                                QDialogButtonBox,
                                QVBoxLayout, QWidget, QLineEdit, QSizePolicy, QScrollArea,
-                               QTreeWidget, QTreeWidgetItem, QStackedWidget, QLayout, QMenu)
-from qfluentwidgets import BodyLabel, FluentIcon
+                               QTreeWidget, QTreeWidgetItem, QStackedWidget, QLayout)
+from qfluentwidgets import BodyLabel, FluentIcon, DropDownPushButton, RoundMenu
 
 from ok.gui.widget.CustomTab import CustomTab
 from src.account_config_editor import AccountConfigEditor, ProfileDraft, sanitize_error
@@ -35,6 +36,16 @@ from src.gui.FlatSettingRow import FlatSettingRow
 
 from src.gui.ChoiceControls import QtComboBox as QComboBox
 ClickOnlyComboBox = QComboBox
+
+
+class _AccountMoreButton(DropDownPushButton):
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key_Space, Qt.Key_Return, Qt.Key_Enter, Qt.Key_F4) or (
+                event.key() == Qt.Key_Down and event.modifiers() & Qt.AltModifier):
+            self._showMenu()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
 
 
 class _AccountStatusLabel(BodyLabel):
@@ -465,10 +476,17 @@ class AccountConfigTab(CustomTab):
         self.save_button.setProperty('role', 'primary')
         self.delete_button.setProperty('role', 'danger')
         row.addWidget(self.new_button)
-        self.more_button = QPushButton('更多', root)
-        menu = QMenu(self.more_button)
-        menu.addAction('账号识别信息', lambda: self._select_route('identity'))
-        menu.addAction('高级账号操作', lambda: self._select_route('advanced'))
+        self.more_button = _AccountMoreButton('更多', root)
+        self.more_button.setFixedHeight(36)
+        self.more_button.setMinimumWidth(88)
+        self.more_button.setFont(self.profile_combo.font())
+        menu = RoundMenu(parent=self.more_button)
+        menu.view.setFont(self.profile_combo.font())
+        menu.setItemHeight(36)
+        for title, route in (('账号识别信息', 'identity'), ('高级账号操作', 'advanced')):
+            action = QAction(title, menu)
+            action.triggered.connect(partial(self._select_route, route))
+            menu.addAction(action)
         self.more_button.setMenu(menu)
         row.addWidget(self.more_button)
         for button in (self.preview_button, self.save_button, self.discard_button):
