@@ -660,7 +660,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         self._run_start_profile_id = profile_id
         self._run_return_profile_id = profile_id
         order = self._run_profile_order
-        if profile_id in order:
+        from src.account_slots import FIXED_SEQUENCES
+        if profile_id in order and self._active_run_snapshot.sequence_id not in FIXED_SEQUENCES:
             index = order.index(profile_id)
             self._run_profile_order = order[index:] + order[:index]
 
@@ -1050,11 +1051,13 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
         # 第一轮：主界面启动先退登并识别真实账号；登录界面启动则从序列选号。
         in_main = self._classify_start_state() == 'world'
+        from src.account_slots import FIXED_SEQUENCES
+        fixed_order = getattr(getattr(self, '_active_run_snapshot', None), 'sequence_id', None) in FIXED_SEQUENCES
         if sequence and self._next_target_account() is None:
             self._finish_sequence()
             return
         if in_main:
-            if configured_start:
+            if configured_start and (not fixed_order or self._same_account(first_account, self._next_target_account())):
                 if not self._is_done(first_account) and not self._account_start_allowed(first_account):
                     self._finish_sequence()
                     return
@@ -1093,6 +1096,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
                 MultiAccountDailyTask._set_run_start(self, first_account)
                 in_sequence = any(self._same_account(first_account, acc) for acc in sequence)
+                if fixed_order and not self._same_account(first_account, self._next_target_account()):
+                    in_sequence = False
                 if in_sequence and not self._is_done(first_account):
                     if not self._account_start_allowed(first_account):
                         self._finish_sequence()

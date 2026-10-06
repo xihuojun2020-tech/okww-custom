@@ -654,7 +654,7 @@ dialog.close()
     def test_account_page_exposes_template_and_new_account_actions(self):
         source = inspect.getsource(AccountConfigTab)
         self.assertIn("编辑新账号模板", source)
-        self.assertIn("新建账号配置", source)
+        self.assertIn("新建账号", source)
         self.assertIn("ClickOnlyComboBox(self.form_host)", source)
 
     def test_sequence_page_keeps_only_creation_deletion_and_member_order_actions(self):

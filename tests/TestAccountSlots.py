@@ -1,0 +1,141 @@
+import copy
+import tempfile
+import unittest
+
+from src.account_slots import account_slot, migrate_slots, ordered_members, SLOT_KEY
+from src.account_repository import AccountRepositoryError, ProfileEditScope
+from src.sequence_repository import SequenceRepository
+from tests.fixture_support import make_account_environment, synthetic_identity
+
+
+class TestAccountSlots(unittest.TestCase):
+    def test_migration_preserves_selections_data_and_numeric_order(self):
+        with tempfile.TemporaryDirectory() as root:
+            env = make_account_environment(root, names=('A1', 'A3', 'A4', 'A10'))
+            ids = {n: synthetic_identity(n)['profile_id'] for n in ('A1','A3','A4','A10')}
+            raw = copy.deepcopy(env.master)
+            raw['sequences']['序列1'] = [ids['A10'], ids['A4'], ids['A3']]
+            candidate, changed = migrate_slots(raw)
+            self.assertTrue(changed)
+            self.assertEqual(candidate['sequences']['序列1'], [ids['A3'],ids['A4'],ids['A10']])
+            self.assertNotIn(ids['A1'], candidate['sequences']['序列1'])
+            self.assertEqual(candidate['sequences']['S1'], raw['sequences']['S1'])
+            for identity, old in raw['profiles'].items():
+                self.assertEqual(candidate['profiles'][identity]['task_config'], old['task_config'])
+            self.assertFalse(migrate_slots(candidate)[1])
+            env.repository._publish_master(candidate)
+            snapshot = SequenceRepository(env.repository).create_run_snapshot('序列1')
+            self.assertEqual(snapshot.profile_ids, (ids['A3'],ids['A4'],ids['A10']))
+            draft = env.repository.load_profile(ids['A4'])
+            account = copy.deepcopy(draft.account)
+            account['extensions'][SLOT_KEY] = {'sequence':'序列1','slot':'A2'}
+            env.repository.publish_profile(ProfileEditScope(draft.profile_id,draft.revision),
+                {'account':account,'tasks':draft.tasks})
+            self.assertEqual(snapshot.profile_ids, (ids['A3'],ids['A4'],ids['A10']))
+            self.assertEqual(SequenceRepository(env.repository).create_run_snapshot('序列1').profile_ids,
+                             (ids['A4'],ids['A3'],ids['A10']))
+
+    def test_occupied_slot_rejects_atomic_publish_and_keeps_runtime(self):
+        from src.account_repository import ProfileEditScope
+        with tempfile.TemporaryDirectory() as root:
+            env = make_account_environment(root)
+            env.repository.migrate_fixed_account_slots()
+            profile = env.repository.load_profile(synthetic_identity('A4')['profile_id'])
+            env.integrity.set_progress('test-retained', {'count':7})
+            account = copy.deepcopy(profile.account)
+            account['extensions'][SLOT_KEY] = {'sequence':'序列1','slot':'A3'}
+            with self.assertRaises(AccountRepositoryError):
+                env.repository.publish_profile(ProfileEditScope(profile.profile_id,profile.revision),
+                                               {'account':account,'tasks':profile.tasks})
+            self.assertEqual(account_slot(env.repository.load_profile(profile.profile_id).account)['slot'],'A4')
+            self.assertEqual(env.integrity.get_progress('test-retained'),{'count':7})
+
+    def test_duplicate_legacy_slots_are_not_guessed(self):
+        accounts = {'one':{'display_name':'A4'}, 'two':{'display_name':'A4'}}
+        raw = {'profiles':accounts, 'sequences':{'序列1':['one','two']}, 'extensions':{}}
+        migrated, _ = migrate_slots(raw)
+        self.assertEqual(migrated['sequences']['序列1'], ['one','two'])
+        with self.assertRaises(ValueError):
+            ordered_members(migrated['profiles'],['one'],'序列1')
+        self.assertEqual(ordered_members(accounts,['two','one'],'自定义'),['two','one'])
+
+    def test_cross_sequence_move_unassign_and_bundle_restore_keep_journals(self):
+        from src.account_config_bundle import AccountConfigBundleService
+        with tempfile.TemporaryDirectory() as root:
+            env = make_account_environment(root)
+            env.repository.migrate_fixed_account_slots()
+            identity = synthetic_identity('A4')['profile_id']
+            sequence = env.repository.load_sequence('序列1')
+            env.repository.publish_sequence('序列1', [identity], expected_revision=sequence.revision)
+            env.integrity.set_progress('forgery:test:' + identity, {'units': 50})
+            profile = env.repository.load_profile(identity)
+            account = copy.deepcopy(profile.account)
+            account['extensions'][SLOT_KEY] = {'sequence': '序列2', 'slot': 'B10'}
+            env.repository.publish_profile(ProfileEditScope(identity, profile.revision), {'account': account, 'tasks': profile.tasks})
+            self.assertEqual(env.repository.load_sequence('序列1').profile_ids, ())
+            self.assertEqual(env.repository.load_sequence('序列2').profile_ids, (identity,))
+            bundle_service = AccountConfigBundleService(root, integrity_service=env.integrity)
+            bundle = bundle_service.export_bundle()
+            profile = env.repository.load_profile(identity)
+            account = copy.deepcopy(profile.account)
+            account['extensions'][SLOT_KEY] = None
+            env.repository.publish_profile(ProfileEditScope(identity, profile.revision), {'account': account, 'tasks': profile.tasks})
+            self.assertEqual(env.repository.load_sequence('序列2').profile_ids, ())
+            bundle_service.import_bundle(bundle, confirm=True, trust_external=True, preserve_runtime_and_preferences=True)
+            self.assertEqual(account_slot(env.repository.load_profile(identity).account)['slot'], 'B10')
+            self.assertEqual(env.integrity.get_progress('forgery:test:' + identity), {'units': 50})
+
+    def test_fixed_sequence_guards_and_b_numeric_order(self):
+        accounts = {slot: {'display_name': slot} for slot in ('B1', 'B9', 'B10')}
+        self.assertEqual(ordered_members(accounts, ['B10', 'B1', 'B9'], '序列2'), ['B1', 'B9', 'B10'])
+        with tempfile.TemporaryDirectory() as root:
+            env = make_account_environment(root)
+            env.repository.migrate_fixed_account_slots()
+            sequence = env.repository.load_sequence('序列1')
+            with self.assertRaises(AccountRepositoryError):
+                env.repository.delete_sequence('序列1', expected_revision=sequence.revision)
+            with self.assertRaises(AccountRepositoryError):
+                env.repository.rename_sequence('序列1', '其他', expected_revision=sequence.revision)
+
+    def test_actual_daily_start_does_not_rotate_fixed_order_from_current_account(self):
+        from src.task.MultiAccountDailyTask import MultiAccountDailyTask
+        with tempfile.TemporaryDirectory() as root:
+            env = make_account_environment(root)
+            env.repository.migrate_fixed_account_slots()
+            ids = [synthetic_identity(n)['profile_id'] for n in ('A3', 'A4')]
+            sequence = env.repository.load_sequence('序列1')
+            env.repository.publish_sequence('序列1', ids, expected_revision=sequence.revision)
+            snapshot = SequenceRepository(env.repository).create_run_snapshot('序列1')
+            task = MultiAccountDailyTask.__new__(MultiAccountDailyTask)
+            task._active_run_snapshot = snapshot
+            task._run_profile_order = snapshot.profile_ids
+            task._profile_id_for = lambda name: synthetic_identity(name)['profile_id']
+            task._set_run_start('A4')
+            self.assertEqual(task._run_profile_order, tuple(ids))
+            self.assertEqual(task._run_return_profile_id, ids[1])
+
+    def test_world_start_at_a4_switches_to_first_pending_fixed_slot(self):
+        from src.task.MultiAccountDailyTask import MultiAccountDailyTask, CURRENT_ACCOUNT
+        from types import SimpleNamespace
+        from unittest.mock import Mock, patch
+        task = SimpleNamespace(
+            config={CURRENT_ACCOUNT: 'A4'}, done_set=set(),
+            _active_run_snapshot=SimpleNamespace(sequence_id='序列1'),
+            _run_profile_order=('id3', 'id4'), _profile_id_for=lambda name: 'id' + name[1:],
+            get_sequence_accounts=lambda: ['A3', 'A4'], _load_today_progress=lambda: [],
+            _task_label=lambda: '每日任务',
+            _classify_start_state=lambda: 'world', _next_target_account=lambda: 'A3',
+            _same_account=lambda a, b: a == b, _is_done=lambda _: False,
+            _switch_to_login=Mock(), _detect_current_account_from_login=Mock(return_value='A4'),
+            _select_and_login_specific=Mock(), _select_and_login_account=Mock(return_value='A3'),
+            _execute_account_task=Mock(return_value=(True, None)), info_set=Mock(), log_info=Mock())
+        with patch.object(MultiAccountDailyTask, '_advance_after_account', return_value=True):
+            MultiAccountDailyTask._run_inner(task)
+        task._switch_to_login.assert_called_once()
+        task._detect_current_account_from_login.assert_called_once()
+        task._select_and_login_specific.assert_not_called()
+        task._execute_account_task.assert_called_once_with('A3')
+
+
+if __name__ == '__main__':
+    unittest.main()

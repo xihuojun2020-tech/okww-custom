@@ -375,13 +375,24 @@ class AccountRepository:
                 "display_name": label,
                 "task_config": task_config,
                 "schedule": {},
-                "extensions": {"garden_execution_mode_migration": 1},
+                "extensions": {**copy.deepcopy(dict(account.get('extensions', {}))),
+                               "garden_execution_mode_migration": 1},
             }
             candidate = copy.deepcopy(raw)
             source_key = "accounts" if "accounts" in candidate and "profiles" not in candidate else "profiles"
             candidate.setdefault(source_key, {})[profile_id] = profile
+            from src.account_slots import SLOT_KEY, account_slot, validate_assignment, ordered_members
+            profile['extensions'][SLOT_KEY] = account_slot(profile)
+            try:
+                validate_assignment(candidate[source_key], profile_id)
+            except ValueError as error:
+                raise AccountRepositoryError(str(error)) from error
             for name in requested_sequences:
                 candidate["sequences"][name].append(profile_id)
+                try:
+                    candidate['sequences'][name] = ordered_members(candidate[source_key], candidate['sequences'][name], name)
+                except ValueError as error:
+                    raise AccountRepositoryError(str(error)) from error
             self._publish_master(candidate)
             return self.load_profile(profile_id)
 
@@ -392,6 +403,15 @@ class AccountRepository:
         with self._lock:
             raw, _, _ = self._load_index()
             candidate, changed = migrate_garden_modes(raw)
+            if changed:
+                self._publish_master(candidate)
+            return changed
+
+    def migrate_fixed_account_slots(self) -> bool:
+        from .account_slots import migrate_slots
+        with self._lock:
+            raw, _, _ = self._load_index()
+            candidate, changed = migrate_slots(raw)
             if changed:
                 self._publish_master(candidate)
             return changed
@@ -438,6 +458,18 @@ class AccountRepository:
             candidate = copy.deepcopy(raw)
             candidate["profiles"][profile_id] = {**copy.deepcopy(dict(account)),
                                                   "task_config": copy.deepcopy(dict(tasks))}
+            from .account_slots import account_slot, validate_assignment, FIXED_SEQUENCES, ordered_members
+            old_slot, new_slot = account_slot(accounts[profile_id]), account_slot(account)
+            try:
+                if old_slot != new_slot:
+                    validate_assignment(candidate['profiles'], profile_id)
+                    participating = any(profile_id in candidate['sequences'].get(name, []) for name in FIXED_SEQUENCES)
+                    for name in FIXED_SEQUENCES:
+                        candidate['sequences'][name] = [i for i in candidate['sequences'].get(name, []) if i != profile_id]
+                    if participating and new_slot:
+                        candidate['sequences'][new_slot['sequence']].append(profile_id)
+            except ValueError as error:
+                raise AccountRepositoryError(str(error)) from error
             if "sequence_ids" in payload:
                 sequence_ids = tuple(str(name).strip() for name in payload["sequence_ids"])
                 if len(set(sequence_ids)) != len(sequence_ids):
@@ -451,6 +483,13 @@ class AccountRepository:
                     else:
                         members = [member for member in members if member != profile_id]
                     candidate["sequences"][name] = members
+            if old_slot != new_slot or 'sequence_ids' in payload:
+                try:
+                    for name in FIXED_SEQUENCES:
+                        if name in candidate['sequences']:
+                            candidate['sequences'][name] = ordered_members(candidate['profiles'], candidate['sequences'][name], name)
+                except ValueError as error:
+                    raise AccountRepositoryError(str(error)) from error
             self._publish_master(candidate)
             return self.load_profile(profile_id)
 
@@ -483,6 +522,11 @@ class AccountRepository:
                 raise AccountRepositoryError("序列不能包含重复账号")
             if any(value not in accounts for value in members):
                 raise AccountRepositoryError("序列引用了不存在的账号")
+            from .account_slots import ordered_members
+            try:
+                members = ordered_members(accounts, members, name)
+            except ValueError as error:
+                raise AccountRepositoryError(str(error)) from error
             candidate = copy.deepcopy(raw)
             candidate.setdefault("sequences", {})[name] = members
             settings = candidate.setdefault("extensions", {}).setdefault("pc_sequence_settings", {})
@@ -496,6 +540,9 @@ class AccountRepository:
             if self._revision(raw) != str(expected_revision):
                 raise ProfileRevisionConflict(f"序列 {sequence_id} 已被其他修改")
             old, new = str(sequence_id).strip(), str(new_sequence_id).strip()
+            from src.account_slots import FIXED_SEQUENCES
+            if old in FIXED_SEQUENCES or new in FIXED_SEQUENCES:
+                raise AccountRepositoryError('固定序列不能重命名')
             if old not in sequences or not new or new in sequences:
                 raise AccountRepositoryError("序列重命名目标无效或已存在")
             candidate = copy.deepcopy(raw)
@@ -513,6 +560,9 @@ class AccountRepository:
             if self._revision(raw) != str(expected_revision):
                 raise ProfileRevisionConflict(f"序列 {sequence_id} 已被其他修改")
             name = str(sequence_id).strip()
+            from src.account_slots import FIXED_SEQUENCES
+            if name in FIXED_SEQUENCES:
+                raise AccountRepositoryError('固定序列不能删除；可取消账号的参与执行选择')
             if name not in sequences:
                 raise AccountRepositoryError(f"序列不存在：{name}")
             candidate = copy.deepcopy(raw)

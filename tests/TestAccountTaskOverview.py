@@ -198,6 +198,18 @@ class TestAccountTaskState(unittest.TestCase):
         self.assertEqual(cards['daily_activity'].state, 'completed')
         self.assertEqual(cards['daily_run'].state, 'attention')
 
+    def test_failed_attempt_time_is_not_reported_as_completion(self):
+        previous = (self.now - timedelta(days=1)).isoformat()
+        attempt = self.now.isoformat()
+        self.env.integrity.record_completion(self.identity, 'Daily Task', previous)
+        self.env.integrity.set_progress('task_state_v1:' + self.identity, {'daily_activity': {
+            'period_id': game_day_key(self.now), 'result': 'failed', 'actual_points': 80,
+            'rewards_claimed': False, 'finished_at': attempt}})
+        card = self.cards()['daily_activity']
+        self.assertEqual(card.state, 'attention')
+        self.assertEqual(card.completed_at, previous)
+        self.assertEqual(card.last_attempt_at, attempt)
+
 
 class TestAccountNavigationUI(unittest.TestCase):
     @classmethod
@@ -221,7 +233,7 @@ class TestAccountNavigationUI(unittest.TestCase):
             with patch('src.gui.AccountSettingsTab.AccountConfigTab',
                        side_effect=lambda: AccountConfigTab(AccountConfigEditor(env.repository))), \
                  patch('src.gui.AccountSettingsTab.SequenceManagementTab',
-                       side_effect=lambda: SequenceManagementTab(SequenceRepository(env.repository))):
+                       side_effect=lambda *args, **kwargs: SequenceManagementTab(SequenceRepository(env.repository), **kwargs)):
                 page = AccountSettingsTab()
             page.resize(1150, 800)
             page.show()

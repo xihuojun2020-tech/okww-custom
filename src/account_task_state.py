@@ -19,6 +19,7 @@ class AccountTaskCard:
     source: str = '程序记录'
     route: str = ''
     manual: bool = False
+    last_attempt_at: str = ''
 
 
 def task_signature(task_id, tasks):
@@ -104,8 +105,11 @@ def build_account_task_cards(profile, service, *, now=None, live=None):
             status, detail = 'running', live.get('detail') or detail
         elif current_event and event.get('result') == 'running' and not done:
             status, detail = 'attention', '上次运行未确认结束，请核对记录'
+        if key in ('world_boss', 'forgery') and not done:
+            stamp = None
         cards.append(AccountTaskCard(key, title, status, detail, stamp or '', str(next_at),
-                                     event.get('started_at') or '', route=route or key))
+                                     event.get('started_at') or '', route=route or key,
+                                     last_attempt_at=event.get('finished_at') or ''))
 
     daily_stamp = completed.get('Daily Task')
     activity = events.get('daily_activity', {})
@@ -117,7 +121,7 @@ def build_account_task_cards(profile, service, *, now=None, live=None):
     # Legacy full daily success is retained as a historical source, not fabricated points.
     if not activity and completed_in_period(daily_stamp, now=now):
         activity_done, detail = True, '旧每日完成记录；具体积分未记录'
-    add('daily_activity', '活跃度与奖励', stamp=activity.get('finished_at') or daily_stamp,
+    add('daily_activity', '活跃度与奖励', stamp=(activity.get('finished_at') if activity_done else None) or daily_stamp,
         done=activity_done, detail=detail, next_at=next_daily_reset(now).isoformat())
     if events.get('daily_run', {}).get('period_id') == game_day_key(now) and events['daily_run'].get('result') == 'failed':
         add('daily_run', '每日流程（收尾／其他步骤）', state='attention', route='closing')

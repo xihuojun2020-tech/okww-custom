@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (QCheckBox, QFormLayout, QGridLayout, QGroupBox, Q
                                QMessageBox, QPlainTextEdit, QPushButton, QInputDialog, QDialog,
                                QDialogButtonBox,
                                QVBoxLayout, QWidget, QLineEdit, QSizePolicy, QScrollArea,
-                               QTreeWidget, QTreeWidgetItem, QStackedWidget, QLayout)
+                               QTreeWidget, QTreeWidgetItem, QStackedWidget, QLayout, QMenu)
 from qfluentwidgets import BodyLabel, FluentIcon
 
 from ok.gui.widget.CustomTab import CustomTab
@@ -35,6 +35,12 @@ from src.gui.FlatSettingRow import FlatSettingRow
 
 from src.gui.ChoiceControls import QtComboBox as QComboBox
 ClickOnlyComboBox = QComboBox
+
+
+class _AccountStatusLabel(BodyLabel):
+    def setText(self, text):
+        super().setText(text)
+        self.setVisible(bool(text) and text not in ('等待操作', '已载入独立草稿'))
 
 
 def recording_defaults():
@@ -382,6 +388,7 @@ class AccountConfigTab(CustomTab):
         self.rebind_service = AccountRebindService(self.editor.repository)
         self.draft = None
         self._failed_drafts = {}
+        self._draft_cache = {}
         root = QWidget(self.view)
         root.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         layout = QVBoxLayout(root)
@@ -395,13 +402,13 @@ class AccountConfigTab(CustomTab):
         layout.addLayout(row)
         self.metadata = BodyLabel("")
         self.metadata.setWordWrap(True)
-        layout.addWidget(self.metadata)
         self.draft_status = QLabel('尚未编辑', root)
         self.draft_status.setProperty('role', 'description')
         from src.gui.SectionPanel import SectionPanel
         self.identity_group = SectionPanel("账号识别信息", "登录身份只读；所属序列可勾选调整，保存后生效。", root, collapsible=True)
         self.identity_layout = QFormLayout()
         self.identity_group.content_layout.addLayout(self.identity_layout)
+        self.identity_layout.addRow(self.metadata)
         self.identity_widgets = {}
         for key, label in (("phone", "完整手机号"), ("masked_phone", "带星号手机号（切换关键依据）"),
                            ("nickname", "游戏昵称"), ("alternate_login_name", "U…A 备用识别名")):
@@ -450,19 +457,28 @@ class AccountConfigTab(CustomTab):
         self.delete_button = QPushButton("删除当前账号", root)
         self.rebind_button = QPushButton("重新绑定身份", root)
         self.template_button = QPushButton("编辑新账号模板", root)
-        self.new_button = QPushButton("新建账号配置", root)
+        self.new_button = QPushButton("新建账号", root)
         self.save_button.setProperty('role', 'primary')
         self.delete_button.setProperty('role', 'danger')
         row.addWidget(self.new_button)
+        self.more_button = QPushButton('更多', root)
+        menu = QMenu(self.more_button)
+        menu.addAction('账号识别信息', lambda: self._select_route('identity'))
+        menu.addAction('高级账号操作', lambda: self._select_route('advanced'))
+        self.more_button.setMenu(menu)
+        row.addWidget(self.more_button)
         for button in (self.preview_button, self.save_button, self.discard_button):
             actions.addWidget(button)
         actions.addWidget(self.draft_status, 1)
-        layout.insertLayout(2, actions)
+        self.draft_actions = QWidget(root)
+        self.draft_actions.setLayout(actions)
+        layout.insertWidget(1, self.draft_actions)
+        self.draft_actions.hide()
         maintenance = SectionPanel('高级账号操作', '模板、JSON、身份重新绑定与删除。', root, collapsible=True)
         for button in (self.json_button, self.template_button, self.rebind_button, self.delete_button):
             maintenance.add_widget(button)
         layout.addWidget(maintenance)
-        self.status = BodyLabel("等待操作")
+        self.status = _AccountStatusLabel("等待操作")
         layout.insertWidget(3, self.status)
         # Keep the existing account header; move only lower settings into the routed body.
         self.maintenance = maintenance
@@ -492,6 +508,11 @@ class AccountConfigTab(CustomTab):
         self.content_stack = QStackedWidget(root)
         from src.gui.AccountTaskOverview import AccountTaskOverview
         self.overview = AccountTaskOverview(repository, self._overview_live, root)
+        from src.gui.AccountSlotEditor import AccountSlotEditor
+        self.slot_editor = AccountSlotEditor(self.overview)
+        self.overview.layout().insertWidget(0, self.slot_editor)
+        self.slot_editor.edited.connect(self._mark_draft_edited)
+        self.slot_editor.order_requested.connect(lambda: self._select_route('sequence_order'))
         self.content_stack.addWidget(self.overview)
         self.content_stack.addWidget(self.settings_scroll)
         body.addWidget(self.content_stack, 1)
@@ -502,12 +523,14 @@ class AccountConfigTab(CustomTab):
         self._route = 'overview'
         self._nav_items = {}
         for route, title, children in (
-                ('overview', '总览', ()), ('identity', '账号识别信息', ()), ('reminders', '待办提醒', ()),
+                ('overview', '任务总览', ()), ('sequences', '账号序列', ()),
+                ('sequence_order', '账号执行顺序', ()),
+                ('identity', '账号识别信息', ()), ('reminders', '待办提醒', ()),
                 ('daily', '日常与声骸', (('nightmare_nest', '残像聚落'), ('world_boss', '讨伐强敌'),
                                        ('forgery', '凝素领域'), ('tacet', '无音区'), ('daily_activity', '活跃度与奖励'))),
                 ('weekly', '周常安排', (('weekly_boss', '战歌重奏'), ('weekly_garden', '每周乐园'), ('merge_echo', '声骸合成'))),
                 ('adversity_tower', '深塔（单独启动）', ()), ('manual', '海墟与活动提醒', ()),
-                ('sequences', '账号序列', ()), ('closing', '收尾行为', ()),
+                ('closing', '收尾行为', ()),
                 ('recording', '截图与录像', ()), ('advanced', '高级设置', ())):
             item = QTreeWidgetItem([title])
             item.setData(0, Qt.UserRole, route)
@@ -531,7 +554,7 @@ class AccountConfigTab(CustomTab):
         self.profile_combo.currentIndexChanged.connect(self._load_selected)
         self.preview_button.clicked.connect(self.preview)
         self.save_button.clicked.connect(self.save)
-        self.discard_button.clicked.connect(self._load_selected)
+        self.discard_button.clicked.connect(lambda: self._load_selected(discard=True))
         self.delete_button.clicked.connect(self.delete_account)
         self.rebind_button.clicked.connect(self.rebind_identity)
         self.template_button.clicked.connect(self.edit_template)
@@ -539,7 +562,8 @@ class AccountConfigTab(CustomTab):
         self.operation = BackgroundOperation(self, (
             self.save_button, self.delete_button, self.rebind_button, self.read_feature_button, self.template_button,
             self.new_button, self.discard_button, self.preview_button,
-            self.form_host, self.task_editor, self.sequence_group, self.json_button, self.reminder_panel))
+            self.form_host, self.task_editor, self.sequence_group, self.json_button, self.reminder_panel,
+            self.slot_editor))
         self.refresh()
         self.navigation.setCurrentItem(self._nav_items['overview'])
 
@@ -587,6 +611,10 @@ class AccountConfigTab(CustomTab):
         self.maintenance.setVisible(route == 'advanced')
         if hasattr(self, '_sequence_panel'):
             self._sequence_panel.setVisible(route == 'sequences')
+        if hasattr(self, '_order_panel'):
+            self._order_panel.setVisible(route == 'sequence_order')
+        if route in ('sequences', 'sequence_order') and hasattr(self, '_refresh_sequence_views'):
+            self._refresh_sequence_views()
         if route == 'advanced':
             self.maintenance.set_expanded(True)
         groups = {'daily': 0, 'weekly': 1, 'closing': 2, 'advanced': 3, 'recording': 4,
@@ -743,18 +771,40 @@ class AccountConfigTab(CustomTab):
         self._render_sequences()
         self._loaded_sequences = tuple(name for name, box in self.sequence_widgets.items() if box.isChecked())
 
-    def _load_selected(self, *_args):
+    def _load_selected(self, *_args, discard=False):
         profile_id = self.profile_combo.currentData()
         if not profile_id:
             return
-        self.draft = self._failed_drafts.pop(profile_id, None) or self.editor.load_draft(profile_id)
+        if self.draft is not None and self.draft.profile_id != profile_id:
+            try:
+                if self.operation.busy or self.dirty:
+                    if not self.operation.busy:
+                        self._apply_text()
+                    self._draft_cache[self.draft.profile_id] = (
+                        copy.deepcopy(self.draft), copy.deepcopy(self._loaded_account),
+                        copy.deepcopy(self._loaded_tasks), self._loaded_sequences,
+                        tuple(name for name, box in self.sequence_widgets.items() if box.isChecked()))
+            except (ValueError, TypeError) as error:
+                self.profile_combo.blockSignals(True)
+                self.profile_combo.setCurrentIndex(self.profile_combo.findData(self.draft.profile_id))
+                self.profile_combo.blockSignals(False)
+                self.status.setText(f'请先修正当前草稿：{sanitize_error(error)}')
+                return
+        if discard:
+            self._draft_cache.pop(profile_id, None)
+            self._failed_drafts.pop(profile_id, None)
+        cached = self._draft_cache.pop(profile_id, None)
+        failed = self._failed_drafts.pop(profile_id, None)
+        self.draft = failed or self.editor.load_draft(profile_id)
+        if cached and failed is None:
+            self.draft = cached[0]
         self.reveal_phone.setChecked(False)
         label = account_display_label(self.draft.account)
         masked_phone = self.draft.account.get("masked_phone") or "未记录"
         alternate = self.draft.account.get("alternate_login_name") or "未记录"
         feature_code = self.draft.account.get("game_feature_code") or "未绑定（初露峥嵘执行前需核验）"
         self.metadata.setText(
-            f"账号：{label} · 唯一编号：{self.draft.profile_id}"
+            f"唯一编号：{self.draft.profile_id}"
         )
         self._render_sequences()
         self._render_identity()
@@ -765,15 +815,32 @@ class AccountConfigTab(CustomTab):
         self._loaded_account = copy.deepcopy(self.draft.account)
         self.task_editor.setPlainText(json.dumps(self.draft.tasks, ensure_ascii=False, indent=2))
         self._loaded_sequences = tuple(name for name, box in self.sequence_widgets.items() if box.isChecked())
+        self._load_slot_editor()
+        if cached:
+            self._loaded_account, self._loaded_tasks, self._loaded_sequences = cached[1:4]
+            for name, box in self.sequence_widgets.items():
+                box.setChecked(name in cached[4])
+        self._load_slot_editor()
         self.status.setText("已载入独立草稿")
         self.draft_status.setText('尚未编辑')
+        self.draft_actions.setVisible(bool(cached))
+        if cached:
+            self.draft_status.setText('已恢复未保存草稿')
         self.overview.set_profile(profile_id)
+
+    def _load_slot_editor(self):
+        self.slot_editor.load(self.draft.account,
+                              {r.profile_id: r.account for r in self.editor.repository.list_profiles()},
+                              self.draft.profile_id,
+                              tuple(name for name, box in self.sequence_widgets.items() if box.isChecked()))
 
     def _mark_draft_edited(self, *_):
         self.draft_status.setText('草稿已编辑，尚未保存')
+        self.draft_actions.show()
 
     def _apply_text(self):
         self.draft.account = self.reminder_panel.apply_account(self.draft.account)
+        self.slot_editor.apply(self.draft.account, self.sequence_widgets)
         # Identity widgets are intentionally read-only.  Identity changes use
         # AccountRebindService so they cannot be mixed into task edits.
         value = json.loads(self.task_editor.toPlainText())
@@ -854,6 +921,9 @@ class AccountConfigTab(CustomTab):
             box.toggled.connect(self._mark_draft_edited)
             self.sequence_widgets[sequence_id] = box
             self.sequence_layout.addWidget(box)
+            from src.account_slots import FIXED_SEQUENCES
+            if sequence_id in FIXED_SEQUENCES:
+                box.hide()
         if not self.sequence_widgets:
             self.sequence_layout.addWidget(QLabel("暂无序列；请先在序列配置页新建序列。", self.sequence_group))
 
@@ -1242,6 +1312,9 @@ class AccountConfigTab(CustomTab):
         self._loaded_account = copy.deepcopy(self.draft.account)
         self._loaded_sequences = tuple(sequence_ids)
         self.draft_status.setText('尚未编辑')
+        self.draft_actions.hide()
+        self._draft_cache.pop(result.profile_id, None)
+        self._load_slot_editor()
 
         self.overview.refresh(force=True)
         self._navigate(self._route)
@@ -1253,6 +1326,7 @@ class AccountConfigTab(CustomTab):
         def completed(result):
             started = perf_counter()
             self._failed_drafts.pop(origin_id, None)
+            self._draft_cache.pop(origin_id, None)
             if self.selected_profile_id == origin_id:
                 if saved_sequences is not None:
                     self._accept_saved_profile(result, submitted, saved_sequences)

@@ -77,10 +77,12 @@ def initialize_account_runtime(root=None, program_version=None, *,
             try:
                 if repository.migrate_garden_execution_modes():
                     integrity_result = integrity_service.check()
+                if repository.migrate_fixed_account_slots():
+                    integrity_result = integrity_service.check()
             except Exception:
                 import logging
                 logging.getLogger(__name__).exception(
-                    "garden_execution_mode_migration_failed")
+                    "account_settings_migration_failed")
                 try:
                     integrity_result = integrity_service.check(record_incident=False)
                 except Exception:
