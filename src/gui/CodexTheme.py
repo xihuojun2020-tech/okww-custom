@@ -2,7 +2,8 @@
 
 from PySide6.QtCore import QObject, QEvent
 from PySide6.QtGui import QColor, QPalette, QFont
-from PySide6.QtWidgets import QApplication, QComboBox, QAbstractSpinBox, QAbstractScrollArea
+from PySide6.QtWidgets import (QApplication, QComboBox, QAbstractSpinBox, QAbstractScrollArea,
+                              QWidget, QStackedWidget)
 from qfluentwidgets import Theme, qconfig, setThemeColor, ComboBox
 
 
@@ -39,9 +40,21 @@ def size_dialog(dialog, width, height):
                   min(height, max(1, screen.height() - 64)))
 
 
-class PageWheelGuard(QObject):
-    """Wheel scrolling must never change a numeric or selection setting."""
+class PageInteractionGuard(QObject):
+    """Keep wheel settings stable and popups tied to their visible page."""
     def eventFilter(self, widget, event):
+        if event.type() == QEvent.Hide and isinstance(widget, QWidget):
+            popup = QApplication.activePopupWidget()
+            if popup is not None:
+                if isinstance(widget.parentWidget(), QStackedWidget):
+                    popup.close()
+                else:
+                    owner = popup.parentWidget()
+                    while owner is not None:
+                        if owner is widget:
+                            popup.close()
+                            break
+                        owner = owner.parentWidget()
         if event.type() == QEvent.Wheel and isinstance(widget, (QComboBox, ComboBox, QAbstractSpinBox)):
             parent = widget.parentWidget()
             while parent is not None:
@@ -180,9 +193,9 @@ def apply_codex_light_theme(app: QApplication | None) -> None:
     palette.setColor(QPalette.HighlightedText, QColor(COLORS["panel"]))
     app.setPalette(palette)
     app.setStyleSheet(codex_style_sheet())
-    if not hasattr(app, '_page_wheel_guard'):
-        app._page_wheel_guard = PageWheelGuard(app)
-        app.installEventFilter(app._page_wheel_guard)
+    if not hasattr(app, '_page_interaction_guard'):
+        app._page_interaction_guard = PageInteractionGuard(app)
+        app.installEventFilter(app._page_interaction_guard)
 
 
 __all__ = ["COLORS", "SPACING", "TYPE_SIZE", "size_dialog", "apply_codex_light_theme", "codex_style_sheet"]

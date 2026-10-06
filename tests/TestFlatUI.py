@@ -34,6 +34,76 @@ def example_task(name='周本挑战'):
 
 
 class TestFlatUI(unittest.TestCase):
+    def test_page_switch_closes_dropdowns_without_changing_values_and_allows_reopen(self):
+        from PySide6.QtCore import QCoreApplication, QEvent
+        from PySide6.QtWidgets import QVBoxLayout, QStackedWidget, QWidget, QComboBox
+        from PySide6.QtGui import QAction
+        from qfluentwidgets import DropDownPushButton, RoundMenu
+        from shiboken6 import isValid
+        from src.gui.ChoiceControls import QtComboBox
+        from src.gui.LabelAndDropDownMultiSelect import LabelAndDropDownMultiSelect
+
+        with patch.object(og, 'app', SimpleNamespace(tr=str)):
+            window = QWidget()
+            layout = QVBoxLayout(window)
+            stack = QStackedWidget(window)
+            layout.addWidget(stack)
+            page = QWidget(stack)
+            body = QVBoxLayout(page)
+            stack.addWidget(page)
+            stack.addWidget(QWidget(stack))
+            more = DropDownPushButton('更多', page)
+            menu = RoundMenu(parent=more)
+            menu.addAction(QAction('账号识别信息', menu))
+            more.setMenu(menu)
+            body.addWidget(more)
+            choices = [QtComboBox(page), QComboBox(page)]
+            for choice in choices:
+                choice.addItems(['选项一', '选项二'])
+                body.addWidget(choice)
+            config = MemoryConfig({'检查日': ['周一']})
+            multi = LabelAndDropDownMultiSelect({}, ['周一', '周日'], config, '检查日')
+            body.addWidget(multi)
+            unrelated = QLabel('临时提示', window)
+            layout.addWidget(unrelated)
+            window.show()
+            self.app.processEvents()
+            try:
+                for open_menu in (more._showMenu, choices[0]._toggleComboMenu,
+                                  choices[1].showPopup, multi.button._showMenu):
+                    for _ in range(2):
+                        stack.setCurrentIndex(0)
+                        self.app.processEvents()
+                        unrelated.show()
+                        open_menu()
+                        self.app.processEvents()
+                        popup = QApplication.activePopupWidget()
+                        self.assertIsNotNone(popup)
+                        self.assertTrue(popup.isVisible())
+                        unrelated.hide()
+                        self.assertTrue(popup.isVisible())
+                        stack.setCurrentIndex(1)
+                        self.app.processEvents()
+                        self.assertTrue(not isValid(popup) or not popup.isVisible())
+                        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+                self.assertEqual([choice.currentIndex() for choice in choices], [0, 0])
+                self.assertEqual(config['检查日'], ['周一'])
+                # Shared headers remain visible while their nested content page changes.
+                layout.addWidget(more)
+                stack.setCurrentIndex(0)
+                self.app.processEvents()
+                more._showMenu()
+                self.assertTrue(menu.isVisible())
+                stack.setCurrentIndex(1)
+                self.assertTrue(more.isVisible())
+                self.assertFalse(menu.isVisible())
+                more._showMenu()
+                more.hide()
+                self.assertFalse(menu.isVisible())
+            finally:
+                window.close()
+                window.deleteLater()
+
     def test_task_status_uses_identity_when_old_name_matches_another_current_slot(self):
         import time
         from ok.gui.tasks.TaskTab import TaskTab
