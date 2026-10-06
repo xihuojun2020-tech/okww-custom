@@ -80,6 +80,12 @@ def publish(archive: Path, destination: Path, *, channel: str = "stable", previo
         raise PublishError("同版本校验文件冲突")
     if not checksum_path.exists():
         _atomic_bytes(checksum_path, checksum)
+    helper = (root / 'src/update/dependency_compatibility.py').read_bytes()
+    _atomic_bytes(version_dir / 'repair_lan_update.py', helper)
+    # Older installers cannot install their own dependency comparison fix.
+    _atomic_bytes(destination / channel / 'repair_lan_update.py', helper)
+    _atomic_bytes(destination / channel / 'repair_lan_update.py.sha256',
+                  (hashlib.sha256(helper).hexdigest() + '  repair_lan_update.py\n').encode('ascii'))
     timestamp = (published_at or datetime.now(timezone.utc)).astimezone(timezone.utc)
     manifest = {
         "schema_version": 1, "channel": channel, "version": version,

@@ -23,6 +23,10 @@ class TestLanUpdatePublisher(unittest.TestCase):
             latest = publish(archive, destination, previous_ref="v1.40.02", published_at=when)
             self.assertTrue(destination.joinpath("stable/releases/v1.40.03", archive.name).is_file())
             self.assertEqual("1.40.03", json.loads(latest.read_text())["version"])
+            helper = destination / 'stable/repair_lan_update.py'
+            self.assertTrue(helper.is_file())
+            self.assertIn(hashlib.sha256(helper.read_bytes()).hexdigest(),
+                          helper.with_suffix('.py.sha256').read_text())
             self.assertEqual(latest, publish(archive, destination, previous_ref="v1.40.02", published_at=when))
 
     @patch("scripts.publish_lan_update.verify_update")

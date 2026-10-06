@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Callable
 
 from .package_validation import ValidatedPackage, validate_package
+from .dependency_compatibility import dependency_lines
 from .worker_process import error_detail
 
 
@@ -99,9 +100,10 @@ def _load_request(path: Path) -> dict:
 
 def _require_unchanged_dependencies(package: zipfile.ZipFile, root: Path, validated: ValidatedPackage) -> None:
     for name in ("requirements.txt", "requirements.in"):
-        if name in validated.files and (not (root / name).is_file() or package.read(name) != (root / name).read_bytes()):
-            raise ApplyError("运行依赖发生变化，请安装完整版本")
-    current = next((line.strip() for line in (root / "requirements.txt").read_text(encoding="utf-8").splitlines()
+        if name in validated.files and (not (root / name).is_file() or
+                dependency_lines(package.read(name)) != dependency_lines((root / name).read_bytes())):
+            raise ApplyError(f"运行依赖发生变化（{name}），请安装完整版本")
+    current = next((line for line in dependency_lines((root / "requirements.txt").read_bytes())
                     if line.startswith("ok-script==")), "")
     if validated.framework != current:
         raise ApplyError("框架版本发生变化，请安装完整版本")

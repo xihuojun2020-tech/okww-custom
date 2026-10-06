@@ -96,6 +96,22 @@ UNC 模式依赖 Windows SMB 身份认证和共享权限；HTTPS 模式要求有
 
 这一步不需要访问GitHub。不要把运行设备的整个工作目录复制为新目录后启动，那会造成配置路径变化。
 
+## 依赖版本相同但提示“运行依赖发生变化”
+
+1.97.20 修复了旧安装器直接比较文件字节的问题。旧版（包括 1.97.09）可能因 CRLF／LF 换行不同而拒绝安装，不能自行装入修复。真实依赖变化仍要求完整安装。
+
+一次性恢复步骤：进入打包版的 `data/apps/okww-custom/working` 目录，在 PowerShell 运行：
+
+```powershell
+& '..\python\python.exe' '\\192.168.3.173\羲火君 共享给我\AI诊断\OKWW-Updates\stable\repair_lan_update.py' --install-root (Get-Location).Path
+```
+
+源码版使用该目录的 `.venv/Scripts/python.exe`，并传入实际源码目录作为 `--install-root`。
+
+工具校验 NAS 清单、ZIP 整包和成员 SHA-256，确认有效依赖行及框架版本一致才对齐文件格式。原文件备份在 `configs/update-backups/dependency-format-*`，不安装依赖、不改变账号或战斗设置。工具成功后在软件内重新检查局域网更新并安装 1.97.20；若报告真实依赖变化，不能用此工具跳过。NAS 同目录提供 `repair_lan_update.py.sha256`。
+
+发布验证现在实际执行生产安装器的预检、替换与配置保留检查，避免仅验证 ZIP 解压成功而遗漏安装器误报。
+
 ## 证书轮换
 
 先把新证书/CA 和新叶证书指纹以受控配置方式送达所有客户端，确认客户端配置生效后再切换 NAS 证书。证书切换前未取得新指纹的客户端会安全拒绝更新，不能通过关闭 TLS 校验恢复。

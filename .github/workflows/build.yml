@@ -114,7 +114,7 @@ jobs:
           python .\打包更新.py .\pyappify_dist
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $update = Get-ChildItem -LiteralPath .\pyappify_dist -Filter 'okww_update_*.zip'
-          python -m scripts.verify_update_package $update.FullName --previous-ref v1.33.00
+          python -m scripts.verify_update_package $update.FullName --previous-ref HEAD^
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python .\scripts\validate_release.py --notes-output .\pyappify_dist\RELEASE_NOTES.md
       - name: Upload package assets

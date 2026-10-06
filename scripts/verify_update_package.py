@@ -6,11 +6,13 @@ import argparse
 import hashlib
 import json
 import runpy
+import shutil
 import subprocess
 import sys
 import tempfile
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -19,6 +21,7 @@ if str(ROOT) not in sys.path:
 from scripts.package_smoke import inspect_distribution, inspect_member
 from scripts.validate_release import validate_release
 from src.update.package_validation import validate_package
+from src.update.lan_apply import apply_request
 
 
 def verify_update(archive: Path, root: Path, previous_ref: str) -> dict:
@@ -57,9 +60,22 @@ def verify_update(archive: Path, root: Path, previous_ref: str) -> dict:
             marker.parent.mkdir(exist_ok=True)
             marker.write_text('{"account":"SYNTHETIC-A1"}', encoding='utf-8')
             before = {p.relative_to(target): p.read_bytes() for p in marker.parent.rglob('*') if p.is_file()}
-            package.extractall(target)
+            staging = target / 'configs/update-staging' / manifest['version']
+            staging.mkdir(parents=True)
+            staged_archive = staging / archive.name
+            shutil.copy2(archive, staged_archive)
+            request = staging / 'apply-request.json'
+            request.write_text(json.dumps(dict(schema_version=1, from_version='previous',
+                to_version=manifest['version'], archive=str(staged_archive),
+                sha256=archive_digest, size=archive.stat().st_size, install_root=str(target),
+                parent_pid=0, restart_command=[sys.executable, '-c', 'pass'])), encoding='utf-8')
+            # Exercise production preflight and replacement, not only ZIP extraction.
+            with patch('src.update.lan_apply.subprocess.Popen'):
+                result = apply_request(request)
+            if result.status != 'succeeded':
+                raise ValueError(f'更新安装器验证失败：{result.message}')
             after = {p.relative_to(target): p.read_bytes() for p in marker.parent.rglob('*') if p.is_file()}
-            if before != after:
+            if any(after.get(name) != data for name, data in before.items()):
                 raise ValueError('更新覆盖了目标运行配置')
             for name, digest in reference.items():
                 if hashlib.sha256((target / name).read_bytes()).hexdigest() != digest:
@@ -78,7 +94,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('archive', type=Path)
     parser.add_argument('--root', type=Path, default=ROOT)
-    parser.add_argument('--previous-ref', default='v1.33.00')
+    parser.add_argument('--previous-ref', default='HEAD^')
     args = parser.parse_args()
     inspect_distribution(args.archive.resolve().parent)
     print(json.dumps(verify_update(args.archive, args.root, args.previous_ref), ensure_ascii=False))

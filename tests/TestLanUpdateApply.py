@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from src.update.lan_apply import apply_request, _running, _wait_parent
+from src.update.dependency_compatibility import repair_legacy_requirements
 
 
 class TestLanUpdateApply(unittest.TestCase):
@@ -96,6 +97,60 @@ class TestLanUpdateApply(unittest.TestCase):
             self.assertFalse((root / "src/stale.py").exists())
             self.assertEqual("preserve", (root / "configs/marker.json").read_text())
             popen.assert_called_once()
+
+    @patch('src.update.lan_apply.subprocess.Popen')
+    def test_dependency_formatting_does_not_block_upgrade(self, popen):
+        for content in (b'ok-script==1.2.3\n', b'ok-script==1.2.3\r\n',
+                        b'\xef\xbb\xbf# generated\r\n\r\n  ok-script==1.2.3  \r\n'):
+            with self.subTest(content=content), tempfile.TemporaryDirectory() as temp:
+                root, request = self.fixture(temp)
+                for name in ('requirements.txt', 'requirements.in'):
+                    (root / name).write_bytes(content)
+                result = apply_request(request)
+                self.assertEqual('succeeded', result.status, result.message)
+                self.assertEqual('preserve', (root / 'configs/marker.json').read_text())
+
+    @patch('src.update.lan_apply.subprocess.Popen')
+    def test_real_dependency_change_is_rejected_before_ready_or_replacement(self, popen):
+        for name in ('requirements.txt', 'requirements.in'):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
+                root, request = self.fixture(temp)
+                (root / name).write_bytes(b'ok-script==1.2.3\nnew-package==2.0\n')
+                data = json.loads(request.read_text())
+                data['parent_pid'] = os.getpid()
+                request.write_text(json.dumps(data))
+                result = apply_request(request)
+                self.assertEqual('failed', result.status)
+                self.assertIn(name, result.message)
+                self.assertFalse(request.with_suffix('.ready.json').exists())
+                self.assertEqual('old', (root / 'src/example.py').read_text())
+                popen.assert_not_called()
+
+    def test_legacy_repair_backs_up_formatting_and_preserves_configs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root, request = self.fixture(temp)
+            data = json.loads(request.read_text())
+            for name in ('requirements.txt', 'requirements.in'):
+                (root / name).write_bytes(b'# local formatting\r\nok-script==1.2.3\r\n')
+            backup = repair_legacy_requirements(root, Path(data['archive']), version=data['to_version'],
+                                               sha256=data['sha256'], size=data['size'])
+            for name in ('requirements.txt', 'requirements.in'):
+                self.assertEqual(b'# local formatting\r\nok-script==1.2.3\r\n', (backup / name).read_bytes())
+                with zipfile.ZipFile(data['archive']) as package:
+                    self.assertEqual(package.read(name), (root / name).read_bytes())
+            self.assertEqual('preserve', (root / 'configs/marker.json').read_text())
+
+    def test_legacy_repair_rejects_real_change_without_partial_repair(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root, request = self.fixture(temp)
+            data = json.loads(request.read_text())
+            (root / 'requirements.txt').write_bytes(b'ok-script==1.2.3\r\n')
+            (root / 'requirements.in').write_bytes(b'ok-script==1.2.3\nextra==1.0\n')
+            with self.assertRaisesRegex(ValueError, '真实运行依赖'):
+                repair_legacy_requirements(root, Path(data['archive']), version=data['to_version'],
+                                           sha256=data['sha256'], size=data['size'])
+            self.assertEqual(b'ok-script==1.2.3\r\n', (root / 'requirements.txt').read_bytes())
+            self.assertFalse((root / 'configs/update-backups').exists())
 
     @patch("src.update.lan_apply.subprocess.Popen")
     def test_failure_rolls_back(self, popen):
