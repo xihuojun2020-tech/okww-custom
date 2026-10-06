@@ -625,6 +625,13 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         self.assertTrue(task.on_combat_check())
         task.in_combat.assert_not_called()
 
+    def test_fenrico_realm_health_title(self):
+        target = TARGETS_BY_ID['world_fenrico']
+        self.assertTrue(matches_health_title('Lv.85 芬莱克·异海归途', target))
+        self.assertTrue(matches_health_title('Lv.85 芬莱克・异海归途', target))
+        self.assertFalse(matches_target('芬莱克·异海归途', target))
+        self.assertFalse(matches_health_title('Lv.85 芬莱克·其他形态', target))
+
     def test_lady_health_full_name_and_split_level_without_broadening_list_names(self):
         target = TARGETS_BY_ID['world_lady_of_the_sea']
         self.assertTrue(matches_health_title('Lv.85海之女·荣光的灰烬', target))
