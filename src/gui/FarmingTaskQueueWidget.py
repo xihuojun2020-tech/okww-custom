@@ -1,6 +1,7 @@
 """Instance editor using the account hub's shared Fluent cards and form controls."""
 from copy import deepcopy
-from PySide6.QtCore import Signal, QTimer, Qt
+from uuid import uuid4
+from PySide6.QtCore import Signal, QTimer, Qt, QSignalBlocker
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QDialog, QDialogButtonBox, QScrollArea, QMessageBox, QInputDialog)
@@ -19,6 +20,7 @@ class FarmingTaskDialog(QDialog):
     def __init__(self, item=None, service=None, profile_id=None, parent=None):
         super().__init__(parent)
         self.item = deepcopy(item)
+        self.replacement_id = str(uuid4())
         self.service, self.profile_id = service, profile_id
         self.setWindowTitle('编辑刷取任务' if item else '添加刷取任务')
         outer = QVBoxLayout(self)
@@ -86,10 +88,8 @@ class FarmingTaskDialog(QDialog):
             self.target.addItem(title, value)
         value = params.get('boss', params.get('domain', params.get('target', options[0][0])))
         self.target.setCurrentIndex(self.target.findData(value))
-        # Existing progress belongs to its original stage; a different stage is a new task.
-        self.target.setEnabled(self.item is None)
         self.params_layout.addWidget(FlatSettingRow('刷取目标', self.target,
-            '更换关卡请添加新任务，以保留原任务进度。' if self.item else '', self.params_host))
+            '更换关卡后，新目标从零累计；原领取记录保留。' if self.item else '', self.params_host))
         if kind in ('weekly', 'world_boss'):
             limit = params.get('limit', -1 if kind == 'weekly' else 1)
             self.limit = QLineEdit('不限' if limit == -1 else str(limit), self.params_host)
@@ -102,8 +102,12 @@ class FarmingTaskDialog(QDialog):
             row = self.quota.rows[0]
             row['target'].setCurrentIndex(row['target'].findData(value))
             row['target'].hide()
-            self.target.currentIndexChanged.connect(lambda *_: row['target'].setCurrentIndex(
-                row['target'].findData(self.target.currentData())))
+            def select_domain(*_):
+                row['target'].setCurrentIndex(row['target'].findData(self.target.currentData()))
+                # The quota editor rejects a change while a claim is pending.
+                with QSignalBlocker(self.target):
+                    self.target.setCurrentIndex(self.target.findData(row['target'].currentData()))
+            self.target.currentIndexChanged.connect(select_domain)
             self.params_layout.addWidget(self.quota)
         else:
             note = QLabel('不限次数；全部有限材料任务结束后，持续刷取到体力不足。', self.params_host)
@@ -131,6 +135,12 @@ class FarmingTaskDialog(QDialog):
         else:
             params = dict(target=target)
         result = deepcopy(self.item) if self.item else new_task(kind, params)
+        if self.item:
+            previous = self.item['params']
+            original_target = previous.get('boss', previous.get('domain', previous.get('target')))
+            if target != original_target:
+                result['id'] = self.replacement_id
+                result.pop('legacy_progress', None)
         result.update(name=self.name.text().strip() or KINDS[kind], params=params)
         return farming_tasks({FARMING_TASKS: [result]})[0]
 
