@@ -193,7 +193,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         # 当前执行账号：用户确认当前已登录该账号；只用于确定起点。
         self.default_config[CURRENT_ACCOUNT] = ''
         self.config_description[CURRENT_ACCOUNT] = (
-            '当前世界中已经登录的账号，仅作为本轮起点；结束后保留最后执行账号。'
+            '当前世界中已经登录的账号，从此账号开始按序号执行，末尾回到前面的未完成账号；结束后保留最后执行账号。'
             '留空时才退登并自动识别当前账号'
         )
         self.config_type[CURRENT_ACCOUNT] = {
@@ -663,7 +663,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         self._run_return_profile_id = profile_id
         order = self._run_profile_order
         from src.account_slots import FIXED_SEQUENCES
-        if profile_id in order and self._active_run_snapshot.sequence_id not in FIXED_SEQUENCES:
+        configured_start = (self.config.get(CURRENT_ACCOUNT) or '').strip()
+        confirmed_start = configured_start and self._same_account(profile_name, configured_start)
+        if profile_id in order and (self._active_run_snapshot.sequence_id not in FIXED_SEQUENCES or confirmed_start):
             index = order.index(profile_id)
             self._run_profile_order = order[index:] + order[:index]
 
@@ -1059,7 +1061,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             self._finish_sequence()
             return
         if in_main:
-            if configured_start and (not fixed_order or self._same_account(first_account, self._next_target_account())):
+            if configured_start:
                 if not self._is_done(first_account) and not self._account_start_allowed(first_account):
                     self._finish_sequence()
                     return

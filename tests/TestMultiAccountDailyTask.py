@@ -22,6 +22,44 @@ from src.win32_login_input import ForegroundResult, LoginClickDelivery
 
 
 class TestPersistentDailyRetry(unittest.TestCase):
+    def test_confirmed_b2_runs_before_logout_then_wraps_to_pending_b1(self):
+        from unittest.mock import Mock
+        names = [f'B{i}' for i in range(1, 11)]
+        for completed in (['B5'], ['B2', 'B5']):
+            with self.subTest(completed=completed):
+                task = self.make_task(start='B2')
+                snapshot = SimpleNamespace(sequence_id='序列2', profile_ids=tuple('id-' + n for n in names),
+                                           profiles=tuple({'profile_id': 'id-' + n,
+                                                           'account': {'display_name': n}} for n in names))
+                task._active_run_snapshot = snapshot
+                task._run_profile_order = snapshot.profile_ids
+                task.create_run_snapshot = Mock(return_value=snapshot)
+                task.get_sequence_accounts = lambda: list(names)
+                task._same_account = lambda a, b: a == b
+                task._classify_start_state = Mock(return_value='world')
+                task._load_today_progress = lambda: list(completed)
+                task._detect_current_account_from_login = Mock()
+                events = []
+                def execute(account):
+                    events.append('execute:' + account)
+                    task.done_set.add(account)
+                    return True, None
+                task._execute_account_task = execute
+                task._switch_to_login.side_effect = lambda: events.append('logout')
+                def login():
+                    target = task._next_target_account()
+                    if target:
+                        events.append('login:' + target)
+                    return target
+                task._select_and_login_account = login
+                task._run_inner()
+                expected = [n for n in names[1:] + names[:1] if n not in completed]
+                self.assertEqual([e[8:] for e in events if e.startswith('execute:')], expected)
+                self.assertEqual(events[0], 'execute:B2' if 'B2' not in completed else 'logout')
+                task._detect_current_account_from_login.assert_not_called()
+                self.assertEqual(snapshot.profile_ids, tuple('id-' + n for n in names))
+                self.assertEqual(task.config[CURRENT_ACCOUNT], 'B2')
+
     def test_weekly_summary_uses_current_shared_info_not_restored_child(self):
         task = self.make_task()
         task.get_task_by_class.return_value.info = {'周本检查结果': '待补检：体力不足'}

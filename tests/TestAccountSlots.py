@@ -212,13 +212,14 @@ class TestAccountSlots(unittest.TestCase):
             snapshot = SequenceRepository(env.repository).create_run_snapshot('序列1')
             task = MultiAccountDailyTask.__new__(MultiAccountDailyTask)
             task._active_run_snapshot = snapshot
+            task.config = {}
             task._run_profile_order = snapshot.profile_ids
             task._profile_id_for = lambda name: synthetic_identity(name)['profile_id']
             task._set_run_start('A4')
             self.assertEqual(task._run_profile_order, tuple(ids))
             self.assertEqual(task._run_return_profile_id, ids[1])
 
-    def test_world_start_at_a4_switches_to_first_pending_fixed_slot(self):
+    def test_confirmed_world_start_at_a4_runs_in_place_in_fixed_sequence(self):
         from src.task.MultiAccountDailyTask import MultiAccountDailyTask, CURRENT_ACCOUNT
         from types import SimpleNamespace
         from unittest.mock import Mock, patch
@@ -230,15 +231,17 @@ class TestAccountSlots(unittest.TestCase):
             _task_label=lambda: '每日任务',
             _classify_start_state=lambda: 'world', _next_target_account=lambda: 'A3',
             _same_account=lambda a, b: a == b, _is_done=lambda _: False,
+            _account_start_allowed=lambda _: True,
             _switch_to_login=Mock(), _detect_current_account_from_login=Mock(return_value='A4'),
             _select_and_login_specific=Mock(), _select_and_login_account=Mock(return_value='A3'),
             _execute_account_task=Mock(return_value=(True, None)), info_set=Mock(), log_info=Mock())
         with patch.object(MultiAccountDailyTask, '_advance_after_account', return_value=True):
             MultiAccountDailyTask._run_inner(task)
-        task._switch_to_login.assert_called_once()
-        task._detect_current_account_from_login.assert_called_once()
+        task._switch_to_login.assert_not_called()
+        task._detect_current_account_from_login.assert_not_called()
         task._select_and_login_specific.assert_not_called()
-        task._execute_account_task.assert_called_once_with('A3')
+        task._execute_account_task.assert_called_once_with('A4')
+        self.assertEqual(task._run_profile_order, ('id4', 'id3'))
 
 
 if __name__ == '__main__':
