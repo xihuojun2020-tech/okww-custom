@@ -591,6 +591,7 @@ dialog.close()
             env = make_account_environment(Path(temp))
             service = SequenceRepository(env.repository)
             tab = SequenceManagementTab(service)
+            tab.refresh('S1')
             original = service.publish
             worker = []
             def publish(*args, **kwargs):

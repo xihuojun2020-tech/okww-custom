@@ -352,8 +352,13 @@ class AccountRepository:
             label = str(account.get("display_name") or "").strip()
             if not label:
                 raise AccountRepositoryError("账号短名不能为空")
+            from .account_slots import account_slot, SLOT_KEY
+            from .account_identity import short_profile_name
+            assignment = account_slot(account)
+            legacy_name_used = any(short_profile_name(value.get('display_name')) == short_profile_name(label)
+                                   for value in accounts.values() if isinstance(value, Mapping))
             if any(str(value.get("display_name") or "").casefold() == label.casefold()
-                   for value in accounts.values() if isinstance(value, Mapping)):
+                   for value in accounts.values() if isinstance(value, Mapping)) and not assignment:
                 raise AccountRepositoryError("账号短名已存在")
             requested_sequences = tuple(str(name).strip() for name in sequence_ids)
             if len(set(requested_sequences)) != len(requested_sequences):
@@ -361,6 +366,10 @@ class AccountRepository:
             if any(name not in sequences for name in requested_sequences):
                 raise AccountRepositoryError("账号序列不存在")
             profile_id = str(uuid.uuid4())
+            # The fixed position may reuse a historical label now bound elsewhere.
+            # Keep storage names unique so saved legacy references retain their owner.
+            if assignment and legacy_name_used:
+                label = '账号-' + profile_id
             task_config = copy.deepcopy(dict(tasks))
             from src.task.forgery_quota_plan import FORGERY_GOALS, fresh_forgery_goals, forgery_plan
             task_config[FORGERY_GOALS] = fresh_forgery_goals(forgery_plan(task_config))
@@ -382,7 +391,7 @@ class AccountRepository:
             source_key = "accounts" if "accounts" in candidate and "profiles" not in candidate else "profiles"
             candidate.setdefault(source_key, {})[profile_id] = profile
             from src.account_slots import SLOT_KEY, account_slot, validate_assignment, ordered_members
-            profile['extensions'][SLOT_KEY] = account_slot(profile)
+            profile['extensions'][SLOT_KEY] = assignment
             try:
                 validate_assignment(candidate[source_key], profile_id)
             except ValueError as error:

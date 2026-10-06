@@ -15,7 +15,10 @@ def parse_account_label(value):
 
 def account_display_label(account):
     legacy = parse_account_label(account.get('display_name'))
-    code = short_profile_name(account.get('display_name')) or account.get('short_name') or '未命名账号'
+    from src.account_slots import account_slot, SLOT_KEY
+    assignment = account_slot(account)
+    code = (assignment['slot'] if assignment else '未分配' if SLOT_KEY in account.get('extensions', {})
+            else short_profile_name(account.get('display_name')) or account.get('short_name') or '未命名账号')
     nickname = account.get('nickname') or legacy.get('nickname') or '未填昵称'
     phone = account.get('phone') or legacy.get('phone')
     masked = account.get('masked_phone') or (masked_phone(phone) if phone else '未填手机号')

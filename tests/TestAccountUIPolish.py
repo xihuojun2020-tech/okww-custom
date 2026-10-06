@@ -31,7 +31,7 @@ class TestAccountUIPolish(unittest.TestCase):
             env = make_account_environment(root)
             record = env.repository.list_profiles()[0]
             tasks = dict(record.tasks)
-            tasks.update({'Which to Farm': 'Forgery Challenge', FORGERY_GOALS: [dict(goal(1, 150),
+            tasks.update({'Which to Farm': 'Forgery Challenge', 'Forgery Limit Mode': 'materials', FORGERY_GOALS: [dict(goal(1, 150),
                           inventory=dict(gold=0, purple=0, blue=0, green=25))]})
             account = dict(record.account)
             account.setdefault('extensions', {})['task_reminders'] = {'adversity_tower': {

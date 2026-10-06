@@ -185,9 +185,10 @@ class AccountConfigEditor:
         nickname = str(nickname or "").strip()
         feature_code = str(game_feature_code or "").strip()
         alias = str(alias_text or "").strip()
-        if not re.fullmatch(r"[A-Z]\d+", label):
-            raise AccountConfigEditorError("账号短名必须为一个字母加数字，例如 A5")
-        if any(short_profile_name(record.account.get('display_name')) == label
+        from .account_slots import account_slot, SLOT_KEY
+        if not re.fullmatch(r"[AB]([1-9]|10)", label):
+            raise AccountConfigEditorError("请选择固定位置 A1～A10 或 B1～B10")
+        if any((assignment := account_slot(record.account)) and assignment['slot'] == label
                for record in self.repository.list_profiles()):
             raise AccountConfigEditorError('账号编号已存在')
         if not re.fullmatch(r"1[3-9]\d{9}", full_phone):
@@ -211,6 +212,7 @@ class AccountConfigEditor:
             "alternate_login_name": alias if alias_enabled else "",
             "game_feature_code": feature_code,
             "account_aliases": [],
+            'extensions': {SLOT_KEY: {'sequence': '序列1' if label[0] == 'A' else '序列2', 'slot': label}},
         }
         return self.repository.create_profile(
             account, tasks, sequence_ids=tuple(sequence_ids),

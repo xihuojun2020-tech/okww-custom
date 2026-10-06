@@ -230,7 +230,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
     def get_current_sequence(self):
         """当前执行的序列名（仅作账号分类标识，按「当前序列」配置执行）。"""
         config = getattr(self, 'config', None)
-        return ((config.get(CURRENT_SEQUENCE) if config is not None else None) or '序列1').strip()
+        from src.account_config_bundle import _sequence_name
+        return _sequence_name((config.get(CURRENT_SEQUENCE) if config is not None else None) or '序列1')
 
     def after_init(self, *args, **kwargs):
         """配置加载后刷新依赖当前配置的序列/账号选项。"""
@@ -523,7 +524,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         except ConfigIntegrityBlocked:
             seq_names, profile_names = [], []
             sequence_members_available = False
-        current_sequence = (self.config.get(CURRENT_SEQUENCE) or '').strip()
+        from src.account_config_bundle import _sequence_name
+        current_sequence = _sequence_name(self.config.get(CURRENT_SEQUENCE) or '')
         if current_sequence not in seq_names and seq_names:
             current_sequence = seq_names[0]
             self.config[CURRENT_SEQUENCE] = current_sequence

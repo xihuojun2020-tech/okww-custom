@@ -333,7 +333,7 @@ class NewAccountDialog(QDialog):
         self.alias_enable.addItem("无", False)
         self.alias_enable.addItem("使用", True)
         self.alias_text = QLineEdit(self)
-        for label, widget in (("账号编号（例如 A5）", self.short_name), ("完整手机号", self.phone),
+        for label, widget in (("固定位置（A1～A10／B1～B10）", self.short_name), ("完整手机号", self.phone),
                               ("游戏昵称", self.nickname), ("游戏内特征码", self.feature_code),
                               ("使用备用识别名称", self.alias_enable),
                               ("备用识别名称内容", self.alias_text)):
@@ -1146,13 +1146,11 @@ class AccountConfigTab(CustomTab):
             template = self.editor.load_template(self.selected_profile_id)
             sequence_ids = self.editor.repository.list_sequence_ids()
             dialog = NewAccountDialog(sequence_ids, self.view)
-            from src.account_identity import short_profile_name
+            from src.account_slots import account_slot, slots_for, FIXED_SEQUENCES
             records = self.editor.repository.list_profiles()
-            occupied = {short_profile_name(record.account.get('display_name')) for record in records}
-            number = 1
-            while f'A{number}' in occupied:
-                number += 1
-            dialog.short_name.setText(f'A{number}')
+            occupied = {assignment['slot'] for record in records if (assignment := account_slot(record.account))}
+            available = [slot for sequence in FIXED_SEQUENCES for slot in slots_for(sequence) if slot not in occupied]
+            dialog.short_name.setText(available[0] if available else '')
             if dialog.exec() != QDialog.Accepted:
                 return None
             values = dialog.values()
@@ -1196,6 +1194,8 @@ class AccountConfigTab(CustomTab):
             if answer != QMessageBox.Yes:
                 return None
             submitted = copy.deepcopy(self.draft)
+            from src.account_slots import account_slot
+            slot_changed = account_slot(self._loaded_account) != account_slot(submitted.account)
             profile_id = submitted.profile_id
             membership_changed = sequence_ids != self._loaded_sequences
             return self._submit_action(
@@ -1203,7 +1203,7 @@ class AccountConfigTab(CustomTab):
                         confirmed_account_label=label, sequence_ids=sequence_ids),
                 '保存成功，已先创建账号备份', lambda result: AccountChangeEvent(
                     'profile_saved', str(getattr(result, 'revision', '')), (profile_id,), sequence_ids,
-                    choices_changed=membership_changed or dict(result.account) != submitted.account),
+                    choices_changed=membership_changed or slot_changed or dict(result.account) != submitted.account),
                 submitted=submitted, saved_sequences=sequence_ids)
         except Exception as exc:
             self.status.setText(f"保存失败：{exc}")

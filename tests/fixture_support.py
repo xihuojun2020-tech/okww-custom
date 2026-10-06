@@ -78,11 +78,14 @@ def make_account_environment(root, *, names=('A1', 'A3', 'A4'), publish=True,
             task_config.pop('Garden Execution Mode')
             task_config['Weekly Garden Check Day'] = 'Monday'
         profiles[identity['profile_id']] = {
-            **identity, 'display_name': name, 'account_aliases': [], 'schedule': {}, 'extensions': {},
+            **identity, 'display_name': name, 'account_aliases': [], 'schedule': {},
+            'extensions': {'fixed_sequence_slot_v1': {'sequence': '序列1', 'slot': name}
+                           if int(name[1:]) <= 10 else None},
             'task_config': task_config,
         }
     master = {'schema_version': 1, 'config_id': 'synthetic-test', 'timezone': 'Asia/Shanghai',
-              'profiles': profiles, 'sequences': {'S1': list(profiles)}, 'extensions': {}}
+              'profiles': profiles, 'sequences': {'S1': list(profiles), '序列1': [], '序列2': []},
+              'extensions': {'fixed_account_slots_v2': True}}
     _atomic_write_json_unchecked(service.paths.master, master)
     _atomic_write_json_unchecked(service.paths.working, service._rebuild_working(master, {}))
     _atomic_write_json_unchecked(service.paths.runtime, {

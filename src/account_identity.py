@@ -221,8 +221,15 @@ def resolve_profile_short_names(short_names: Iterable[Any], profiles: Mapping[An
     for value in requested:
         if not re.fullmatch(r'[A-Za-z]\d+', value):
             raise AccountIdentityError('连续账号顺序必须使用精确短名，如 A1,A3,A4')
-        matches = [str(name) for name, profile in items
-                   if short_profile_name(profile.get('display_name', name) if isinstance(profile, Mapping) else name) == value.upper()]
+        from .account_slots import account_slot, SLOT_KEY
+        matches = []
+        for name, profile in items:
+            profile = profile if isinstance(profile, Mapping) else {}
+            assignment = account_slot(profile)
+            short = (assignment['slot'] if assignment else None if SLOT_KEY in profile.get('extensions', {})
+                     else short_profile_name(profile.get('display_name', name)))
+            if short == value.upper():
+                matches.append(str(name))
         if len(matches) > 1:
             raise AccountIdentityError('账号短名同时匹配多个账号方案')
         if not matches:

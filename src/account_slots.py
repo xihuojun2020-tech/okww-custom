@@ -1,11 +1,13 @@
 """Fixed execution positions, separate from stable account identity and participation."""
 import copy
 import re
+from collections.abc import Mapping
 
 from src.account_identity import short_profile_name
 
 FIXED_SEQUENCES = {'序列1': ('序列一', 'A'), '序列2': ('序列二', 'B')}
 SLOT_KEY = 'fixed_sequence_slot_v1'
+MIGRATION_KEY = 'fixed_account_slots_v2'
 
 
 def account_slot(account):
@@ -14,7 +16,7 @@ def account_slot(account):
         value = extensions[SLOT_KEY]
         if value is None:
             return None
-        if not isinstance(value, dict) or set(value) != {'sequence', 'slot'}:
+        if not isinstance(value, Mapping) or set(value) != {'sequence', 'slot'}:
             raise ValueError('账号槽位格式无效')
         sequence, slot = value['sequence'], value['slot']
         if sequence not in FIXED_SEQUENCES or slot not in slots_for(sequence):
@@ -63,16 +65,45 @@ def validate_assignment(accounts, identity):
 
 def migrate_slots(raw):
     candidate = copy.deepcopy(raw)
+    if candidate.get('extensions', {}).get(MIGRATION_KEY):
+        return candidate, False
     profiles = candidate.get('profiles', {})
+    sequences = candidate.setdefault('sequences', {})
+    from .account_config_bundle import _sequence_name
+    for name in list(sequences):
+        canonical = _sequence_name(name)
+        if canonical not in FIXED_SEQUENCES or canonical == name:
+            continue
+        if sequences.get(canonical) and sequences[name] and sequences[canonical] != sequences[name]:
+            raise ValueError('同一固定序列存在两份不同账号名单，请核对实际顺序')
+        sequences[canonical] = sequences.get(canonical) or sequences[name]
+        del sequences[name]
+        settings = candidate.get('extensions', {}).get('pc_sequence_settings', {})
+        if name in settings:
+            settings.setdefault(canonical, settings[name])
+            del settings[name]
+    memberships = {}
+    issues = []
+    for sequence in FIXED_SEQUENCES:
+        members = sequences.setdefault(sequence, [])
+        if len(members) > 10:
+            issues.append(f'{sequence} 超过十个位置，请核对未分配账号')
+        for position, identity in enumerate(members, 1):
+            memberships.setdefault(identity, []).append((sequence, position))
     for account in profiles.values():
         extensions = account.setdefault('extensions', {})
-        if SLOT_KEY not in extensions:
-            extensions[SLOT_KEY] = account_slot(account)
-    for sequence in FIXED_SEQUENCES:
-        members = candidate.setdefault('sequences', {}).setdefault(sequence, [])
-        try:
-            candidate['sequences'][sequence] = ordered_members(profiles, members, sequence)
-        except ValueError:
-            pass  # Preserve ambiguous legacy selections; runtime requires explicit repair.
-    candidate.setdefault('extensions', {})['fixed_account_slots_v1'] = True
+        extensions[SLOT_KEY] = None
+    for identity, positions in memberships.items():
+        if identity not in profiles:
+            raise ValueError('序列引用了不存在的账号')
+        if len(positions) != 1:
+            issues.append('同一账号出现在多个固定位置，请核对归属')
+            continue
+        sequence, position = positions[0]
+        if position <= 10:
+            profiles[identity]['extensions'][SLOT_KEY] = {
+                'sequence': sequence, 'slot': FIXED_SEQUENCES[sequence][1] + str(position)}
+    metadata = candidate.setdefault('extensions', {})
+    metadata[MIGRATION_KEY] = True
+    metadata['fixed_account_slots_migration_issues'] = issues
     return candidate, candidate != raw
