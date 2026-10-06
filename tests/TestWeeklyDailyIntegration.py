@@ -11,6 +11,19 @@ from src.task.weekly_boss import (WEEKLY_TARGET, WEEKLY_MONDAY, WEEKLY_SUNDAY,
 
 
 class TestWeeklyDailyIntegration(unittest.TestCase):
+    def setUp(self):
+        # Tests that exercise the automatic weekly entry need an eligible game day.
+        # Explicit boundary cases below still supply their own dates.
+        class MondayClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                from datetime import timezone, timedelta
+                value = datetime(2026, 10, 5, 12, tzinfo=timezone(timedelta(hours=8)))
+                return value.astimezone(tz) if tz else value.replace(tzinfo=None)
+        clock = patch('src.task.weekly_boss.datetime', MondayClock)
+        clock.start()
+        self.addCleanup(clock.stop)
+
     class SharedGardenState:
         def __init__(self):
             self.completions = {}

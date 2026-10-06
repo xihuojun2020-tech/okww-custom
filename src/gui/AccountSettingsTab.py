@@ -26,11 +26,30 @@ class AccountSettingsTab(CustomTab):
         self.account_tab.settings_layout.addWidget(section)
         self.account_tab._sequence_panel = section
         section.hide()
+        self.order_tab = SequenceManagementTab(self.sequence_tab.service, readonly=True)
+        order_section = SectionPanel('账号执行顺序', parent=self.account_tab.settings_host)
+        order_section.add_embedded_widget(self.order_tab)
+        self.account_tab.settings_layout.addWidget(order_section)
+        self.account_tab._order_panel = order_section
+        order_section.hide()
+        self.account_tab._refresh_sequence_views = self._refresh_sequence_views
+        self.sequence_tab.account_requested.connect(self._select_account)
+        self.order_tab.account_requested.connect(self._select_account)
         self.add_widget(self.account_tab, stretch=1)
         self.vBoxLayout.setSizeConstraint(QLayout.SetDefaultConstraint)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         from src.gui.compact_settings import compact_settings
         compact_settings(self, account=True)
+
+    def _refresh_sequence_views(self):
+        self.sequence_tab.refresh()
+        self.order_tab.refresh()
+
+    def _select_account(self, identity):
+        index = self.account_tab.profile_combo.findData(identity)
+        if index >= 0:
+            self.account_tab.profile_combo.setCurrentIndex(index)
+            self.account_tab._select_route('overview')
 
     def _on_account_changed(self, event: AccountChangeEvent):
         """Refresh sibling panels without destroying an unsaved account draft."""
@@ -38,16 +57,19 @@ class AccountSettingsTab(CustomTab):
             return
         if event.kind == "sequence_changed":
             self.account_tab.refresh_sequences()
+            self.order_tab.refresh()
         else:
             selected_sequence = self.sequence_tab._selected()
             self.sequence_tab.refresh(
                 sequence_id=selected_sequence.sequence_id if selected_sequence else None)
+            self.order_tab.refresh()
         self.account_changed.emit(event)
 
     def refresh_all(self):
         """Reload both account panels after import/restore/repair operations."""
         self.account_tab.refresh(preserve_draft=True)
         self.sequence_tab.refresh()
+        self.order_tab.refresh()
         self.account_changed.emit(AccountChangeEvent("graph_refreshed"))
 
     @property

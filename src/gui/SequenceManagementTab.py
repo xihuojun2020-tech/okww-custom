@@ -1,9 +1,9 @@
 """Standalone account-sequence management tab."""
 
 from functools import partial
-from PySide6.QtCore import Qt, Signal, QSignalBlocker
+from PySide6.QtCore import Qt, Signal, QSignalBlocker, QSize, QTimer
 from PySide6.QtWidgets import (QAbstractScrollArea, QHBoxLayout, QInputDialog, QListWidget,
-                               QMessageBox, QPushButton, QVBoxLayout, QWidget)
+                               QMessageBox, QPushButton, QVBoxLayout, QWidget, QListWidgetItem)
 from PySide6.QtWidgets import QSizePolicy
 from qfluentwidgets import BodyLabel, FluentIcon
 
@@ -18,16 +18,28 @@ from src.gui.SectionPanel import SectionPanel
 
 class SequenceManagementTab(CustomTab):
     changed = Signal(object)
+    account_requested = Signal(str)
 
-    def __init__(self, service=None):
+    def __init__(self, service=None, *, readonly=False):
         super().__init__()
+        self.readonly = readonly
         repository = get_default_repository() or AccountRepository()
         self.service = service or SequenceRepository(repository)
         root = QWidget(self.view)
         root.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         layout = QVBoxLayout(root)
         layout.setAlignment(Qt.AlignTop)
-        layout.addWidget(BodyLabel("序列配置（运行开始后使用不可变快照；此处删除的是整个序列）"))
+        self.help = BodyLabel('固定顺序 A1 → A10 / B1 → B10；空槽位与未参与账号跳过。双击账号可设置归属。')
+        self.help.setWordWrap(True)
+        layout.addWidget(self.help)
+        self.snapshot_label = BodyLabel('')
+        self.snapshot_label.setWordWrap(True)
+        self.snapshot_label.setProperty('role', 'description')
+        layout.addWidget(self.snapshot_label)
+        self.enabled_button = QPushButton('停用序列', root)
+        self.enabled_button.clicked.connect(self._toggle_enabled)
+        self.enabled_button.setVisible(not self.readonly)
+        layout.addWidget(self.enabled_button)
         self.sequences = QListWidget(root)
         self.members = QListWidget(root)
         self.sequences.setAccessibleName('当前序列')
@@ -44,7 +56,7 @@ class SequenceManagementTab(CustomTab):
         self.members.setMinimumHeight(32)
         layout.addWidget(BodyLabel("当前序列"))
         layout.addWidget(self.sequences)
-        self.order_section = SectionPanel('账号执行顺序', parent=root, collapsible=True)
+        self.order_section = SectionPanel('固定槽位' if self.readonly else '账号执行顺序', parent=root, collapsible=True)
         self.order_section.add_widget(self.members)
         layout.addWidget(self.order_section)
         sequence_actions = QHBoxLayout()
@@ -69,8 +81,17 @@ class SequenceManagementTab(CustomTab):
         self.up_button.clicked.connect(lambda: self._move(-1))
         self.down_button.clicked.connect(lambda: self._move(1))
         self.operation = BackgroundOperation(self, (self.create_button, self.delete_button,
-                                                    self.up_button, self.down_button))
+                                                    self.up_button, self.down_button, self.members, self.sequences,
+                                                    self.enabled_button))
+        self.members.itemChanged.connect(self._membership_changed)
+        self.members.itemDoubleClicked.connect(lambda item: self.account_requested.emit(item.data(Qt.UserRole))
+                                               if item.data(Qt.UserRole) else None)
+        self.order_section.set_expanded(True)
         self.refresh()
+        self.live_timer = QTimer(self)
+        self.live_timer.setInterval(3000)
+        self.live_timer.timeout.connect(lambda: self._show_snapshot() if self.view.isVisible() else None)
+        self.live_timer.start()
 
     @property
     def name(self):
@@ -93,6 +114,20 @@ class SequenceManagementTab(CustomTab):
             self._selected().sequence_id if getattr(self, "_drafts", None) and self._selected() else None)
         try:
             self._drafts = list(self.service.list())
+            from src.account_slots import FIXED_SEQUENCES
+            self._drafts.sort(key=lambda item: (item.sequence_id not in FIXED_SEQUENCES, item.sequence_id))
+            records = self.service.repository.list_profiles()
+            accounts = {record.profile_id: record.account for record in records}
+            previous_summaries = getattr(self, '_task_summaries', {})
+            self._task_summaries = {}
+            for record in records:
+                tasks = record.tasks
+                nests = tasks.get('Tacet Discord Nests to Farm') or []
+                farm = {'Tacet Suppression': '无音区', 'Forgery Challenge': '凝素领域',
+                        'Simulation Challenge': '模拟训练'}.get(tasks.get('Which to Farm'), '')
+                self._task_summaries[record.profile_id] = f'所选聚落 {len(nests)}' + (f' · {farm}' if farm else '')
+            accounts_unchanged = accounts == getattr(self, '_accounts', None)
+            self._accounts = accounts
             labels = {record.profile_id: account_display_label(record.account)
                       for record in self.service.repository.list_profiles()}
         except AccountRepositoryError as exc:
@@ -104,12 +139,13 @@ class SequenceManagementTab(CustomTab):
         unchanged = previous == [(item.sequence_id, item.profile_ids, item.enabled) for item in self._drafts]
         labels_unchanged = labels == getattr(self, '_profile_labels', None)
         self._profile_labels = labels
-        if unchanged and labels_unchanged and selected == previous_selected:
+        if unchanged and labels_unchanged and accounts_unchanged and previous_summaries == self._task_summaries and selected == previous_selected:
+            self._show_snapshot()
             return
         with QSignalBlocker(self.sequences):
             self.sequences.clear()
             for item in self._drafts:
-                self.sequences.addItem(item.sequence_id)
+                self.sequences.addItem(FIXED_SEQUENCES.get(item.sequence_id, (item.sequence_id,))[0])
             if self._drafts:
                 names = [item.sequence_id for item in self._drafts]
                 self.sequences.setCurrentRow(names.index(selected) if selected in names else 0)
@@ -126,6 +162,7 @@ class SequenceManagementTab(CustomTab):
         return self._drafts[row] if 0 <= row < len(self._drafts) else None
 
     def _show_members(self, *_args):
+        blocker = QSignalBlocker(self.members)
         self.members.clear()
         item = self._selected()
         if not item:
@@ -133,6 +170,43 @@ class SequenceManagementTab(CustomTab):
             self.order_section.set_summary('尚未选择序列。')
             return
         profiles = self._profile_labels
+        self.enabled_button.setText('停用序列' if item.enabled else '启用序列')
+        from src.account_slots import FIXED_SEQUENCES, slot_owners, slots_for
+        fixed = item.sequence_id in FIXED_SEQUENCES
+        for button in (self.create_button, self.delete_button, self.up_button, self.down_button):
+            button.setVisible(not fixed and not self.readonly)
+        if fixed:
+            try:
+                owners = slot_owners(self._accounts, item.sequence_id)
+                for slot in slots_for(item.sequence_id):
+                    identities = owners.get(slot, [])
+                    identity = identities[0] if len(identities) == 1 else None
+                    selected = identity in item.profile_ids
+                    status = '参与执行' if selected and item.enabled else '序列未启用' if selected else '未参与'
+                    text = (f'{slot}   {profiles[identity]}   · {status}' if identity else
+                            f'{slot}   槽位冲突，请核对' if identities else f'{slot}   空槽位 · 跳过')
+                    if identity and not self.readonly:
+                        text += '\n         ' + self._task_summaries[identity]
+                    row = QListWidgetItem(text, self.members)
+                    row.setFlags(row.flags() & ~Qt.ItemIsUserCheckable)
+                    row.setToolTip(text)
+                    row.setData(Qt.UserRole, identity)
+                    row.setData(Qt.UserRole + 1, text)
+                    row.setSizeHint(QSize(0, 48 if not self.readonly else 40))
+                    if identity:
+                        row.setCheckState(Qt.Checked if selected else Qt.Unchecked)
+                        row.setFlags(row.flags() & ~Qt.ItemIsUserCheckable if self.readonly else
+                                     row.flags() | Qt.ItemIsUserCheckable)
+                        if self.readonly:
+                            row.setData(Qt.CheckStateRole, None)
+                self.order_section.set_description('勾选表示参与执行；槽位归属在对应账号的任务总览设置。'
+                                                   if not self.readonly else '执行顺序固定；此页只读。')
+                self.order_section.set_summary(f'{FIXED_SEQUENCES[item.sequence_id][0]} · {len(item.profile_ids)} 个参与账号')
+                self.members.setFixedHeight(488 if not self.readonly else 408)
+            except ValueError as error:
+                self.status.setText(str(error))
+            self._show_snapshot()
+            return
         for profile_id in item.profile_ids:
             self.members.addItem(str(profiles.get(profile_id, "缺失账号")))
         self.order_section.set_description(
@@ -145,6 +219,60 @@ class SequenceManagementTab(CustomTab):
         # content-sized instead of relying on a nested scroll area.
         row_height = self.members.sizeHintForRow(0) if self.members.count() else 24
         self.members.setFixedHeight(max(32, row_height * self.members.count() + 8))
+        self._show_snapshot()
+
+    def _show_snapshot(self):
+        from ok import og
+        task = getattr(getattr(og, 'executor', None), 'current_task', None)
+        if not getattr(task, '_active_run_snapshot', None):
+            task = next((candidate for candidate in getattr(getattr(og, 'executor', None), 'onetime_tasks', [])
+                         if getattr(candidate, 'running', False) and getattr(candidate, '_active_run_snapshot', None)), task)
+        snapshot = getattr(task, '_active_run_snapshot', None) if getattr(task, 'running', False) else None
+        text = ''
+        if snapshot:
+            from src.account_display import account_display_label
+            profiles = {p['profile_id']: p for p in snapshot.profiles}
+            order = getattr(task, '_run_profile_order', snapshot.profile_ids)
+            labels = [account_display_label(profiles[identity]['account']) for identity in order]
+            text = f'本次运行快照 · {snapshot.sequence_id}：' + ' → '.join(labels)
+            text += '\n配置修改将用于下一次启动。'
+        self.snapshot_label.setText(text)
+        self.snapshot_label.setVisible(bool(text))
+        item = self._selected()
+        if item is None:
+            return
+        done = set(getattr(task, 'done_set', ())) if snapshot else set()
+        current = getattr(task, '_current_profile_id', None) if snapshot else None
+        pending = [identity for identity in order if identity not in done and identity != current] if snapshot else []
+        with QSignalBlocker(self.members):
+            for i in range(self.members.count()):
+                row = self.members.item(i)
+                base, identity = row.data(Qt.UserRole + 1), row.data(Qt.UserRole)
+                if base is None:
+                    continue
+                state = ''
+                if snapshot and snapshot.sequence_id == item.sequence_id and identity in snapshot.profile_ids:
+                    state = (' · 本轮完成' if identity in done else ' · 运行中' if identity == current else
+                             ' · 下个账号' if pending and identity == pending[0] else ' · 本轮待执行')
+                if row.text() != base + state:
+                    row.setText(base + state)
+
+    def _membership_changed(self, *_):
+        if self.readonly or self.operation.busy:
+            return
+        item = self._selected()
+        if not item:
+            return
+        members = [row.data(Qt.UserRole) for i in range(self.members.count())
+                   if (row := self.members.item(i)).data(Qt.UserRole) and row.checkState() == Qt.Checked]
+        self._run_action('保存参与账号', partial(self.service.publish, item.scope,
+                                             {'profile_ids': members, 'enabled': item.enabled}))
+
+    def _toggle_enabled(self):
+        item = self._selected()
+        if item and not self.readonly:
+            self._run_action('更新序列状态', partial(self.service.publish, item.scope,
+                                                 {'profile_ids': item.profile_ids, 'enabled': not item.enabled}))
 
     def _name(self, title):
         return QInputDialog.getText(self.view, title, "序列名称")
@@ -200,6 +328,8 @@ class SequenceManagementTab(CustomTab):
                     "sequence_changed", revision, (), (sequence_id,)))
         def failed(exc):
             self.status.setText(f"{label}失败：{sanitize_error(exc)}")
+            if isinstance(self, SequenceManagementTab):
+                self._show_members()
         return self.operation.start(callback, completed, failed)
 
 

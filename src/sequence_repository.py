@@ -186,6 +186,11 @@ class SequenceRepository:
 
     def _snapshot(self, profile_ids, records, sequence_id, revision):
         members = self._normalize(profile_ids, records)
+        from .account_slots import ordered_members
+        try:
+            members = tuple(ordered_members({pid: record.account for pid, record in records.items()}, members, sequence_id))
+        except ValueError as error:
+            raise SequenceReferenceError(str(error)) from error
         profiles = tuple(_freeze({"profile_id": profile_id, "account": dict(records[profile_id].account),
                                   "tasks": dict(records[profile_id].tasks)}) for profile_id in members)
         identities = _freeze({pid: {**dict(record.account), 'profile_id': pid, 'task_config': dict(record.tasks)}

@@ -24,7 +24,7 @@ COLORS = {
 }
 
 SPACING = {"small": 8, "row": 4, "section": 8}
-TYPE_SIZE = {"body": 13, "description": 12, "section": 15, "page": 23}
+TYPE_SIZE = {"body": 14, "description": 12, "section": 15, "page": 20}
 
 
 def size_dialog(dialog, width, height):
@@ -63,6 +63,7 @@ def codex_style_sheet() -> str:
     }}
     QWidget#disclosureHeader {{ background: {COLORS['panel']}; border-radius: 6px; }}
     QWidget#disclosureHeader:hover {{ background: {COLORS['hover']}; }}
+    QWidget#accountTaskRow {{ background: {COLORS['panel']}; border-radius: 4px; }}
     QGroupBox {{ border: 0; margin-top: 12px; padding-top: 8px; }}
     QGroupBox::title {{ subcontrol-origin: margin; left: 0; }}
     QLabel[role="sectionTitle"] {{ font-size: {TYPE_SIZE['section']}px; font-weight: 600; }}
