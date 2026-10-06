@@ -232,7 +232,7 @@ class TestAccountNavigationUI(unittest.TestCase):
         if font.exists():
             QFontDatabase.addApplicationFont(str(font))
 
-    def test_real_account_hub_does_not_squeeze_overview_with_sequence_panel(self):
+    def test_real_account_hub_switches_identity_and_merged_sequence_panel(self):
         from PySide6.QtCore import QThreadPool
         from src.gui.AccountConfigTab import AccountConfigTab
         from src.gui.AccountSettingsTab import AccountSettingsTab
@@ -249,17 +249,17 @@ class TestAccountNavigationUI(unittest.TestCase):
             page.resize(1150, 800)
             page.show()
             self.app.processEvents()
-            self.assertGreater(page.account_tab.overview.height(), 500)
+            self.assertGreater(page.account_tab.settings_scroll.height(), 500)
             self.assertFalse(page.account_tab._sequence_panel.isVisible())
             page.account_tab._select_route('sequences')
             self.app.processEvents()
             self.assertTrue(page.account_tab._sequence_panel.isVisible())
-            self.assertFalse(page.account_tab.overview.isVisible())
-            page.account_tab._select_route('overview')
+            self.assertFalse(page.account_tab.identity_group.isVisible())
+            page.account_tab._select_route('identity')
             self.app.processEvents()
-            self.assertGreater(page.account_tab.overview.height(), 500)
+            self.assertGreater(page.account_tab.settings_scroll.height(), 500)
             page.close()
-            page.account_tab.overview.timer.stop()
+            page.sequence_tab.live_timer.stop()
             QThreadPool.globalInstance().waitForDone(3000)
             page.deleteLater()
             self.app.processEvents()
@@ -275,16 +275,13 @@ class TestAccountNavigationUI(unittest.TestCase):
             page = AccountConfigTab(AccountConfigEditor(env.repository))
             page.resize(1150, 800)
             page.show()
-            for _ in range(20):
-                self.app.processEvents()
-                if not page.overview.loading.busy:
-                    break
-                time.sleep(.02)
+            self.app.processEvents()
             from src.task.farming_task_queue import FARMING_TASKS
             widget = page.form_widgets[FARMING_TASKS]
             original = widget.values()
             page._select_route('tacet')
-            self.assertEqual(page.content_stack.currentWidget(), page.settings_scroll)
+            self.assertEqual(page._route, 'stamina')
+            self.assertTrue(page.form_host.isVisible())
             widget.toggle(0)
             edited = widget.values()
             self.assertNotEqual(edited, original)
@@ -293,22 +290,16 @@ class TestAccountNavigationUI(unittest.TestCase):
             self.assertIs(page.form_widgets[FARMING_TASKS], widget)
             self.assertEqual(widget.values(), edited)
             self.assertTrue(page.dirty)
-            page._select_route('overview')
-            page.overview.refresh(force=True)
-            for _ in range(60):
-                self.app.processEvents()
-                if not page.overview.loading.busy:
-                    break
-                time.sleep(.02)
-            self.assertTrue(page.overview._cards, page.overview.notice.text())
-            self.assertFalse(page.overview.notice.text())
+            page._select_route('identity')
+            page.refresh_account_choices()
+            self.app.processEvents()
+            self.assertTrue(page.identity_group.isVisible())
             self.assertIs(page.form_widgets[FARMING_TASKS], widget)
             self.assertEqual(widget.values(), edited)
             self.assertNotIn(FARMING_TASKS, env.repository.load_profile(page.selected_profile_id).tasks)
             Path('test_out').mkdir(exist_ok=True)
-            page.grab().save('test_out/account-overview-1.97.12.png')
+            page.grab().save('test_out/account-identity-1.97.36.png')
             page.close()
-            page.overview.timer.stop()
             QThreadPool.globalInstance().waitForDone(3000)
             page.deleteLater()
             self.app.processEvents()

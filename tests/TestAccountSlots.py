@@ -232,12 +232,14 @@ class TestAccountSlots(unittest.TestCase):
             _classify_start_state=lambda: 'world', _next_target_account=lambda: 'A3',
             _same_account=lambda a, b: a == b, _is_done=lambda _: False,
             _account_start_allowed=lambda _: True,
+            _require_daily_profile=Mock(),
             _switch_to_login=Mock(), _detect_current_account_from_login=Mock(return_value='A4'),
             _select_and_login_specific=Mock(), _select_and_login_account=Mock(return_value='A3'),
             _execute_account_task=Mock(return_value=(True, None)), info_set=Mock(), log_info=Mock())
         with patch.object(MultiAccountDailyTask, '_advance_after_account', return_value=True):
             MultiAccountDailyTask._run_inner(task)
         task._switch_to_login.assert_not_called()
+        task._require_daily_profile.assert_called_once_with('A4')
         task._detect_current_account_from_login.assert_not_called()
         task._select_and_login_specific.assert_not_called()
         task._execute_account_task.assert_called_once_with('A4')

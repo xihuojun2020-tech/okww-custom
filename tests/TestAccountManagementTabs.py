@@ -692,7 +692,6 @@ dialog.close()
                 self.assertIn('账号仓库暂不可用', tab.status.text())
                 self.assertEqual(tab.selected_profile_id, identity)
             finally:
-                tab.overview.timer.stop()
                 tab.deleteLater()
         sequence_source = inspect.getsource(SequenceManagementTab.refresh)
         self.assertIn("AccountRepositoryError", sequence_source)

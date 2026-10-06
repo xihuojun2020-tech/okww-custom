@@ -147,7 +147,8 @@ class TestAccountUIPolish(unittest.TestCase):
             account = dict(record.account)
             account.setdefault('extensions', {})['task_reminders'] = {'adversity_tower': {
                 'enabled': True, 'rule': 'custom', 'reset_at': '2099-10-07T04:00:00+08:00',
-                'priority': '中间塔优先', 'towers': ['回音之塔']}}
+                'priority': '中间塔优先', 'towers': ['回音之塔'], 'status': 'blocked',
+                'marked_at': '2026-10-05T12:00:00+08:00'}}
             env.repository.publish_profile(ProfileEditScope(record.profile_id, record.revision),
                                            {'account': account, 'tasks': tasks})
             page = AccountConfigTab(AccountConfigEditor(env.repository))
@@ -174,13 +175,13 @@ class TestAccountUIPolish(unittest.TestCase):
                 page._select_route('weekly_boss')
                 self.assertEqual('stamina', page._route)
                 page._select_route('reminder:adversity_tower')
-                box, state, date = page.reminder_panel.task_choices['adversity_tower']
-                self.assertEqual([state.itemText(i) for i in range(state.count())], ['完成', '未完成', '前置未完成'])
-                self.assertFalse(date.isVisible())
-                state.setCurrentIndex(state.findData('blocked'))
+                self.assertEqual('reminders', page._route)
+                self.assertFalse(hasattr(page.reminder_panel, 'task_choices'))
+                page.reminder_panel.choices['activities'].setChecked(True)
+                page.reminder_panel.note.setPlainText('保留历史提醒')
                 page._apply_text()
                 row = page.draft.account['extensions']['task_reminders']['adversity_tower']
-                self.assertEqual('blocked', row['status'])
+                self.assertEqual(record.account['extensions']['task_reminders'], page.draft.account['extensions']['task_reminders'])
                 self.assertEqual('2099-10-07T04:00:00+08:00', row['reset_at'])
                 self.assertEqual(['回音之塔'], row['towers'])
                 self.assertEqual('中间塔优先', row['priority'])
@@ -208,8 +209,10 @@ class TestAccountUIPolish(unittest.TestCase):
         self.assertTrue(predicate())
 
     def cleanup_page(self, page):
-        overview = page.account_tab.overview if hasattr(page, 'account_tab') else getattr(page, 'overview', page)
-        overview.timer.stop()
+        if isinstance(page, AccountTaskOverview):
+            page.timer.stop()
+        if isinstance(page, AccountSettingsTab):
+            page.sequence_tab.live_timer.stop()
         page.close()
         QThreadPool.globalInstance().waitForDone(5000)
         self.app.processEvents()
@@ -333,7 +336,7 @@ class TestAccountUIPolish(unittest.TestCase):
                 release.set()
                 self.cleanup_page(page)
 
-    def test_hub_fixed_slots_readonly_order_and_responsive_routes(self):
+    def test_hub_merged_slots_and_responsive_routes(self):
         with tempfile.TemporaryDirectory() as root:
             env = make_account_environment(root)
             env.repository.migrate_fixed_account_slots()
@@ -353,14 +356,31 @@ class TestAccountUIPolish(unittest.TestCase):
                 page = AccountSettingsTab()
             try:
                 page.show()
-                self.drain(lambda: not page.account_tab.overview.loading.busy)
+                self.drain()
                 account = page.account_tab
-                self.assertEqual([account.navigation.topLevelItem(i).text(0) for i in range(3)],
-                                 ['任务总览', '账号序列', '账号执行顺序'])
+                self.assertEqual([account.navigation.topLevelItem(i).text(0) for i in range(account.navigation.topLevelItemCount())],
+                                 ['账号序列', '账号识别信息', '待办提醒', '残像聚落', '刷取任务', '周常乐园', '截图与录像', '高级设置'])
+                self.assertTrue(all(account.navigation.topLevelItem(i).childCount() == 0 for i in range(account.navigation.topLevelItemCount())))
+                self.assertEqual('identity', account._route)
+                self.assertIs(account.slot_editor.parentWidget(), account.identity_group.content)
+                self.assertTrue(account.slot_editor.details.isVisible())
+                self.assertFalse(account.sequence_group.isVisible())
+                self.assertFalse(hasattr(account, 'overview'))
+                self.assertFalse(hasattr(page, 'order_tab'))
+                account.slot_editor.sequence._toggleComboMenu()
+                self.app.processEvents()
+                popup = self.app.activePopupWidget()
+                self.assertIsNotNone(popup)
+                account._select_route('reminders')
+                self.app.processEvents()
+                from shiboken6 import isValid
+                self.assertTrue(not isValid(popup) or not popup.isVisible())
+                self.assertFalse(account.reminder_panel.description_label.isVisible())
                 self.assertEqual(page.sequence_tab.members.count(), 10)
-                self.assertEqual(page.order_tab.members.count(), 10)
-                self.assertTrue(all(not page.order_tab.members.item(i).flags() & Qt.ItemIsUserCheckable for i in range(10)))
-                self.assertTrue(all(page.order_tab.members.item(i).data(Qt.CheckStateRole) is None for i in range(10)))
+                self.assertTrue(all(page.sequence_tab.members.item(i).data(Qt.UserRole + 2)['slot'] == f'A{i + 1}' for i in range(10)))
+                page._select_account(record.profile_id)
+                self.assertEqual(record.profile_id, account.selected_profile_id)
+                self.assertEqual('identity', account._route)
                 page.sequence_tab.members.item(3).setCheckState(Qt.Checked)
                 self.drain(lambda: not page.sequence_tab.operation.busy)
                 page.sequence_tab.members.item(2).setCheckState(Qt.Checked)
@@ -374,11 +394,11 @@ class TestAccountUIPolish(unittest.TestCase):
                                           _run_profile_order=snapshot.profile_ids,
                                           _current_profile_id=selected[0], done_set=set())
                 with patch.object(og, 'executor', SimpleNamespace(current_task=running), create=True):
-                    page.order_tab.refresh()
-                    self.assertIn('运行中', page.order_tab.members.item(2).text())
-                    self.assertIn('下个账号', page.order_tab.members.item(3).text())
-                    self.assertIn('本次运行快照', page.order_tab.snapshot_label.text())
-                    self.assertFalse(page.order_tab.operation.busy)
+                    page.sequence_tab.refresh()
+                    self.assertIn('运行中', page.sequence_tab.members.item(2).text())
+                    self.assertIn('下个账号', page.sequence_tab.members.item(3).text())
+                    self.assertIn('本次运行快照', page.sequence_tab.snapshot_label.text())
+                    self.assertFalse(page.sequence_tab.operation.busy)
                 scale = float(os.environ.get('QT_SCALE_FACTOR', '1'))
                 sizes = [(round(w / scale) - 96, round(h / scale) - 52) for w, h in
                          ((1280, 800), (1440, 900), (1920, 1080))] if os.environ.get('OKWW_UI_MATRIX') else ((720, 540), (1050, 720), (1700, 1000))
@@ -390,14 +410,19 @@ class TestAccountUIPolish(unittest.TestCase):
                         self.assertLessEqual(page.width(), width + 2, (route, width, page.width()))
                         self.assertLessEqual(account.width(), page.viewport().width(), (route, width, account.width()))
                         self.assertLessEqual(account.view.width(), account.viewport().width(), (route, width, account.view.width()))
-                        scroll = account.overview.scroll if route == 'overview' else account.settings_scroll
+                        scroll = account.settings_scroll
                         self.drain(lambda: scroll.widget().width() <= scroll.viewport().width())
                         self.assertEqual(scroll.horizontalScrollBar().maximum(), 0, (width, route))
                         self.assertLessEqual(scroll.widget().width(), scroll.viewport().width(), (width, route, scroll.widget().width(), scroll.viewport().width()))
-                    account._select_route('overview')
-                    self.drain(lambda: not account.overview.loading.busy)
+                    account._select_route('reminders')
+                    self.drain()
                     Path('test_out').mkdir(exist_ok=True)
                     page.grab().save(f'test_out/account-ui-polish-{width}-scale-{scale}.png')
+                    if width == 1050:
+                        for route in ('identity', 'sequences', 'nightmare_nest', 'stamina', 'weekly_garden'):
+                            account._select_route(route)
+                            self.drain()
+                            page.grab().save(f'test_out/account-simplified-{route}.png')
             finally:
                 self.cleanup_page(page)
 
@@ -412,14 +437,14 @@ class TestAccountUIPolish(unittest.TestCase):
                 page = AccountSettingsTab()
             try:
                 page.show()
-                self.drain(lambda: not page.account_tab.overview.loading.busy)
+                self.drain()
                 account = page.account_tab
                 scale = float(os.environ.get('QT_SCALE_FACTOR', '1'))
                 sizes = [(round(w / scale) - 96, round(h / scale) - 52) for w, h in
                          ((1280, 800), (1440, 900), (1920, 1080))] if os.environ.get('OKWW_UI_MATRIX') else ((720, 540), (1050, 720), (1700, 1000))
                 for width, height in sizes:
                     page.resize(width, height)
-                    for route, editor in (('sequences', page.sequence_tab), ('sequence_order', page.order_tab)):
+                    for route, editor in (('sequences', page.sequence_tab),):
                         account._select_route(route)
                         editor.order_section.set_expanded(True)
                         for _ in range(5):

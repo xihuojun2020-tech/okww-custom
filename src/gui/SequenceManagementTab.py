@@ -97,7 +97,7 @@ class SequenceManagementTab(CustomTab):
         member_actions.addWidget(self.up_button)
         member_actions.addWidget(self.down_button)
         self.order_section.content_layout.addLayout(member_actions)
-        self.status = BodyLabel("执行顺序固定；本页只读。" if readonly else "参与选择即时保存；账号归属在总览设置。")
+        self.status = BodyLabel("执行顺序固定；本页只读。" if readonly else "参与选择即时保存；账号归属在账号识别信息中设置。")
         self.status.setProperty('role', 'description')
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
@@ -279,7 +279,7 @@ class SequenceManagementTab(CustomTab):
                                      row.flags() | Qt.ItemIsUserCheckable)
                         if self.readonly:
                             row.setData(Qt.CheckStateRole, None)
-                self.order_section.set_description('勾选表示参与执行；槽位归属在对应账号的任务总览设置。'
+                self.order_section.set_description('勾选表示参与执行；槽位归属在对应账号的账号识别信息中设置。'
                                                    if not self.readonly else '执行顺序固定；此页只读。')
                 self.order_section.set_summary(f'{FIXED_SEQUENCES[item.sequence_id][0]} · {len(item.profile_ids)} 个参与账号')
                 self.members.setFixedHeight(648)
