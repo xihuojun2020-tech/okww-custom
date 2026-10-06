@@ -124,15 +124,49 @@ class TestDiagnosticArchive(unittest.TestCase):
             wake_uploader(Path(temporary))
             spawn.assert_not_called()
 
-    def test_upload_copies_without_rehashing_the_zip(self):
+    def test_same_size_remote_conflict_never_acknowledges_or_writes_success_receipt(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / 'root'
             session = DiagnosticSession(root, 'test')
             session.finish(timeout=5)
             archive = build_archive(root)
-            real_hash = __import__('src.runtime.diagnostic_archive', fromlist=['hash_file']).hash_file
-            with patch('src.runtime.diagnostic_archive.hash_file', side_effect=lambda path: (
-                    real_hash(path) if Path(path).name == 'manifest.json' else
-                    (_ for _ in ()).throw(AssertionError('ZIP must not be rehashed')))):
-                remote = Path(upload_archive(archive, Path(temporary) / 'nas'))
-            self.assertEqual(archive.stat().st_size, remote.stat().st_size)
+            target = Path(temporary) / 'nas'
+            remote = target / '待分析/压缩包' / archive.name
+            remote.parent.mkdir(parents=True)
+            remote.write_bytes(b'x' * archive.stat().st_size)
+            with self.assertRaisesRegex(ValueError, 'SHA256 冲突'):
+                upload_archive(archive, target)
+            self.assertFalse(remote.with_suffix('.json').exists())
+            self.assertFalse(list((root / 'states').glob('*.json')))
+            self.assertEqual('packed', json.loads(archive.with_suffix('.json').read_text())['status'])
+
+    def test_corrupt_resumed_prefix_is_rejected_and_clean_retry_succeeds(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / 'root'
+            session = DiagnosticSession(root, 'test'); session.finish(timeout=5)
+            archive = build_archive(root)
+            target = Path(temporary) / 'nas'
+            remote = target / '待分析/压缩包' / archive.name
+            remote.parent.mkdir(parents=True)
+            partial = remote.with_name(remote.name + '.partial')
+            partial.write_bytes(b'x' * 100)
+            with self.assertRaisesRegex(ValueError, 'SHA256 不匹配'):
+                upload_archive(archive, target)
+            self.assertFalse(remote.exists())
+            self.assertFalse(partial.exists())
+            self.assertFalse(list((root / 'states').glob('*.json')))
+            uploaded = Path(upload_archive(archive, target))
+            self.assertEqual(hash_file(archive), hash_file(uploaded))
+            self.assertTrue(json.loads(archive.with_suffix('.json').read_text())['verified_at'])
+
+    def test_local_same_size_corruption_is_rejected_before_network(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / 'root'
+            session = DiagnosticSession(root, 'test'); session.finish(timeout=5)
+            archive = build_archive(root)
+            archive.write_bytes(b'x' * archive.stat().st_size)
+            with patch('src.runtime.diagnostic_archive.connect') as connect:
+                with self.assertRaisesRegex(ValueError, '本地压缩包 SHA256'):
+                    upload_archive(archive, Path(temporary) / 'nas')
+                connect.assert_not_called()
+            self.assertFalse(list((root / 'states').glob('*.json')))

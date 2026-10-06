@@ -179,6 +179,9 @@ def upload_archive(archive, target=DEFAULT_TARGET):
     mode, day = receipt.get('mode', 'manual'), receipt.get('day', date.today().isoformat())
     if archive.parent != root / 'archives' or archive.stat().st_size != receipt['size']:
         raise ValueError('本地压缩包路径或大小校验失败')
+    write_progress(root, mode=mode, day=day, stage='verifying_local', archive=str(archive))
+    if hash_file(archive) != receipt['sha256']:
+        raise ValueError('本地压缩包 SHA256 不匹配，未上传，原始批次已保留')
     write_progress(root, mode=mode, day=day, stage='connecting', archive=str(archive))
     connect(target)
     destination = Path(target) / '待分析/压缩包'
@@ -208,9 +211,17 @@ def upload_archive(archive, target=DEFAULT_TARGET):
                     os.fsync(out.fileno())
             if partial.stat().st_size != receipt['size']:
                 raise ValueError('NAS 压缩包大小校验失败')
+            write_progress(root, mode=mode, day=day, stage='verifying_remote', archive=str(partial))
+            if hash_file(partial) != receipt['sha256']:
+                partial.unlink()  # Discard only this corrupt transfer, so retry starts clean.
+                raise ValueError('NAS 临时压缩包 SHA256 不匹配，未确认上传，请重试')
             partial.replace(remote)
-        if remote.stat().st_size != receipt['size']:
-            raise ValueError('NAS 已有同名压缩包大小冲突')
+        else:
+            if remote.stat().st_size != receipt['size']:
+                raise ValueError('NAS 已有同名压缩包大小冲突')
+            write_progress(root, mode=mode, day=day, stage='verifying_remote', archive=str(remote))
+            if hash_file(remote) != receipt['sha256']:
+                raise ValueError('NAS 已有同名压缩包 SHA256 冲突，未确认上传')
         final_rate = locals().get('rate', TransferRate(receipt['size'])).update(receipt['size'], receipt['size'])
         write_progress(root, mode=mode, day=day, stage='recording', archive=str(remote), **final_rate)
         remote_receipt = remote.with_suffix('.json')
@@ -218,7 +229,7 @@ def upload_archive(archive, target=DEFAULT_TARGET):
         if remote_receipt.exists():
             uploaded_at = json.loads(remote_receipt.read_text(encoding='utf-8')).get('uploaded_at', uploaded_at)
         atomic_json(remote_receipt, {'sha256': receipt['sha256'], 'size': receipt['size'],
-                                    'uploaded_at': uploaded_at})
+                                    'uploaded_at': uploaded_at, 'verified_at': time.time()})
         for item in receipt['batches']:
             run, batch_id = item['key'].split('--', 1)
             batch = safe_path(root, f'{run}/batches/{batch_id}')
@@ -227,11 +238,12 @@ def upload_archive(archive, target=DEFAULT_TARGET):
             state_path = root / 'states' / (item['key'] + '.json')
             state = json.loads(state_path.read_text(encoding='utf-8')) if state_path.exists() else {}
             state.update(status='uploaded', transport='archive', archive=str(remote),
-                         archive_sha256=receipt['sha256'], uploaded_at=time.time(), last_error=None)
+                         archive_sha256=receipt['sha256'], uploaded_at=time.time(), last_error=None,
+                         archive_verified_at=time.time())
             atomic_json(state_path, state)
             from src.runtime.diagnostic_queue import acknowledge
             acknowledge(batch)
-        receipt.update(status='uploaded', remote=str(remote), uploaded_at=time.time())
+        receipt.update(status='uploaded', remote=str(remote), uploaded_at=time.time(), verified_at=time.time())
         atomic_json(receipt_path, receipt)
         write_progress(root, mode=mode, day=day, stage='uploaded', archive=str(remote),
                        skipped_batches=receipt.get('skipped_batches', []), **final_rate)

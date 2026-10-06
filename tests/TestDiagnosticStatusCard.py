@@ -24,6 +24,8 @@ class TestDiagnosticStatusCard(unittest.TestCase):
         text = format_archive_progress({'mode':'manual','day':'2026-09-16','stage':'packing',
                                         'completed_batches':1250,'total_batches':1840})
         self.assertIn('批次：1250 / 1840', text)
+        self.assertIn('校验 NAS 压缩包', format_archive_progress({'stage': 'verifying_remote'}))
+        self.assertIn('校验本地压缩包', format_archive_progress({'stage': 'verifying_local'}))
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
