@@ -602,6 +602,27 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         self.assertIsNone(material_target_button([title, box(target.name, y=380), action], target, 1080))
         self.assertIs(action, material_target_button([box('无', width=25), box('冠者', x=426, width=55), action], target, 1080))
 
+    def test_second_boss_ocr_name_is_selected_on_first_page(self):
+        target = TARGETS_BY_ID['world_prison_husk']
+        action = box('直接挑战', 800, 320)
+        self.assertEqual('万囮牢·朽躯', target.name)
+        self.assertIs(action, material_target_button(
+            [box('天傀劫煞', y=200), box('万囮牢・朽躯'), action], target, 1080))
+
+    def test_sufficient_stamina_keeps_guidebook_open_for_target_selection(self):
+        task = self.runner()
+        task.openF2Book = Mock()
+        task.open_boss_book = Mock()
+        task.daily_stamina_budget = Mock(return_value=0)
+        task.get_verified_stamina = task.prepare_daily_stamina = Mock(return_value=(87, 0, 87))
+        self.assertTrue(task._resources_for_claim(60, True, 0))
+        task.back.assert_not_called()
+        task.select_configured_boss = Mock(return_value=False)
+        task.wait_click_travel = task.wait_in_team_and_world = task.sleep = Mock()
+        task.teleport_to_configured_boss()
+        task.ensure_main.assert_not_called()
+        task.open_boss_book.assert_called_once_with('qiangdi')
+
     def test_material_combat_entry_does_not_require_health_title(self):
         task = self.runner()
         task.wait_until = Mock(return_value='post')
@@ -911,7 +932,7 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         with patch.object(og, 'main_window', SimpleNamespace(daily_run_confirmation=bridge)):
             self.assertTrue(task._confirm_standalone_profile())
         text = bridge.confirm.call_args.args[1]
-        self.assertIn('本次只执行世界首领突破材料', text)
+        self.assertIn('本次只执行讨伐强敌', text)
         self.assertIn(TARGETS_BY_ID[B].name, text)
         self.assertNotIn(TARGETS_BY_ID[A].name, text)
         self.assertIn('本次领取 3 次', text)

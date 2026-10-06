@@ -99,7 +99,7 @@ class TestFlatUI(unittest.TestCase):
                 claims = card.config_widget_by_key['领取次数'].spin_box
                 self.assertEqual(23, bosses.count())
                 self.assertEqual('天傀劫煞', bosses.itemText(0))
-                self.assertEqual('万囚牢·朽躯', bosses.itemText(1))
+                self.assertEqual('万囮牢·朽躯', bosses.itemText(1))
                 self.assertEqual('梦魔亚当·重锤', bosses.itemText(2))
                 self.assertEqual('聚械机偶', bosses.itemText(22))
                 self.assertEqual('无冠者', bosses.currentText())

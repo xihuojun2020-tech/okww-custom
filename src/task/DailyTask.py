@@ -431,7 +431,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             from src.task.world_boss_materials import TARGETS_BY_ID
             boss, claims = self._runtime_overrides['_world_boss_material_request']
             text = (f'确认游戏当前已登录账号：{short_profile_name(self._verified_profile_name)}。\n'
-                    f'本次只执行世界首领突破材料：{TARGETS_BY_ID[boss].name}，本次领取 {claims} 次。\n'
+                    f'本次只执行讨伐强敌：{TARGETS_BY_ID[boss].name}，本次领取 {claims} 次。\n'
                     '会实际消耗体力并计入账号累计领奖次数，不修改每日三目标计划。\n'
                     '领取达到本次次数或体力不足时结束。\n'
                     '程序尚未自动核验游戏内账号身份，是否继续？')

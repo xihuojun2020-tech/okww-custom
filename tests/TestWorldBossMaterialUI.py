@@ -39,7 +39,7 @@ class TestWorldBossMaterialUI(unittest.TestCase):
         return widget
 
     def test_screenshot_catalog_order_preserves_saved_targets_and_cumulative_progress(self):
-        expected = ['天傀劫煞', '万囚牢·朽躯', '梦魔亚当·重锤', '无铭探索者', '海维夏',
+        expected = ['天傀劫煞', '万囮牢·朽躯', '梦魔亚当·重锤', '无铭探索者', '海维夏',
                     '炉芯机骸', '海之女', '伪作的神王', '芬莱克', '荣耀狮像', '叹息古龙',
                     '罗蕾莱', '异构武装', '无归的谬误', '无冠者', '朔雷之鳞', '云闪之鳞',
                     '燎照之骑', '飞廉之猩', '哀声鸷', '无常凶鹭', '辉萤军势', '聚械机偶']

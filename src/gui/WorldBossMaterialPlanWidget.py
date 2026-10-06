@@ -21,7 +21,7 @@ class WorldBossMaterialPlanWidget(QWidget):
         layout = QGridLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setHorizontalSpacing(8)
-        layout.addWidget(QLabel('世界首领突破材料 · 优先级与累计领取上限', self), 0, 0, 1, 6)
+        layout.addWidget(QLabel('讨伐强敌 · 优先级与累计领取上限', self), 0, 0, 1, 6)
         for index, row in enumerate(material_plan(tasks)):
             target = QComboBox(self)
             target.addItem('无', 'none')

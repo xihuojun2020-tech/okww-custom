@@ -54,7 +54,7 @@ class WorldBossMaterialTask(FarmEchoTask):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.name = '世界首领突破材料'
+        self.name = '讨伐强敌'
         self.description = '选择首领关卡和本次领取次数，为每日任务当前账号单独刷取突破材料，共享累计领奖记录。'
         self.visible = True
         self.group_name = None
@@ -229,7 +229,6 @@ class WorldBossMaterialTask(FarmEchoTask):
                     and self._button((.62, .864, .76, .95), '快速编队', frame))
 
     def teleport_to_configured_boss(self):
-        self.ensure_main(time_out=180)
         self.openF2Book('gray_book_boss')
         self.open_boss_book('qiangdi')
         is_team = self.select_configured_boss(None, None)
@@ -250,7 +249,6 @@ class WorldBossMaterialTask(FarmEchoTask):
         balance = self.prepare_daily_stamina(cost, budget)
         if before[0] < cost:
             self._material_reenter = True
-        self.back(after_sleep=.5)
         self._material_balance = balance
         return balance[0] >= cost
 

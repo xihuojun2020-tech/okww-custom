@@ -15,7 +15,7 @@ class WorldBossTarget:
 
 WORLD_BOSS_TARGETS = (
     WorldBossTarget('world_puppet_calamity', '天傀劫煞'),
-    WorldBossTarget('world_prison_husk', '万囚牢·朽躯'),
+    WorldBossTarget('world_prison_husk', '万囮牢·朽躯'),
     WorldBossTarget('world_adam_smasher', '梦魔亚当·重锤'),
     WorldBossTarget('world_explorer', '无铭探索者', farm_profile='Nameless Explorer'),
     WorldBossTarget('world_hyvatia', '海维夏', farm_profile='Hyvatia'),
@@ -42,9 +42,9 @@ TARGETS_BY_ID = {target.key: target for target in WORLD_BOSS_TARGETS}
 
 
 def matches_target(text, target):
-    value = compact(text)
+    value = compact(text).replace('・', '·')
     names = (target.name, *target.aliases)
-    titles = {compact(name) for name in names}
+    titles = {compact(name).replace('・', '·') for name in names}
     titles.update(compact(target.name + separator + alias)
                   for alias in target.aliases for separator in ('·', '・', '-'))
     return value in titles
