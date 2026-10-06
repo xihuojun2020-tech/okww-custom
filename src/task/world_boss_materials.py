@@ -1,6 +1,5 @@
 """Named targets in the guidebook's Boss Challenge section, never weekly bosses."""
 from dataclasses import dataclass
-import re
 from src.task.weekly_boss import compact
 
 
@@ -12,7 +11,6 @@ class WorldBossTarget:
     farm_profile: str = 'Other'
     ordinal_hint: int = 0
     cost: int = 60  # Verified again against the claim dialog before consumption.
-    health_titles: tuple[str, ...] = ()
 
 
 WORLD_BOSS_TARGETS = (
@@ -22,11 +20,9 @@ WORLD_BOSS_TARGETS = (
     WorldBossTarget('world_explorer', '无铭探索者', farm_profile='Nameless Explorer'),
     WorldBossTarget('world_hyvatia', '海维夏', farm_profile='Hyvatia'),
     WorldBossTarget('world_furnace', '炉芯机骸'),
-    WorldBossTarget('world_lady_of_the_sea', '海之女', farm_profile='Lady of the Sea',
-                    health_titles=('海之女·荣光的灰烬',)),
+    WorldBossTarget('world_lady_of_the_sea', '海之女', farm_profile='Lady of the Sea'),
     WorldBossTarget('world_false_sovereign', '伪作的神王'),
-    WorldBossTarget('world_fenrico', '芬莱克', farm_profile='Fenrico',
-                    health_titles=('芬莱克·异海归途',)),
+    WorldBossTarget('world_fenrico', '芬莱克', farm_profile='Fenrico'),
     WorldBossTarget('world_lioness', '荣耀狮像', ('亚狮诺索',), 'Lioness of Glory'),
     WorldBossTarget('world_dragon', '叹息古龙'),
     WorldBossTarget('world_lorelei', '罗蕾莱', ('夜之女皇',), 'Lorelei'),
@@ -52,28 +48,6 @@ def matches_target(text, target):
     titles.update(compact(target.name + separator + alias)
                   for alias in target.aliases for separator in ('·', '・', '-'))
     return value in titles
-
-
-def matches_health_title(text, target):
-    value = re.sub(r'(?:[lL][vV][.．]?|等级)\s*\d{1,3}', '', compact(text))
-    return matches_target(value, target) or value.replace('・', '·') in target.health_titles
-
-
-def matches_health_title_boxes(boxes, target, height):
-    """OCR may separate Lv., the level, and the title. Join only adjacent same-row boxes."""
-    for first in boxes:
-        neighbors = sorted((b for b in boxes if b.x >= first.x and
-                            abs((b.y + b.height / 2) - (first.y + first.height / 2))
-                            <= min(b.height, first.height) / 2), key=lambda b: b.x)
-        text, right = '', first.x
-        for part in neighbors:
-            if part.x - right > height * .025:
-                break
-            text += part.name
-            right = part.x + part.width
-            if matches_health_title(text, target):
-                return True
-    return False
 
 
 def material_target_button(boxes, target, height):

@@ -8,7 +8,7 @@ from ok.task.exceptions import FinishedException
 from src.task.FarmEchoTask import FarmEchoTask
 from src.task.WeeklyBossTask import WeeklyBossTask
 from src.task.BaseCombatTask import CombatStateUnknown
-from src.task.world_boss_materials import WORLD_BOSS_TARGETS, TARGETS_BY_ID, material_target_button, matches_health_title_boxes, matches_target
+from src.task.world_boss_materials import WORLD_BOSS_TARGETS, TARGETS_BY_ID, material_target_button, matches_target
 from src.task.world_boss_material_plan import material_plan, choose_material_target, material_plan_revision, validate_material_request
 from src.task.world_boss_material_progress import WorldBossMaterialProgress
 from src.task.weekly_boss import compact
@@ -75,7 +75,6 @@ class WorldBossMaterialTask(FarmEchoTask):
         self._material_target = None
         self._material_progress = None
         self._material_phase = 'idle'
-        self._material_name_verified = False
         self._material_retry_plan = None
         self.combat_end_condition = self._material_combat_finished
 
@@ -104,11 +103,6 @@ class WorldBossMaterialTask(FarmEchoTask):
     def on_combat_check(self):
         self.in_realm_check(20)
         return True  # No arbitrary F while the foreground combat owns input.
-
-    def perform_combat_rotation(self):
-        if not self._material_name_verified:
-            self._verify_material_boss_title()
-        return super().perform_combat_rotation()
 
     def manage_boss_interactions(self):
         if self._in_realm:
@@ -143,7 +137,7 @@ class WorldBossMaterialTask(FarmEchoTask):
                     or self._button(self.VICTORY, '挑战成功'))
 
     def _wait_material_post_combat(self, result):
-        if not result.combat_entered or not self._material_name_verified:
+        if not result.combat_entered:
             raise CombatStateUnknown('材料战斗未确认进入，不执行吸收或领取')
         previous = self.__dict__.get('skip_combat_check', False)
         self.skip_combat_check = True
@@ -248,22 +242,6 @@ class WorldBossMaterialTask(FarmEchoTask):
             self.wait_in_team_and_world(time_out=120)
         self.sleep(2)
         return is_team
-
-    def check_boss_name(self):
-        if self._material_name_verified or not (self.has_target() or self.check_health_bar()):
-            return
-        self._verify_material_boss_title()
-
-    def _verify_material_boss_title(self):
-        target = self._material_target
-        def found():
-            self.next_frame()
-            boxes = self.ocr(.15, .0, .85, .10)
-            return matches_health_title_boxes(boxes, target, self.height)
-        if not self.wait_until(found, time_out=5, raise_if_not_found=False):
-            raise CombatStateUnknown('首领血条名称未确认，停止材料战斗')
-        self._material_name_verified = True
-        self.aim_boss = target.name
 
     def _resources_for_claim(self, cost, activity_ready, used_stamina):
         self.openF2Book('gray_book_boss')
@@ -471,13 +449,11 @@ class WorldBossMaterialTask(FarmEchoTask):
                     self.config['Boss'] = self._material_target.farm_profile
                     self._farm_start_time = time.time()
                     self.is_revived = False
-                    self._material_name_verified = False
                     self.aim_boss = None
                     self.manage_boss_parameters()
                     self.teleport_to_configured_boss_and_prepare()
                     current_target = choice[0]
                 self._material_phase = 'combat'
-                self._material_name_verified = False
                 result = self.farm_cycle(pickup_echo=False)
                 if result.revived:
                     continue
@@ -506,6 +482,6 @@ class WorldBossMaterialTask(FarmEchoTask):
                 self._material_retry_plan = None
                 self._material_phase = 'idle'
                 self._material_balance = None
-                self._material_name_verified = self._material_reenter = False
+                self._material_reenter = False
                 self.reset_to_false('material_profile_exit')
                 self.skip_combat_check = False

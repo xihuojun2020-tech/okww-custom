@@ -4,7 +4,6 @@ from unittest.mock import patch
 from config import config
 from ok.test.TaskTestCase import TaskTestCase
 from src.task.WorldBossMaterialTask import WorldBossMaterialTask
-from src.task.world_boss_materials import TARGETS_BY_ID, matches_health_title_boxes
 
 
 class TestMaterialCombatImages(TaskTestCase):
@@ -13,18 +12,6 @@ class TestMaterialCombatImages(TaskTestCase):
 
     def load(self, name):
         self.set_image('tests/images/material_boss_entry/' + name + '.png')
-
-    def test_actual_title_including_fragmented_level_is_verified(self):
-        target = TARGETS_BY_ID['world_lady_of_the_sea']
-        for name in ('combat_alive', 'combat_healer_dead', 'combat_two_dead'):
-            self.load(name)
-            boxes = self.task.ocr(.15, .0, .85, .10)
-            self.assertTrue(matches_health_title_boxes(boxes, target, self.task.height))
-            self.assertFalse(matches_health_title_boxes(boxes, TARGETS_BY_ID['world_crownless'], self.task.height))
-            self.task._material_target = target
-            self.task._material_name_verified = False
-            self.task._verify_material_boss_title()
-            self.assertTrue(self.task._material_name_verified)
 
     def test_actual_no_revival_banner_only_blocks_gray_dead_teammates(self):
         cases = [('combat_alive', [False, False, False]),

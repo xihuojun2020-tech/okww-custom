@@ -15,7 +15,7 @@ from src.task.MaterialPlannerTask import MaterialPlannerTask, MATERIAL_PLANNER
 from src.task.TacetTask import TacetTask
 from src.task.ForgeryTask import ForgeryTask
 from src.task.SimulationTask import SimulationTask
-from src.task.world_boss_materials import TARGETS_BY_ID, material_target_button, matches_health_title, matches_health_title_boxes, matches_target
+from src.task.world_boss_materials import TARGETS_BY_ID, material_target_button, matches_target
 from src.task.world_boss_material_plan import MATERIAL_TARGETS
 from src.task.world_boss_material_progress import WorldBossMaterialProgress
 
@@ -55,7 +55,6 @@ class TestWorldBossMaterialTask(unittest.TestCase):
             setattr(task, name, Mock())
         task.farm_cycle = Mock(return_value=FarmCycleResult(True, False, False))
         def cycle(**kwargs):
-            task._material_name_verified = True
             task.out_of_combat_reason = task.TARGET_GONE_END_REASON
             return FarmCycleResult(True, False, False)
         task.farm_cycle.side_effect = cycle
@@ -71,9 +70,6 @@ class TestWorldBossMaterialTask(unittest.TestCase):
                     return result
             return None
         task.wait_until = Mock(side_effect=wait)
-        def verified():
-            task._material_name_verified = True
-        task.teleport_to_configured_boss_and_prepare.side_effect = verified
         return task
 
     def run_task(self, task, guard=None):
@@ -206,7 +202,6 @@ class TestWorldBossMaterialTask(unittest.TestCase):
 
     def test_post_combat_reappearance_resumes_battle_before_echo_or_reward(self):
         task = self.runner()
-        task._material_name_verified = True
         task.has_target.return_value = True
         self.assertFalse(task._wait_material_post_combat(FarmCycleResult(True, False, False)))
         task.pickup_dropped_echo.assert_not_called()
@@ -227,7 +222,6 @@ class TestWorldBossMaterialTask(unittest.TestCase):
 
     def test_multi_phase_hint_prevents_early_post_combat_handoff(self):
         task = self.runner()
-        task._material_name_verified = True
         task._task_hint_phase = Mock(return_value='combat')
         task.out_of_combat_reason = task.TARGET_GONE_END_REASON
         with self.assertRaises(CombatStateUnknown):
@@ -447,7 +441,6 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         def fight(**kwargs):
             nonlocal active
             self.assertTrue(active)
-            task._material_name_verified = True
             task.out_of_combat_reason = task.TARGET_GONE_END_REASON
             active = False
             return True
@@ -608,44 +601,13 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         self.assertIsNone(material_target_button([title, box('前往', 800, 480)], target, 1080))
         self.assertIsNone(material_target_button([title, box(target.name, y=380), action], target, 1080))
         self.assertIs(action, material_target_button([box('无', width=25), box('冠者', x=426, width=55), action], target, 1080))
-        self.assertTrue(matches_health_title('无冠者 Lv.90', target))
-        self.assertFalse(matches_health_title('梦魇·无冠者 Lv.90', target))
-        self.assertTrue(matches_health_title('异构武装·加尔古耶', TARGETS_BY_ID['world_sentry']))
 
-    def test_boss_identity_probe_does_not_recurse_into_combat_check(self):
+    def test_material_combat_entry_does_not_require_health_title(self):
         task = self.runner()
-        task._material_name_verified = False
-        task.has_target = Mock(return_value=True)
-        task.in_combat = Mock(side_effect=AssertionError('recursive combat detection'))
-        task._verify_material_boss_title = Mock()
-        task.check_boss_name()
-        task._verify_material_boss_title.assert_called_once()
-        task.in_combat.assert_not_called()
-        task.in_realm_check = Mock()
-        self.assertTrue(task.on_combat_check())
-        task.in_combat.assert_not_called()
-
-    def test_fenrico_realm_health_title(self):
-        target = TARGETS_BY_ID['world_fenrico']
-        self.assertTrue(matches_health_title('Lv.85 芬莱克·异海归途', target))
-        self.assertTrue(matches_health_title('Lv.85 芬莱克・异海归途', target))
-        self.assertFalse(matches_target('芬莱克·异海归途', target))
-        self.assertFalse(matches_health_title('Lv.85 芬莱克·其他形态', target))
-
-    def test_lady_health_full_name_and_split_level_without_broadening_list_names(self):
-        target = TARGETS_BY_ID['world_lady_of_the_sea']
-        self.assertTrue(matches_health_title('Lv.85海之女·荣光的灰烬', target))
-        self.assertTrue(matches_health_title('Lv.85海之女・荣光的灰烬', target))
-        self.assertFalse(matches_target('海之女·荣光的灰烬', target))
-        for value in ('梦魇·海之女·荣光的灰烬', '海之女·其他形态', '85海之女·荣光的灰烬'):
-            self.assertFalse(matches_health_title(value, target))
-        parts = [box('LV.', 1067, 20, 49), box('85海之女·荣光的灰烬', 1118, 20, 388)]
-        self.assertTrue(matches_health_title_boxes(parts, target, 1440))
-        parts[0].y = 80
-        self.assertFalse(matches_health_title_boxes(parts, target, 1440))
-        parts[0].y = 20
-        parts[1].x = 1300
-        self.assertFalse(matches_health_title_boxes(parts, target, 1440))
+        task.wait_until = Mock(return_value='post')
+        task._task_hint_phase = Mock(return_value='post')
+        task._reward_available = Mock(return_value=True)
+        self.assertTrue(task._wait_material_post_combat(FarmCycleResult(True, False, False)))
 
     def test_standalone_entry_clears_stale_combat_before_delegated_navigation_and_on_failure(self):
         task = self.runner()
@@ -693,10 +655,11 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         task._resources_for_claim.side_effect = next_resource_check
         self.assertEqual(MaterialRunResult(0, 0, 'resource_shortfall'), self.run_task(task))
 
-    def test_old_reward_without_verified_boss_never_claimed(self):
+    def test_old_reward_without_combat_never_claimed(self):
         task = self.runner()
         task.teleport_to_configured_boss_and_prepare.side_effect = None
         task.farm_cycle.side_effect = None
+        task.farm_cycle.return_value = FarmCycleResult(False, False, False)
         task._claim_material_reward = Mock()
         with self.assertRaises(CombatStateUnknown):
             self.run_task(task)
@@ -986,7 +949,6 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         next_run = self.claim_task()
         cycles = iter([FarmCycleResult(True, True, False), FarmCycleResult(True, False, False)])
         def cycle(**kwargs):
-            next_run._material_name_verified = True
             return next(cycles)
         next_run.farm_cycle.side_effect = cycle
         self.assertEqual(MaterialRunResult(1, 60, 'complete'), self.run_selected(next_run, A, 1))
