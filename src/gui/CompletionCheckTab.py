@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, Q
     QMessageBox, QCheckBox, QPlainTextEdit, QSizePolicy, QPushButton, QApplication, QMenu)
 from qfluentwidgets import FluentIcon, PushButton, PrimaryPushButton
 
-from src.account_display import account_display_label, parse_account_label
+from src.account_display import account_display_label, account_sort_key, parse_account_label
 from src.account_repository import get_default_repository
 from src.evidence.model import (PROJECTS, CURRENT_PROJECTS, GROUPS, project_group,
     STATUSES, SOURCES, ASSETS, period_for, period_label, summarize, now_iso)
@@ -362,7 +362,8 @@ class CompletionCheckTab(QWidget):
     def _accounts_loaded(self, result):
         projection, archived, preferred = result
         profiles = projection.get('profiles', {})
-        self._profiles = {p['profile_id']: account_display_label(p) for p in profiles.values()}
+        self._profiles = {p['profile_id']: account_display_label(p) for p in
+                          sorted(profiles.values(), key=lambda p: account_sort_key(p, p['profile_id']))}
         self._nicknames = {p['profile_id']: p.get('nickname') or
                            parse_account_label(p.get('display_name') or name).get('nickname') or
                            p.get('short_name') or p['profile_id'][:8]
@@ -390,7 +391,8 @@ class CompletionCheckTab(QWidget):
 
     def _filter_accounts(self, *_):
         selected, query = self._selected, self.search.text().strip().casefold()
-        ids = self._sequences.get(self.sequence.currentData(), list(self._profiles))
+        members = self._sequences.get(self.sequence.currentData())
+        ids = [identity for identity in self._profiles if members is None or identity in members]
         self.accounts.blockSignals(True)
         self.accounts.clear()
         current = None

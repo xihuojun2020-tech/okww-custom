@@ -16,6 +16,46 @@ ACCOUNT = '00000000-0000-4000-8000-000000000001'
 
 
 class TestCompletionCheckUI(unittest.TestCase):
+    def test_accounts_follow_current_slots_in_all_and_filtered_views(self):
+        from PySide6.QtCore import Qt
+        from src.account_slots import SLOT_KEY
+        def profile(identity, old_name, slot):
+            return dict(profile_id=identity, display_name=old_name, nickname='测试',
+                        extensions={SLOT_KEY: None if slot is None else
+                                    {'sequence': '序列1' if slot[0] == 'A' else '序列2', 'slot': slot}})
+        # Creation order and legacy names differ from current fixed positions.
+        profiles = {'B18': profile('b1', 'B18', 'B1'),
+                    'A10': profile('a10', 'A10', 'A10'),
+                    'B10': profile('a2', 'B10', 'A2'),
+                    'unused': profile('unused', 'A3', None),
+                    'A1': profile('a1', 'A1', 'A1')}
+        projection = {'profiles': profiles, 'sequences': {'序列1': ['A10', 'B10'], '序列2': ['B18']}}
+        with tempfile.TemporaryDirectory() as root:
+            page = CompletionCheckTab(SimpleNamespace(), repository=EvidenceRepository(root),
+                                      account_provider=lambda: None)
+            def identities():
+                return [page.accounts.item(i).data(Qt.UserRole) for i in range(page.accounts.count())]
+            try:
+                page.timer.stop()
+                with patch.object(page, 'reload_records'):
+                    page._accounts_loaded((projection, ['retired'], 'a2'))
+                    self.assertEqual(identities(), ['a1', 'a2', 'a10', 'b1', 'unused', 'retired'])
+                    self.assertEqual(page._selected, 'a2')
+                    self.assertTrue(page.accounts.item(1).text().startswith('A2-'))
+                    page.sequence.setCurrentIndex(page.sequence.findData('序列1'))
+                    self.assertEqual(identities(), ['a2', 'a10'])
+                    self.assertEqual(page._selected, 'a2')
+                    page.sequence.setCurrentIndex(0)
+                    page.search.setText('A')
+                    self.assertEqual(identities(), ['a1', 'a2', 'a10'])
+                    page.search.clear()
+                    page._accounts_loaded((projection, ['retired'], 'b1'))
+                    self.assertEqual(identities(), ['a1', 'a2', 'a10', 'b1', 'unused', 'retired'])
+                    self.assertEqual(page._selected, 'a2')
+            finally:
+                page.service.close()
+                page.close()
+
     def test_manual_account_mismatch_requires_confirmation(self):
         other = '00000000-0000-4000-8000-000000000002'
         capture = dict(frame=np.zeros((50, 80, 3), np.uint8), profile_id=ACCOUNT, captured_at=now_iso())
