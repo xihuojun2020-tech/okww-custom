@@ -1074,6 +1074,10 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         in_main = self._classify_start_state() == 'world'
         from src.account_slots import FIXED_SEQUENCES
         fixed_order = getattr(getattr(self, '_active_run_snapshot', None), 'sequence_id', None) in FIXED_SEQUENCES
+        if in_main and configured_start:
+            # Verify even a completed starting account before any logout. The
+            # execution boundary reuses this visit instead of reading twice.
+            self._require_daily_profile(first_account)
         if sequence and self._next_target_account() is None:
             self._finish_sequence()
             return
@@ -1406,6 +1410,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         return service.switch_to_account(profile_name, max_retries=max_retries)
 
     def _switch_to_login(self):
+        self.executor._account_feature_run = None
         MultiAccountDailyTask._guard_account_transition(self)
         _publish_status_safe(self, stage='账号切换', detail='正在退出当前账号')
         self.log_info(self.tr('Switching back to login screen'))
@@ -3056,6 +3061,14 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         if daily_task is not None:
             daily_task._runtime_status_account = profile_status_label(profile_name)
         self._current_profile_id = profile_id
+        from src.task.account_feature_verification import begin_account_visit
+        verification = getattr(self.executor, '_account_feature_run', None)
+        if verification is None:
+            begin_account_visit(self, profile_id)
+        else:
+            verification.guard()
+            if verification.profile_id != profile_id:
+                raise ConfigIntegrityBlocked('当前核验账号与执行账号不一致，已停止多账号任务')
         return True
 
     def _click_account_in_list(self, profile_name, interaction_mode=None, require_expanded=False):

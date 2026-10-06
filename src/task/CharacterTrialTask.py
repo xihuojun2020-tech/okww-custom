@@ -478,12 +478,8 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
             timeout = self.config.get('Trial Combat Timeout', 180)
             if self.validate_config('Trial Combat Timeout', timeout):
                 raise ValueError('Trial Combat Timeout must be between 60 and 600.')
-            from src.account_repository import get_default_repository
-            from src.task.account_feature_verification import FeatureRun, expected_profile, STATUS_LABELS
-            repository = get_default_repository()
-            if repository is None:
-                raise RuntimeError('账号配置仓库不可用，不能核验真实账号')
-            verification = FeatureRun(self, repository, expected_profile(self)).begin()
+            from src.task.account_feature_verification import current_feature_run, STATUS_LABELS
+            verification = current_feature_run(self)
             self._feature_run = verification
             self._open()
             targets = self._scan()

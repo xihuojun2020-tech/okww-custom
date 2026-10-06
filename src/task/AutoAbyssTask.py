@@ -682,13 +682,10 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         self.log_info("自动深渊开始：先扫描三塔，再按设置逐塔扫描预设、疲劳值和挑战")
         try:
             self.ensure_main(time_out=30)
-            from src.account_repository import get_default_repository
-            from src.task.account_feature_verification import FeatureRun, expected_profile
+            from src.task.account_feature_verification import current_feature_run
             from src.task.abyss_cycle_progress import AbyssCycleProgress
-            repository = get_default_repository()
-            if repository is None:
-                raise RuntimeError('账号仓库未就绪，深塔需要先绑定特征码')
-            self._abyss_feature_run = FeatureRun(self, repository, expected_profile(self)).begin()
+            self._abyss_feature_run = current_feature_run(self)
+            repository = self._abyss_feature_run.repository
             self._verified_profile_id = self._abyss_feature_run.profile_id
             from src.account_reminders import get_task_reminders
             deep = get_task_reminders(self._abyss_feature_run.record.account).get('adversity_tower', {})

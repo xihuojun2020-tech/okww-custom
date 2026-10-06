@@ -34,6 +34,70 @@ def example_task(name='周本挑战'):
 
 
 class TestFlatUI(unittest.TestCase):
+    def test_common_account_panel_preserves_multi_selection_and_daily_cards_have_no_details(self):
+        from src.gui.TaskHubTab import TaskHubTab
+        with tempfile.TemporaryDirectory() as folder:
+            env = make_account_environment(folder)
+            owner = type('MultiAccountDailyTask', (), {})()
+            daily = type('DailyTask', (), {})()
+            for task in (owner, daily):
+                task.__dict__.update(vars(example_task()))
+                task.config_type = {}
+            owner.config = MemoryConfig({'当前序列': 'S1', '当前执行账号': 'A3'})
+            daily.config = MemoryConfig({'Daily Profile': 'A1'})
+            owner.get_sequence_names = lambda: ['S1']
+            owner.get_current_sequence = lambda: owner.config['当前序列']
+            owner.get_sequence_accounts = lambda _sequence=None: ['A4', 'A1', 'A3']
+            owner._load_profiles = lambda: env.repository.legacy_profile_projection()['profiles']
+            executor = SimpleNamespace(onetime_tasks=[daily, owner], current_task=None,
+                                       waiting_for_task=lambda _: '', _account_feature_run=None)
+            with patch.object(og, 'executor', executor), patch.object(og, 'app', SimpleNamespace(tr=str)), \
+                 patch.object(og, 'task_manager', SimpleNamespace(imported_scripts={})), \
+                 patch('src.account_repository.get_default_repository', return_value=env.repository):
+                page = TaskHubTab()
+                try:
+                    self.assertEqual(page.sequence_combo.currentData(), 'S1')
+                    self.assertEqual(page.account_combo.currentData(), 'A3')
+                    self.assertEqual([page.account_combo.itemData(i) for i in range(page.account_combo.count())],
+                                     ['', 'A1', 'A3', 'A4'])
+                    self.assertEqual(daily.config['Daily Profile'], 'A1')
+                    self.assertFalse(page.account_panel.content.isVisible())
+                    for card in page.task_tab.card_widgets:
+                        self.assertFalse(card.config_widgets)
+                        card.setExpand(True)
+                        self.assertFalse(card.isExpand)
+                        self.assertTrue(card.card.expandButton.isHidden())
+                        self.assertTrue(card.state_label.isHidden())
+                    page.account_combo.setCurrentIndex(page.account_combo.findData('A4'))
+                    self.assertEqual(owner.config['当前执行账号'], 'A4')
+                    owner.enabled = True
+                    record = env.repository.load_profile(env.repository.legacy_profile_projection()['profiles']['A1']['profile_id'])
+                    executor._account_feature_run = SimpleNamespace(profile_id=record.profile_id)
+                    page.refresh_account_choices()
+                    self.assertEqual(page.account_combo.currentData(), 'A1')
+                    self.assertEqual(owner.config['当前执行账号'], 'A4')
+                    self.assertFalse(page.account_combo.isEnabled())
+                finally:
+                    page.task_tab.timer.stop()
+                    page.deleteLater()
+
+    def test_task_start_has_no_first_run_confirmation_and_resume_does_not_restart(self):
+        from ok.gui.tasks.TaskCard import TaskCard
+        task = example_task()
+        task.first_run_alert = 'old confirmation'
+        start = Mock()
+        with patch.object(og, 'app', SimpleNamespace(tr=str, start_controller=SimpleNamespace(start=start))), \
+             patch.object(og, 'executor', SimpleNamespace(waiting_for_task=lambda _: '')):
+            card = TaskCard(task, True, fluent_sample=True)
+            card.start_clicked()
+            start.assert_called_once_with(task)
+            self.assertNotIn('_first_run_alert', task.config)
+            task.enabled = task.paused = True
+            card.start_clicked()
+            task.unpause.assert_called_once()
+            start.assert_called_once()
+            card.deleteLater()
+
     def test_page_switch_closes_dropdowns_without_changing_values_and_allows_reopen(self):
         from PySide6.QtCore import QCoreApplication, QEvent
         from PySide6.QtWidgets import QVBoxLayout, QStackedWidget, QWidget, QComboBox
@@ -154,7 +218,7 @@ class TestFlatUI(unittest.TestCase):
             try:
                 for _ in range(2):
                     self.assertEqual([task], page.task_tab.tasks)
-                    self.assertEqual('每日执行', task_category(task))
+                    self.assertEqual('不常用任务', task_category(task))
                     card = page.task_tab.card_widgets[0]
                     self.assertIsNotNone(card.start_button)
                     self.assertEqual('海之女', card.config_widget_by_key['首领关卡'].combo_box.currentText())
@@ -578,8 +642,14 @@ class TestFlatUI(unittest.TestCase):
             with patch.object(og, 'app', SimpleNamespace(tr=str)), patch.object(
                     og, 'executor', SimpleNamespace(waiting_for_task=lambda _: '')):
                 card = TaskCard(task, True, fluent_sample=True)
-                self.assertTrue(card.card.contentLabel.isHidden())
-                self.assertEqual(card.card.contentLabel.text(), '')
+                if name in ('DailyTask', 'MultiAccountDailyTask'):
+                    self.assertFalse(card.card.contentLabel.isHidden())
+                    self.assertEqual(card.card.contentLabel.text(), task.description)
+                    self.assertTrue(card.card.expandButton.isHidden())
+                    self.assertTrue(card.state_label.isHidden())
+                else:
+                    self.assertTrue(card.card.contentLabel.isHidden())
+                    self.assertEqual(card.card.contentLabel.text(), '')
                 self.assertTrue(task.description)
                 self.assertEqual(card.card.minimumHeight(), 56)
                 card.deleteLater()
@@ -841,8 +911,8 @@ class TestFlatUI(unittest.TestCase):
             tasks = OneTimeTaskTab(section='tasks', group_tasks=True)
             tools = OneTimeTaskTab(section='tests')
             helpers = TriggerTaskTab()
-            self.assertEqual([card.task for card in tasks.card_widgets], [daily, weekly, activity])
-            self.assertEqual([label.text() for label in tasks._category_labels], ['每日执行', '每周任务', '活动'])
+            self.assertEqual([card.task for card in tasks.card_widgets], [daily, activity, weekly])
+            self.assertEqual([label.text() for label in tasks._category_labels], ['每日执行', '活动', '不常用任务'])
             self.assertEqual([card.task for card in tools.card_widgets], [experiment])
             helpers.card_widgets[0].setExpand(True)
             tasks.refresh_ui()
@@ -1004,11 +1074,10 @@ class TestFlatUI(unittest.TestCase):
              patch.dict(ACTIVITY_REVISIONS, {'PianoTeachingTask': 2026091201}):
             page = OneTimeTaskTab(section='tasks', group_tasks=True, fluent_sample=True)
             try:
-                self.assertEqual([card.task for card in page.card_widgets], [piano])
+                self.assertEqual([card.task for card in page.card_widgets], [])
                 self.assertEqual([card.task for card in page._activity_placeholders],
                                  [project for project, _ in PLACEHOLDERS])
                 for placeholder in page._activity_placeholders:
-                    self.assertLess(page.taskCardLayout.indexOf(page.card_widgets[0]), page.taskCardLayout.indexOf(placeholder))
                     self.assertFalse(placeholder.isExpand)
                     self.assertFalse(placeholder.findChildren(PrimaryPushButton))
                     placeholder.setExpand(True)

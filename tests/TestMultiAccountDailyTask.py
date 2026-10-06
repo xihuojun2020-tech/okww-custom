@@ -726,6 +726,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
                 return 'integrity mismatch'
 
         class FakeTask:
+            executor = SimpleNamespace(_account_feature_run=None)
             _switch_to_login = MultiAccountDailyTask._switch_to_login
             _guard_account_transition = MultiAccountDailyTask._guard_account_transition
 
@@ -779,6 +780,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
 
     def test_logout_retries_when_confirm_button_was_not_delivered(self):
         class FakeTask:
+            executor = SimpleNamespace(_account_feature_run=None)
             _switch_to_login = MultiAccountDailyTask._switch_to_login
             _logout_state = MultiAccountDailyTask._logout_state
 
@@ -832,6 +834,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
 
     def test_logout_confirm_dialog_is_reclicked_without_esc(self):
         class FakeTask:
+            executor = SimpleNamespace(_account_feature_run=None)
             _switch_to_login = MultiAccountDailyTask._switch_to_login
 
             def __init__(self):
@@ -874,6 +877,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
 
     def test_logout_setting_page_clicks_logout_without_esc(self):
         class FakeTask:
+            executor = SimpleNamespace(_account_feature_run=None)
             _switch_to_login = MultiAccountDailyTask._switch_to_login
 
             def __init__(self):
@@ -921,6 +925,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
 
     def test_logout_main_uses_key_delay_without_a_second_fixed_sleep(self):
         class FakeTask:
+            executor = SimpleNamespace(_account_feature_run=None)
             _switch_to_login = MultiAccountDailyTask._switch_to_login
 
             def __init__(self):
@@ -960,6 +965,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         sample = CaptureSample(object(), (0, 0), 10, 'test', 1.0)
 
         class FakeTask:
+            executor = SimpleNamespace(_account_feature_run=None)
             _switch_to_login = MultiAccountDailyTask._switch_to_login
 
             def __init__(self):
@@ -1001,6 +1007,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
 
     def test_logout_stop_exception_propagates_from_state_detection(self):
         class FakeTask:
+            executor = SimpleNamespace(_account_feature_run=None)
             _switch_to_login = MultiAccountDailyTask._switch_to_login
 
             def _logout_state(self):
@@ -1017,6 +1024,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
 
     def test_logout_loading_unknown_state_does_not_exhaust_poll_count(self):
         class FakeTask:
+            executor = SimpleNamespace(_account_feature_run=None)
             _switch_to_login = MultiAccountDailyTask._switch_to_login
 
             def __init__(self):
@@ -1055,6 +1063,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
 
     def test_logout_none_input_counts_and_unknown_does_not_reset_budget(self):
         class FakeTask:
+            executor = SimpleNamespace(_account_feature_run=None)
             _switch_to_login = MultiAccountDailyTask._switch_to_login
 
             def __init__(self):
@@ -1133,6 +1142,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
                 self.profiles = profiles
                 self.linked = linked
                 self.config = {}
+                self.executor = SimpleNamespace(_account_feature_run=None)
 
             def _load_profiles(self):
                 return self.profiles
@@ -1149,7 +1159,9 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         self.assertNotIn(CURRENT_ACCOUNT, failed.config)
 
         linked = FakeTask({'A1': {}}, True)
-        self.assertTrue(linked._require_daily_profile('A1'))
+        with patch('src.task.account_feature_verification.begin_account_visit') as verify:
+            self.assertTrue(linked._require_daily_profile('A1'))
+            verify.assert_called_once_with(linked, None)
         self.assertNotIn(CURRENT_ACCOUNT, linked.config)
 
     def test_dialog_login_click_retries_when_ui_does_not_transition(self):
@@ -1425,7 +1437,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         task._run_inner()
         self.assertEqual(
             task.events,
-            ['profile:A3', 'daily', 'save', 'ensure_main', 'logout',
+            ['profile:A3', 'profile:A3', 'daily', 'save', 'ensure_main', 'logout',
              'login:A4', 'profile:A4', 'daily', 'save', 'ensure_main', 'logout',
              'login:A1', 'profile:A1', 'daily', 'save', 'ensure_main', 'finish'],
         )
@@ -1548,7 +1560,9 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         self.assertEqual(1, task.starts)
 
     def test_all_done_explicit_start_stays_in_world_without_logout(self):
+        from unittest.mock import Mock
         class FakeTask:
+            _require_daily_profile = Mock()
             _run_inner = MultiAccountDailyTask._run_inner
             _classify_start_state = lambda self: "world"
             _next_target_account = MultiAccountDailyTask._next_target_account

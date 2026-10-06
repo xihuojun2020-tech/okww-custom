@@ -77,8 +77,9 @@ class OneTimeTaskTab(TaskTab):
         self.reset_task_groups()
         
         self.tasks = []
+        from src.gui.navigation_sections import HIDDEN_TASKS
         for task in og.executor.onetime_tasks:
-            if not getattr(task, 'visible', True):
+            if not getattr(task, 'visible', True) or type(task).__name__ in HIDDEN_TASKS:
                 continue
             task_group = getattr(task, 'group_name', None)
             if self.section:
@@ -92,16 +93,14 @@ class OneTimeTaskTab(TaskTab):
             elif self.group_name and task_group == self.group_name:
                 self.tasks.append(task)
                 
-        from src.gui.navigation_sections import task_category, TASK_CATEGORIES
+        from src.gui.navigation_sections import task_category, TASK_CATEGORIES, task_order
         entries = list(self.tasks)
         if self.group_tasks:
-            from src.gui.activity_catalog import activity_revision, PLACEHOLDERS, PLACEHOLDER_REVISION
-            self.tasks.sort(key=lambda task: (TASK_CATEGORIES.index(task_category(task)),
-                                             -activity_revision(task) if task_category(task) == '活动' else 0))
+            from src.gui.activity_catalog import PLACEHOLDERS, PLACEHOLDER_REVISION
+            self.tasks.sort(key=task_order)
             entries = list(PLACEHOLDERS) + self.tasks
-            entries.sort(key=lambda entry: (TASK_CATEGORIES.index('活动' if isinstance(entry, tuple) else task_category(entry)),
-                         -PLACEHOLDER_REVISION if isinstance(entry, tuple) else
-                         -activity_revision(entry) if task_category(entry) == '活动' else 0))
+            entries.sort(key=lambda entry: (TASK_CATEGORIES.index('活动'), -PLACEHOLDER_REVISION)
+                         if isinstance(entry, tuple) else task_order(entry))
         self.empty_label.setVisible(not entries)
         for task in entries:
             if isinstance(task, tuple):

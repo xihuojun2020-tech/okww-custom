@@ -174,8 +174,8 @@ class TestMultiAccountWeeklyGardenTask(unittest.TestCase):
                     self.assertIsNotNone(card.start_button)
                     self.assertIsNotNone(card.stop_button)
                     self.assertFalse(card.instructions_button.isVisible())
-                    self.assertIn('当前序列', card.config_widget_by_key)
-                    self.assertIn('当前执行账号', card.config_widget_by_key)
+                    self.assertNotIn('当前序列', card.config_widget_by_key)
+                    self.assertNotIn('当前执行账号', card.config_widget_by_key)
                     self.assertIn('本次最多处理账号数', card.config_widget_by_key)
                     self.assertIn('本次时间预算（分钟）', card.config_widget_by_key)
                 finally:

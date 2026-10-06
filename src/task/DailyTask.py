@@ -407,44 +407,10 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _ensure_run_account_confirmation(self):
         self._guard_bound_profile_identity()
-        if getattr(self, '_daily_from_verified_snapshot', False):
-            return
-        if not getattr(self, '_verified_profile_id', None) or self.integrity_service is None:
-            raise ConfigIntegrityBlocked('独立每日任务需要有效的账号方案')
-        repository = AccountRepository(paths=self.integrity_service.paths, integrity_service=self.integrity_service)
-        before = repository.load_profile(self._verified_profile_id)
-        selection = self.config.get(DAILY_PROFILE)
-        if not self._confirm_standalone_profile():
-            raise TaskDisabledException('未确认本轮账号与方案，已取消每日任务')
-        self._guard_bound_profile_identity()
-        if (repository.load_profile(self._verified_profile_id).revision != before.revision
-                or self.config.get(DAILY_PROFILE) != selection):
-            raise ConfigIntegrityBlocked('确认期间账号方案发生变化，请重新开始')
-        self.log_info('独立每日任务账号来源=user_confirmed；未声明已自动识别游戏内身份')
-
-    def _confirm_standalone_profile(self):
-        from ok import og
-        bridge = getattr(getattr(og, 'main_window', None), 'daily_run_confirmation', None)
-        if bridge is None:
-            return False
-        if self._runtime_overrides.get('_world_boss_material_only', False):
-            from src.task.world_boss_materials import TARGETS_BY_ID
-            boss, claims = self._runtime_overrides['_world_boss_material_request']
-            text = (f'确认游戏当前已登录账号：{short_profile_name(self._verified_profile_name)}。\n'
-                    f'本次只执行讨伐强敌：{TARGETS_BY_ID[boss].name}，本次领取 {claims} 次。\n'
-                    '会实际消耗体力并计入账号累计领奖次数，不修改每日三目标计划。\n'
-                    '领取达到本次次数或体力不足时结束。\n'
-                    '程序尚未自动核验游戏内账号身份，是否继续？')
-            return bridge.confirm(self, text)
-        text = self.tr(
-            'Confirm that the game is logged into {account}.\n'
-            'Stamina: {farm}\nNests selected: {nests}\nWeekly garden: {day}\n'
-            'The account in the game has not been automatically verified. Continue?'
-        ).format(account=short_profile_name(self._verified_profile_name),
-                 farm=self.tr(self._profile_get('Which to Farm', '')),
-                 nests=len(self._profile_get('Tacet Discord Nests to Farm', [])),
-                 day=self.tr(normalize_weekday(self._profile_get(GARDEN_CHECK_DAY))))
-        return bridge.confirm(self, text)
+        from src.task.account_feature_verification import current_feature_run
+        verification = current_feature_run(self)
+        if verification.profile_id != self._verified_profile_id:
+            raise ConfigIntegrityBlocked('每日任务配置账号与特征码核验账号不一致，已停止任务')
 
     def _run_daily_inner(self):
         material_only = (getattr(self, '_runtime_overrides', None) or {}).get('_world_boss_material_only', False)

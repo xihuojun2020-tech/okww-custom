@@ -83,14 +83,14 @@ class TestAccountFeatureVerification(unittest.TestCase):
             read_code(task,frame)
         self.assertNotIn('private',str(raised.exception))
 
-    def test_expected_account_is_selected_daily_uuid_or_multi_child(self):
-        daily=Mock(); daily._profile_run_active=False
-        daily.get_active_profile_name.return_value='A3'
-        daily.load_daily_profiles.return_value={'A3':{'profile_id':'id-three'}}
-        task=SimpleNamespace(executor=SimpleNamespace(current_task=None), get_task_by_class=Mock(return_value=daily))
+    def test_expected_account_is_top_selection_or_multi_child(self):
+        owner=Mock(); owner.config={'当前执行账号':'A3'}
+        owner._load_profiles.return_value={'A3':{'profile_id':'id-three'}}
+        owner.get_sequence_accounts.return_value=['A3']
+        task=SimpleNamespace(executor=SimpleNamespace(current_task=None), get_task_by_class=Mock(return_value=owner))
         self.assertEqual(expected_profile(task),'id-three')
-        daily.get_active_profile_name.return_value='默认'
-        self.assertIsNone(expected_profile(task))
+        owner.config['当前执行账号']=''
+        with self.assertRaisesRegex(RuntimeError, '顶部选择'): expected_profile(task)
         parent=type('MultiAccountDailyTask',(),{})()
         parent._current_profile_id='id-four'
         task.executor.current_task=parent
@@ -214,6 +214,37 @@ class TestAccountFeatureVerification(unittest.TestCase):
         self.assertFalse(task.running)
         self.assertIsNone(executor.current_task)
 
+    def test_executor_blocks_queued_run_when_start_verification_fails_and_clears_context(self):
+        import threading
+        from custom_ok.ok.task.TaskExecutor import TaskExecutor
+        from src.config_integrity import ConfigIntegrityBlocked
+        executor = TaskExecutor.__new__(TaskExecutor)
+        executor.exit_event = threading.Event()
+        executor.paused = False
+        executor.current_task = None
+        executor._frame = None
+        executor._last_frame_time = 0
+        executor._get_wake_version = Mock(return_value=0)
+        executor.reset_scene = executor.destroy = Mock()
+        executor.next_frame = Mock()
+        task = Mock(name='game-task')
+        task.name = '测试任务'
+        task.info_set = Mock()
+        task.before_run.side_effect = ConfigIntegrityBlocked('账号不一致')
+        executor._account_feature_run = object()
+        def dequeue():
+            executor.exit_event.set()
+            return task, False, False
+        executor.next_task = dequeue
+        with patch.object(TaskExecutor, '_service_diagnostic_capture'):
+            executor.execute()
+        task.before_run.assert_called_once()
+        task.run.assert_not_called()
+        task.after_run.assert_called_once()
+        task.disable.assert_called_once()
+        self.assertIsNone(executor._account_feature_run)
+        self.assertIsNone(executor.current_task)
+
     def test_resolution_statuses(self):
         a, b = record(3,'123'), record(4,'456')
         self.assertEqual(resolve(Observation('verified','123'),[a,b],a.profile_id)[0], 'verified')
@@ -276,6 +307,7 @@ class TestAccountFeatureVerification(unittest.TestCase):
 
     def run_trial(self, end='verified', save_error=None, stop=False, final_state='complete'):
         task=trial_tests.TestTrialFlow().task()
+        task.executor._account_feature_run=None
         task._open=Mock(); task._scan=Mock(return_value=list(range(5)))
         task._process=Mock(return_value='already_complete'); task._select=Mock()
         task._state=Mock(return_value=final_state); task._release=Mock()

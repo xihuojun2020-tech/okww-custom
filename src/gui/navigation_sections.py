@@ -19,7 +19,9 @@ _MANIFEST = (
     (SETTINGS, "设置", 'bottom'),
 )
 
-TASK_CATEGORIES = ('每日执行', '每周任务', '声骸获取与整理', '活动', '扩展任务')
+TASK_CATEGORIES = ('每日执行', '每周任务', '声骸获取与整理', '活动', '扩展任务', '不常用任务')
+HIDDEN_TASKS = {'EchoesRemainTask', 'PianoTeachingTask', 'SecondSolTask'}
+INFREQUENT_TASKS = ('WorldBossMaterialTask', 'GardenTask', 'WeeklyBossTask', 'FarmEchoTask')
 HELPER_CATEGORIES = ('战斗与拾取', '剧情与移动', '登录与输入', '扩展辅助')
 
 
@@ -44,6 +46,8 @@ def build_navigation_manifest(_executor=None, _config=None):
 
 
 def task_category(task):
+    if type(task).__name__ in INFREQUENT_TASKS:
+        return '不常用任务'
     if getattr(task, 'navigation_section', '') == ACTIVITIES or getattr(task, 'group_name', '') in ('限时活动', '常驻活动'):
         return '活动'
     name = type(task).__name__
@@ -54,6 +58,20 @@ def task_category(task):
     if name in ('FarmEchoTask', 'MergeEchoTask'):
         return '声骸获取与整理'
     return '扩展任务'
+
+
+def task_order(task):
+    name = type(task).__name__
+    category = task_category(task)
+    if category == '不常用任务':
+        rank = INFREQUENT_TASKS.index(name)
+    elif category == '活动':
+        from src.gui.activity_catalog import activity_revision
+        rank = (-float('inf') if name == 'CharacterTrialTask' else
+                float('inf') if name in ('EventTask', 'ResonanceSimulationTask') else -activity_revision(task))
+    else:
+        rank = 0
+    return TASK_CATEGORIES.index(category), rank
 
 
 def helper_category(task):

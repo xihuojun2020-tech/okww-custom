@@ -54,6 +54,18 @@ def normalize_monthly_hour(value):
 class BaseWWTask(BaseTask):
     map_zoomed = False
 
+    def before_run(self):
+        from src.task.account_feature_verification import begin_task_run
+        begin_task_run(self)
+
+    def after_run(self):
+        from src.gui.navigation_sections import classify_task, TASKS
+        if classify_task(self) == TASKS:
+            from src.task.DailyTask import DailyTask
+            daily = self.get_task_by_class(DailyTask)
+            if daily is not None:
+                daily.clear_profile_binding()
+
     def navigate_ui(self, step, source, target, *, action=None, timeout=18,
                     attempts=3, identity=None, loading=None, screenshots=False, on_status=None, retry_after=3):
         """Opt-in semantic navigation, never used to repeat resource submissions."""

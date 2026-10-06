@@ -920,25 +920,13 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         task.get_task_by_class.assert_called_once_with(DailyTask)
         daily.run_world_boss_material_only.assert_called_once_with(B, 3)
 
-    def test_material_confirmation_describes_only_real_material_claims(self):
-        from ok import og
+    def test_material_entry_reuses_verified_account_without_confirmation(self):
         task, _ = self.daily()
-        task._runtime_overrides = {'_world_boss_material_only': True, '_world_boss_material_request': (B, 3)}
-        task._verified_profile_name = 'A1-Test'
-        task._readonly_profile_config = Mock(return_value=self.tasks)
-        task._profile_get.side_effect = AssertionError('unrelated daily setting in material prompt')
-        bridge = Mock()
-        bridge.confirm.return_value = True
-        with patch.object(og, 'main_window', SimpleNamespace(daily_run_confirmation=bridge)):
-            self.assertTrue(task._confirm_standalone_profile())
-        text = bridge.confirm.call_args.args[1]
-        self.assertIn('本次只执行讨伐强敌', text)
-        self.assertIn(TARGETS_BY_ID[B].name, text)
-        self.assertNotIn(TARGETS_BY_ID[A].name, text)
-        self.assertIn('本次领取 3 次', text)
-        self.assertIn('不修改每日三目标计划', text)
-        self.assertIn('实际消耗体力', text)
-        self.assertNotIn('Weekly garden', text)
+        task._verified_profile_id = 'account-a'
+        task._guard_bound_profile_identity = Mock()
+        verification = SimpleNamespace(profile_id='account-a')
+        with patch('src.task.account_feature_verification.current_feature_run', return_value=verification):
+            task._ensure_run_account_confirmation()
 
     def test_selected_boss_counts_exact_claims_above_daily_limit_without_changing_plan(self):
         for daily_tasks in (plan(), {MATERIAL_TARGETS: []}):

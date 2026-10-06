@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 
 from src.evidence.model import now_iso
+from src.config_integrity import ConfigIntegrityBlocked
 
 STATUS_LABELS = {'verified': '已核验', 'unreadable': '无法稳定读取', 'unbound': '未绑定',
                  'mismatch': '账号不一致', 'ambiguous': '重复绑定', 'context_invalid': '核验上下文失效'}
@@ -119,33 +120,89 @@ def resolve(observation, profiles, expected=None):
 def window_id(task):
     window = task.executor.device_manager.hwnd_window
     if window is None or not window.exists:
-        raise RuntimeError('特征码核验：游戏窗口不可用')
+        raise ConfigIntegrityBlocked('特征码核验：游戏窗口不可用')
     return window.hwnd
 
 
 def expected_profile(task):
     current = task.executor.current_task
     if getattr(current, '_active_account_switch_capture', None) is not None:
-        raise RuntimeError('账号切换中，不能开始特征码核验')
-    if type(current).__name__ == 'MultiAccountDailyTask':
+        raise ConfigIntegrityBlocked('账号切换中，不能开始特征码核验')
+    if type(current).__name__ in ('MultiAccountDailyTask', 'MultiAccountWeeklyGardenTask'):
         identity = getattr(current, '_current_profile_id', None)
         if not identity:
-            raise RuntimeError('多账号子任务尚未冻结期望账号')
+            raise ConfigIntegrityBlocked('多账号子任务尚未冻结期望账号')
         return identity
+    verification = getattr(task.executor, '_account_feature_run', None)
+    if verification is not None:
+        verification.guard()
+        return verification.profile_id
+    from src.task.MultiAccountDailyTask import MultiAccountDailyTask, CURRENT_ACCOUNT
+    owner = task.get_task_by_class(MultiAccountDailyTask)
+    if owner is None:
+        raise ConfigIntegrityBlocked('顶部账号选择不可用，已停止任务')
+    name = owner.config.get(CURRENT_ACCOUNT) or ''
+    selected = owner._load_profiles().get(name)
+    if name not in owner.get_sequence_accounts() or not selected or not selected.get('profile_id'):
+        raise ConfigIntegrityBlocked('请先在任务页顶部选择当前序列和账号')
+    return selected['profile_id']
+
+
+def begin_task_run(task):
+    """Executor boundary: one verification per start; multi tasks verify each visit."""
+    from src.gui.navigation_sections import classify_task, TASKS
+    from src.task.MultiAccountDailyTask import MultiAccountDailyTask, CURRENT_SEQUENCE, CURRENT_ACCOUNT
+    if classify_task(task) != TASKS:
+        return
+    task.executor._account_feature_run = None
+    if isinstance(task, MultiAccountDailyTask):
+        owner = task.get_task_by_class(MultiAccountDailyTask)
+        if task is not owner:
+            task.config[CURRENT_SEQUENCE] = owner.config[CURRENT_SEQUENCE]
+            task.config[CURRENT_ACCOUNT] = owner.config[CURRENT_ACCOUNT]
+        # Validate the common selection now, but read the game only after login.
+        name = task.config.get(CURRENT_ACCOUNT) or ''
+        if not name or name not in task.get_sequence_accounts():
+            raise ConfigIntegrityBlocked('请先在任务页顶部选择当前序列和账号')
+        return
+    expected = expected_profile(task)
+    from src.task.WWOneTimeTask import WWOneTimeTask
+    WWOneTimeTask.run(task)
+    task.ensure_main(time_out=180)
+    verification = begin_account_visit(task, expected)
     from src.task.DailyTask import DailyTask
     daily = task.get_task_by_class(DailyTask)
-    if daily is None:
-        return None
-    if getattr(daily, '_profile_run_active', False):
-        return daily._verified_profile_id
-    name = daily.get_active_profile_name()
-    profiles = daily.load_daily_profiles()
-    selected = profiles.get(name)
-    if selected:
-        return selected.get('profile_id')
-    if name in ('默认', '', None) or name in getattr(daily, 'get_sequence_names', lambda: [])():
-        return None
-    raise RuntimeError('每日任务所选账号无有效绑定，请重新选择')
+    if daily is not None:
+        # The common binding is also used by standalone material/weekly tasks.
+        record = verification.record
+        daily.bind_verified_profile(record.account['display_name'], expected_profile_id=record.profile_id,
+                                    snapshot_profile={'profile_id': record.profile_id,
+                                                      'account': record.account, 'tasks': record.tasks})
+
+
+def begin_account_visit(task, expected):
+    from src.account_repository import get_default_repository
+    repository = get_default_repository()
+    if repository is None:
+        raise ConfigIntegrityBlocked('账号配置仓库不可用，不能核验真实账号')
+    # Discard the previous visit before reading after an account switch.
+    task.executor._account_feature_run = None
+    try:
+        verification = FeatureRun(task, repository, expected).begin()
+    except RuntimeError as error:
+        # Multi-account errors of this kind must stop the whole batch, rather
+        # than be recorded as a farming failure and advance to another account.
+        raise ConfigIntegrityBlocked(str(error)) from error
+    task.executor._account_feature_run = verification
+    return verification
+
+
+def current_feature_run(task):
+    verification = getattr(task.executor, '_account_feature_run', None)
+    if verification is None:
+        verification = begin_account_visit(task, expected_profile(task))
+    verification.guard()
+    return verification
 
 
 class FeatureRun:
@@ -164,20 +221,20 @@ class FeatureRun:
     def guard(self):
         self.task.executor.check_enabled()
         if window_id(self.task) != self.window or self.task.executor.current_task is not self.current:
-            raise RuntimeError('特征码核验上下文失效：窗口或任务变化')
+            raise ConfigIntegrityBlocked('特征码核验上下文失效：窗口或任务变化')
         if getattr(self.current, '_active_account_switch_capture', None) is not None:
-            raise RuntimeError('特征码核验上下文失效：账号正在切换')
-        if type(self.current).__name__ == 'MultiAccountDailyTask' and getattr(self.current, '_current_profile_id', None) != self.expected:
-            raise RuntimeError('特征码核验上下文失效：期望账号变化')
+            raise ConfigIntegrityBlocked('特征码核验上下文失效：账号正在切换')
+        if type(self.current).__name__ in ('MultiAccountDailyTask', 'MultiAccountWeeklyGardenTask') and getattr(self.current, '_current_profile_id', None) != self.expected:
+            raise ConfigIntegrityBlocked('特征码核验上下文失效：期望账号变化')
         if not self.record:
             bindings = {str(r.profile_id): str(r.account.get('game_feature_code') or '').strip()
                         for r in self.repository.list_profiles()}
             if bindings != self.initial_bindings:
-                raise RuntimeError('读取期间绑定变化，请重新核验')
+                raise ConfigIntegrityBlocked('读取期间绑定变化，请重新核验')
         if self.record:
             record = self.repository.load_profile(self.profile_id)
             if str(record.account.get('game_feature_code') or '').strip() != self.binding:
-                raise RuntimeError('特征码绑定已变化，本轮待核验')
+                raise ConfigIntegrityBlocked('特征码绑定已变化，本轮待核验')
 
     def observe(self):
         return observe(self.task.next_frame, lambda frame: read_code(self.task, frame),

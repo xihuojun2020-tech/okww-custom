@@ -15,11 +15,8 @@ class TaskCard(ConfigCard):
         config_type = dict(task.config_type or {})
         config_description = task.config_description
         if type(task).__name__ in ('DailyTask', 'MultiAccountDailyTask', 'MultiAccountWeeklyGardenTask'):
-            allowed = ({'方案序列', 'Daily Profile', '备用识别名称', '备用识别名称内容'}
-                       if type(task).__name__ == 'DailyTask' else
-                       {'当前序列', '当前执行账号', '当前序列账号', '本次最多处理账号数', '本次时间预算（分钟）'}
-                       if type(task).__name__ == 'MultiAccountWeeklyGardenTask' else
-                       {'当前序列', '当前执行账号', '当前序列账号'})
+            allowed = ({'本次最多处理账号数', '本次时间预算（分钟）'}
+                       if type(task).__name__ == 'MultiAccountWeeklyGardenTask' else set())
             config_type = {key: dict(value) if isinstance(value, dict) else value for key, value in config_type.items()}
             for key in set(task.config) | set(config_type):
                 if key not in allowed:
@@ -31,8 +28,7 @@ class TaskCard(ConfigCard):
         if type(task).__name__ in ('DailyTask', 'MultiAccountDailyTask', 'MultiAccountWeeklyGardenTask'):
             config_type['Manage Daily Profiles'] = {'hidden': True}
             config_type['管理序列'] = {'hidden': True}
-        description = '' if (type(task).__name__ in ('DailyTask', 'MultiAccountDailyTask', 'MultiAccountWeeklyGardenTask') or
-                              fluent_sample and type(task).__name__ in ('GardenTask', 'WeeklyBossTask', 'EventTask')) else task.description
+        description = '' if (fluent_sample and type(task).__name__ in ('GardenTask', 'WeeklyBossTask', 'EventTask')) else task.description
         super().__init__(task, task.name, task.config, description, task.default_config, config_description,
                          config_type, config_icon=task.icon or FluentIcon.INFO)
         self.task = task
@@ -126,6 +122,10 @@ class TaskCard(ConfigCard):
                 widget.setMinimumHeight(44)
         if type(task).__name__ in ('DailyTask', 'MultiAccountDailyTask', 'MultiAccountWeeklyGardenTask') and self.reset_config is not None:
             self.reset_config.hide()
+        if type(task).__name__ in ('DailyTask', 'MultiAccountDailyTask'):
+            self._expand_enabled = False
+            self.card.expandButton.hide()
+            self.setExpand(False)
 
     def add_buttons(self):
         if type(self.task).__name__ not in ('DailyTask', 'MultiAccountDailyTask', 'MultiAccountWeeklyGardenTask'):
@@ -208,13 +208,13 @@ class TaskCard(ConfigCard):
         state = ('已暂停' if self.task.paused else '运行中' if self.task.running
                  else '等待中' if self.task.enabled and self.onetime
                  else '已启用' if self.task.enabled else '未运行' if self.onetime else '已关闭')
-        self.state_label.setText(state)
+        self.state_label.setText('' if self.onetime else state)
         recovery = getattr(self.task, 'recovery_status', '')
         if recovery and og.app is not None:
             recovery = og.app.tr(recovery)
         if recovery:
-            self.state_label.setText(f'{state} · {recovery}')
-        self.state_label.setVisible(bool(self.onetime or self.task.running or self.task.paused or recovery))
+            self.state_label.setText(recovery if self.onetime else f'{state} · {recovery}')
+        self.state_label.setVisible(bool(recovery or not self.onetime and (self.task.running or self.task.paused)))
         if not self.onetime and recovery and not self.task.running and not self.task.paused:
             self.state_label.setText(recovery)
 
@@ -223,20 +223,6 @@ class TaskCard(ConfigCard):
             logger.info(f"resume paused task {self.task}")
             self.task.unpause()
             return
-        if self.task.first_run_alert:
-            if not self.task.config.get('_first_run_alert'):
-                title = og.app.tr('Alert')
-                content = og.app.tr(self.task.first_run_alert)
-                from qfluentwidgets import Dialog
-                w = Dialog(title, content, self.window())
-                # w.cancelButton.setVisible(False)
-                w.yesButton.setText(og.app.tr('Confirm'))
-                w.cancelButton.setText(og.app.tr('Cancel'))
-                w.setContentCopyable(True)
-                if w.exec():
-                    self.task.config['_first_run_alert'] = self.task.first_run_alert
-                else:
-                    return
         og.app.start_controller.start(self.task)
 
     def stop_clicked(self):

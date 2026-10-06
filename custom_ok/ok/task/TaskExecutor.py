@@ -701,6 +701,9 @@ class TaskExecutor:
                     logger.debug(f'start running onetime_task {task.name}')
                     self._navigation_epoch = getattr(self, '_navigation_epoch', 0) + 1
                     self._navigation_owner = task
+                    before_run = getattr(task, 'before_run', None)
+                    if callable(before_run):
+                        before_run()
                     task.run()
                     logger.debug(f'end running onetime_task {task.name}')
                     prevent_sleeping(False)
@@ -764,6 +767,12 @@ class TaskExecutor:
                 except Exception:
                     pass
             finally:
+                if not is_trigger_task:
+                    after_run = getattr(task, 'after_run', None)
+                    if callable(after_run):
+                        after_run()
+                    self._account_feature_run = None
+                    prevent_sleeping(False)
                 release = getattr(task, '_release_combat_inputs', None)
                 if callable(release):
                     try:
