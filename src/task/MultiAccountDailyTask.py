@@ -118,8 +118,19 @@ def profile_short_name(profile_name):
     return _short_profile_name(profile_name)
 
 
-def profile_status_label(profile_name):
+def profile_status_label(profile_name, profiles=None):
     """Return the non-sensitive label allowed in task status UI."""
+    if profiles is None:
+        repository = get_default_repository()
+        profiles = {str(record.account.get('display_name') or record.profile_id):
+                    {**record.account, 'profile_id': record.profile_id}
+                    for record in repository.list_profiles()} if repository is not None else {}
+    profile = profiles.get(profile_name) or next(
+        (profile for profile in profiles.values() if profile.get('profile_id') == profile_name), None)
+    if profile is not None:
+        from src.account_slots import account_slot
+        assignment = account_slot(profile)
+        return assignment['slot'] if assignment else '未分配'
     return profile_short_name(profile_name) or '账号'
 
 
@@ -803,8 +814,14 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             except Exception:
                 self.failed_accounts[key] = previous
                 raise
-            self.info_set('Failed', [item['account'] for item in self.failed_accounts.values()
-                                     if item.get('status') != 'resolved'])
+            self.info_set('Failed', [item['account'] for item in
+                                     MultiAccountDailyTask._failed_status_records(self).values()])
+
+    def _failed_status_records(self):
+        """Resolve historical failure labels by their stable account keys for display."""
+        return {key: {**record, 'account': profile_status_label(key)}
+                for key, record in self.failed_accounts.items()
+                if record.get('status') != 'resolved'}
 
     def _reconcile_failures(self, sequence):
         from datetime import datetime
@@ -1211,9 +1228,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             if profile.get('profile_id')
         }
         return sorted({
-            profile_status_label(id_to_name.get(item, item))
+            profile_status_label(id_to_name.get(item, item), profiles)
             for item in self.done_set
-        })
+        }, key=lambda label: (label[0], int(label[1:]) if re.fullmatch(r'[A-Za-z]\d+', label) else 0))
 
     def _is_done(self, account):
         if not MultiAccountDailyTask._daily_is_done(self, account):
@@ -1292,6 +1309,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         publish_task_status(
             self,
             account=profile_status_label(account) if account else None,
+            profile_id=self._profile_id_for(account) if account else None,
             stage=stage,
             detail=detail,
         )
@@ -2116,8 +2134,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             'history': history,
         }
         self._save_failed_accounts()
-        self.info_set('Failed', [item['account'] for item in self.failed_accounts.values()
-                                 if item.get('status') != 'resolved'])
+        self.info_set('Failed', [item['account'] for item in
+                                 MultiAccountDailyTask._failed_status_records(self).values()])
         _publish_status_safe(
             self, account=account, stage='执行失败', detail=reason,
         )
@@ -3593,8 +3611,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         sequence = ([str(p['account'].get('display_name') or p['profile_id']) for p in snapshot.profiles]
                     if snapshot is not None else getattr(self, 'get_sequence_accounts', lambda: None)())
         keys = {MultiAccountDailyTask._failure_key(self, a) for a in sequence} if sequence is not None else None
-        failures = [v for k, v in (getattr(self, 'failed_accounts', {}) or {}).items()
-                    if v.get('status') != 'resolved' and (keys is None or k in keys)]
+        failures = [v for k, v in MultiAccountDailyTask._failed_status_records(self).items()
+                    if keys is None or k in keys]
         title = '多账号每日任务部分失败' if failures else '多账号每日任务完成'
         failure_text = ''
         pending = getattr(self, '_weekly_pending', {})

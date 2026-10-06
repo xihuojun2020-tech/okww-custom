@@ -106,6 +106,7 @@ class TestMultiAccountWeeklyGardenTask(unittest.TestCase):
         task._account_attempts = {'profile-a1': 1}
         task._attempt_scope = 'weekly'
         task._failure_key = lambda _account: 'profile-a1'
+        task._profile_id_for = lambda _account: 'profile-a1'
         task._progress_period = lambda: 'week-key'
         task._last_garden_result = GardenRunResult(
             'pending', 'week-key', error='score unclear', evidence_ref='evidence-42')

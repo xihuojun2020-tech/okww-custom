@@ -22,6 +22,51 @@ from src.win32_login_input import ForegroundResult, LoginClickDelivery
 
 
 class TestPersistentDailyRetry(unittest.TestCase):
+    def test_status_uses_assigned_slots_for_completed_and_historical_failures(self):
+        import tempfile
+        from src.account_repository import ProfileEditScope
+        from src.task.MultiAccountDailyTask import profile_status_label
+        from tests.fixture_support import make_account_environment
+
+        with tempfile.TemporaryDirectory() as root:
+            env = make_account_environment(root, names=('A13', 'A14', 'A10'))
+            records = {record.account['display_name'].replace('A', 'B', 1): record
+                       for record in env.repository.list_profiles()}
+            for name, sequence, slot in (('B13', '序列1', 'A9'), ('B14', '序列2', 'B2'),
+                                         ('B10', '序列2', 'B10')):
+                record = env.repository.load_profile(records[name].profile_id)
+                account = dict(record.account)
+                account.update(display_name=name, short_name=name)
+                account['extensions'] = {**account['extensions'],
+                    'fixed_sequence_slot_v1': {'sequence': sequence, 'slot': slot}}
+                env.repository.publish_profile(ProfileEditScope(record.profile_id, record.revision),
+                                               {'account': account, 'tasks': dict(record.tasks)})
+            task = self.make_task(env.integrity)
+            task._load_profiles = lambda: env.repository.get_detached_projection()['profiles']
+            task._profile_id_for = lambda name: records[name].profile_id
+            task.get_sequence_accounts = lambda: list(records)
+            task.info_set = lambda key, value: task.info.__setitem__(key, value)
+            task.done_set = {record.profile_id for record in records.values()}
+            task.failed_accounts = {records['B13'].profile_id:
+                {'account': 'B13', 'status': 'pending', 'stage': '挑战', 'reason': '失败'}}
+
+            with patch('src.task.MultiAccountDailyTask.get_default_repository', return_value=env.repository):
+                self.assertEqual(profile_status_label('B14'), 'B2')
+                self.assertEqual(task._done_status_labels(), ['A9', 'B2', 'B10'])
+                task._publish_status(account='B14', stage='每日任务')
+                self.assertEqual(task.info['Status Account'], 'B2')
+                self.assertEqual(task.info['Status Profile ID'], records['B14'].profile_id)
+                task._finish_sequence('B14')
+                message = task._notify_user.call_args.args[1]
+                self.assertIn('失败账号：A9', message)
+                self.assertIn('停留在账号 B2', message)
+                self.assertNotIn('B13', message)
+                self.assertEqual(task.failed_accounts[records['B13'].profile_id]['account'], 'B13')
+                task._mark_failed('B14', RuntimeError('领奖失败'))
+                self.assertEqual(task.info['Failed'], ['A9', 'B2'])
+                task._resolve_failure('B13')
+                self.assertEqual(task.info['Failed'], ['B2'])
+
     def test_confirmed_b2_runs_before_logout_then_wraps_to_pending_b1(self):
         from unittest.mock import Mock
         names = [f'B{i}' for i in range(1, 11)]
@@ -431,7 +476,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
     def test_completed_sequence_keeps_world_or_login_without_account_input(self):
         from unittest.mock import Mock
         for state in ('world', 'login'):
-            task = SimpleNamespace(config={}, done_set=set(),
+            task = SimpleNamespace(config={}, done_set=set(), failed_accounts={},
                 get_sequence_accounts=Mock(return_value=['A1', 'A3', 'A4']),
                 _load_today_progress=Mock(return_value=['A1', 'A3', 'A4']),
                 _classify_start_state=Mock(return_value=state),
@@ -1215,6 +1260,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
 
             def __init__(self):
                 self.done_set = set()
+                self.failed_accounts = {}
                 self.config = {}
                 self.events = []
                 self.targets = [None]
@@ -1312,6 +1358,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
 
             def __init__(self):
                 self.done_set = set()
+                self.failed_accounts = {}
                 self.config = {CURRENT_ACCOUNT: 'A3'}
                 self.events = []
                 self.targets = iter(['A4', 'A1', None])
@@ -1511,6 +1558,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
 
             def __init__(self):
                 self.done_set = set()
+                self.failed_accounts = {}
                 self.config = {CURRENT_ACCOUNT: 'A3'}
                 self.events = []
 

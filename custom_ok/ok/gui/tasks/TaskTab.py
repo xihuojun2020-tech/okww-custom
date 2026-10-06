@@ -154,7 +154,8 @@ class TaskTab(Tab):
         # Snapshot before calling translators/formatters, which can yield control.
         info = task.info.copy()
         from src.account_display import account_option_label
-        summary = [(key, account_option_label(value) if key == 'Status Account' else value)
+        summary = [(key, account_option_label(info['Status Profile ID'])
+                    if key == 'Status Account' and info.get('Status Profile ID') else value)
                    for key, value in info.items()]
         self.task_summary.setText("\n".join(f"{og.app.tr(str(key))}：{og.app.tr(value_to_string(value))}"
                                                for key, value in summary[:8]))

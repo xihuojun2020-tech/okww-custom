@@ -34,6 +34,31 @@ def example_task(name='周本挑战'):
 
 
 class TestFlatUI(unittest.TestCase):
+    def test_task_status_uses_identity_when_old_name_matches_another_current_slot(self):
+        import time
+        from ok.gui.tasks.TaskTab import TaskTab
+        records = [SimpleNamespace(profile_id=identity, account={
+            'display_name': old_name, 'nickname': '测试账号',
+            'extensions': {'fixed_sequence_slot_v1': {'sequence': '序列2', 'slot': slot}}})
+            for identity, old_name, slot in (('id-current', 'B14', 'B2'), ('id-other', 'B2', 'B9'))]
+        repository = SimpleNamespace(list_profiles=lambda: records)
+        task = SimpleNamespace(name='多账号每日任务', enabled=True, start_time=time.time() - 5,
+            info={'Status Account': 'B2', 'Status Profile ID': 'id-current',
+                  'Completed': ['B2'], 'Failed': ['B9']})
+        with patch('src.account_repository.get_default_repository', return_value=repository), \
+             patch.object(og, 'app', SimpleNamespace(tr=str)), \
+             patch.object(og, 'executor', SimpleNamespace(current_task=None)):
+            tab = TaskTab()
+            try:
+                tab.update_task_info(task)
+                text = tab.task_summary.text()
+                self.assertIn('Status Account：B2-测试账号', text)
+                self.assertNotIn('Status Account：B9', text)
+                self.assertIn('Completed：B2', text)
+                self.assertIn('Failed：B9', text)
+            finally:
+                tab.deleteLater()
+
     def test_registered_material_entry_remains_on_task_page_after_refresh(self):
         from config import config
         from src.gui.TaskHubTab import TaskHubTab
