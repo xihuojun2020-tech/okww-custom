@@ -9,6 +9,33 @@ def goal(domain=1, green=50):
 
 
 class TestForgeryQuotaPlan(unittest.TestCase):
+    def test_inventory_deficit_estimate_and_old_goal_semantics(self):
+        row = goal()
+        row.update(inventory=dict(gold=1, purple=2, blue=3, green=4),
+                   need=dict(gold=5, purple=3, blue=5, green=6))
+        self.assertEqual(125, goal_units(row))
+        self.assertEqual((2, 1, 200), claim_estimate(125))
+        self.assertEqual((0, 2, 80), claim_estimate(26))
+        self.assertEqual(75, next_forgery_goal([row], {row['goal_id']: 50})[1])
+        row['inventory'] = dict(row['need'])
+        self.assertEqual(0, goal_units(row))
+        self.assertIsNone(next_forgery_goal([row], {}))
+        self.assertEqual(50, goal_units(goal()))
+
+    def test_explicit_unlimited_keeps_dormant_goals_and_requires_valid_limited_plan(self):
+        rows = [goal()]
+        self.assertFalse(forgery_limited({FORGERY_GOALS: rows, FORGERY_MODE: 'unlimited'}))
+        self.assertEqual(rows, forgery_plan({FORGERY_GOALS: rows, FORGERY_MODE: 'unlimited'}))
+        self.assertTrue(forgery_limited({FORGERY_GOALS: rows}))
+        for tasks in ({FORGERY_MODE: 'materials'}, {FORGERY_MODE: 'invalid'}):
+            with self.assertRaises(ValueError):
+                forgery_plan(tasks)
+        snapshot = dict(goal(), inventory=dict.fromkeys(TIERS, 0))
+        for second in (goal(), dict(goal(), inventory=dict.fromkeys(TIERS, 0))):
+            with self.assertRaisesRegex(ValueError, '同一领域'):
+                forgery_plan({FORGERY_GOALS: [snapshot, second]})
+        self.assertEqual(2, len(forgery_plan({FORGERY_GOALS: [goal(), goal()]})))
+
     def test_equivalence_and_strict_validation(self):
         self.assertEqual(40, green_units(dict(gold=1, purple=1, blue=1, green=1)))
         for bad in (-1, True, 1.5, '1', 1000000):

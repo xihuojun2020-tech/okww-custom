@@ -193,6 +193,7 @@ service.import_bundle(bundle, confirm=True, trust_external=True)
                 with self.subTest(same=same, phase=phase):
                     root = self.root / f'{same}-{phase}'
                     env = make_account_environment(root, names=('A1', 'A3'))
+                    env.repository.migrate_task_settings()
                     deleted = synthetic_identity('A3')['profile_id']
                     env.repository.record_completion(deleted, 'daily', 'old')
                     service = AccountConfigBundleService(root)
@@ -301,7 +302,8 @@ except ProfileRevisionConflict:
 
         self.assertTrue(imported.ok)
         restored = json.loads(self.service.paths.master.read_text(encoding="utf-8"))
-        self.assertEqual(restored["extensions"]["new_profile_template"], template)
+        self.assertEqual(restored["extensions"]["new_profile_template"],
+                         {**template, 'Forgery Limit Mode': 'unlimited'})
 
     def test_export_recursively_redacts_credentials_but_keeps_full_phone_identity(self):
         self.master["extensions"] = {

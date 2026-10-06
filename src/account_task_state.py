@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from src.game_period import (beijing_now, completed_in_period, game_day_key, game_week_key,
                              next_daily_reset, next_weekly_reset, nightmare_checkpoint, parse_legacy_time)
-from src.account_reminders import get_task_reminders, TASK_REMINDERS, manual_reminder_done
+from src.account_reminders import get_task_reminders, TASK_REMINDERS, manual_reminder_state
 
 
 @dataclass(frozen=True)
@@ -27,7 +27,7 @@ def task_signature(task_id, tasks):
     import json
     keys = {'nightmare_nest': ('Tacet Discord Nests to Farm', 'Nightmare Settlements to Farm'),
             'world_boss': ('World Boss Material Targets',),
-            'forgery': ('Forgery Material Goals', 'Which to Farm', 'Which Forgery Challenge to Farm'),
+            'forgery': ('Forgery Material Goals', 'Forgery Limit Mode', 'Which to Farm', 'Which Forgery Challenge to Farm'),
             'tacet': ('Which Tacet Suppression to Farm',),
             'weekly_boss': ('Weekly Boss Targets', 'Weekly Boss Target'),
             'weekly_garden': ('Garden Execution Mode', 'Weekly Garden Check Day')}.get(task_id, ())
@@ -73,7 +73,7 @@ def record_task_event(task, task_id, result, **details):
 
 
 def build_account_task_cards(profile, service, *, now=None, live=None):
-    from src.task.forgery_quota_plan import forgery_plan, green_units
+    from src.task.forgery_quota_plan import forgery_plan, forgery_limited, goal_units
     from src.task.forgery_quota_progress import ForgeryQuotaProgress
     from src.task.world_boss_material_plan import material_plan
     from src.task.world_boss_material_progress import WorldBossMaterialProgress
@@ -112,20 +112,6 @@ def build_account_task_cards(profile, service, *, now=None, live=None):
                                      last_attempt_at=event.get('finished_at') or ''))
 
     daily_stamp = completed.get('Daily Task')
-    activity = events.get('daily_activity', {})
-    activity_done = (activity.get('result') == 'completed' and (activity.get('actual_points') or 0) >= 100
-                     and activity.get('rewards_claimed') is True
-                     and activity.get('period_id') == game_day_key(now))
-    detail = ('实测活跃度：' + str(activity.get('actual_points', '未记录')) + '；宝箱' +
-              ('已领取' if activity.get('rewards_claimed') else '领取待核验'))
-    # Legacy full daily success is retained as a historical source, not fabricated points.
-    if not activity and completed_in_period(daily_stamp, now=now):
-        activity_done, detail = True, '旧每日完成记录；具体积分未记录'
-    add('daily_activity', '活跃度与奖励', stamp=(activity.get('finished_at') if activity_done else None) or daily_stamp,
-        done=activity_done, detail=detail, next_at=next_daily_reset(now).isoformat())
-    if events.get('daily_run', {}).get('period_id') == game_day_key(now) and events['daily_run'].get('result') == 'failed':
-        add('daily_run', '每日流程（收尾／其他步骤）', state='attention', route='closing')
-
     nests = tasks.get('Tacet Discord Nests to Farm', DEFAULT_NEST_NAMES)
     nightmare = tasks.get('Nightmare Settlements to Farm', [])
     if nests or nightmare:
@@ -148,23 +134,42 @@ def build_account_task_cards(profile, service, *, now=None, live=None):
     quota = ForgeryQuotaProgress(service, identity)
     earned = quota.earned()
     target = tasks.get('Which to Farm', 'Tacet Suppression')
-    if target == 'Forgery Challenge' and goals:
-        done = all(earned.get(r['goal_id'], 0) >= green_units(r['need']) for r in goals)
-        detail = '；'.join(f"目标{i + 1}：绿色当量 {earned.get(r['goal_id'], 0)}/{green_units(r['need'])}" for i, r in enumerate(goals))
-        add('forgery', '凝素领域', done=done, detail=detail, state='attention' if quota.pending() else None)
-    elif target in ('Forgery Challenge', 'Simulation Challenge', 'Tacet Suppression'):
-        key, title = {'Forgery Challenge': ('forgery', '凝素领域（旧刷法）'),
-                      'Simulation Challenge': ('simulation', '模拟训练'),
-                      'Tacet Suppression': ('tacet', '无音区')}[target]
-        stamp = completed.get(target)
-        # A return alone only proves this run ended, not an exhausted lifetime goal.
+    if target in ('Forgery Challenge', 'Simulation Challenge', 'Tacet Suppression'):
+        limited = target == 'Forgery Challenge' and forgery_limited(tasks)
+        all_done = limited and all(earned.get(r['goal_id'], 0) >= goal_units(r) for r in goals)
+        active = 'tacet' if all_done or target == 'Tacet Suppression' else 'forgery' if target == 'Forgery Challenge' else 'simulation'
+        checkpoint = 'Tacet Suppression' if all_done else target
+        stamp = completed.get(checkpoint)
         done = completed_in_period(stamp, now=now) and completed_in_period(daily_stamp, now=now)
-        add(key, title, stamp=stamp, done=done, detail='今日安排已结束；长期选择保留' if done else '按账号配置使用当前体力',
-            next_at=next_daily_reset(now).isoformat())
-    if target == 'Forgery Challenge' and goals and all(earned.get(r['goal_id'], 0) >= green_units(r['need']) for r in goals):
-        add('tacet', '无音区（凝素达标后续刷）', stamp=completed.get('Tacet Suppression'),
-            done=completed_in_period(completed.get('Tacet Suppression'), now=now) and completed_in_period(daily_stamp, now=now),
-            next_at=next_daily_reset(now).isoformat())
+        if limited:
+            done = done and all_done
+            detail = '；'.join(f"目标{i + 1}：新增当量 {earned.get(r['goal_id'], 0)}/{goal_units(r)}" for i, r in enumerate(goals))
+            detail += '；凝素达标，后续刷无音区' if all_done else '；达标后转所选无音区'
+        else:
+            detail = {'Forgery Challenge': f'凝素不限 · 领域 {tasks.get("Which Forgery Challenge to Farm", 1)}',
+                      'Tacet Suppression': f'无音区 · {tasks.get("Which Tacet Suppression to Farm", "未设置")}',
+                      'Simulation Challenge': '模拟训练 · ' + str(tasks.get('Material Selection', ''))}[target]
+        event = events.get(active, {})
+        valid = not event.get('signature') or event['signature'] == task_signature(active, tasks)
+        if not valid:
+            done = False
+        current = valid and event.get('period_id') == game_day_key(now)
+        state = 'completed' if done else 'pending'
+        if quota.pending():
+            state, detail = 'attention', '凝素领取待核验；请先核对消费记录'
+        elif current and event.get('result') in ('failed', 'unconfirmed', 'running') and not done:
+            state = 'attention'
+            detail = event.get('reason') or '上次体力刷取未确认结束，请核对记录'
+        elif current and event.get('result') == 'resource_shortfall' and not done:
+            state = 'waiting'
+            detail += '；当前体力不足，下次手动启动继续'
+        if (live and live.get('profile_id') == identity and live.get('task_id') in ('forgery', 'tacet', 'simulation')
+                and live.get('run_id') and events.get(live['task_id'], {}).get('run_id') == live['run_id']):
+            state = 'running'
+            detail = live.get('detail') or detail
+        cards.append(AccountTaskCard('stamina', '体力刷取', state, detail, stamp if done else '',
+                                     next_daily_reset(now).isoformat(), event.get('started_at') or '',
+                                     route='stamina', last_attempt_at=event.get('finished_at') or ''))
 
     if plan_enabled(weekly_plan(tasks)):
         weekday = (now - timedelta(hours=4)).weekday()
@@ -189,31 +194,22 @@ def build_account_task_cards(profile, service, *, now=None, live=None):
             detail='随每日执行' if mode == 'daily' else '独立多账号每周入口',
             next_at=(check_at if not done and now < check_at else next_weekly_reset(now)).isoformat(),
             state='waiting' if not done and mode == 'daily' and now < check_at else None)
-    if tasks.get('Merge Echo on Sunday'):
-        stamp = completed.get('Merge Echo')
-        add('merge_echo', '声骸合成', stamp=stamp, done=completed_in_period(stamp, weekly=True, now=now),
-            next_at=(next_weekly_reset(now) - timedelta(days=1)).isoformat(),
-            state='waiting' if (now - timedelta(hours=4)).weekday() != 6 and not completed_in_period(stamp, weekly=True, now=now) else None)
-
     marks = service.get_progress('manual_task_marks:' + identity, {})
     for key, row in get_task_reminders(profile.account).items():
         if not row['enabled']:
             continue
-        if key == 'adversity_tower':
-            from src.task.abyss_cycle_progress import abyss_overview
-            state, detail, stamp, end = abyss_overview(service, identity, now, row.get('towers'))
-            if live and live.get('profile_id') == identity and live.get('task_id') == key:
-                state = 'running'
-            cards.append(AccountTaskCard(key, TASK_REMINDERS[key], state, '单独启动；' + detail,
-                                         stamp or '', end or '', route=key))
-            continue
         mark = marks.get(key, {})
-        done = manual_reminder_done(row, mark, now)
+        state = manual_reminder_state(row, mark, now)
         next_at = (next_daily_reset(now).isoformat() if row['rule'] == 'day' else
                    next_weekly_reset(now).isoformat() if row['rule'] == 'week' else row.get('reset_at', ''))
         if row['rule'] == 'custom' and parse_legacy_time(next_at) <= now:
             next_at = ''
-        cards.append(AccountTaskCard(key, TASK_REMINDERS[key], 'completed' if done else 'pending',
-                                     '仅提醒，不自动执行', mark.get('completed_at', ''), next_at,
-                                     source='手动标记', route='reminders', manual=True))
+        marked_stamps = [parse_legacy_time(value.get('marked_at') or value.get('completed_at'))
+                         for value in (row, mark)]
+        marked_stamps = [stamp for stamp in marked_stamps if stamp and stamp <= now]
+        marked_at = max(marked_stamps).isoformat() if marked_stamps and state == 'completed' else ''
+        cards.append(AccountTaskCard(key, TASK_REMINDERS[key], state,
+                                     '仅提醒，不自动执行' + (' · 深塔单独启动' if key == 'adversity_tower' else ''),
+                                     marked_at, next_at,
+                                     source='手动标记', route='reminder:' + key, manual=True))
     return cards

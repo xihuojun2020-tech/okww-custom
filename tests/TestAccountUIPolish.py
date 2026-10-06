@@ -22,6 +22,61 @@ from tests.fixture_support import make_account_environment
 
 
 class TestAccountUIPolish(unittest.TestCase):
+    def test_simplified_routes_inventory_form_and_reminder_rules_survive_save(self):
+        from src.account_repository import ProfileEditScope
+        from tests.TestForgeryQuotaPlan import goal
+        from src.gui.ChoiceControls import QtComboBox
+        from src.task.forgery_quota_plan import FORGERY_GOALS
+        with tempfile.TemporaryDirectory() as root:
+            env = make_account_environment(root)
+            record = env.repository.list_profiles()[0]
+            tasks = dict(record.tasks)
+            tasks.update({'Which to Farm': 'Forgery Challenge', FORGERY_GOALS: [dict(goal(1, 150),
+                          inventory=dict(gold=0, purple=0, blue=0, green=25))]})
+            account = dict(record.account)
+            account.setdefault('extensions', {})['task_reminders'] = {'adversity_tower': {
+                'enabled': True, 'rule': 'custom', 'reset_at': '2099-10-07T04:00:00+08:00',
+                'priority': '中间塔优先', 'towers': ['回音之塔']}}
+            env.repository.publish_profile(ProfileEditScope(record.profile_id, record.revision),
+                                           {'account': account, 'tasks': tasks})
+            page = AccountConfigTab(AccountConfigEditor(env.repository))
+            page.resize(1080, 800)
+            page.show()
+            try:
+                for hidden in ('forgery', 'tacet', 'daily_activity', 'merge_echo', 'closing', 'adversity_tower'):
+                    self.assertNotIn(hidden, page._nav_items)
+                self.assertIn('stamina', page._nav_items)
+                for hidden in ('Merge Echo on Sunday', 'Logout After Daily Task'):
+                    self.assertNotIn(hidden, page.form_widgets)
+                page._select_route('stamina')
+                self.app.processEvents()
+                quota = page.form_widgets[FORGERY_GOALS]
+                self.assertTrue(quota.goal_host.isVisible())
+                self.assertTrue(page.form_rows['Which Tacet Suppression to Farm'].isVisible())
+                self.assertFalse(page.form_rows['Which Forgery Challenge to Farm'].isVisible())
+                quota.mode.setCurrentIndex(quota.mode.findData('unlimited'))
+                self.app.processEvents()
+                self.assertFalse(quota.goal_host.isVisible())
+                self.assertFalse(page.form_rows['Which Tacet Suppression to Farm'].isVisible())
+                self.assertTrue(page.form_rows['Which Forgery Challenge to Farm'].isVisible())
+                page._select_route('weekly_boss')
+                weekly = page.form_widgets['Weekly Boss Targets']
+                self.assertIsInstance(weekly.rows[0][0], QtComboBox)
+                page._select_route('reminder:adversity_tower')
+                box, state, date = page.reminder_panel.task_choices['adversity_tower']
+                self.assertEqual([state.itemText(i) for i in range(state.count())], ['完成', '未完成', '前置未完成'])
+                self.assertFalse(date.isVisible())
+                state.setCurrentIndex(state.findData('blocked'))
+                page._apply_text()
+                row = page.draft.account['extensions']['task_reminders']['adversity_tower']
+                self.assertEqual('blocked', row['status'])
+                self.assertEqual('2099-10-07T04:00:00+08:00', row['reset_at'])
+                self.assertEqual(['回音之塔'], row['towers'])
+                self.assertEqual('中间塔优先', row['priority'])
+                self.assertEqual(150, page.draft.tasks[FORGERY_GOALS][0]['need']['green'])
+            finally:
+                self.cleanup_page(page)
+
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
@@ -56,16 +111,16 @@ class TestAccountUIPolish(unittest.TestCase):
             env.repository.migrate_fixed_account_slots()
             page = AccountConfigTab(AccountConfigEditor(env.repository))
             try:
-                field = page.form_widgets['Merge Echo on Sunday']
+                field = page.form_widgets['Record After Daily Task']
                 original = field.isChecked()
                 field.setChecked(not original)
                 origin = page.selected_profile_id
                 page.profile_combo.setCurrentIndex(1)
                 page.profile_combo.setCurrentIndex(0)
                 self.assertEqual(page.selected_profile_id, origin)
-                self.assertEqual(page.form_widgets['Merge Echo on Sunday'].isChecked(), not original)
+                self.assertEqual(page.form_widgets['Record After Daily Task'].isChecked(), not original)
                 self.assertTrue(page.dirty)
-                self.assertEqual(env.repository.load_profile(origin).tasks['Merge Echo on Sunday'], original)
+                self.assertEqual(env.repository.load_profile(origin).tasks.get('Record After Daily Task', original), original)
                 page.slot_editor.slot.setCurrentIndex(page.slot_editor.slot.findData('A3'))
                 self.assertIn('占用', page.slot_editor.error.text())
                 with self.assertRaises(ValueError):
@@ -114,6 +169,29 @@ class TestAccountUIPolish(unittest.TestCase):
             finally:
                 self.cleanup_page(page)
 
+    def test_hidden_activity_failure_remains_visible_and_is_not_carried_to_next_account(self):
+        from src.game_period import game_day_key
+        with tempfile.TemporaryDirectory() as root:
+            env = make_account_environment(root)
+            identities = [r.profile_id for r in env.repository.list_profiles()]
+            env.integrity.set_progress('task_state_v1:' + identities[0], {'daily_activity': {
+                'period_id': game_day_key(), 'result': 'failed', 'reason': '实测活跃度仅80'}})
+            page = AccountTaskOverview(env.repository, lambda: {})
+            page.show()
+            page.timer.stop()
+            try:
+                page.set_profile(identities[0])
+                self.drain(lambda: not page.loading.busy)
+                self.assertNotIn('daily_activity', page._rows)
+                self.assertIn('实测活跃度仅80', page.notice.text())
+                self.assertTrue(page.notice.isVisible())
+                page.set_profile(identities[1])
+                self.assertEqual('', page._daily_notice)
+                self.drain(lambda: not page.loading.busy)
+                self.assertNotIn('实测活跃度仅80', page.notice.text())
+            finally:
+                self.cleanup_page(page)
+
     def test_late_read_after_a_b_a_switch_is_discarded(self):
         with tempfile.TemporaryDirectory() as root:
             env = make_account_environment(root)
@@ -148,6 +226,15 @@ class TestAccountUIPolish(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             env = make_account_environment(root)
             env.repository.migrate_fixed_account_slots()
+            from src.account_repository import ProfileEditScope
+            from tests.TestForgeryQuotaPlan import goal
+            record = env.repository.list_profiles()[0]
+            tasks = dict(record.tasks)
+            tasks.update({'Which to Farm': 'Forgery Challenge', 'Forgery Limit Mode': 'materials',
+                          'Forgery Material Goals': [dict(goal(1, 183),
+                              inventory=dict(gold=1, purple=2, blue=3, green=4))]})
+            env.repository.publish_profile(ProfileEditScope(record.profile_id, record.revision),
+                                           {'account': record.account, 'tasks': tasks})
             with patch('src.gui.AccountSettingsTab.AccountConfigTab',
                        side_effect=lambda: AccountConfigTab(AccountConfigEditor(env.repository))), \
                  patch('src.gui.AccountSettingsTab.SequenceManagementTab',
@@ -186,13 +273,14 @@ class TestAccountUIPolish(unittest.TestCase):
                          ((1280, 800), (1440, 900), (1920, 1080))] if os.environ.get('OKWW_UI_MATRIX') else ((720, 540), (1050, 720), (1700, 1000))
                 for width, height in sizes:
                     page.resize(width, height)
-                    for route in ('overview', 'sequences', 'sequence_order', 'identity', 'tacet', 'forgery', 'world_boss', 'weekly_boss', 'nightmare_nest', 'reminders', 'manual', 'adversity_tower'):
+                    for route in ('overview', 'sequences', 'sequence_order', 'identity', 'stamina', 'world_boss', 'weekly_boss', 'nightmare_nest', 'reminders', 'manual', 'reminder:adversity_tower'):
                         account._select_route(route)
                         self.drain()
                         self.assertLessEqual(page.width(), width + 2, (route, width, page.width()))
                         self.assertLessEqual(account.width(), page.viewport().width(), (route, width, account.width()))
                         self.assertLessEqual(account.view.width(), account.viewport().width(), (route, width, account.view.width()))
                         scroll = account.overview.scroll if route == 'overview' else account.settings_scroll
+                        self.drain(lambda: scroll.widget().width() <= scroll.viewport().width())
                         self.assertEqual(scroll.horizontalScrollBar().maximum(), 0, (width, route))
                         self.assertLessEqual(scroll.widget().width(), scroll.viewport().width(), (width, route, scroll.widget().width(), scroll.viewport().width()))
                     account._select_route('overview')

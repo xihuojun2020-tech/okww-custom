@@ -29,6 +29,7 @@ class AccountTaskOverview(QWidget):
         self._generation = 0
         self._filter = None
         self._stale = False
+        self._daily_notice = ''
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(16)
@@ -99,6 +100,7 @@ class AccountTaskOverview(QWidget):
         # Remove previous account data immediately, before asynchronous reads finish.
         self._cards = []
         self.summary.setText('正在读取当前账号的任务…')
+        self._daily_notice = ''
         self.recent.setText('正在读取完成记录…')
         self.notice.clear()
         self._clear()
@@ -125,14 +127,21 @@ class AccountTaskOverview(QWidget):
         def work():
             profile = repository.load_profile(identity)
             cards = build_account_task_cards(profile, repository.integrity_service, now=now, live=live)
-            return cards
-        def loaded(cards):
+            events = repository.integrity_service.get_progress('task_state_v1:' + identity, {})
+            issues = [row.get('reason') or '每日流程未完成，请查看运行日志'
+                      for key in ('daily_run', 'daily_activity')
+                      if (row := events.get(key, {})).get('period_id') == game_day_key(now)
+                      and row.get('result') in ('failed', 'unconfirmed')]
+            return cards, '；'.join(issues)
+        def loaded(result):
+            cards, issue = result if isinstance(result, tuple) else (result, '')
             if identity != self.profile_id or generation != self._generation:
                 QTimer.singleShot(0, lambda: self.refresh(force=True))
                 return
             self._last_loaded = monotonic()
             self._cards = cards
             self._stale = False
+            self._daily_notice = issue
             self._render(cards, now, live)
         def failed(error):
             if identity == self.profile_id and generation == self._generation:
@@ -184,7 +193,7 @@ class AccountTaskOverview(QWidget):
             return card.state
         if card.manual:
             return 'manual'
-        if card.task_id in ('weekly_boss', 'weekly_garden', 'merge_echo', 'adversity_tower'):
+        if card.task_id in ('weekly_boss', 'weekly_garden'):
             return 'weekly'
         return 'daily'
 
@@ -200,7 +209,7 @@ class AccountTaskOverview(QWidget):
                              f'执行完成 {done}/{len(cards) - len(reminders)} · '
                              f'提醒完成 {sum(c.state == "completed" for c in reminders)}/{len(reminders)}')
         self.notice.setText('其他账号正在执行；本页只展示当前所选账号。'
-                           if live.get('profile_id') and live['profile_id'] != self.profile_id else '')
+                           if live.get('profile_id') and live['profile_id'] != self.profile_id else self._daily_notice)
         self.notice.setVisible(bool(self.notice.text()))
         stamps = [parse_legacy_time(c.completed_at) for c in cards if c.completed_at and not c.manual]
         stamps = [stamp for stamp in stamps if stamp is not None]
@@ -235,7 +244,7 @@ class AccountTaskOverview(QWidget):
             if row.parentWidget() != group.content:
                 group.add_widget(row)
         for key, group in self._groups.items():
-            order = {'nightmare_nest': 0, 'world_boss': 1, 'forgery': 2, 'simulation': 3, 'tacet': 4,
+            order = {'nightmare_nest': 0, 'world_boss': 1, 'stamina': 2, 'forgery': 2, 'simulation': 3, 'tacet': 4,
                      'daily_activity': 5, 'daily_run': 6, 'weekly_boss': 0, 'weekly_garden': 1,
                      'merge_echo': 2, 'adversity_tower': 3}
             grouped = sorted((c for c in cards if self._group_key(c) == key), key=lambda c: order.get(c.task_id, 100))

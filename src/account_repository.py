@@ -416,6 +416,26 @@ class AccountRepository:
                 self._publish_master(candidate)
             return changed
 
+    def migrate_task_settings(self) -> bool:
+        from .account_task_policy import migrate_task_policy
+        from .account_reminders import get_task_reminders, reminder_period
+        from .game_period import beijing_now
+        with self._lock:
+            raw, _, _ = self._load_index()
+            candidate, _ = migrate_task_policy(raw)
+            for identity, account in candidate.get('profiles', {}).items():
+                row = get_task_reminders(account).get('adversity_tower')
+                if row is not None and 'status' not in row:
+                    from .task.abyss_cycle_progress import abyss_overview
+                    state, _, _, _ = abyss_overview(self.integrity_service, identity, beijing_now(), row.get('towers'))
+                    row.update(status='completed' if state == 'completed' else 'pending',
+                               marked_at=beijing_now().isoformat(), period_id=reminder_period(row))
+                    account['extensions']['task_reminders']['adversity_tower'] = row
+            if candidate != raw:
+                self._publish_master(candidate)
+                return True
+            return False
+
     def _publish_master(self, raw: Mapping[str, Any], *, precommit_hook=None):
         from . import account_config_bundle as bundle_module
 

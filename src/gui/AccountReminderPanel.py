@@ -5,7 +5,7 @@ from PySide6.QtWidgets import QCheckBox, QLabel, QWidget, QGridLayout, QPlainTex
 from src.account_reminders import (NOTE_LIMIT, REMINDERS, get_reminder_note, get_reminders,
                                    set_reminder_note, set_reminders)
 from src.gui.SectionPanel import SectionPanel
-from src.account_reminders import TASK_REMINDERS, RESET_RULES, get_task_reminders, set_task_reminders
+from src.account_reminders import TASK_REMINDERS, REMINDER_STATES, get_task_reminders, set_task_reminders, manual_reminder_state, reminder_period
 from src.gui.ChoiceControls import QtComboBox
 
 
@@ -44,14 +44,16 @@ class AccountReminderPanel(SectionPanel):
         for index, (key, title) in enumerate(TASK_REMINDERS.items()):
             box = QCheckBox(title, self)
             rule = QtComboBox(self)
-            for option, label in RESET_RULES.items():
+            for option, label in REMINDER_STATES.items():
                 rule.addItem(label, option)
+            rule.setMinimumWidth(max(rule.fontMetrics().horizontalAdvance(label)
+                                     for label in REMINDER_STATES.values()) + 48)
             date = QDateTimeEdit(QDateTime.currentDateTime().addDays(1), self)
             date.setDisplayFormat('yyyy-MM-dd HH:mm')
             date.setCalendarPopup(True)
-            rule.setEnabled(key != 'adversity_tower')
+            rule.setEnabled(True)
             def changed(*_, rule=rule, date=date):
-                date.setVisible(rule.currentData() == 'custom')
+                date.hide()
                 self.edited.emit()
             rule.currentIndexChanged.connect(changed)
             box.toggled.connect(self.edited)
@@ -59,7 +61,6 @@ class AccountReminderPanel(SectionPanel):
             date.hide()
             task_grid.addWidget(box, index, 0)
             task_grid.addWidget(rule, index, 1)
-            task_grid.addWidget(date, index, 2)
             self.task_choices[key] = (box, rule, date)
         task_grid.setColumnStretch(0, 1)
         self.add_widget(self.task_host)
@@ -80,6 +81,7 @@ class AccountReminderPanel(SectionPanel):
             deep_grid.addWidget(box, index, 0, 1, 2)
             self.deep_towers[title] = box
         self.add_widget(self.deep_settings)
+        self.deep_settings.hide()
         self._arrange()
 
     def _arrange(self):
@@ -97,13 +99,11 @@ class AccountReminderPanel(SectionPanel):
                 self.task_grid.takeAt(0)
             for index, (box, rule, date) in enumerate(self.task_choices.values()):
                 if narrow:
-                    self.task_grid.addWidget(box, index * 3, 0, 1, 3)
-                    self.task_grid.addWidget(rule, index * 3 + 1, 0, 1, 3)
-                    self.task_grid.addWidget(date, index * 3 + 2, 0, 1, 3)
+                    self.task_grid.addWidget(box, index * 2, 0, 1, 3)
+                    self.task_grid.addWidget(rule, index * 2 + 1, 0, 1, 3)
                 else:
                     self.task_grid.addWidget(box, index, 0)
                     self.task_grid.addWidget(rule, index, 1)
-                    self.task_grid.addWidget(date, index, 2)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -137,6 +137,9 @@ class AccountReminderPanel(SectionPanel):
             self._changed()
             rows = get_task_reminders(account)
             self._loaded_task_rows = rows
+            provider = getattr(self, 'record_provider', lambda _: {})
+            marks = provider(account.get('profile_id'))
+            self._loaded_statuses = {}
             deep = rows.get('adversity_tower', {})
             with QSignalBlocker(self.deep_priority):
                 self.deep_priority.setCurrentIndex(max(0, self.deep_priority.findData(deep.get('priority', '两侧塔优先'))))
@@ -145,13 +148,15 @@ class AccountReminderPanel(SectionPanel):
                     box.setChecked(title in deep.get('towers', list(self.deep_towers)))
             for key, (box, rule, date) in self.task_choices.items():
                 row = rows.get(key, {'enabled': False, 'rule': 'none'})
+                state = manual_reminder_state(row, marks.get(key, {}))
+                self._loaded_statuses[key] = state
                 with QSignalBlocker(box), QSignalBlocker(rule), QSignalBlocker(date):
                     box.setChecked(row['enabled'])
-                    rule.setCurrentIndex(max(0, rule.findData(row['rule'])))
+                    rule.setCurrentIndex(max(0, rule.findData(state)))
                     if row.get('reset_at'):
                         from src.game_period import beijing_now
                         date.setDateTime(QDateTime(beijing_now(row['reset_at']).replace(tzinfo=None)))
-                    date.setVisible(rule.currentData() == 'custom')
+                    date.hide()
         self._arrange()
 
     def apply_account(self, account):
@@ -160,12 +165,13 @@ class AccountReminderPanel(SectionPanel):
         rows = {}
         for key, (box, rule, date) in self.task_choices.items():
             if box.isChecked() or key in getattr(self, '_loaded_task_rows', {}):
-                row = {'enabled': box.isChecked(), 'rule': rule.currentData()}
-                if row['rule'] == 'custom':
+                from copy import deepcopy
+                row = deepcopy(getattr(self, '_loaded_task_rows', {}).get(key, {'rule': 'none'}))
+                row['enabled'] = box.isChecked()
+                state = rule.currentData()
+                if state != getattr(self, '_loaded_statuses', {}).get(key, 'pending'):
                     from src.game_period import beijing_now
-                    row['reset_at'] = beijing_now(date.dateTime().toPython()).isoformat(timespec='seconds')
-                if key == 'adversity_tower':
-                    row.update(priority=self.deep_priority.currentData(),
-                               towers=[title for title, box in self.deep_towers.items() if box.isChecked()])
+                    row.update(status=state, marked_at=beijing_now().isoformat(timespec='microseconds'),
+                               period_id=reminder_period(row))
                 rows[key] = row
         return set_task_reminders(result, rows)

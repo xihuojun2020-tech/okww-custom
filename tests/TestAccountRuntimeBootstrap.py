@@ -57,6 +57,10 @@ class TestAccountRuntimeBootstrap(unittest.TestCase):
                 events.append('slot_migrate')
                 return False
 
+            def migrate_task_settings(self):
+                events.append('task_migrate')
+                return False
+
         class Snapshot:
             def __init__(self, _repository):
                 events.append("snapshot")
@@ -86,6 +90,7 @@ class TestAccountRuntimeBootstrap(unittest.TestCase):
         self.assertLess(events.index("recover"), events.index("check"))
         self.assertLess(events.index("check"), events.index("garden_migrate"))
         self.assertLess(events.index("garden_migrate"), events.index("slot_migrate"))
+        self.assertLess(events.index("slot_migrate"), events.index("task_migrate"))
         self.assertEqual(1, events.count("publish"))
         self.assertIs(first.integrity_service, get_default_service())
         self.assertIs(first.repository, get_default_repository())

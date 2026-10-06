@@ -59,6 +59,7 @@ PROTECTED_PROFILE_FIELDS = (
 
 PROTECTED_TASK_KEYS = (
     "Forgery Material Goals",
+    "Forgery Limit Mode",
     "World Boss Material Targets",
     "Material Planner Enabled",
     "Which to Farm",
@@ -80,6 +81,7 @@ PROTECTED_TASK_KEYS = (
 )
 _TASK_KEY_TYPES = {
     "Forgery Material Goals": list,
+    "Forgery Limit Mode": str,
     "World Boss Material Targets": list,
     "Material Planner Enabled": bool,
     "Which to Farm": str,
@@ -343,7 +345,7 @@ def validate_master(data: Any) -> list[str]:
             missing_keys = [key for key in PROTECTED_TASK_KEYS
                             if key not in task_config and key not in (
                                 'Weekly Boss Target', 'Weekly Boss Targets', 'Material Planner Enabled',
-                                'Nightmare Settlements to Farm', 'Garden Execution Mode', 'World Boss Material Targets', 'Forgery Material Goals')]
+                                'Nightmare Settlements to Farm', 'Garden Execution Mode', 'World Boss Material Targets', 'Forgery Material Goals', 'Forgery Limit Mode')]
             from src.task.weekly_boss import WEEKLY_BOSSES
             from src.task.weekly_boss_plan import weekly_plan
             try:

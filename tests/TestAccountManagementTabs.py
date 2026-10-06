@@ -224,7 +224,7 @@ class TestAccountManagementTabs(unittest.TestCase):
                 saved = env.repository.load_profile(tab.selected_profile_id)
                 self.assertEqual(get_reminders(saved.account), ['weekly_boss'])
                 self.assertEqual(get_reminder_note(saved.account), '周日再看')
-                self.assertEqual(saved.tasks, tasks)
+                self.assertEqual(saved.tasks, dict(tasks, **{'Forgery Limit Mode': 'unlimited'}))
                 self.assertEqual(env.repository.get_detached_projection()['sequences'], before['sequences'])
                 self.assertFalse(tab.dirty)
             finally:
@@ -235,7 +235,7 @@ class TestAccountManagementTabs(unittest.TestCase):
             env = make_account_environment(Path(temp))
             tab = AccountConfigTab(AccountConfigEditor(env.repository))
             tab.profile_combo.setCurrentIndex(1)
-            field = tab.form_widgets['Merge Echo on Sunday']
+            field = tab.form_widgets['Record After Daily Task']
             field.setChecked(True)
             widgets = dict(tab.form_widgets)
             panels = dict(tab.form_sections)
@@ -264,7 +264,7 @@ class TestAccountManagementTabs(unittest.TestCase):
                 self.assertFalse(tab.dirty)
                 self.assertFalse(events[0].choices_changed)
                 self.assertTrue(env.repository.load_profile(tab.selected_profile_id).tasks[
-                    'Merge Echo on Sunday'])
+                    'Record After Daily Task'])
                 with patch.object(QMessageBox, 'question', return_value=QMessageBox.Yes):
                     field.setChecked(False)
                     tab.save()
@@ -316,7 +316,7 @@ class TestAccountManagementTabs(unittest.TestCase):
             old_revision = tab._selected().revision
             editor = AccountConfigEditor(env.repository)
             draft = editor.load_draft(env.repository.list_profiles()[0].profile_id)
-            draft.tasks['Merge Echo on Sunday'] = True
+            draft.tasks['Record After Daily Task'] = True
             editor.save_draft(draft.scope, draft, confirmed_account_label=draft.account['display_name'])
             try:
                 with patch.object(tab, '_show_members', wraps=tab._show_members) as render:
@@ -358,7 +358,7 @@ class TestAccountManagementTabs(unittest.TestCase):
             sequences = SequenceManagementTab(SequenceRepository(env.repository))
             tab.profile_combo.setCurrentIndex(8)
             tab.changed.connect(lambda _: sequences.refresh())
-            tab.form_widgets['Merge Echo on Sunday'].setChecked(True)
+            tab.form_widgets['Record After Daily Task'].setChecked(True)
             try:
                 with patch.object(tab, '_render_form', wraps=tab._render_form) as form_render, \
                      patch.object(sequences, '_show_members', wraps=sequences._show_members) as member_render, \
@@ -522,7 +522,7 @@ dialog.close()
             env = make_account_environment(Path(temp))
             tab = AccountConfigTab(AccountConfigEditor(env.repository))
             try:
-                field = tab.form_widgets['Merge Echo on Sunday']
+                field = tab.form_widgets['Record After Daily Task']
                 field.setChecked(not field.isChecked())
                 self.assertTrue(tab.dirty)
                 draft = tab.draft

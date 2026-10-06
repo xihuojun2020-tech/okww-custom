@@ -34,6 +34,11 @@ class TaskOverviewRow(QWidget):
         self.settings.clicked.connect(lambda: overview.navigate.emit(self.card.route))
         self.settings.setProperty('role', 'link')
         self.action_layout.addWidget(self.settings)
+        self.launch = QPushButton('单独启动', self)
+        self.launch.setProperty('role', 'link')
+        self.launch.setToolTip('打开独立深塔任务页，在该页启动')
+        self.launch.clicked.connect(lambda: overview.launch_page.emit('AutoAbyssTask'))
+        self.action_layout.addWidget(self.launch)
         self.toggle = QToolButton(self)
         self.toggle.setProperty('role', 'rowDisclosure')
         self.toggle.setIcon(FluentIcon.CHEVRON_RIGHT.icon())
@@ -89,7 +94,7 @@ class TaskOverviewRow(QWidget):
         self.card = card
         self.name.setText(card.title)
         self.badge.setText({'running': '运行中', 'attention': '需要处理', 'pending': '待完成',
-                            'waiting': '等待中', 'completed': '已完成'}[card.state])
+                            'waiting': '等待中', 'completed': '已完成', 'blocked': '前置未完成'}[card.state])
         if self.badge.property('state') != card.state:
             self.badge.setProperty('state', card.state)
             self.badge.style().unpolish(self.badge)
@@ -115,6 +120,7 @@ class TaskOverviewRow(QWidget):
         self.time_label.setText(time_text)
         self.brief.setToolTip(card.detail)
         self.primary.setVisible(card.manual or card.task_id == 'adversity_tower')
+        self.launch.setVisible(card.task_id == 'adversity_tower' and card.manual)
         self.primary.setText(('撤销完成' if card.state == 'completed' else '标记完成') if card.manual else '单独启动')
         self.primary.setToolTip('打开独立任务页，在该页启动' if not card.manual else self.primary.text())
         self.retry.setVisible(card.task_id == 'adversity_tower' and card.state == 'attention')

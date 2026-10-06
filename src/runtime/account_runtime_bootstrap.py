@@ -79,6 +79,8 @@ def initialize_account_runtime(root=None, program_version=None, *,
                     integrity_result = integrity_service.check()
                 if repository.migrate_fixed_account_slots():
                     integrity_result = integrity_service.check()
+                if repository.migrate_task_settings():
+                    integrity_result = integrity_service.check()
             except Exception:
                 import logging
                 logging.getLogger(__name__).exception(

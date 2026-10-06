@@ -25,6 +25,7 @@ TASK_REMINDERS = {'adversity_tower': '深塔（单独启动）', 'sea_ruins': '�
                  'matrix': '矩阵', 'character_trial': '初露峥嵘', **ACTIVITIES,
                  'other': '其他待办'}
 RESET_RULES = {'none': '不自动重置', 'day': '每日 04:00', 'week': '周一 04:00', 'custom': '自定义重置时间'}
+REMINDER_STATES = {'completed': '完成', 'pending': '未完成', 'blocked': '前置未完成'}
 
 
 def get_task_reminders(account):
@@ -37,6 +38,10 @@ def get_task_reminders(account):
                 or row.get('rule') not in RESET_RULES
                 or (row['rule'] == 'custom' and not parse_legacy_time(row.get('reset_at')))):
             raise ValueError('任务提醒周期无效')
+        if 'status' in row and row['status'] not in REMINDER_STATES:
+            raise ValueError('任务提醒状态无效')
+        if 'status' in row and not parse_legacy_time(row.get('marked_at')):
+            raise ValueError('任务提醒标记时间无效')
         if key == 'adversity_tower' and (row.get('priority', '两侧塔优先') not in ('两侧塔优先', '中间塔优先')
                                         or not isinstance(row.get('towers', []), list)
                                         or any(t not in ('残响之塔', '深境之塔', '回音之塔') for t in row.get('towers', []))):
@@ -61,28 +66,42 @@ def reminder_period(row, now=None):
     return row['rule'] + ':' + str(row.get('reset_at', ''))
 
 
-def manual_reminder_done(row, record, now=None):
-    from src.game_period import beijing_now, parse_legacy_time
-    stamp = parse_legacy_time(record.get('completed_at'))
+def manual_reminder_state(row, record, now=None):
+    from src.game_period import beijing_now, parse_legacy_time, game_day_key, game_week_key
     current = beijing_now(now)
-    if not stamp or stamp > current or record.get('revoked_at'):
-        return False
-    if record.get('period_id') != reminder_period(row, current):
-        return False
+    candidates = [(parse_legacy_time(value.get('marked_at') or value.get('completed_at')), value)
+                  for value in (row, record) if 'status' in value or value.get('completed_at')]
+    candidates = [(stamp, value) for stamp, value in candidates if stamp and stamp <= current]
+    if not candidates:
+        return 'pending'
+    stamp, value = max(candidates, key=lambda item: item[0])
+    state = value.get('status', 'pending' if value.get('revoked_at') else 'completed')
+    if row['rule'] == 'day' and game_day_key(stamp) != game_day_key(current):
+        return 'pending'
+    if row['rule'] == 'week' and game_week_key(stamp) != game_week_key(current):
+        return 'pending'
     boundary = parse_legacy_time(row.get('reset_at')) if row['rule'] == 'custom' else None
-    return not (boundary and stamp < boundary <= current)
+    return 'pending' if boundary and stamp < boundary <= current else state
 
 
-def mark_manual_reminder(service, profile_id, task_id, row, *, done=True, now=None):
+def manual_reminder_done(row, record, now=None):
+    return manual_reminder_state(row, record, now) == 'completed'
+
+
+def mark_manual_reminder(service, profile_id, task_id, row, *, done=True, state=None, now=None):
     from src.game_period import beijing_now
-    if task_id not in TASK_REMINDERS or task_id == 'adversity_tower' or not row.get('enabled'):
+    if task_id not in TASK_REMINDERS or not row.get('enabled'):
         raise ValueError('只有已保存的人工提醒任务可以标记完成')
     service.get_profile_completions(profile_id)  # Require a trusted, existing account.
-    stamp = beijing_now(now).isoformat(timespec='seconds')
+    stamp = beijing_now(now).isoformat()
+    state = state or ('completed' if done else 'pending')
+    if state not in REMINDER_STATES:
+        raise ValueError('任务提醒状态无效')
     def update(value):
         value = value if isinstance(value, dict) else {}
         previous = dict(value.get(task_id, {}))
-        if done:
+        previous.update(status=state, marked_at=stamp)
+        if state == 'completed':
             previous.update(completed_at=stamp, revoked_at=None, source='manual',
                             period_id=reminder_period(row, now))
         else:

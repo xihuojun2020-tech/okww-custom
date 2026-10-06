@@ -66,7 +66,7 @@ class TestAccountTaskState(unittest.TestCase):
             'result': 'completed', 'period_id': game_day_key(self.now), 'actual_points': 100,
             'rewards_claimed': True, 'finished_at': stamp}})
         self.assertNotIn('nightmare_nest', self.cards())
-        self.assertEqual(self.cards()['daily_activity'].state, 'completed')
+        self.assertNotIn('daily_activity', self.cards())
 
     def test_all_manual_cycles_and_account_isolation(self):
         for rule in ('none', 'day', 'week', 'custom'):
@@ -76,6 +76,10 @@ class TestAccountTaskState(unittest.TestCase):
             mark_manual_reminder(self.env.integrity, self.identity, 'sea_ruins', row, now=self.now)
             record = self.env.integrity.get_progress('manual_task_marks:' + self.identity)['sea_ruins']
             self.assertTrue(manual_reminder_done(row, record, self.now))
+            saved = dict(row, status='blocked', marked_at=(self.now - timedelta(hours=1)).isoformat())
+            self.profile.account.setdefault('extensions', {})['task_reminders'] = {'sea_ruins': saved}
+            saved['enabled'] = True
+            self.assertEqual(self.now.isoformat(), self.cards()['sea_ruins'].completed_at)
             future = self.now + timedelta(days=8)
             self.assertEqual(manual_reminder_done(row, record, future), rule == 'none')
             self.assertEqual(self.env.integrity.get_profile_completions(self.identity), {})
@@ -93,12 +97,16 @@ class TestAccountTaskState(unittest.TestCase):
         self.profile.tasks.update({FORGERY_GOALS: [goal], 'Which to Farm': 'Forgery Challenge'})
         progress = ForgeryQuotaProgress(self.env.integrity, self.identity)
         event = progress.begin(goal['goal_id'], 1, 80, 'r1')
-        self.assertEqual(self.cards()['forgery'].state, 'attention')
+        self.assertEqual(self.cards()['stamina'].state, 'attention')
         progress.resolve(event, 80)
-        self.assertEqual(self.cards()['forgery'].state, 'completed')
-        self.assertIn('tacet', self.cards())
+        self.assertEqual(self.cards()['stamina'].state, 'pending')
+        self.assertNotIn('tacet', self.cards())
+        self.assertNotIn('forgery', self.cards())
+        for key in ('Daily Task', 'Tacet Suppression'):
+            self.env.integrity.record_completion(self.identity, key, self.now.isoformat())
+        self.assertEqual(self.cards()['stamina'].state, 'completed')
         live = {'profile_id': synthetic_identity('A3')['profile_id'], 'task_id': 'daily_activity'}
-        self.assertNotEqual(self.cards(live=live)['daily_activity'].state, 'running')
+        self.assertNotEqual(self.cards(live=live)['stamina'].state, 'running')
 
     def test_weekly_monday_success_requires_sunday_recheck(self):
         from src.task.weekly_boss import WEEKLY_MONDAY
@@ -195,19 +203,22 @@ class TestAccountTaskState(unittest.TestCase):
                                'actual_points': 100, 'rewards_claimed': True},
             'daily_run': {'period_id': game_day_key(self.now), 'result': 'failed', 'reason': '战令收尾失败'}})
         cards = self.cards()
-        self.assertEqual(cards['daily_activity'].state, 'completed')
-        self.assertEqual(cards['daily_run'].state, 'attention')
+        self.assertNotIn('daily_activity', cards)
+        self.assertNotIn('daily_run', cards)
+        events = self.env.integrity.get_progress('task_state_v1:' + self.identity)
+        self.assertEqual(events['daily_activity']['actual_points'], 100)
+        self.assertEqual(events['daily_run']['result'], 'failed')
 
     def test_failed_attempt_time_is_not_reported_as_completion(self):
         previous = (self.now - timedelta(days=1)).isoformat()
         attempt = self.now.isoformat()
         self.env.integrity.record_completion(self.identity, 'Daily Task', previous)
-        self.env.integrity.set_progress('task_state_v1:' + self.identity, {'daily_activity': {
+        self.env.integrity.set_progress('task_state_v1:' + self.identity, {'tacet': {
             'period_id': game_day_key(self.now), 'result': 'failed', 'actual_points': 80,
             'rewards_claimed': False, 'finished_at': attempt}})
-        card = self.cards()['daily_activity']
+        card = self.cards()['stamina']
         self.assertEqual(card.state, 'attention')
-        self.assertEqual(card.completed_at, previous)
+        self.assertEqual(card.completed_at, '')
         self.assertEqual(card.last_attempt_at, attempt)
 
 

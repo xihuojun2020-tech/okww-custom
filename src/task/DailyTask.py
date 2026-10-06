@@ -341,6 +341,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         if self.integrity_service is not None:
             for _profile_key in PROFILE_KEYS:
                 self.config_type[_profile_key] = {'type': 'label'}
+        for hidden_key in (MERGE_ECHO_ON_SUNDAY, LC_MERGE, LOGOUT_AFTER_DAILY):
+            self.config_type[hidden_key] = {'hidden': True}
         # 迁移旧版"附加任务列表"配置到独立开关
         self._migrate_profiles()
         self.description = "登录、领取月卡、刷声骸并领取每日奖励"
@@ -355,6 +357,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         try:
             result = super().after_init(*args, **kwargs)
             if self.config is not None:
+                self.config[MERGE_ECHO_ON_SUNDAY] = False
                 self._sync_sequence_options()
             return result
         except Exception as e:
@@ -667,8 +670,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         target = config.get('Which to Farm', self._profile_get('Which to Farm', self.support_tasks[0]))
         if target == '无':
             return None
-        from src.task.forgery_quota_plan import forgery_plan
-        if target == self.support_tasks[1] and forgery_plan(config):
+        from src.task.forgery_quota_plan import forgery_limited
+        if target == self.support_tasks[1] and forgery_limited(config):
             DailyTask._overview_event(self, 'forgery', 'running')
             status = self.get_task_by_class(ForgeryTask).farm_quota(
                 profile_id, self._material_plan_tasks, service, self._guard_bound_profile_identity,
@@ -1104,7 +1107,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         旧格式的 'Additional Tasks to Run After Daily Task' 列表会被转换：
         - Check Weekly Garden        → 若未设置检查日，则迁移为星期日
         - Auto Farm all Nightmare Nest → AUTO_FARM_NIGHTMARE_NEST = True
-        - Merge Echo If discarded > 1000 → MERGE_ECHO_ON_SUNDAY = True
+        - 旧声骸合成选项 → 停用
         迁移完成后删除旧键，避免污染新方案。
         """
         if self.integrity_service is not None:
@@ -1119,6 +1122,12 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             for profile in profiles.values():
                 if not isinstance(profile, dict):
                     continue
+                if profile.get(MERGE_ECHO_ON_SUNDAY) is not False:
+                    profile[MERGE_ECHO_ON_SUNDAY] = False
+                    changed = True
+                if not profile.get('Forgery Limit Mode'):
+                    profile['Forgery Limit Mode'] = 'materials' if profile.get('Forgery Material Goals') else 'unlimited'
+                    changed = True
                 additional = profile.pop(ADDITIONAL_TASKS, None)
                 if isinstance(additional, list):
                     changed = True
@@ -1127,7 +1136,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                     if AUTO_FARM_NIGHTMARE_NEST in additional:
                         profile[AUTO_FARM_NIGHTMARE_NEST] = True
                     if old_merge in additional:
-                        profile[MERGE_ECHO_ON_SUNDAY] = True
+                        profile[MERGE_ECHO_ON_SUNDAY] = False
                 # 迁移旧版多选周几 → 单选一天；空列表表示禁用。
                 old_days = profile.get(WEEKLY_GARDEN_CHECK_DAYS)
                 if isinstance(old_days, list):
@@ -1923,8 +1932,6 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             self.check_weekly_garden()
         # 声骸融合：每周日运行一次
         from src.game_period import beijing_now
-        if self._profile_get(MERGE_ECHO_ON_SUNDAY) and (beijing_now(datetime.now(timezone(timedelta(hours=8)))) - timedelta(hours=4)).weekday() == 6:
-            self.check_discarded_echo()
 
     def check_weekly_boss(self):
         identity = self._active_profile_id()
@@ -2152,26 +2159,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             pass
 
     def check_discarded_echo(self):
-        DailyTask._overview_event(self, 'merge_echo', 'running')
-        self.info_set('current task', 'check discarded echo')
-        self.log_info('check discarded echo')
-        merge_echo_task = self.get_task_by_class(MergeEchoTask)
-        old_notify_if_not_enough = merge_echo_task.notify_if_not_enough
-        try:
-            merge_echo_task.notify_if_not_enough = False
-            self.run_task_by_class(MergeEchoTask)
-            self.record_last_completed('Merge Echo', profile_id=getattr(self, '_verified_profile_id', None))
-            DailyTask._overview_event(self, 'merge_echo', 'completed')
-        except TaskDisabledException:
-            raise
-        except (ConfigIntegrityBlocked, ConfigWriteBlocked):
-            raise
-        except Exception as e:
-            self.log_error("MergeEchoTask Failed", e)
-            self.screenshot('MergeEchoTask')
-            self.ensure_main(time_out=180)
-        finally:
-            merge_echo_task.notify_if_not_enough = old_notify_if_not_enough
+        self.log_info('声骸合成已停用')
+        return
 
     # ==================== 每日任务完成后录像（进度留档） ====================
 

@@ -40,7 +40,8 @@ class AccountFieldMetadata:
 
 
 _LABELS = {
-    'Forgery Material Goals': ('凝素材料目标', '输入本轮还需刷出的金、紫、蓝、绿数量；按27/9/3/1折算，完成两组后自动刷本账号无音区。'),
+    'Forgery Material Goals': ('凝素材料目标', '输入已有材料与目标所需；按27/9/3/1折算缺口，达标后刷本账号无音区。'),
+    'Forgery Limit Mode': ('凝素上限', '不限，或按已有库存与目标需求计算缺口。'),
     'World Boss Material Targets': ('世界首领突破材料', '按1→2→3累计领奖，0跳过；全部达标后跟随本账号体力用途。次数跨日保留，只计成功领取，不计材料产出数量。'),
     'Material Planner Enabled': ('养成材料规划', '按游戏培养目标刷凝素，材料满足后刷声骸；每周校准仓库，收益原图和统计永久保留。首版仅简体中文16:9。'),
     'Screenshot After Daily Task': ('每日任务后截图', '依次保存四页到完成检查；关闭录像仍可截图。'),

@@ -11,6 +11,36 @@ from src.account_repository import ProfileEditScope
 
 
 class TestForgeryQuotaUI(unittest.TestCase):
+    def test_inventory_rebase_keeps_history_and_demand_edits_keep_round(self):
+        from src.task.forgery_quota_progress import ForgeryQuotaProgress
+        with tempfile.TemporaryDirectory() as root:
+            env = make_account_environment(root)
+            identity = env.repository.list_profiles()[0].profile_id
+            row = dict(goal(1, 150), inventory=dict(gold=0, purple=0, blue=0, green=25))
+            progress = ForgeryQuotaProgress(env.integrity, identity)
+            event = progress.begin(row['goal_id'], 1, 80, 'original')
+            progress.resolve(event, 80)
+            widget = ForgeryQuotaWidget({FORGERY_GOALS: [row]}, env.integrity, identity)
+            try:
+                self.assertIn('尚缺 75', widget.rows[0]['status'].text())
+                widget.rows[0]['fields']['green'].setText('200')
+                self.assertEqual(row['goal_id'], widget.values()[0]['goal_id'])
+                widget.rows[0]['inventory_fields']['green'].setText('75')
+                widget._inventory_changed(0)
+                with self.assertRaises(ValueError):
+                    widget.values()
+                widget._new_round(0)
+                updated = widget.values()[0]
+                self.assertNotEqual(row['goal_id'], updated['goal_id'])
+                self.assertEqual(75, updated['inventory']['green'])
+                self.assertIn('已确认新增 0', widget.rows[0]['status'].text())
+                self.assertEqual(50, progress.earned()[row['goal_id']])
+                widget.mode.setCurrentIndex(widget.mode.findData('unlimited'))
+                self.assertEqual(updated, widget.values()[0])
+            finally:
+                widget.timer.stop()
+                widget.deleteLater()
+
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])

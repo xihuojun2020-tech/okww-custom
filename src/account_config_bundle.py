@@ -512,6 +512,8 @@ class AccountConfigBundleService:
             else:
                 from .account_field_metadata import migrate_garden_modes
                 master, _ = migrate_garden_modes(master)
+                from .account_task_policy import migrate_task_policy
+                master, _ = migrate_task_policy(master)
             if isinstance(master, Mapping) and not errors:
                 errors.extend(ci.validate_master(master))
             runtime_raw = bundle.get("runtime_data", {})

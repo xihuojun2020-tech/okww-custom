@@ -1,6 +1,7 @@
-"""Three priority rows, with limits immediately to the right of each target."""
+"""Three aligned priority targets with limits and progress on a second line."""
 from PySide6.QtCore import Signal, QTimer
-from PySide6.QtWidgets import QWidget, QGridLayout, QLabel, QLineEdit, QPushButton, QInputDialog, QMessageBox, QComboBox
+from PySide6.QtWidgets import QWidget, QGridLayout, QLabel, QLineEdit, QPushButton, QInputDialog, QMessageBox
+from src.gui.ChoiceControls import QtComboBox as QComboBox
 
 from src.task.weekly_boss import WEEKLY_BOSSES, WEEKLY_AUTO, WEEKLY_DISABLED
 from src.task.weekly_boss_plan import WEEKLY_PLAN, weekly_plan, choose_weekly_target
@@ -17,6 +18,8 @@ class WeeklyBossPlanWidget(QWidget):
         layout = QGridLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setHorizontalSpacing(8)
+        layout.setVerticalSpacing(8)
+        self.correct_buttons = []
         names = {b.key: b.name for b in WEEKLY_BOSSES}
         for index, row in enumerate(weekly_plan(tasks)):
             target = QComboBox(self)
@@ -31,25 +34,34 @@ class WeeklyBossPlanWidget(QWidget):
             label.setWordWrap(True)
             correct = QPushButton('校正', self)
             correct.setToolTip('录入已知累计次数；请先停止运行中的任务。')
-            layout.addWidget(QLabel(f'{index + 1}', self), index, 0)
-            layout.addWidget(target, index, 1)
-            layout.addWidget(limit, index, 2)
-            layout.addWidget(QLabel('次', self), index, 3)
-            layout.addWidget(label, index, 4)
-            layout.addWidget(correct, index, 5)
+            layout.addWidget(QLabel(f'优先级{index + 1}', self), index * 3, 0)
+            layout.addWidget(target, index * 3, 1, 1, 4)
+            layout.addWidget(QLabel('领取上限', self), index * 3 + 1, 0)
+            layout.addWidget(limit, index * 3 + 1, 1)
+            layout.addWidget(QLabel('次', self), index * 3 + 1, 2)
+            layout.addWidget(label, index * 3 + 1, 3, 1, 2)
+            layout.addWidget(correct, index * 3 + 2, 1, 1, 4)
+            correct.hide()
+            self.correct_buttons.append(correct)
+            label.setProperty('role', 'description')
             self.rows.append((target, limit, label))
             target.currentIndexChanged.connect(self._edited)
             limit.textEdited.connect(self._edited)
             correct.setEnabled(self.progress is not None)
             correct.clicked.connect(lambda checked=False, target=target: self._correct(target))
-        layout.setColumnStretch(1, 2)
         layout.setColumnStretch(4, 1)
         self.summary = QLabel(self)
         self.summary.setWordWrap(True)
-        layout.addWidget(self.summary, 3, 0, 1, 6)
+        self.summary.setProperty('role', 'description')
+        layout.addWidget(self.summary, 9, 0, 1, 5)
+        details = QPushButton('累计校正', self)
+        details.setCheckable(True)
+        details.setProperty('role', 'link')
+        details.toggled.connect(lambda show: [button.setVisible(show) for button in self.correct_buttons])
+        layout.addWidget(details, 10, 0, 1, 5)
         self.resolve_button = QPushButton('核对未确认领取', self)
         self.resolve_button.clicked.connect(self._resolve)
-        layout.addWidget(self.resolve_button, 4, 0, 1, 6)
+        layout.addWidget(self.resolve_button, 11, 0, 1, 5)
         self.timer = QTimer(self)
         self.timer.setInterval(3000)
         self.timer.timeout.connect(self.refresh)

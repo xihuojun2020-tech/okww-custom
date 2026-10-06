@@ -829,13 +829,15 @@ class TestFlatUI(unittest.TestCase):
                                     '备用识别名称': True, '备用识别名称内容': 'fixture'})
             before = dict(tab.draft.tasks)
             tab._render_form()
-            for index, title in ((0, '日常与声骸'), (1, '周常安排'), (2, '收尾行为')):
+            for index, title in ((0, '日常与声骸'), (1, '周常安排')):
                 section = tab.form_sections[index]
                 self.assertEqual(section.title_label.text(), title)
                 self.assertFalse(section.toggle_button.isChecked())
-            for key in ('Weekly Garden Check Day', 'Merge Echo on Sunday'):
+            for key in ('Weekly Garden Check Day',):
                 self.assertTrue(tab.form_sections[1].isAncestorOf(tab.form_widgets[key]))
-            self.assertTrue(tab.form_sections[2].isAncestorOf(tab.form_widgets['Logout After Daily Task']))
+            self.assertNotIn(2, tab.form_sections)
+            self.assertNotIn('Merge Echo on Sunday', tab.form_widgets)
+            self.assertNotIn('Logout After Daily Task', tab.form_widgets)
             self.assertTrue(tab.identity_group.isAncestorOf(tab.form_widgets['备用识别名称内容']))
             self.assertEqual(tab.draft.tasks, before)
             tab.deleteLater()

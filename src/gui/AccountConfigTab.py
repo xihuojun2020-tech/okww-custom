@@ -20,7 +20,7 @@ from src.account_display import account_display_label
 from src.account_rebind_service import AccountRebindService, rebind_confirmation_identity
 from src.account_repository import AccountRepository, AccountRepositoryError, get_default_repository
 from src.gui.ForgeryQuotaWidget import ForgeryQuotaWidget
-from src.task.forgery_quota_plan import FORGERY_GOALS
+from src.task.forgery_quota_plan import FORGERY_GOALS, FORGERY_MODE
 from src.gui.WorldBossMaterialPlanWidget import WorldBossMaterialPlanWidget
 from src.task.world_boss_material_plan import MATERIAL_TARGETS, material_plan
 from src.gui.WeeklyBossPlanWidget import WeeklyBossPlanWidget
@@ -231,7 +231,8 @@ class AccountTemplateDialog(QDialog):
         form = QVBoxLayout(content)
         for field in account_field_metadata(self._tasks):
             if field.key in ('Nightmare Which to Farm', 'Nightmare Settlements to Farm', 'Weekly Boss Target',
-                             'Material Planner Enabled', 'Auto Farm all Nightmare Nest', 'Farm Nightmare Nest for Daily Echo'):
+                             'Material Planner Enabled', 'Auto Farm all Nightmare Nest', 'Farm Nightmare Nest for Daily Echo',
+                             FORGERY_MODE, 'Merge Echo on Sunday', 'Logout After Daily Task'):
                 continue
             if field.affects_identity or field.key in ("备用识别名称", "备用识别名称内容"):
                 continue
@@ -283,6 +284,8 @@ class AccountTemplateDialog(QDialog):
         for key, widget in self._widgets.items():
             if isinstance(widget, ForgeryQuotaWidget):
                 result[key] = widget.values()
+                if FORGERY_MODE in result or widget.mode.currentData() != ('materials' if result[key] else 'unlimited'):
+                    result[FORGERY_MODE] = widget.mode.currentData()
             elif isinstance(widget, WorldBossMaterialPlanWidget):
                 rows = widget.values()
                 if result.get(key) != [] or rows != material_plan(result):
@@ -433,6 +436,7 @@ class AccountConfigTab(CustomTab):
         layout.addWidget(self.identity_group)
         from src.gui.AccountReminderPanel import AccountReminderPanel
         self.reminder_panel = AccountReminderPanel(root)
+        self.reminder_panel.record_provider = lambda identity: repository.integrity_service.get_progress('manual_task_marks:' + identity, {}) if identity else {}
         self.reminder_panel.edited.connect(self._mark_draft_edited)
         layout.addWidget(self.reminder_panel)
         self.sequence_group = QGroupBox("所属序列（勾选后保存即可调整当前账号归属）", self.identity_group)
@@ -531,10 +535,9 @@ class AccountConfigTab(CustomTab):
                 ('sequence_order', '账号执行顺序', ()),
                 ('identity', '账号识别信息', ()), ('reminders', '待办提醒', ()),
                 ('daily', '日常与声骸', (('nightmare_nest', '残像聚落'), ('world_boss', '讨伐强敌'),
-                                       ('forgery', '凝素领域'), ('tacet', '无音区'), ('daily_activity', '活跃度与奖励'))),
-                ('weekly', '周常安排', (('weekly_boss', '战歌重奏'), ('weekly_garden', '每周乐园'), ('merge_echo', '声骸合成'))),
-                ('adversity_tower', '深塔（单独启动）', ()), ('manual', '海墟与活动提醒', ()),
-                ('closing', '收尾行为', ()),
+                                       ('stamina', '体力刷取'))),
+                ('weekly', '周常安排', (('weekly_boss', '战歌重奏'), ('weekly_garden', '每周乐园'))),
+                ('manual', '海墟与活动提醒', ()),
                 ('recording', '截图与录像', ()), ('advanced', '高级设置', ())):
             item = QTreeWidgetItem([title])
             item.setData(0, Qt.UserRole, route)
@@ -548,7 +551,7 @@ class AccountConfigTab(CustomTab):
                 item.setIcon(0, FluentIcon.CHEVRON_RIGHT.icon())
         from src.account_reminders import TASK_REMINDERS
         for key, label in TASK_REMINDERS.items():
-            if key != 'adversity_tower':
+            if key in TASK_REMINDERS:
                 item = QTreeWidgetItem(self._nav_items['manual'], [label])
                 item.setData(0, Qt.UserRole, 'reminder:' + key)
                 self._nav_items['reminder:' + key] = item
@@ -592,6 +595,8 @@ class AccountConfigTab(CustomTab):
                 'elapsed': max(0, int(time.time() - getattr(task, 'start_time', time.time())))}
 
     def _select_route(self, route):
+        route = {'forgery': 'stamina', 'tacet': 'stamina', 'daily_activity': 'overview', 'closing': 'overview',
+                 'merge_echo': 'overview', 'adversity_tower': 'reminder:adversity_tower'}.get(route, route)
         route = route if route in self._nav_items else 'daily'
         item = self._nav_items[route]
         if item.parent():
@@ -600,6 +605,8 @@ class AccountConfigTab(CustomTab):
         self._navigate(route)
 
     def _navigate(self, route):
+        route = {'forgery': 'stamina', 'tacet': 'stamina', 'daily_activity': 'overview',
+                 'merge_echo': 'overview', 'closing': 'overview', 'adversity_tower': 'reminder:adversity_tower'}.get(route, route)
         self._route = route
         self.content_stack.setCurrentWidget(self.overview if route == 'overview' else self.settings_scroll)
         self.identity_group.setVisible(route == 'identity')
@@ -607,15 +614,15 @@ class AccountConfigTab(CustomTab):
         self.reminder_panel.setVisible(reminder_route)
         if reminder_route:
             self.reminder_panel.set_expanded(True)
-            self.reminder_panel.deep_settings.setVisible(route in ('reminders', 'adversity_tower'))
+            self.reminder_panel.deep_settings.hide()
             for widget in (self.reminder_panel.host, self.reminder_panel.note_label, self.reminder_panel.note):
                 widget.setVisible(route == 'reminders')
             key_filter = 'adversity_tower' if route == 'adversity_tower' else route.partition(':')[2] if route.startswith('reminder:') else None
             for key, (box, rule, date) in self.reminder_panel.task_choices.items():
-                visible = key == key_filter if key_filter else (key != 'adversity_tower' if route == 'manual' else True)
+                visible = key == key_filter if key_filter else True
                 box.setVisible(visible)
                 rule.setVisible(visible)
-                date.setVisible(visible and rule.currentData() == 'custom')
+                date.hide()
         if route == 'identity':
             self.identity_group.set_expanded(True)
         self.maintenance.setVisible(route == 'advanced')
@@ -628,11 +635,10 @@ class AccountConfigTab(CustomTab):
         if route == 'advanced':
             self.maintenance.set_expanded(True)
         groups = {'daily': 0, 'weekly': 1, 'closing': 2, 'advanced': 3, 'recording': 4,
-                  'nightmare_nest': 0, 'world_boss': 0, 'forgery': 0, 'tacet': 0, 'daily_activity': 0,
+                  'nightmare_nest': 0, 'world_boss': 0, 'stamina': 0,
                   'weekly_boss': 1, 'weekly_garden': 1, 'merge_echo': 1}
         filters = {'nightmare_nest': {'Tacet Discord Nests to Farm'}, 'world_boss': {MATERIAL_TARGETS},
-                   'forgery': {FORGERY_GOALS, 'Which to Farm', 'Which Forgery Challenge to Farm'},
-                   'tacet': {'Which to Farm', 'Which Tacet Suppression to Farm'},
+                   'stamina': {FORGERY_GOALS, 'Which to Farm', 'Which Forgery Challenge to Farm', 'Which Tacet Suppression to Farm', 'Material Selection'},
                    'weekly_boss': {WEEKLY_PLAN},
                    'weekly_garden': {'Garden Execution Mode', 'Weekly Garden Check Day'},
                    'merge_echo': {'Merge Echo on Sunday'}, 'daily_activity': set()}
@@ -649,6 +655,24 @@ class AccountConfigTab(CustomTab):
             self._weekly_status_host.setVisible(route in ('weekly', 'weekly_boss'))
         if route == 'overview':
             self.overview.refresh(force=True)
+        self._update_stamina_rows()
+
+    def _update_stamina_rows(self, *_):
+        if getattr(self, '_route', None) not in ('stamina', 'daily'):
+            return
+        target = self.form_widgets.get('Which to Farm')
+        quota = self.form_widgets.get(FORGERY_GOALS)
+        if target is None or quota is None:
+            return
+        kind = target.currentData()
+        finite = quota.mode.currentData() == 'materials'
+        visible = {FORGERY_GOALS: kind == 'Forgery Challenge',
+                   'Which Forgery Challenge to Farm': kind == 'Forgery Challenge' and not finite,
+                   'Which Tacet Suppression to Farm': kind == 'Tacet Suppression' or (kind == 'Forgery Challenge' and finite),
+                   'Material Selection': kind == 'Simulation Challenge'}
+        for key, show in visible.items():
+            if key in self.form_rows:
+                self.form_rows[key].setVisible(show)
 
     def _open_records(self, key):
         from ok import og
@@ -865,6 +889,8 @@ class AccountConfigTab(CustomTab):
                 continue
             if isinstance(widget, ForgeryQuotaWidget):
                 self.draft.tasks[key] = widget.values()
+                if FORGERY_MODE in self.draft.tasks or widget.mode.currentData() != ('materials' if self.draft.tasks[key] else 'unlimited'):
+                    self.draft.tasks[FORGERY_MODE] = widget.mode.currentData()
             elif isinstance(widget, WorldBossMaterialPlanWidget):
                 rows = widget.values()
                 if self.draft.tasks.get(key) != [] or rows != material_plan(self.draft.tasks):
@@ -972,7 +998,8 @@ class AccountConfigTab(CustomTab):
         fields = sorted(account_field_metadata(self.draft.tasks), key=group)
         for field in fields:
             if field.key in ('Nightmare Which to Farm', 'Nightmare Settlements to Farm', 'Weekly Boss Target',
-                             'Material Planner Enabled', 'Auto Farm all Nightmare Nest', 'Farm Nightmare Nest for Daily Echo'):
+                             'Material Planner Enabled', 'Auto Farm all Nightmare Nest', 'Farm Nightmare Nest for Daily Echo',
+                             FORGERY_MODE, 'Merge Echo on Sunday', 'Logout After Daily Task'):
                 continue
             identity_field = field.key in ('备用识别名称', '备用识别名称内容')
             if not identity_field and group(field) != last_group:
@@ -1033,6 +1060,10 @@ class AccountConfigTab(CustomTab):
             if field.key == WEEKLY_PLAN:
                 self._render_weekly_status()
         _link_material_controls(self.form_widgets)
+        if 'Which to Farm' in self.form_widgets:
+            self.form_widgets['Which to Farm'].currentIndexChanged.connect(self._update_stamina_rows)
+        if FORGERY_GOALS in self.form_widgets:
+            self.form_widgets[FORGERY_GOALS].mode.currentIndexChanged.connect(self._update_stamina_rows)
         target = self.form_widgets.get(WEEKLY_PLAN)
         if target is not None and 1 in self.form_sections:
             def update_summary(*_):

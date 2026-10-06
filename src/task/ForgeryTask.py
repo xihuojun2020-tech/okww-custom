@@ -62,7 +62,7 @@ class ForgeryTask(DomainTask):
         self.ensure_main()
 
     def farm_quota(self, profile_id, read_tasks, service, guard, *, activity_ready=False, used_stamina=0):
-        from src.task.forgery_quota_plan import forgery_plan, next_forgery_goal, claim_width
+        from src.task.forgery_quota_plan import forgery_plan, forgery_limited, next_forgery_goal, claim_width
         from src.task.forgery_quota_progress import ForgeryQuotaProgress
         from src.config_integrity import fingerprint
         progress = ForgeryQuotaProgress(service, profile_id)
@@ -77,6 +77,7 @@ class ForgeryTask(DomainTask):
                 guard()
                 current_tasks = read_tasks()
                 if (current_tasks.get('Which to Farm', 'Forgery Challenge') != 'Forgery Challenge'
+                        or not forgery_limited(current_tasks)
                         or forgery_plan(current_tasks) != self.rows):
                     raise RuntimeError('凝素目标已修改，停止本次领奖，请重新运行')
                 if progress.pending():
@@ -96,7 +97,7 @@ class ForgeryTask(DomainTask):
                 if progress.pending():
                     raise RuntimeError('凝素领奖待核验，请先在账号设置核对')
                 current_tasks = read_tasks()
-                if current_tasks.get('Which to Farm', 'Forgery Challenge') != 'Forgery Challenge':
+                if current_tasks.get('Which to Farm', 'Forgery Challenge') != 'Forgery Challenge' or not forgery_limited(current_tasks):
                     return 'disabled'
                 rows = forgery_plan(current_tasks)
                 choice = next_forgery_goal(rows, progress.earned())
