@@ -93,7 +93,7 @@ class ForgeryQuotaWidget(QWidget):
         self.timer.start()
         self.refresh()
 
-    def values(self, *, preview=False):
+    def values(self, *, preview=False, farm_kind='Forgery Challenge'):
         result = []
         for row in self.rows:
             domain = row['target'].currentData()
@@ -113,7 +113,8 @@ class ForgeryQuotaWidget(QWidget):
             if row['snapshot'] or (preview and row['inventory_dirty']):
                 goal['inventory'] = quantities(row['inventory_fields'])
             result.append(goal)
-        return forgery_plan({FORGERY_GOALS: result, FORGERY_MODE: self.mode.currentData()})
+        return forgery_plan({FORGERY_GOALS: result, FORGERY_MODE: self.mode.currentData(),
+                             'Which to Farm': farm_kind})
 
     def _edited(self, *_):
         self.refresh()

@@ -22,6 +22,44 @@ from tests.fixture_support import make_account_environment
 
 
 class TestAccountUIPolish(unittest.TestCase):
+    def test_tacet_save_does_not_require_unlimited_forgery_and_keeps_inactive_mode(self):
+        from PySide6.QtWidgets import QMessageBox
+        from src.gui.AccountConfigTab import AccountTemplateDialog
+        from src.task.forgery_quota_plan import FORGERY_MODE, FORGERY_GOALS
+        with tempfile.TemporaryDirectory() as root:
+            env = make_account_environment(root)
+            page = AccountConfigTab(AccountConfigEditor(env.repository))
+            try:
+                identity = page.selected_profile_id
+                page._select_route('stamina')
+                quota = page.form_widgets[FORGERY_GOALS]
+                quota.mode.setCurrentIndex(quota.mode.findData('materials'))
+                target = page.form_widgets['Which to Farm']
+                target.setCurrentIndex(target.findData('Tacet Suppression'))
+                self.assertTrue(page.form_rows[FORGERY_GOALS].isHidden())
+                with patch.object(QMessageBox, 'question', return_value=QMessageBox.Yes):
+                    page.save()
+                    self.drain(lambda: not page.operation.busy)
+                self.assertIn('保存成功', page.status.text())
+                saved = env.repository.load_profile(identity).tasks
+                self.assertEqual('Tacet Suppression', saved['Which to Farm'])
+                self.assertEqual('materials', saved[FORGERY_MODE])
+                self.assertEqual([], saved[FORGERY_GOALS])
+                dialog = AccountTemplateDialog(saved)
+                try:
+                    self.assertEqual(saved[FORGERY_MODE], dialog.tasks()[FORGERY_MODE])
+                finally:
+                    dialog.deleteLater()
+                page.refresh()
+                self.assertEqual('materials', page.form_widgets[FORGERY_GOALS].mode.currentData())
+                target = page.form_widgets['Which to Farm']
+                target.setCurrentIndex(target.findData('Forgery Challenge'))
+                with self.assertRaisesRegex(ValueError, '至少一个领域目标'):
+                    page._apply_text()
+                self.assertEqual(saved, env.repository.load_profile(identity).tasks)
+            finally:
+                self.cleanup_page(page)
+
     def test_committed_slot_save_updates_label_order_and_keeps_uuid(self):
         from PySide6.QtWidgets import QMessageBox
         from src.account_slots import account_slot

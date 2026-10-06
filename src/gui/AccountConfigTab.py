@@ -292,9 +292,11 @@ class AccountTemplateDialog(QDialog):
 
     def tasks(self):
         result = dict(self._tasks)
+        target = self._widgets.get('Which to Farm')
+        farm_kind = target.currentData() if target is not None else result.get('Which to Farm', 'Forgery Challenge')
         for key, widget in self._widgets.items():
             if isinstance(widget, ForgeryQuotaWidget):
-                result[key] = widget.values()
+                result[key] = widget.values(farm_kind=farm_kind)
                 if FORGERY_MODE in result or widget.mode.currentData() != ('materials' if result[key] else 'unlimited'):
                     result[FORGERY_MODE] = widget.mode.currentData()
             elif isinstance(widget, WorldBossMaterialPlanWidget):
@@ -908,11 +910,13 @@ class AccountConfigTab(CustomTab):
         from src.recording_policy import RECORDING_PAGES
         self.draft.tasks['Record Pages'] = list(RECORDING_PAGES)
         self.draft.tasks.setdefault('Garden Execution Mode', 'closed')
+        target = self.form_widgets.get('Which to Farm')
+        farm_kind = target.currentData() if target is not None else self.draft.tasks.get('Which to Farm', 'Forgery Challenge')
         for key, widget in self.form_widgets.items():
             if not widget.isEnabled():
                 continue
             if isinstance(widget, ForgeryQuotaWidget):
-                self.draft.tasks[key] = widget.values()
+                self.draft.tasks[key] = widget.values(farm_kind=farm_kind)
                 if FORGERY_MODE in self.draft.tasks or widget.mode.currentData() != ('materials' if self.draft.tasks[key] else 'unlimited'):
                     self.draft.tasks[FORGERY_MODE] = widget.mode.currentData()
             elif isinstance(widget, WorldBossMaterialPlanWidget):

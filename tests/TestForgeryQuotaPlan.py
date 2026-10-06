@@ -9,6 +9,11 @@ def goal(domain=1, green=50):
 
 
 class TestForgeryQuotaPlan(unittest.TestCase):
+    def test_inactive_forgery_does_not_require_material_goals(self):
+        for kind in ('Tacet Suppression', 'Simulation Challenge', '无'):
+            self.assertEqual([], forgery_plan({'Which to Farm': kind, FORGERY_MODE: 'materials'}))
+        with self.assertRaisesRegex(ValueError, '至少一个领域目标'):
+            forgery_plan({'Which to Farm': 'Forgery Challenge', FORGERY_MODE: 'materials'})
     def test_inventory_deficit_estimate_and_old_goal_semantics(self):
         row = goal()
         row.update(inventory=dict(gold=1, purple=2, blue=3, green=4),

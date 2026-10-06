@@ -37,7 +37,7 @@ def forgery_plan(tasks):
     mode = tasks.get(FORGERY_MODE)
     if mode is not None and mode not in ('unlimited', 'materials'):
         raise ValueError('凝素上限模式无效')
-    if mode == 'materials' and not rows:
+    if mode == 'materials' and not rows and tasks.get('Which to Farm', 'Forgery Challenge') == 'Forgery Challenge':
         raise ValueError('按材料需求刷取需要设置至少一个领域目标')
     domains = [row['domain'] for row in rows]
     if any('inventory' in row and domains.count(row['domain']) > 1 for row in rows):
