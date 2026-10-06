@@ -156,10 +156,11 @@ class TestFlatUI(unittest.TestCase):
                  patch.object(og, 'app', SimpleNamespace(tr=str)):
                 config = MemoryConfig({'序列 1 账号': ['A1', 'A3']})
                 completed = Mock(return_value='测试时间')
-                row = LabelAndAccountSequence({}, ['A1', 'A3', 'A4'], config, '序列 1 账号',
+                row = LabelAndAccountSequence({}, ['A4', 'A3', 'A1'], config, '序列 1 账号',
                                                max_count=3, last_completed_provider=completed)
                 self.assertIn('测试账号一', row.combos[0].currentText())
                 self.assertEqual(row._config_list(), ['A1', 'A3'])
+                self.assertEqual([row.combos[0].itemData(i) for i in range(4)], ['无', 'A1', 'A3', 'A4'])
                 completed.assert_any_call('A1')
                 completed.assert_any_call('A3')
                 row._refresh_all()
@@ -241,6 +242,33 @@ class TestFlatUI(unittest.TestCase):
                     row.combo_box.setCurrentIndex(target_index)
                     self.assertEqual(config[key], 'A4', kind.__name__)
                     self.assertIn('199****0004', row.combo_box.currentText())
+                    row.deleteLater()
+
+    def test_account_dropdown_resorts_saved_bindings_without_writing_selection(self):
+        import copy
+        from src.gui.AccountChoice import AccountChoice
+        from src.account_slots import SLOT_KEY
+        from src.account_repository import ProfileEditScope
+        with tempfile.TemporaryDirectory() as temp:
+            env = make_account_environment(Path(temp), names=('A10', 'A9', 'A1'))
+            with patch('src.account_repository.get_default_repository', return_value=env.repository), \
+                 patch.object(og, 'app', SimpleNamespace(tr=str)):
+                config = MemoryConfig({'目标账号': 'A10'})
+                row = AccountChoice({}, ['A10', 'A9', 'A1', '（自动识别）'], config, '目标账号')
+                try:
+                    self.assertEqual([row.combo_box.itemData(i) for i in range(4)], ['（自动识别）', 'A1', 'A9', 'A10'])
+                    record = next(r for r in env.repository.list_profiles() if r.account['short_name'] == 'A10')
+                    account = copy.deepcopy(record.account)
+                    account['extensions'][SLOT_KEY] = {'sequence': '序列2', 'slot': 'B1'}
+                    env.repository.publish_profile(ProfileEditScope(record.profile_id, record.revision),
+                                                   {'account': account, 'tasks': record.tasks})
+                    row.update_value()
+                    self.assertEqual(row.combo_box.currentData(), 'A10')
+                    self.assertTrue(row.combo_box.currentText().startswith('B1-'))
+                    self.assertEqual(config['目标账号'], 'A10')
+                    row.combo_box.setCurrentIndex(row.combo_box.findData('A9'))
+                    self.assertEqual(config['目标账号'], 'A9')
+                finally:
                     row.deleteLater()
 
     def test_shared_dropdown_values_keyboard_and_elision(self):

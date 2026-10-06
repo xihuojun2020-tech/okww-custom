@@ -2,7 +2,7 @@
 from PySide6.QtCore import QSignalBlocker
 from ok.gui.tasks.ConfigLabelAndWidget import ConfigLabelAndWidget
 from src.gui.AccountConfigTab import ClickOnlyComboBox
-from src.account_display import account_option_labels
+from src.account_display import account_option_items
 
 
 class AccountChoice(ConfigLabelAndWidget):
@@ -18,16 +18,12 @@ class AccountChoice(ConfigLabelAndWidget):
             self.update_config(self.combo_box.itemData(index))
 
     def update_value(self):
-        with QSignalBlocker(self.combo_box):
-            values = [self.combo_box.itemData(i) for i in range(self.combo_box.count())]
-            for index, label in enumerate(account_option_labels(values)):
-                self.combo_box.setItemText(index, label)
-            self.combo_box.setCurrentIndex(self.combo_box.findData(self.config.get(self.key)))
+        self.set_options([self.combo_box.itemData(i) for i in range(self.combo_box.count())])
 
     def set_options(self, options):
-        values = list(options)
+        items = account_option_items(options)
         with QSignalBlocker(self.combo_box):
             self.combo_box.clear()
-            for value, label in zip(values, account_option_labels(values)):
+            for value, label in items:
                 self.combo_box.addItem(label, value)
             self.combo_box.setCurrentIndex(self.combo_box.findData(self.config.get(self.key)))

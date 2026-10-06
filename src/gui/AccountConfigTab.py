@@ -6,7 +6,7 @@ import logging
 from time import perf_counter
 from functools import partial
 
-from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtCore import Qt, Signal, QTimer, QSignalBlocker
 from PySide6.QtWidgets import (QCheckBox, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout, QLabel,
                                QMessageBox, QPlainTextEdit, QPushButton, QInputDialog, QDialog,
                                QDialogButtonBox,
@@ -16,7 +16,7 @@ from qfluentwidgets import BodyLabel, FluentIcon
 
 from ok.gui.widget.CustomTab import CustomTab
 from src.account_config_editor import AccountConfigEditor, ProfileDraft, sanitize_error
-from src.account_display import account_display_label
+from src.account_display import account_display_label, account_sort_key
 from src.account_rebind_service import AccountRebindService, rebind_confirmation_identity
 from src.account_repository import AccountRepository, AccountRepositoryError, get_default_repository
 from src.gui.ForgeryQuotaWidget import ForgeryQuotaWidget
@@ -775,28 +775,34 @@ class AccountConfigTab(CustomTab):
         return True
 
     def refresh(self, profile_id=None, *, preserve_draft=False):
+        if not self.refresh_account_choices(profile_id):
+            return
         if self.operation.busy or (preserve_draft and self.dirty):
             self.status.setText('账号配置已更新；当前草稿已保留，保存时将检查版本冲突')
             return
+        self._load_selected()
+
+    def refresh_account_choices(self, profile_id=None):
+        """Refresh committed labels/order without loading or changing an editor draft."""
         selected_id = profile_id or self.profile_combo.currentData()
-        self.profile_combo.blockSignals(True)
-        self.profile_combo.clear()
         try:
-            records = self.editor.repository.list_profiles()
-            for record in records:
-                label = account_display_label(record.account)
-                self.profile_combo.addItem(label, record.profile_id)
+            records = sorted(self.editor.repository.list_profiles(),
+                             key=lambda record: account_sort_key(record.account, record.profile_id))
+            items = [(account_display_label(record.account), record.profile_id) for record in records]
         except AccountRepositoryError as exc:
             # A missing master is a safe-mode state during first launch or
             # after an incomplete import.  Keep the shell visible so the
             # integrity dialog can explain/recover it instead of crashing UI.
             self.status.setText(f"账号仓库暂不可用：{sanitize_error(exc)}")
-        finally:
+            return False
+        with QSignalBlocker(self.profile_combo):
+            self.profile_combo.clear()
+            for label, identity in items:
+                self.profile_combo.addItem(label, identity)
             if selected_id:
                 index = self.profile_combo.findData(selected_id)
                 self.profile_combo.setCurrentIndex(index if index >= 0 else 0)
-            self.profile_combo.blockSignals(False)
-        self._load_selected()
+        return True
 
     def refresh_sequences(self):
         """Refresh membership checkboxes without discarding an unsaved draft."""
@@ -1357,6 +1363,7 @@ class AccountConfigTab(CustomTab):
         self._draft_cache.pop(result.profile_id, None)
         self._load_slot_editor()
 
+        self.refresh_account_choices(result.profile_id)
         self.overview.refresh(force=True)
         self._navigate(self._route)
 
@@ -1373,7 +1380,11 @@ class AccountConfigTab(CustomTab):
                     self._accept_saved_profile(result, submitted, saved_sequences)
                 elif refresh:
                     self.refresh(profile_id=getattr(result, 'profile_id', origin_id))
+                else:
+                    self.refresh_account_choices()
                 self._commit_status(success_text)
+            else:
+                self.refresh_account_choices()
             if event:
                 self.changed.emit(event(result))
             logging.getLogger(__name__).info('account_save_ui_refresh_ms=%.1f',

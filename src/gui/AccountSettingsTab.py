@@ -59,6 +59,8 @@ class AccountSettingsTab(CustomTab):
         """Refresh sibling panels without destroying an unsaved account draft."""
         if not isinstance(event, AccountChangeEvent):
             return
+        if event.choices_changed:
+            self.account_tab.refresh_account_choices()
         if event.kind == "sequence_changed":
             self.account_tab.refresh_sequences()
             self.order_tab.refresh()

@@ -682,10 +682,20 @@ dialog.close()
         self.assertTrue(event.ignored)
 
     def test_account_pages_enter_safe_state_when_master_is_missing(self):
-        account_source = inspect.getsource(AccountConfigTab.refresh)
+        from src.account_repository import AccountRepositoryError
+        with tempfile.TemporaryDirectory() as root:
+            env = make_account_environment(root)
+            tab = AccountConfigTab(AccountConfigEditor(env.repository))
+            try:
+                identity = tab.selected_profile_id
+                with patch.object(env.repository, 'list_profiles', side_effect=AccountRepositoryError('missing master')):
+                    tab.refresh()
+                self.assertIn('账号仓库暂不可用', tab.status.text())
+                self.assertEqual(tab.selected_profile_id, identity)
+            finally:
+                tab.overview.timer.stop()
+                tab.deleteLater()
         sequence_source = inspect.getsource(SequenceManagementTab.refresh)
-        self.assertIn("AccountRepositoryError", account_source)
-        self.assertIn("账号仓库暂不可用", account_source)
         self.assertIn("AccountRepositoryError", sequence_source)
         self.assertIn("序列仓库暂不可用", sequence_source)
 

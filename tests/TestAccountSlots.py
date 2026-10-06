@@ -9,6 +9,27 @@ from tests.fixture_support import make_account_environment, synthetic_identity
 
 
 class TestAccountSlots(unittest.TestCase):
+    def test_dropdown_orders_all_fixed_positions_without_changing_raw_keys(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock, patch
+        from src.account_display import account_option_items, account_option_labels
+        slots = [f'{prefix}{i}' for prefix in ('A', 'B') for i in range(1, 11)]
+        records = [SimpleNamespace(profile_id=f'id-{slot}', account={
+            'display_name': f'old-{slot}', 'nickname': '测试', 'phone': '19910000001',
+            'extensions': {SLOT_KEY: {'sequence': '序列1' if slot[0] == 'A' else '序列2', 'slot': slot}}})
+            for slot in slots]
+        records.append(SimpleNamespace(profile_id='unassigned', account={
+            'display_name': 'A1', 'extensions': {SLOT_KEY: None}}))
+        repository = SimpleNamespace(list_profiles=Mock(return_value=list(reversed(records))))
+        raw = ['unassigned'] + [r.profile_id for r in reversed(records[:-1])] + ['（自动识别）']
+        with patch('src.account_repository.get_default_repository', return_value=repository):
+            items = account_option_items(raw)
+            repository.list_profiles.assert_called_once_with()
+            self.assertEqual([value for value, _ in items], ['（自动识别）'] + [f'id-{s}' for s in slots] + ['unassigned'])
+            self.assertEqual([label.split('-')[0] for _, label in items[1:-1]], slots)
+            self.assertTrue(items[-1][1].startswith('未分配-'))
+            self.assertEqual(account_option_labels(raw), [dict(items)[value] for value in raw])
+
     def test_b10_at_ninth_position_and_b17_b18_follow_sequence_not_names(self):
         from src.account_display import account_display_label
         from src.account_identity import match_profile_identity

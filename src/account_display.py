@@ -26,8 +26,17 @@ def account_display_label(account):
     return f'{code}-{nickname}-{masked}'
 
 
-def account_option_labels(values):
-    """Resolve one display batch from one repository read; never rewrite its keys."""
+def account_sort_key(account, identity=''):
+    """Order fixed positions numerically, independently of creation and participation."""
+    from src.account_slots import account_slot
+    assignment = account_slot(account)
+    return (0 if assignment and assignment['sequence'] == '序列1' else 1 if assignment else 2,
+            int(assignment['slot'][1:]) if assignment else 0,
+            str(account.get('nickname') or '').casefold(), str(identity))
+
+
+def account_option_items(values, *, sort=True):
+    """Resolve labels and sort their original selection keys together in one read."""
     values = list(values)
     if not values:
         return []
@@ -40,23 +49,34 @@ def account_option_labels(values):
             records = repository.list_profiles()
         except AccountRepositoryError:
             pass
-    labels = []
-    for value in values:
+    items = []
+    for index, value in enumerate(values):
         if not value or value in ('无', '（自动识别）'):
-            labels.append(value)
+            items.append(((-1, index, '', ''), value, value))
             continue
         exact = [r for r in records if value in (r.profile_id, r.account.get('display_name'))]
         matches = exact or [r for r in records if value in (
             short_profile_name(r.account.get('display_name')), r.account.get('short_name'))]
         if len(matches) == 1:
-            labels.append(account_display_label(matches[0].account))
+            account = matches[0].account
+            label = account_display_label(account)
+            key = account_sort_key(account, matches[0].profile_id)
         elif len(matches) > 1:
-            labels.append(f'{value}-账号匹配不唯一')
+            label, key = f'{value}-账号匹配不唯一', (2, 0, '', str(value))
         elif parse_account_label(value) or re.fullmatch(r'[A-Za-z]\d+', str(value)):
-            labels.append(account_display_label({'display_name': value}))
+            account = {'display_name': value}
+            label, key = account_display_label(account), account_sort_key(account, value)
         else:
-            labels.append(value)
-    return labels
+            label, key = value, (2, 0, '', str(value))
+        items.append((key, value, label))
+    if sort:
+        items.sort(key=lambda item: item[0])
+    return [(value, label) for _, value, label in items]
+
+
+def account_option_labels(values):
+    """Keep caller order for labels used alongside persisted sequences."""
+    return [label for _, label in account_option_items(values, sort=False)]
 
 
 def account_option_label(value):

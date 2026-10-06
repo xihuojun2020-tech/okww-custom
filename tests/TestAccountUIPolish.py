@@ -22,6 +22,83 @@ from tests.fixture_support import make_account_environment
 
 
 class TestAccountUIPolish(unittest.TestCase):
+    def test_committed_slot_save_updates_label_order_and_keeps_uuid(self):
+        from PySide6.QtWidgets import QMessageBox
+        from src.account_slots import account_slot
+        with tempfile.TemporaryDirectory() as root:
+            env = make_account_environment(root, names=('A11', 'A10', 'A9', 'A1'))
+            unassigned = next(r for r in env.repository.list_profiles() if r.account['short_name'] == 'A11')
+            page = AccountConfigTab(AccountConfigEditor(env.repository))
+            try:
+                def codes():
+                    return [page.profile_combo.itemText(i).split('-')[0] for i in range(page.profile_combo.count())]
+                self.assertEqual(codes(), ['A1', 'A9', 'A10', '未分配'])
+                page.profile_combo.setCurrentIndex(page.profile_combo.findData(unassigned.profile_id))
+                widgets = dict(page.form_widgets)
+                page.slot_editor.sequence.setCurrentIndex(page.slot_editor.sequence.findData('序列2'))
+                page.slot_editor.slot.setCurrentIndex(page.slot_editor.slot.findData('B3'))
+                self.assertTrue(page.profile_combo.currentText().startswith('未分配-'))
+                with patch.object(QMessageBox, 'question', return_value=QMessageBox.Yes):
+                    page.save()
+                    self.drain(lambda: not page.operation.busy)
+                self.assertEqual(page.selected_profile_id, unassigned.profile_id)
+                self.assertTrue(page.profile_combo.currentText().startswith('B3-'))
+                self.assertEqual(codes(), ['A1', 'A9', 'A10', 'B3'])
+                self.assertEqual(page.form_widgets, widgets)
+                self.assertFalse(page.dirty)
+                self.assertFalse(page.slot_editor.participating.isChecked())
+                for sequence, slot, expected in (('序列1', 'A2', ['A1', 'A2', 'A9', 'A10']),
+                                                  ('序列2', 'B10', ['A1', 'A9', 'A10', 'B10'])):
+                    page.slot_editor.sequence.setCurrentIndex(page.slot_editor.sequence.findData(sequence))
+                    page.slot_editor.slot.setCurrentIndex(page.slot_editor.slot.findData(slot))
+                    with patch.object(QMessageBox, 'question', return_value=QMessageBox.Yes):
+                        page.save()
+                        self.drain(lambda: not page.operation.busy)
+                    self.assertEqual(codes(), expected)
+                    self.assertEqual(page.selected_profile_id, unassigned.profile_id)
+                    self.assertEqual(account_slot(env.repository.load_profile(unassigned.profile_id).account)['slot'], slot)
+                page.refresh()
+                self.assertEqual(codes(), expected)
+                self.assertEqual(page.selected_profile_id, unassigned.profile_id)
+                page.slot_editor.slot.setCurrentIndex(page.slot_editor.slot.findData('B4'))
+                with patch.object(page.editor, 'save_draft', side_effect=OSError('synthetic save failure')), \
+                     patch.object(QMessageBox, 'question', return_value=QMessageBox.Yes):
+                    page.save()
+                    self.drain(lambda: not page.operation.busy)
+                self.assertIn('保存失败', page.status.text())
+                self.assertTrue(page.profile_combo.currentText().startswith('B10-'))
+                self.assertTrue(page.dirty)
+            finally:
+                self.cleanup_page(page)
+
+    def test_external_choice_refresh_preserves_unsaved_editor(self):
+        import copy
+        from src.account_repository import ProfileEditScope
+        from src.account_slots import SLOT_KEY
+        with tempfile.TemporaryDirectory() as root:
+            env = make_account_environment(root)
+            page = AccountConfigTab(AccountConfigEditor(env.repository))
+            try:
+                identity = page.selected_profile_id
+                field = page.form_widgets['Record After Daily Task']
+                value = not field.isChecked()
+                field.setChecked(value)
+                draft = page.draft
+                other = env.repository.list_profiles()[1]
+                account = copy.deepcopy(other.account)
+                account['extensions'][SLOT_KEY] = {'sequence': '序列2', 'slot': 'B1'}
+                env.repository.publish_profile(ProfileEditScope(other.profile_id, other.revision),
+                                               {'account': account, 'tasks': other.tasks})
+                page.refresh(preserve_draft=True)
+                self.assertIs(page.draft, draft)
+                self.assertEqual(page.selected_profile_id, identity)
+                self.assertEqual(field.isChecked(), value)
+                self.assertTrue(page.dirty)
+                index = page.profile_combo.findData(other.profile_id)
+                self.assertTrue(page.profile_combo.itemText(index).startswith('B1-'))
+            finally:
+                self.cleanup_page(page)
+
     def test_simplified_routes_inventory_form_and_reminder_rules_survive_save(self):
         from src.account_repository import ProfileEditScope
         from tests.TestForgeryQuotaPlan import goal

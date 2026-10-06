@@ -16,7 +16,7 @@ import re
 
 from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel
 from src.gui.ChoiceControls import ComboBox
-from src.account_display import account_option_labels
+from src.account_display import account_option_items
 
 from ok import og
 from ok.gui.tasks.ConfigLabelAndWidget import ConfigLabelAndWidget
@@ -123,11 +123,16 @@ class LabelAndAccountSequence(ConfigLabelAndWidget):
         available = [o for o in self.options if o not in used]
         return [NONE_LABEL] + available
 
+    def _sorted_labels(self):
+        items = account_option_items(self.options)
+        self.options = [value for value, _ in items]
+        return dict(items)
+
     def _refresh_all(self):
         """重建全部位置的选项（点开下拉时调用，保证跨序列去重最新）。"""
         self.user_action = False
         try:
-            labels = dict(zip(self.options, account_option_labels(self.options)))
+            labels = self._sorted_labels()
             current_vals = [c.currentData() for c in self.combos]
             for i in range(self.max_count):
                 combo = self.combos[i]
@@ -166,7 +171,7 @@ class LabelAndAccountSequence(ConfigLabelAndWidget):
     def _refresh_from(self, start):
         self.user_action = False
         try:
-            labels = dict(zip(self.options, account_option_labels(self.options)))
+            labels = self._sorted_labels()
             for i in range(start, self.max_count):
                 combo = self.combos[i]
                 current = combo.currentData()
@@ -184,7 +189,7 @@ class LabelAndAccountSequence(ConfigLabelAndWidget):
     def update_value(self):
         self.user_action = False
         try:
-            labels = dict(zip(self.options, account_option_labels(self.options)))
+            labels = self._sorted_labels()
             current = self.config[self.key] or []
             for i in range(self.max_count):
                 combo = self.combos[i]
