@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch, PropertyMock
 from ok import TaskDisabledException
 from src.config_integrity import ConfigIntegrityService
 from src.task.BaseWWTask import BaseWWTask
-from src.task.BaseCombatTask import CombatStateUnknown
+from src.task.BaseCombatTask import BaseCombatTask, CombatStateUnknown, NotInCombatException, CharDeadException, CharRevivedInPlace
 from src.task.FarmEchoTask import FarmEchoTask, FarmCycleResult
 from src.task.WorldBossMaterialTask import WorldBossMaterialTask, MaterialRunResult
 from src.task.DailyTask import DailyTask
@@ -206,6 +206,58 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         self.assertFalse(task._wait_material_post_combat(FarmCycleResult(True, False, False)))
         task.pickup_dropped_echo.assert_not_called()
         task.send_key.assert_not_called()
+
+    def test_death_cinematic_switch_loss_hands_off_after_fresh_reward_frames(self):
+        task = self.runner()
+        task.skip_combat_check = False
+        task._combat_held_keys = task._combat_held_mouse = {}
+        task.out_of_combat_reason = 'not in_team while switching'
+        task._task_hint_phase = Mock(return_value='post')
+        # The cinematic hides the whole HUD; reward and living roster return later.
+        task.in_team_and_world.side_effect = [False, False, True, True]
+        task.wait_combat = Mock(return_value=True)
+        task.switch_healer_enabled = Mock(return_value=False)
+        task.in_combat = Mock(side_effect=[True, False, False])
+        task.chars = []
+        task.get_current_char = Mock(return_value=Mock())
+        task.get_current_char.return_value.perform.side_effect = NotInCombatException('not in_team while switching')
+        task.record_combat_error = task._wait_combat_recovery = Mock()
+        task.finish_rotation_tracking = task.combat_end = task.wait_in_team_and_world = Mock()
+        with patch.object(task.executor, 'check_enabled', Mock(), create=True):
+            self.assertTrue(task.combat_once())
+        self.assertEqual('post', task._material_phase)
+        self.assertEqual(4, task.in_team_and_world.call_count)
+        task.pickup_dropped_echo.assert_not_called()
+        task.send_key.assert_not_called()
+        self.assertEqual({}, self.progress.counts())
+
+    def test_rotation_loss_with_live_enemy_resumes_without_reward_handoff(self):
+        task = self.runner()
+        task.has_target.return_value = True
+        with patch.object(BaseCombatTask, 'perform_combat_rotation',
+                          side_effect=NotInCombatException('recovering rotation left combat')):
+            task.perform_combat_rotation()
+        task.pickup_dropped_echo.assert_not_called()
+        task.send_key.assert_not_called()
+
+    def test_rotation_loss_without_post_evidence_fails_and_control_signals_propagate(self):
+        task = self.runner()
+        task.out_of_combat_reason = 'not in_team while switching'
+        task._task_hint_phase = Mock(return_value=None)
+        task._material_combat_finished.return_value = False
+        with patch.object(BaseCombatTask, 'perform_combat_rotation',
+                          side_effect=NotInCombatException('recovering rotation left combat')):
+            with self.assertRaisesRegex(CombatStateUnknown, '战后阶段未确认'):
+                task.perform_combat_rotation()
+        task.pickup_dropped_echo.assert_not_called()
+        task.send_key.assert_not_called()
+        for error in (CharDeadException(), CharRevivedInPlace(), TaskDisabledException()):
+            with self.subTest(signal=type(error).__name__):
+                task._wait_material_post_combat = Mock()
+                with patch.object(BaseCombatTask, 'perform_combat_rotation', side_effect=error):
+                    with self.assertRaises(type(error)):
+                        task.perform_combat_rotation()
+                task._wait_material_post_combat.assert_not_called()
 
     def test_echo_f_never_triggers_reward_or_unselected_absorption(self):
         task = self.runner()

@@ -59,6 +59,28 @@ class TestWorldBossMaterialNavigation(unittest.TestCase):
         task.wait_click_travel.assert_not_called()
         task.scroll_relative.assert_called_once_with(.92, .5, 30)
 
+    def test_prison_husk_observed_ocr_variants_confirm_same_row_without_scrolling_past(self):
+        for first, second in (('万@牢・朽躯', '万囮牢・朽躯'), ('万囮牢・朽躯', '万车·朽躯')):
+            with self.subTest(first=first, second=second):
+                task = self.task()
+                task._material_target = TARGETS_BY_ID['world_prison_husk']
+                task._ocr = Mock(side_effect=[
+                    [box(first, 800, 600, 300), self.button],
+                    [box(second, 800, 600, 300), self.button]])
+                task._open_material_target = Mock(return_value=True)
+                self.assertTrue(task.select_configured_boss(None, None))
+                task._open_material_target.assert_called_once_with(task._material_target, self.button)
+                task.scroll_relative.assert_called_once_with(.92, .5, 30)
+
+    def test_prison_husk_ocr_alias_still_requires_unique_title_and_own_button(self):
+        from src.task.world_boss_materials import material_target_button
+        target = TARGETS_BY_ID['world_prison_husk']
+        title = box('万@牢・朽躯', 800, 600, 300)
+        self.assertIsNone(material_target_button([title, box('直接挑战', 1700, 800)], target, 1080))
+        self.assertIsNone(material_target_button([title, box(target.name, 800, 600, 300),
+                                                 box('直接挑战', 1700, 640)], target, 1080))
+        self.assertFalse(matches_target('万囮牢·其他首领', target))
+
     def test_story_confirmation_is_shared_and_original_boss_checked(self):
         task = self.task()
         self.direct(task, story=True)
