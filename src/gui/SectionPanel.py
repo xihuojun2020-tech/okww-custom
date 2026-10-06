@@ -1,7 +1,7 @@
 """Flat bordered section container shared by all five top-level pages."""
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget, QSizePolicy, QToolButton, QScrollArea
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget, QSizePolicy, QToolButton, QScrollArea, QLayout
 
 from src.gui.FlatSettingRow import FlatSettingRow
 from src.gui.CodexTheme import SPACING
@@ -15,8 +15,9 @@ class SectionPanel(QWidget):
         # Sections are the full-width building blocks of every hub page.
         # Explicitly opting into horizontal expansion prevents a child whose
         # size hint is only a few hundred pixels wide from leaving a large
-        # unused area on the right side of the window.
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        # unused area on the right side of the window. Vertically, sections
+        # follow their content instead of distributing spare page height.
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         self.setObjectName("codexSection")
         self.setAttribute(Qt.WA_StyledBackground)
         self.title_label = QLabel(title, self)
@@ -76,7 +77,14 @@ class SectionPanel(QWidget):
             if callable(take_widget):
                 take_widget()
             content.setParent(self)
+            content.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
             if content.layout():
+                # CustomTab's scroll view uses SetMinimumSize. Once detached,
+                # that constraint can retain the expanded page's minimum
+                # height and spread spare space across collapsed headers.
+                # The containing hub now owns scrolling and content sizing.
+                content.layout().setSizeConstraint(QLayout.SetDefaultConstraint)
+                content.setMinimumSize(0, 0)
                 content.layout().setContentsMargins(0, 0, 0, 0)
                 content.layout().setSpacing(SPACING['row'])
         return self.add_widget(content, stretch)
