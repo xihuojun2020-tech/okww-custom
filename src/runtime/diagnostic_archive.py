@@ -295,6 +295,7 @@ def automatic_upload(root, *, today=None):
     root, today = Path(root), today or date.today().isoformat()
     write_progress(root, mode='automatic', day=today, stage='discovering')
     days, uploaded = pending_days(root, today=today), []
+    failures = []
     if not days:
         write_progress(root, mode='automatic', day=today, stage='idle')
     for selected_day in days:
@@ -306,7 +307,13 @@ def automatic_upload(root, *, today=None):
             progress = json.loads((root / 'archives/progress.json').read_text(encoding='utf-8'))
             write_progress(root, mode='automatic', day=selected_day, stage='failed',
                            failed_stage=progress.get('stage'), error=str(error))
-            raise
+            failures.append({'day': selected_day, 'stage': progress.get('stage'), 'error': str(error)})
+    if failures:
+        message = '自动诊断上传失败：' + '；'.join(f"{item['day']}：{item['error']}" for item in failures)
+        message += f'；已成功上传 {len(uploaded)} 个压缩包'
+        write_progress(root, mode='automatic', day=today, stage='failed',
+                       failed_stage='daily_upload', error=message, failed_days=failures, uploaded=uploaded)
+        raise ValueError(message)
     return uploaded
 
 

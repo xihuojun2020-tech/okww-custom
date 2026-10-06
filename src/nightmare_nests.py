@@ -10,12 +10,14 @@ NEST_NAMES = list(NEST_TOTALS_BY_NAME)
 # Preserve legacy implicit choices as well as explicitly saved selections.
 DEFAULT_NEST_NAMES = NEST_NAMES[1:]
 NIGHTMARE_NAMES = ['穗波市梦魇聚落', '三王峰梦魇聚落', '潮痕岩滩梦魇聚落', '受蚀地梦魇聚落']
+_NIGHTMARE_GAME_NAMES = {name.replace('梦魇聚落', '梦魔聚落'): name for name in NIGHTMARE_NAMES}
 
 
 def normalize_nest_text(value):
-    return ''.join(str(value).split()).translate(str.maketrans(
+    normalized = ''.join(str(value).split()).translate(str.maketrans(
         {'像': '象', '夢': '梦', '樞': '枢', '羅': '罗', '淵': '渊',
          '殘': '残', '復': '复'}))
+    return _NIGHTMARE_GAME_NAMES.get(normalized, normalized)
 
 
 def canonical_nest_name(value):

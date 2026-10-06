@@ -69,6 +69,26 @@ class TestTacetRewardRecovery(unittest.TestCase):
         task.refresh_daily_reserve_after_exit.assert_called_once()
         task.use_stamina.assert_not_called()
 
+    def test_loading_after_claim_waits_for_world_without_more_input(self):
+        task = self.scene_task()
+        task.wait_in_team_and_world.side_effect = [False, True]
+        task.get_settlement_stamina.return_value = -1
+        TacetTask._leave_tacet_after_claim(task)
+        self.assertEqual(120, task.wait_in_team_and_world.call_args.kwargs['time_out'])
+        task.click_relative.assert_not_called()
+        task.use_stamina.assert_not_called()
+        task.refresh_daily_reserve_after_exit.assert_called_once()
+
+    def test_loading_timeout_keeps_claim_record_and_reports_return_failure(self):
+        task = self.scene_task()
+        task.wait_in_team_and_world.return_value = False
+        task.get_settlement_stamina.return_value = -1
+        with self.assertRaisesRegex(CombatStateUnknown, '返回世界'):
+            TacetTask._leave_tacet_after_claim(task)
+        task.click_relative.assert_not_called()
+        task.use_stamina.assert_not_called()
+        task.refresh_daily_reserve_after_exit.assert_not_called()
+
     def test_nearby_claim_does_not_move_or_nudge(self):
         task = reward_task()
         task.find_f_with_claim_text.return_value = True

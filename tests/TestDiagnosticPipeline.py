@@ -229,6 +229,35 @@ class TestDiagnosticPipeline(unittest.TestCase):
         self.assertTrue(list(self.session.run.glob('batches/*/日志/*/*/*/*/*.json')))
         self.assertTrue((self.session.run / 'crash.json').is_file())
 
+    def test_successful_system_exit_is_not_a_crash_but_nonzero_exit_is(self):
+        from src.runtime import diagnostic_lifecycle as lifecycle
+        with patch.object(lifecycle, '_session', self.session):
+            for code in (None, 0):
+                error = SystemExit(code)
+                lifecycle.record_crash(SystemExit, error, None, fatal=False)
+            self.assertFalse((self.session.run / 'crash.json').exists())
+            self.assertEqual('running', self.session.metadata['process_status'])
+            lifecycle.record_crash(SystemExit, SystemExit(2), None, fatal=False)
+        value = json.loads((self.session.run / 'crash.json').read_text())
+        self.assertEqual(('SystemExit', '2'), (value['exception_type'], value['message']))
+
+    def test_bitblt_error_records_live_capture_context_before_cleanup(self):
+        from types import SimpleNamespace
+        context = SimpleNamespace(last_hwnd=123, last_width=1920, last_height=1080, window_dc=456)
+        def capture_by_bitblt(context, hwnd, width, height, x, y, render_full_content):
+            try:
+                raise RuntimeError('BitBlt failed')
+            except RuntimeError:
+                self.session.emit(logging.LogRecord('ok', logging.ERROR, '', 0,
+                    'bitblt_utils:capture_by_bitblt exception: BitBlt failed', (), None))
+        with patch('win32api.GetLastError', return_value=6), \
+                patch.object(self.session, 'record_error') as report:
+            capture_by_bitblt(context, 123, 1920, 1080, 0, 0, False)
+        captured = report.call_args.args[0]['capture']
+        self.assertEqual((123, 456, 6), (captured['hwnd'], captured['window_dc'],
+                                        captured['win32_error_at_diagnostic_handler']))
+        self.assertIn('RuntimeError: BitBlt failed', captured['traceback'])
+
     def test_sealed_error_wakes_uploader(self):
         import threading
         ready = threading.Event()

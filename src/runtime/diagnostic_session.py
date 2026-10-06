@@ -7,6 +7,8 @@ import os
 import platform
 import queue
 import shutil
+import sys
+import traceback
 import threading
 import time
 import uuid
@@ -242,6 +244,26 @@ class DiagnosticSession(logging.Handler):
                 self._append('run', '.log', sanitize_text(self.format(record)))
                 if record.levelno >= logging.ERROR:
                     data = {'message': self.format(record), 'logger': record.name, 'level': record.levelname}
+                    if record.getMessage().startswith('bitblt_utils:capture_by_bitblt exception:'):
+                        # The framework logs inside except, before DC cleanup.
+                        # Read its live traceback here instead of copying the capture backend.
+                        _, error, tb = sys.exc_info()
+                        while tb is not None:
+                            frame = tb.tb_frame
+                            if frame.f_code.co_name == 'capture_by_bitblt':
+                                import win32api
+                                values = frame.f_locals
+                                context = values['context']
+                                data['capture'] = {
+                                    **{key: values[key] for key in ('hwnd', 'width', 'height', 'x', 'y',
+                                                                  'render_full_content')},
+                                    'last_hwnd': context.last_hwnd, 'last_width': context.last_width,
+                                    'last_height': context.last_height, 'window_dc': context.window_dc,
+                                    'win32_error_at_diagnostic_handler': win32api.GetLastError(),
+                                    'exception_type': type(error).__name__, 'exception_args': error.args,
+                                    'traceback': ''.join(traceback.format_exception(type(error), error, error.__traceback__))}
+                                break
+                            tb = tb.tb_next
                     self.record_event('error_log', data)
                     self.record_error(data)
                     if time.monotonic() - self.last_error_batch >= 5:

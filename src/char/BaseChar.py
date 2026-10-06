@@ -718,11 +718,18 @@ class BaseChar:
         self.task.in_liberation = False
         for _ in range(2):
             self.task.next_frame()
+            if self.task.has_challenge_success():
+                self.task.reset_to_false(reason=self.task.EXPLICIT_END_REASON)
+                self.task.raise_not_in_combat('挑战成功，交接结果页', expected=True)
+                return
             player = self.task.in_team()[0] or self.task.find_one(
                 'solo_player_health', threshold=.75, use_gray_scale=True,
                 horizontal_variance=.002, vertical_variance=.002)
-            if not player or not (self.task.has_target() or self.task.check_health_bar()):
-                self.task.raise_not_in_combat('liberation timeout: combat HUD not confirmed')
+            target = self.task.has_target()
+            health = bool(target or self.task.check_health_bar())
+            if not player or not health:
+                self.task.raise_not_in_combat('liberation timeout: combat HUD not confirmed '
+                                              f'(player={bool(player)}, target={bool(target)}, enemy={health})')
                 return
         self.task.log_warning('liberation HUD timeout; player and enemy still visible, resume combat')
 

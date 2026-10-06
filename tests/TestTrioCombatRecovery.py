@@ -230,6 +230,20 @@ class TestTrioCombatRecovery(unittest.TestCase):
             char = get_char_by_pos(task, object(), 1, char, force_full_scan=True)
             self.assertTrue(char._identity_unconfirmed)
 
+    def test_full_scan_replaces_stale_zhezhi_with_stable_danjin(self):
+        task = combat_task()
+        old = BaseChar(task, 2, char_name=Labels.char_zhezhi, confidence=.95)
+        task.find_best_match_in_box = Mock(side_effect=lambda box, names, **kw:
+            SimpleNamespace(name=Labels.char_danjin, confidence=.859)
+            if Labels.char_danjin in names else SimpleNamespace(confidence=.70))
+        char = old
+        for token in (1, 1, 2, 3):
+            task.executor._last_frame_time = token
+            char = get_char_by_pos(task, object(), 2, char, force_full_scan=True)
+            self.assertEqual(token != 3, char._identity_unconfirmed)
+        self.assertEqual(Labels.char_danjin, char.char_name)
+        self.assertIsNot(old, char)
+
     def test_timeout_rechecks_before_switch_and_does_not_repeat_full_wait(self):
         task = combat_task()
         char = task.chars[1]

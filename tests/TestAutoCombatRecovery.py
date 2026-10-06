@@ -117,6 +117,40 @@ class TestAutoCombatRecovery(unittest.TestCase):
             self.assertEqual(task.recovery_status, '异常恢复中')
         self.assertTrue(task.enabled)
 
+    def test_capture_wait_logs_state_changes_without_error_incidents(self):
+        from src.runtime.game_runtime_errors import FrameUnavailable
+        task = self.make_task()
+        task.screenshot = Mock()
+        with patch('src.task.BaseCombatTask.logger.error') as error_log, \
+                patch('src.task.BaseCombatTask.logger.warning') as waiting_log, \
+                patch('src.task.BaseCombatTask.time.monotonic', side_effect=[0, 0, 60, 60]):
+            task.handle_execution_error(FrameUnavailable('no frame'))
+            task.handle_execution_error(FrameUnavailable('no frame'))
+        error_log.assert_not_called()
+        waiting_log.assert_called_once()
+        task.screenshot.assert_not_called()
+        self.assertIn('FrameUnavailable: no frame', waiting_log.call_args.args[0])
+        self.assertTrue(task.config['_enabled'])
+        task._run_combat = Mock(return_value=False)
+        task.run()
+        self.assertEqual('已开启，等待战斗', task.recovery_status)
+        with patch('src.task.BaseCombatTask.logger.warning') as waiting_log:
+            task.handle_execution_error(FrameUnavailable('no frame'))
+        waiting_log.assert_called_once()
+
+    def test_recovery_log_uses_exception_traceback_outside_except(self):
+        task = self.make_task()
+        try:
+            raise RuntimeError('reported outside except')
+        except RuntimeError as error:
+            saved = error
+        with patch('src.task.BaseCombatTask.logger.error') as report:
+            task.record_combat_error(saved, 1, 2)
+        message = report.call_args.args[0]
+        self.assertIn('Traceback (most recent call last)', message)
+        self.assertIn('RuntimeError: reported outside except', message)
+        self.assertNotIn('NoneType: None', message)
+
     def test_recovery_only_clears_after_a_handled_combat(self):
         task = self.make_task()
         task._error_count = 3

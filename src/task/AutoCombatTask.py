@@ -166,7 +166,14 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
                 raise RuntimeError('自动战斗仍有未释放输入，等待输入后端恢复')
             if self._enable_pending:
                 self._prepare_combat_input()
-            self._capture_waiting = False
+            if self._capture_waiting:
+                logger.info('game capture restored; resume combat detection')
+                self.info.pop('自动战斗保护', None)
+                self._capture_waiting = False
+                self._error_count = 0
+                self._retry_at = 0
+                self._last_combat_error = None
+                self._suppressed_combat_errors = 0
             result = self._run_combat()
             if result and self._error_count:
                 self._error_count = 0

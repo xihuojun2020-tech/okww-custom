@@ -18,6 +18,7 @@ class TestCharacterIdentityRecovery(unittest.TestCase):
         self.task.require_game_frame.return_value = np.zeros((720, 1280, 3), np.uint8)
         self.task.hwnd = SimpleNamespace(hwnd=123)
         self.task._verified_profile_id = 'A1'
+        self.task.has_challenge_success.return_value = False
         self.task.executor._last_frame_time = 1
         self.candidate = SimpleNamespace(name=factory.Labels.char_rover, confidence=.96)
         self.runner = SimpleNamespace(name=factory.Labels.char_hiyuki, confidence=.7)
@@ -134,10 +135,40 @@ class TestCharacterIdentityRecovery(unittest.TestCase):
     def test_missing_hud_during_confirmation_does_not_load_old_team(self):
         self.prepare_load()
         self.task.in_team.side_effect = [(True, 0, 1)] + [(False, -1, 1)] * 5
-        with self.assertRaises(CombatStateUnknown):
-            BaseCombatTask.load_chars(self.task)
-        self.task.screenshot.assert_called_once()
+        self.assertFalse(BaseCombatTask.load_chars(self.task))
+        self.task.screenshot.assert_not_called()
         self.old.reset_state.assert_not_called()
+        self.task.send_key.assert_not_called()
+
+    def test_verified_success_after_liberation_hands_off_without_recovery(self):
+        char = BaseChar.__new__(BaseChar)
+        char.task = self.task
+        self.task.has_challenge_success.return_value = True
+        self.task.EXPLICIT_END_REASON = 'explicit_end_condition'
+        self.task.raise_not_in_combat.side_effect = RuntimeError('expected end')
+        with self.assertRaisesRegex(RuntimeError, 'expected end'):
+            char.recheck_liberation_timeout()
+        self.task.raise_not_in_combat.assert_called_once_with('挑战成功，交接结果页', expected=True)
+        self.task.reset_to_false.assert_called_once_with(reason='explicit_end_condition')
+        self.task.has_target.assert_not_called()
+
+    def test_youhu_unknown_page_never_sends_selection_key(self):
+        from src.char.Youhu import Youhu
+        char = Youhu(self.task, 0)
+        self.task.ocr.return_value = []
+        with patch.object(BaseChar, 'recheck_liberation_timeout') as recheck:
+            char.recheck_liberation_timeout()
+        self.task.send_key.assert_not_called()
+        recheck.assert_called_once()
+
+    def test_youhu_selection_failure_propagates_without_more_input(self):
+        from src.char.Youhu import Youhu
+        char = Youhu(self.task, 0)
+        self.task.ocr.return_value = [SimpleNamespace(name=k) for k in 'WASD']
+        self.task.wait_until.side_effect = RuntimeError('selection did not return')
+        with self.assertRaisesRegex(RuntimeError, 'selection did not return'):
+            char.recheck_liberation_timeout()
+        self.task.send_key.assert_called_once_with('w', after_sleep=.1)
 
     def test_user_stop_during_confirmation_propagates(self):
         from ok import TaskDisabledException

@@ -156,16 +156,24 @@ class TacetTask(WWOneTimeTask, BaseCombatTask):
         raise CombatStateUnknown('无音区成功动画或加载页面未进入可确认状态，保留现场')
 
     def _leave_tacet_after_claim(self, refresh_activity=True):
+        failure = '退出结算页未确认'
         for _ in range(3):
             if self.wait_in_team_and_world(time_out=15, raise_if_not_found=False):
                 if refresh_activity:
                     self.refresh_daily_reserve_after_exit()
                 return
             if self.get_settlement_stamina() < 0:
+                # Settlement has gone: wait through the return transition without
+                # replaying exit or claim input on the loading/unknown screen.
+                if self.wait_in_team_and_world(time_out=120, raise_if_not_found=False):
+                    if refresh_activity:
+                        self.refresh_daily_reserve_after_exit()
+                    return
+                failure = '返回世界未确认，加载或界面切换未完成'
                 break
             self.click_relative(0.365, 0.853, hcenter=True)
         self.screenshot('tacet_exit_unconfirmed', frame=self.frame)
-        raise CombatStateUnknown('无音区已确认领奖，但退出结算页未确认；保留现场')
+        raise CombatStateUnknown(f'无音区已确认领奖，但{failure}；保留现场')
 
     def not_enough_stamina(self, back=True):
         self.log_info(f"used all stamina")

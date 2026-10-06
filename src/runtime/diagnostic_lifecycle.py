@@ -123,6 +123,8 @@ def start_diagnostics(version, root=None):
 
 
 def record_crash(kind, value, tb, *, fatal=True):
+    if issubclass(kind, SystemExit) and value.code in (None, 0):
+        return
     if _session is None:
         return
     try:

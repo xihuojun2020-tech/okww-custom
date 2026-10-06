@@ -196,7 +196,7 @@ def get_char_by_pos(task, box, index, old_char, *, force_full_scan=False):
         char = _find_registered_char(task, box, info)
         # A weak old-template hit must not conceal a much stronger new portrait.
         if char and char.confidence >= .9:
-            old_char.__dict__.pop('_replacement_evidence', None)
+            old_char.__dict__.pop('_identity_evidence', None)
             cls = load_custom_char_class(info.get('cls'))
             if type(old_char) is not cls:
                 return _apply_char_config(task, cls(task, index, char_name=info['canonical_name'],
@@ -213,7 +213,9 @@ def get_char_by_pos(task, box, index, old_char, *, force_full_scan=False):
         if char:
             info = char_dict.get(char.name)
             name = char.name
-            if force_full_scan:
+            replacing = (old_char and old_char.char_name in char_names and
+                         info['canonical_name'] != char_dict[old_char.char_name]['canonical_name'])
+            if force_full_scan or replacing:
                 runner_names = [label for label in char_names
                                 if char_dict[label]['canonical_name'] != info['canonical_name']]
                 runner = task.find_best_match_in_box(box, runner_names, threshold=0.6)
@@ -228,60 +230,27 @@ def get_char_by_pos(task, box, index, old_char, *, force_full_scan=False):
                 token = getattr(task.executor, '_last_frame_time', None) or id(frame)
                 now = time.monotonic()
                 evidence = old_char.__dict__.get('_identity_evidence') if old_char else None
-                eligible = char.confidence >= .82 and (margin is None or margin >= .08)
-                if eligible and not strong:
+                eligible = char.confidence >= (.82 if force_full_scan else .9) and (margin is None or margin >= .08)
+                if eligible and (not strong or replacing):
                     if not evidence or evidence[0] != (candidate, context) or now - evidence[3] > 2:
                         evidence = ((candidate, context), token, 1, now)
                     elif evidence[1] != token:
                         evidence = (evidence[0], token, evidence[2] + 1, now)
                 else:
                     evidence = None
-                if not strong and (not evidence or evidence[2] < 3):
+                if (not strong or replacing) and (not evidence or evidence[2] < 3):
                     unresolved = old_char or BaseChar(task, index, char_name='unknown')
                     unresolved._identity_unconfirmed = True
                     unresolved._identity_observation = (name, char.confidence, margin,
                                                         evidence[2] if evidence else 0)
                     unresolved._identity_evidence = evidence
-                    unresolved.__dict__.pop('_replacement_evidence', None)
                     return unresolved
                 if old_char:
                     old_char.__dict__.pop('_identity_evidence', None)
-                if not strong:
+                if not strong or replacing:
                     task.log_info(f'character identity verified slot={index + 1} '
                                   f'name={candidate} score={char.confidence:.3f} '
                                   f'margin={margin} frames={evidence[2]}')
-            if old_char and old_char.char_name in char_names:
-                old_char._identity_observation = (name, round(char.confidence, 3))
-                previous = char_dict[old_char.char_name]
-                if info['canonical_name'] != previous['canonical_name']:
-                    if char.confidence < .9:
-                        old_char.__dict__.pop('_replacement_evidence', None)
-                        return old_char
-                    # Compare candidates on this capture, not historical confidence.
-                    runner_names = [label for label in char_names
-                                    if char_dict[label]['canonical_name'] != info['canonical_name']]
-                    runner = task.find_best_match_in_box(box, runner_names, threshold=0.6)
-                    if runner and char.confidence - runner.confidence < .08:
-                        old_char.__dict__.pop('_replacement_evidence', None)
-                        return old_char
-                    frame = task.require_game_frame()
-                    from src.combat.roster_context import roster_context
-                    context = (*roster_context(task), frame.shape[:2])
-                    token = getattr(task.executor, '_last_frame_time', None) or id(frame)
-                    key = (info['canonical_name'], context)
-                    evidence = old_char.__dict__.get('_replacement_evidence')
-                    now = time.monotonic()
-                    if evidence and now - evidence[3] > 2:
-                        evidence = None
-                    count = evidence[2] if evidence and evidence[0] == key else 0
-                    if not evidence or evidence[1] != token:
-                        count += 1
-                    old_char._replacement_evidence = (key, token, count, now)
-                    if count < 3:
-                        return old_char
-                    task.log_info(f'character replacement verified slot={index + 1} '
-                                  f'old={old_char.char_name} new={name} score={char.confidence:.3f}')
-                old_char.__dict__.pop('_replacement_evidence', None)
             cls = load_custom_char_class(info.get('cls'))
             if (old_char and type(old_char) is cls and
                     old_char.char_name == info['canonical_name']):
@@ -294,7 +263,7 @@ def get_char_by_pos(task, box, index, old_char, *, force_full_scan=False):
                                                 char_type=_get_char_type(task, info),
                                                 buff_time=_get_buff_time(task, info)), info)
     if old_char:
-        old_char.__dict__.pop('_replacement_evidence', None)
+        old_char.__dict__.pop('_identity_evidence', None)
         if force_full_scan:
             old_char._identity_unconfirmed = True
         task.log_debug(f'could not refresh known char {index}; keeping {old_char}')

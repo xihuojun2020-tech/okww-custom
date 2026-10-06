@@ -308,6 +308,35 @@ class TestNightmareNestTask(unittest.TestCase):
             task.ocr = lambda *args, **kwargs: boxes
             self.assertEqual({}, task._nightmare_rows(object()))
 
+    def test_game_mengmo_names_keep_legacy_selection_and_progress_keys(self):
+        from src.nightmare_nests import NIGHTMARE_NAMES, normalize_nest_text
+        from src.task.NightmareNestTask import FARM_NIGHTMARE_SETTLEMENTS
+        for current in (0, 36):
+            task = NightmareNestTask.__new__(NightmareNestTask)
+            task.config = {FARM_NIGHTMARE_SETTLEMENTS: [NIGHTMARE_NAMES[1]]}
+            task.count_re = re.compile(r'(\d{1,2})/(\d{1,2})')
+            task.height_of_screen = lambda value: 1080 * value
+            task.width_of_screen = lambda value: 1920 * value
+            task.require_game_frame = lambda: object()
+            task._close_nightmare_filter = lambda frame: None
+            task._nightmare_filter_open = lambda frame: False
+            task._reset_progress_tracking()
+            task._unreachable_nests = set()
+            button = FakeBox('直接挑战', x=1680, y=520)
+            task.ocr = lambda *a, **k: [FakeBox('三王峰梦魔聚落', x=690, y=468),
+                                       FakeBox(f'已击败残象{current}/36', x=700, y=520), button]
+            target = task._find_nightmare_nest()
+            if current == 0:
+                self.assertEqual('nightmare:三王峰梦魇聚落', target.cache_key)
+                self.assertIs(button, target.box)
+            else:
+                self.assertIsNone(target)
+                self.assertIn('三王峰梦魇聚落', task._nest_completed)
+            self.assertEqual([NIGHTMARE_NAMES[1]], task.config[FARM_NIGHTMARE_SETTLEMENTS])
+        for name in NIGHTMARE_NAMES:
+            self.assertEqual(name, normalize_nest_text(name.replace('梦魇', '梦魔')))
+        self.assertEqual('梦魔亚当·重锤', normalize_nest_text('梦魔亚当·重锤'))
+
     def test_find_nest_keeps_partially_completed_row(self):
         task = NightmareNestTask.__new__(NightmareNestTask)
         task.config = {'Tacet Discord Nests to Farm': ['落渊南丘残象聚落']}

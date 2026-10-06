@@ -9,6 +9,32 @@ from src.runtime.diagnostic_archive import build_archive, upload_archive, pendin
 
 
 class TestDiagnosticArchive(unittest.TestCase):
+    def test_bad_old_day_does_not_block_verified_later_upload(self):
+        from src.runtime.diagnostic_archive import automatic_upload
+        with tempfile.TemporaryDirectory() as temporary:
+            root, nas = Path(temporary) / 'root', Path(temporary) / 'nas'
+            old = self._dated_session(root, '2026-09-25')
+            recent = self._dated_session(root, '2026-10-05')
+            broken = list(old.run.glob('batches/*/_READY'))
+            for path in broken:
+                path.write_text('incomplete', encoding='ascii')
+            with patch('src.runtime.diagnostic_archive.send_archive',
+                       side_effect=lambda archive: upload_archive(archive, nas)):
+                with self.assertRaisesRegex(ValueError, '2026-09-25'):
+                    automatic_upload(root, today='2026-10-06')
+                progress = json.loads((root / 'archives/progress.json').read_text())
+                self.assertEqual('failed', progress['stage'])
+                self.assertEqual(1, len(progress['uploaded']))
+                remote = Path(progress['uploaded'][0])
+                local = root / 'archives' / remote.name
+                self.assertEqual(hash_file(local), hash_file(remote))
+                self.assertTrue(all(path.read_text() == 'incomplete' for path in broken))
+                self.assertTrue(all(json.loads(path.read_text())['status'] == 'uploaded'
+                                    for path in (root / 'states').glob(recent.run.name + '--*.json')))
+                with self.assertRaises(ValueError):
+                    automatic_upload(root, today='2026-10-06')
+                self.assertEqual(1, len(list((nas / '待分析/压缩包').glob('*.zip'))))
+
     def _dated_session(self, root, day):
         from datetime import datetime
         session = DiagnosticSession(root, 'test')

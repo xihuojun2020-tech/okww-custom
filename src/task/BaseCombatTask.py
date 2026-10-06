@@ -1,13 +1,14 @@
 import re
 import time
 import json
+import traceback
 from decimal import Decimal, ROUND_UP, ROUND_DOWN
 
 import cv2
 import numpy as np
 
 from ok import Logger, Config, TaskDisabledException
-from ok.task.exceptions import FinishedException
+from ok.task.exceptions import FinishedException, CaptureException
 from src.combat.CombatCheck import CombatFlowInterrupt
 from src.runtime.game_runtime_errors import FrameUnavailable, GameProcessLost
 from src.config_integrity import ConfigIntegrityBlocked, ConfigWriteBlocked
@@ -139,22 +140,30 @@ class BaseCombatTask(CombatCheck):
         try:
             signature = (type(error).__name__, str(error))
             now = time.monotonic()
-            self.info_set('自动战斗保护', f'异常恢复中；第 {count} 次，{delay} 秒后重新检查')
+            waiting = isinstance(error, (FrameUnavailable, GameProcessLost, CaptureException))
+            self.info_set('自动战斗保护', '等待游戏窗口/截图恢复' if waiting else
+                          f'异常恢复中；第 {count} 次，{delay} 秒后重新检查')
             self.info_set('最近异常', f'{signature[0]}: {signature[1]}')
         except Exception:
             signature = (type(error).__name__, 'diagnostic unavailable')
             now = time.monotonic()
-        if signature != self._last_combat_error or now - self._last_combat_error_log >= 30:
+            waiting = isinstance(error, (FrameUnavailable, GameProcessLost, CaptureException))
+        if signature != self._last_combat_error or (not waiting and now - self._last_combat_error_log >= 30):
             self._last_combat_error_log = now
             try:
-                logger.error(f'combat recovery; retry={count}, delay={delay}s, '
-                             f'merged={self._suppressed_combat_errors}', error)
+                message = (f'{signature[0]}: {signature[1]}; retry={count}, delay={delay}s, '
+                           f'merged={self._suppressed_combat_errors}')
+                if waiting:
+                    logger.warning(f'combat waiting; {message}')
+                else:
+                    detail = ''.join(traceback.format_exception(type(error), error, error.__traceback__))
+                    logger.error(f'combat recovery; {message}\n{detail}')
             except Exception:
                 pass
             self._suppressed_combat_errors = 0
             try:
                 frame = getattr(self.executor, '_frame', None)
-                if frame is not None:
+                if not waiting and frame is not None:
                     self.screenshot('combat_recovery', frame=frame)
             except Exception:
                 pass
@@ -1172,6 +1181,9 @@ class BaseCombatTask(CombatCheck):
         previous_char_identity = self._char_identity(self.chars)
         deadline = time.monotonic() + 4
         for attempt in range(6):
+            if not in_team:
+                self._in_combat = False
+                return False  # HUD left during confirmation; no old rotation can run.
             frame = self.require_game_frame()
             context = roster_context(self)
             previous_context = getattr(self, '_char_context', None)
@@ -1193,15 +1205,14 @@ class BaseCombatTask(CombatCheck):
                     )
                     for index in range(team_size)
                 ]
-                if not any(c.__dict__.get('_identity_unconfirmed', False) or
-                           c.__dict__.get('_replacement_evidence') for c in self.chars):
+                if not any(c.__dict__.get('_identity_unconfirmed', False) for c in self.chars):
                     break
             if attempt == 5 or time.monotonic() >= deadline:
                 self._in_combat = False
                 details = [{'slot': c.index + 1, 'cached': c.char_name,
                             'observed': c.__dict__.get('_identity_observation'),
                             'unconfirmed': c.__dict__.get('_identity_unconfirmed', False),
-                            'pending': c.__dict__.get('_replacement_evidence')} for c in self.chars]
+                            'pending': c.__dict__.get('_identity_evidence')} for c in self.chars]
                 self.log_warning(f'combat roster unconfirmed team={(in_team, current_index, count)} '
                                  f'chars={details}')
                 self.screenshot('combat_roster_unconfirmed', frame=frame)
