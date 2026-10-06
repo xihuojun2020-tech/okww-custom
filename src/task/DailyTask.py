@@ -2043,12 +2043,16 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         try:
             result = self.run_weekly_garden_only()
             if result.done:
+                self.info_set('每周乐园检查结果', '已完成')
                 self.log_info('每周乐园已确认完成')
+            else:
+                self.info_set('每周乐园检查结果', f'待补检：{result.error or "积分未确认"}')
         except (TaskDisabledException, FinishedException):
             raise
         except (ConfigIntegrityBlocked, ConfigWriteBlocked):
             raise
         except Exception as e:
+            self.info_set('每周乐园检查结果', f'待补检：{str(e) or type(e).__name__}')
             self.log_error("GardenTask Failed", e)
             self.screenshot('GardenTask')
             self.ensure_main(time_out=180)

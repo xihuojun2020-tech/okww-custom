@@ -213,6 +213,21 @@ class TestWeeklyDailyIntegration(unittest.TestCase):
         task.screenshot.assert_not_called()
         task.ensure_main.assert_not_called()
 
+    def test_daily_garden_failure_is_visible_as_pending_check(self):
+        task = object.__new__(DailyTask)
+        task._profile_get = lambda key, default=None: 'daily' if key == 'Garden Execution Mode' else 'Monday'
+        task.get_last_completed = Mock(return_value=None)
+        task.info_set = Mock()
+        task.log_info = Mock()
+        task.run_weekly_garden_only = Mock(side_effect=RuntimeError('积分未确认'))
+        task.log_error = Mock()
+        task.screenshot = Mock()
+        task.ensure_main = Mock()
+        with patch('src.task.DailyTask.weekly_garden_check_due', return_value=True):
+            task.check_weekly_garden()
+        task.info_set.assert_any_call('每周乐园检查结果', '待补检：积分未确认')
+        task.log_error.assert_called_once()
+
     def test_low_stamina_is_pending_without_error_or_completion(self):
         task = self.daily(WeeklyBossResult(3, 2, 1, reason='当前体力不足'))
         task.check_weekly_boss()

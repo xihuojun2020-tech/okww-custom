@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 from config import config
 from ok.test.TaskTestCase import TaskTestCase
 from src.task.GardenTask import GardenTask
@@ -18,6 +19,22 @@ class TestGardenPageImages(TaskTestCase):
     def test_completed_current_value_is_read_without_a_fraction(self):
         self.set_image('tests/images/garden_page/completed.png')
         self.assertEqual(6000, self.task.read_weekly_garden_points())
+
+    def test_partial_or_missing_header_still_reads_anchored_current_value(self):
+        for image, expected in (('zero.png', 0), ('completed.png', 6000)):
+            for missing_header in (False, True):
+                with self.subTest(image=image, missing_header=missing_header):
+                    self.set_image('tests/images/garden_page/' + image)
+                    original_ocr = self.task.ocr
+
+                    def ocr(*args, **kwargs):
+                        boxes = original_ocr(*args, **kwargs)
+                        if args[:4] == (.02, .03, .45, .17):
+                            return [] if missing_header else [box for box in boxes if '周度游历' not in box.name]
+                        return boxes
+
+                    with patch.object(self.task, 'ocr', side_effect=ocr):
+                        self.assertEqual(expected, self.task.read_weekly_garden_points())
 
     def test_named_garden_entry_belongs_to_left_card(self):
         self.set_image('tests/images/garden_page/zero.png')

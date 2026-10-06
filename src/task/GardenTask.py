@@ -183,10 +183,19 @@ class GardenTask(WWOneTimeTask, BaseWWTask):
         if frame is None:
             return None
         header = self.ocr(.02, .03, .45, .17, frame=frame)
-        if garden_weekly_page(header):
-            anchor = self.ocr(.185, .89, .285, .935, frame=frame)
-            if not any('游历值' in str(getattr(b, 'name', b)) for b in anchor or []):
-                return None
+        anchor = self.ocr(.185, .89, .285, .935, frame=frame)
+        has_anchor = any('游历值' in str(getattr(b, 'name', b)) for b in anchor or [])
+        page_confirmed = garden_weekly_page(header)
+        if has_anchor and not page_confirmed:
+            # A missed header word must not send the new layout to the old n/6000 parser.
+            cards = self.ocr(.11, .18, .67, .79, frame=frame)
+            card_text = ''.join(str(getattr(b, 'name', b)) for b in cards or [])
+            header_text = ''.join(str(getattr(b, 'name', b)) for b in header or [])
+            has_card = '幻梦游园' in card_text or '千道门扉' in card_text
+            page_confirmed = has_card and ('活跃行迹' in header_text or '周度游历' in header_text
+                                           or ('幻梦游园' in card_text and '千道门扉' in card_text))
+            self.log_info(f'Garden page fallback: header={header_text!r}, cards={card_text!r}, confirmed={page_confirmed}')
+        if has_anchor and page_confirmed:
             for scale in (2160, 3240):
                 digits = self.ocr(.185, .83, .285, .883, frame=frame,
                                   frame_processor=lambda image, scale=scale: cv2.resize(
@@ -202,6 +211,8 @@ class GardenTask(WWOneTimeTask, BaseWWTask):
                       if .185*w <= b.center()[0] <= .285*w
                       and .83*h <= b.center()[1] <= .883*h]
             return garden_current_points(digits)
+        if has_anchor or page_confirmed:
+            return None
         # Legacy layouts show an earned/target pair in this anchored region.
         texts = self.ocr(0.102, 0.793, 0.284, 0.956, frame=frame)
         rendered = ' '.join(str(getattr(box, 'name', box)) for box in (texts or []))
