@@ -202,6 +202,55 @@ class TestAccountUIPolish(unittest.TestCase):
             finally:
                 self.cleanup_page(page)
 
+    def test_embedded_sequence_collapse_releases_height_without_spreading_rows(self):
+        with tempfile.TemporaryDirectory() as root:
+            env = make_account_environment(root)
+            env.repository.migrate_fixed_account_slots()
+            with patch('src.gui.AccountSettingsTab.AccountConfigTab',
+                       side_effect=lambda: AccountConfigTab(AccountConfigEditor(env.repository))), \
+                 patch('src.gui.AccountSettingsTab.SequenceManagementTab',
+                       side_effect=lambda *args, **kwargs: SequenceManagementTab(SequenceRepository(env.repository), **kwargs)):
+                page = AccountSettingsTab()
+            try:
+                page.show()
+                self.drain(lambda: not page.account_tab.overview.loading.busy)
+                account = page.account_tab
+                scale = float(os.environ.get('QT_SCALE_FACTOR', '1'))
+                sizes = [(round(w / scale) - 96, round(h / scale) - 52) for w, h in
+                         ((1280, 800), (1440, 900), (1920, 1080))] if os.environ.get('OKWW_UI_MATRIX') else ((720, 540), (1050, 720), (1700, 1000))
+                for width, height in sizes:
+                    page.resize(width, height)
+                    for route, editor in (('sequences', page.sequence_tab), ('sequence_order', page.order_tab)):
+                        account._select_route(route)
+                        editor.order_section.set_expanded(True)
+                        for _ in range(5):
+                            self.app.processEvents()
+                        expanded_height = editor.view.height()
+                        editor.order_section.set_expanded(False)
+                        for _ in range(5):
+                            self.app.processEvents()
+                        Path('test_out').mkdir(exist_ok=True)
+                        page.grab().save(f'test_out/sequence-collapse-{route}-{width}-scale-{scale}.png')
+                        section = editor.order_section
+                        self.assertLessEqual(section.header.height(), 72, (route, width, section.header.height()))
+                        self.assertLessEqual(section.height(), section.header.height() + 16, (route, width, section.height()))
+                        self.assertLessEqual(editor.help.height(), editor.help.sizeHint().height() + 4)
+                        self.assertGreaterEqual(expanded_height - editor.view.height(), 300,
+                                                (route, width, expanded_height, editor.view.height()))
+                        account._select_route('identity')
+                        account._select_route(route)
+                        for _ in range(5):
+                            self.app.processEvents()
+                        self.assertFalse(section.content.isVisible())
+                        self.assertLessEqual(section.header.height(), 72)
+                        editor.order_section.set_expanded(True)
+                        for _ in range(5):
+                            self.app.processEvents()
+                        self.assertTrue(editor.members.isVisible())
+                        self.assertEqual(editor.members.count(), 10)
+            finally:
+                self.cleanup_page(page)
+
 
 if __name__ == '__main__':
     unittest.main()
