@@ -1126,7 +1126,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                     profile[MERGE_ECHO_ON_SUNDAY] = False
                     changed = True
                 if not profile.get('Forgery Limit Mode'):
-                    profile['Forgery Limit Mode'] = 'materials' if profile.get('Forgery Material Goals') else 'unlimited'
+                    profile['Forgery Limit Mode'] = 'unlimited'
                     changed = True
                 additional = profile.pop(ADDITIONAL_TASKS, None)
                 if isinstance(additional, list):

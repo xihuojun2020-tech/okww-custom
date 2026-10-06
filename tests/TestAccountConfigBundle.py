@@ -77,6 +77,70 @@ class TestAccountConfigBundle(unittest.TestCase):
         for reader in (repo, AccountRepository(self.root, integrity_service=self.service)):
             self.assertEqual(reader.load_profile(PROFILE_A).tasks['Which Tacet Suppression to Farm'], 2)
 
+    def test_legacy_forgery_import_is_unlimited_even_with_old_material_goals(self):
+        from src.account_repository import AccountRepository
+        from src.task.forgery_quota_plan import FORGERY_MODE, FORGERY_GOALS, forgery_limited
+        from tests.TestForgeryQuotaPlan import goal
+        bundles = AccountConfigBundleService(self.root, integrity_service=self.service)
+        for rows in ([], [goal(7, 100)]):
+            with self.subTest(has_old_goals=bool(rows)):
+                candidate = bundles.export_bundle()
+                tasks = candidate['master_config']['profiles'][PROFILE_A]['task_config']
+                tasks.update({'Which to Farm': 'Forgery Challenge', 'Which Forgery Challenge to Farm': 7,
+                              FORGERY_GOALS: rows})
+                tasks.pop(FORGERY_MODE, None)
+                candidate['master_config']['extensions']['new_profile_template'] = dict(tasks)
+                self.service.set_progress('legacy_goal_evidence', {'claims': 3})
+                result = bundles.import_bundle(candidate, confirm=True, trust_external=True,
+                                               preserve_runtime_and_preferences=True)
+                self.assertTrue(result.ok)
+                repository = AccountRepository(self.root, integrity_service=self.service)
+                restored = repository.load_profile(PROFILE_A).tasks
+                self.assertEqual('Forgery Challenge', restored['Which to Farm'])
+                self.assertEqual(7, restored['Which Forgery Challenge to Farm'])
+                self.assertEqual(rows, restored[FORGERY_GOALS])
+                self.assertEqual('unlimited', restored[FORGERY_MODE])
+                self.assertFalse(forgery_limited(restored))
+                self.assertEqual('unlimited', repository.load_profile_template().tasks[FORGERY_MODE])
+                self.assertEqual({'claims': 3}, self.service.get_progress('legacy_goal_evidence'))
+
+    def test_explicit_new_material_mode_survives_import_and_repeated_startup(self):
+        from src.account_repository import AccountRepository
+        from src.task.forgery_quota_plan import FORGERY_MODE, FORGERY_GOALS
+        from tests.TestForgeryQuotaPlan import goal
+        bundles = AccountConfigBundleService(self.root, integrity_service=self.service)
+        candidate = bundles.export_bundle()
+        tasks = candidate['master_config']['profiles'][PROFILE_A]['task_config']
+        rows = [dict(goal(7, 100), inventory=dict(gold=0, purple=0, blue=0, green=25))]
+        tasks.update({'Which to Farm': 'Forgery Challenge', FORGERY_MODE: 'materials', FORGERY_GOALS: rows})
+        self.assertTrue(bundles.import_bundle(candidate, confirm=True, trust_external=True).ok)
+        repository = AccountRepository(self.root, integrity_service=self.service)
+        self.assertFalse(repository.migrate_task_settings())
+        restored = repository.load_profile(PROFILE_A).tasks
+        self.assertEqual('materials', restored[FORGERY_MODE])
+        self.assertEqual(rows, restored[FORGERY_GOALS])
+
+    def test_legacy_startup_forgery_migration_defaults_to_unlimited(self):
+        from src.account_repository import AccountRepository
+        from tests.TestForgeryQuotaPlan import goal
+        tasks = self.master['profiles'][PROFILE_A]['task_config']
+        rows = [goal(7, 100)]
+        tasks.update({'Which to Farm': 'Forgery Challenge', 'Which Forgery Challenge to Farm': 7,
+                      'Forgery Material Goals': rows})
+        self.service.paths.master.write_text(json.dumps(self.master), encoding='utf-8')
+        self.service.paths.working.write_text(json.dumps(self.service._rebuild_working(self.master, {})), encoding='utf-8')
+        self.service.paths.runtime.write_text(json.dumps({
+            'accepted_master_fingerprint': fingerprint(normalize_master(self.master)),
+            'completed_at': {}, 'progress': {}}), encoding='utf-8')
+        repository = AccountRepository(self.root, integrity_service=self.service)
+        self.assertTrue(repository.migrate_task_settings())
+        self.assertFalse(repository.migrate_task_settings())
+        restored = repository.load_profile(PROFILE_A).tasks
+        self.assertEqual('unlimited', restored['Forgery Limit Mode'])
+        self.assertEqual('Forgery Challenge', restored['Which to Farm'])
+        self.assertEqual(7, restored['Which Forgery Challenge to Farm'])
+        self.assertEqual(rows, restored['Forgery Material Goals'])
+
     def test_import_migrates_old_garden_day_and_preserves_weekly_completion(self):
         bundle = self.service_bundle = AccountConfigBundleService(self.root, integrity_service=self.service).export_bundle()
         tasks = bundle['master_config']['profiles'][PROFILE_A]['task_config']

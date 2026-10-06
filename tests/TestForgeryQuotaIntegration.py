@@ -14,6 +14,35 @@ from tests.TestForgeryQuotaPlan import goal
 
 
 class TestForgeryQuotaIntegration(unittest.TestCase):
+    def test_migrated_legacy_forgery_uses_unlimited_path_without_tacet_handoff(self):
+        from src.account_task_policy import migrate_task_policy
+        config = {'Which to Farm': 'Forgery Challenge', 'Which Forgery Challenge to Farm': 7,
+                  FORGERY_GOALS: [goal(7, 25)]}
+        migrated, _ = migrate_task_policy({'profiles': {'one': {'task_config': config}}})
+        config = migrated['profiles']['one']['task_config']
+        task = Mock(spec=DailyTask)
+        task.integrity_service = None
+        task._verified_profile_id = 'one'
+        task.support_tasks = ['Tacet Suppression', 'Forgery Challenge', 'Simulation Challenge']
+        task._profile_get.side_effect = lambda key, default=None: config.get(key, default)
+        forgery, tacet = Mock(), Mock()
+        task.get_task_by_class.side_effect = lambda cls: {ForgeryTask: forgery, TacetTask: tacet}[cls]
+        DailyTask._run_profile_stamina(task, config, activity_ready=True, used_stamina=0)
+        forgery.farm_forgery.assert_called_once_with(daily=True, config=config, activity_ready=True, used_stamina=0)
+        forgery.farm_quota.assert_not_called()
+        tacet.farm_tacet.assert_not_called()
+        legacy = Mock(spec=DailyTask)
+        legacy.integrity_service = None
+        legacy.default_config = {}
+        old = dict(config)
+        old.pop('Forgery Limit Mode')
+        legacy.load_daily_profiles.return_value = {'old': old}
+        DailyTask._migrate_profiles(legacy)
+        legacy.log_error.assert_not_called()
+        legacy.save_daily_profiles.assert_called_once()
+        self.assertEqual('unlimited', old['Forgery Limit Mode'])
+        self.assertEqual(7, old['Which Forgery Challenge to Farm'])
+
     def test_quota_claims_sequence_and_confirmed_downshift(self):
         with tempfile.TemporaryDirectory() as root:
             service = ConfigIntegrityService(root)

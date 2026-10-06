@@ -1,6 +1,6 @@
 """Idempotent policy upgrades applied to startup and imported account bundles."""
 from copy import deepcopy
-from src.task.forgery_quota_plan import FORGERY_GOALS, FORGERY_MODE
+from src.task.forgery_quota_plan import FORGERY_MODE
 
 
 def migrate_task_policy(master):
@@ -12,5 +12,6 @@ def migrate_task_policy(master):
     for tasks in task_configs:
         tasks['Merge Echo on Sunday'] = False
         tasks.pop('Merge Echo If discarded > 1000', None)
-        tasks.setdefault(FORGERY_MODE, 'materials' if tasks.get(FORGERY_GOALS) else 'unlimited')
+        # A legacy farming choice carries no explicit quota-mode selection.
+        tasks.setdefault(FORGERY_MODE, 'unlimited')
     return result, result != master

@@ -41,7 +41,7 @@ class TestAccountReminders(unittest.TestCase):
         self.assertTrue(changed)
         tasks = migrated['profiles']['one']['task_config']
         self.assertEqual([row], tasks['Forgery Material Goals'])
-        self.assertEqual('materials', tasks['Forgery Limit Mode'])
+        self.assertEqual('unlimited', tasks['Forgery Limit Mode'])
         self.assertFalse(tasks['Merge Echo on Sunday'])
         self.assertFalse(migrate_task_policy(migrated)[1])
         master['extensions'] = {'new_profile_template': {'Merge Echo on Sunday': True}}
