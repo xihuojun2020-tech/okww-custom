@@ -62,6 +62,30 @@ class TestAbyssSeasonImages(TaskTestCase):
         number, top = rows[2]
         self.assertIsNone(self.task._preset_on_row(original, number, top))
 
+    def test_oct6_presets_read_current_energy_and_recognize_hiyuki(self):
+        self.set_image(str(self.folder / 'oct6_presets.png'))
+        self.task._character_descriptors = None
+        frame = self.task.frame.copy()
+        expected = ((10, 10, 10), (7, 7, 7), (7, 10, 10))
+        presets = [self.task._preset_on_row(frame, number, top)
+                   for number, top in self.task._preset_page_rows(frame)]
+        self.assertEqual(len(presets), 3)
+        self.assertTrue(all(presets), presets)
+        self.assertEqual(tuple(p.energies for p in presets), expected)
+        self.assertEqual(presets[2].members[1], Labels.char_hiyuki)
+        # An unreadable team must not discard the other verified presets.
+        task = self.task
+        original = task._preset_member
+        with patch.object(task, 'scroll_relative'), patch.object(task, 'sleep'), \
+                patch.object(task, '_wait_stable_preset_frame', return_value=frame), \
+                patch.object(task, '_preset_member', wraps=task._preset_member) as identify:
+            identify.side_effect = lambda image, x, top: (
+                None if top > .5 and x == .207 else original(image, x, top))
+            records = task._scan_saved_presets()
+        self.assertEqual(tuple(task._saved_presets), (1, 2))
+        self.assertEqual(len(records), 6)
+        self.assertTrue(task._preset_scan_incomplete)
+
     def test_real_preset_scan_feeds_side_tower_allocation_without_missing_member(self):
         self.set_image(str(self.folder / 'presets.png'))
         task = self.task

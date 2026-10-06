@@ -941,7 +941,9 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             if incomplete_energy:
                 reason = "角色体力识别不完整：" + "、".join(incomplete_energy)
             elif not candidates:
-                reason = "没有疲劳值可确认且大于0的完整预设编队" if preset_mode else "没有可用的输出角色"
+                reason = ("预设队伍识别不完整：成员头像或当前疲劳值未确认"
+                          if preset_mode and self._preset_scan_incomplete else
+                          "没有疲劳值可确认且大于0的完整预设编队" if preset_mode else "没有可用的输出角色")
             elif not legal:
                 reason = "当前层无符合输出属性规则的候选队"
             elif allocation.approximate:
@@ -1577,6 +1579,32 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                     value = int(left[-1])
                 # A lone zero without an arrow can be a clipped 10.
                 if value is not None and (arrow or value > 0):
+                    values.append(value)
+            if values and len(set(values)) == 1:
+                readings.append(values[0])
+        if len(readings) >= 2:
+            # Contradictory current readings are not an OCR omission to repair.
+            return readings[0] if len(set(readings)) == 1 else None
+        # On the Oct 6 presets, portrait backgrounds hide the left number while
+        # OCR keeps only the projected energy on the right. Isolate the gold
+        # current-value region, excluding the arrow and projected number.
+        readings = []
+        for offset in (0, .004, -.004):
+            crop = _relative_crop(frame, (x + .023, top + .108 + offset,
+                                          x + .047, top + .140 + offset))
+            mask = cv2.inRange(cv2.cvtColor(crop, cv2.COLOR_BGR2HSV),
+                               np.array((18, 90, 150)), np.array((40, 255, 255)))
+            isolated = cv2.resize(255 - mask, None, fx=5, fy=5, interpolation=cv2.INTER_CUBIC)
+            isolated = cv2.cvtColor(isolated, cv2.COLOR_GRAY2BGR)
+            values = []
+            for box in self.ocr(0, 0, 1, 1, frame=isolated):
+                text = str(box.name).strip()
+                value = current_preset_energy(text)
+                # These observed misreads contain the left lightning plus 7.
+                if text in ('17', '47') and box.x < isolated.shape[1] * .25:
+                    value = 7
+                # A lone zero can be a clipped 10; never promote it to usable energy.
+                if value is not None and value > 0:
                     values.append(value)
             if values and len(set(values)) == 1:
                 readings.append(values[0])
@@ -2240,6 +2268,15 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             _points, descriptor = self._avatar_orb.detectAndCompute(enlarged, None)
             if descriptor is not None:
                 descriptors.append((canonical, descriptor))
+        # The registered 82x67 combat portrait does not match Hiyuki's preset card.
+        template = cv2.imread(str(Path(__file__).resolve().parents[2] /
+                                   'assets/images/abyss_hiyuki_preset.png'))
+        if template is None:
+            raise FileNotFoundError('深塔绯雪预设头像模板不存在')
+        scale = target_height / template.shape[0]
+        enlarged = cv2.resize(template, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        _points, descriptor = self._avatar_orb.detectAndCompute(enlarged, None)
+        self._hiyuki_preset_descriptor = descriptor
         self._character_descriptors = descriptors
         return descriptors
 
@@ -2257,11 +2294,16 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             return None
         best_name, best_score = ranked[0]
         second_score = ranked[1][1] if len(ranked) > 1 else 0
-        if best_score < CHARACTER_MATCH_MINIMUM:
-            return None
-        if best_score - second_score < CHARACTER_MATCH_MARGIN and best_score < 12:
-            return None
-        return best_name, min(1.0, best_score / 25.0)
+        if best_score >= CHARACTER_MATCH_MINIMUM and (
+                best_score - second_score >= CHARACTER_MATCH_MARGIN or best_score >= 12):
+            return best_name, min(1.0, best_score / 25.0)
+        # Supplement only an unresolved identity, preserving existing successful matches.
+        if self._hiyuki_preset_descriptor is not None:
+            pairs = self._avatar_matcher.knnMatch(self._hiyuki_preset_descriptor, descriptor, k=2)
+            score = sum(1 for pair in pairs if len(pair) == 2 and pair[0].distance < .75 * pair[1].distance)
+            if score >= CHARACTER_MATCH_MINIMUM and score - best_score >= CHARACTER_MATCH_MARGIN:
+                return 'char_hiyuki', min(1.0, score / 25.0)
+        return None
 
     @staticmethod
     def _slot_crop(frame, slot, local_region):

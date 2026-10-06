@@ -63,6 +63,7 @@ class TestAbyssPresetUI(unittest.TestCase):
         task = AutoAbyssTask.__new__(AutoAbyssTask)
         task._preset_mode = True
         task._saved_presets = {}
+        task._preset_scan_incomplete = False
         task._abyss_rules = current_season_rules()
         task._allocation_context = ('残响之塔', 0, {'残响之塔': (AVAILABLE,)}, '两侧塔优先')
         task.sleep = lambda *_: None
@@ -114,7 +115,7 @@ class TestAbyssPresetUI(unittest.TestCase):
                                 (('10>5', '0>0', '10>5'), None),
                                 (('0>0', '0>0', '0>0'), 0)):
             with self.subTest(texts=texts):
-                task.ocr = Mock(side_effect=[[SimpleNamespace(name=t)] if t else [] for t in texts])
+                task.ocr = Mock(side_effect=[[SimpleNamespace(name=t)] if t else [] for t in texts] + [[], [], []])
                 self.assertEqual(task._preset_energy(frame, .207, .185), expected)
 
     def test_challenge_start_opens_preset_tab_without_old_quick_formation(self):
@@ -141,6 +142,13 @@ class TestAbyssPresetUI(unittest.TestCase):
             [SimpleNamespace(name=text, x=75, width=100),
              SimpleNamespace(name='10', x=350, width=70)] for text in ('4', '14', '4')])
         self.assertEqual(task._preset_energy(frame, .207, .185), 4)
+
+    def test_color_recheck_never_promotes_clipped_zero_to_usable_energy(self):
+        import numpy as np
+        task = AutoAbyssTask.__new__(AutoAbyssTask)
+        frame = np.zeros((720, 1280, 3), np.uint8)
+        task.ocr = Mock(return_value=[SimpleNamespace(name='0', x=0, width=50)])
+        self.assertIsNone(task._preset_energy(frame, .207, .185))
 
     def test_apply_preset_checks_page_again_before_click(self):
         preset = AbyssSavedPreset(7, (Labels.char_qingxiao, Labels.char_denia,
