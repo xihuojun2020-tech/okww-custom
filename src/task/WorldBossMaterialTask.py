@@ -5,9 +5,9 @@ import time
 from dataclasses import dataclass
 from ok import TaskDisabledException
 from ok.task.exceptions import FinishedException
-from src.task.FarmEchoTask import FarmEchoTask
+from src.task.FarmEchoTask import FarmEchoTask, FarmCycleResult
 from src.task.WeeklyBossTask import WeeklyBossTask
-from src.task.BaseCombatTask import CombatStateUnknown
+from src.task.BaseCombatTask import CombatStateUnknown, NotInCombatException, CharDeadException, CharRevivedInPlace
 from src.task.world_boss_materials import WORLD_BOSS_TARGETS, TARGETS_BY_ID, material_target_button, matches_target
 from src.task.world_boss_material_plan import material_plan, choose_material_target, material_plan_revision, validate_material_request
 from src.task.world_boss_material_progress import WorldBossMaterialProgress
@@ -135,6 +135,19 @@ class WorldBossMaterialTask(FarmEchoTask):
         return bool(phase == 'post' or self._reward_available() or self.find_treasure_icon()
                     or self.has_claim_stamina() or self._selected_reward_interaction('吸收')
                     or self._button(self.VICTORY, '挑战成功'))
+
+    def perform_combat_rotation(self):
+        try:
+            return super().perform_combat_rotation()
+        except (CharDeadException, CharRevivedInPlace):
+            raise
+        except NotInCombatException:
+            # Boss death cinematics hide the roster before reward prompts appear.
+            # This rotation was entered in combat; verify the transition using
+            # the same fresh-frame gate as the normal material battle exit.
+            self._release_combat_inputs()
+            self._stage('战斗界面消失，核验敌人或战后奖励')
+            self._wait_material_post_combat(FarmCycleResult(True, False, False))
 
     def _wait_material_post_combat(self, result):
         if not result.combat_entered:

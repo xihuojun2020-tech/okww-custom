@@ -298,7 +298,7 @@ class TestAccountNavigationUI(unittest.TestCase):
             self.assertEqual(widget.values(), edited)
             self.assertNotIn(FARMING_TASKS, env.repository.load_profile(page.selected_profile_id).tasks)
             Path('test_out').mkdir(exist_ok=True)
-            page.grab().save('test_out/account-identity-1.97.36.png')
+            page.grab().save('test_out/account-identity-1.97.37.png')
             page.close()
             QThreadPool.globalInstance().waitForDone(3000)
             page.deleteLater()

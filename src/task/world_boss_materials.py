@@ -15,7 +15,8 @@ class WorldBossTarget:
 
 WORLD_BOSS_TARGETS = (
     WorldBossTarget('world_puppet_calamity', '天傀劫煞'),
-    WorldBossTarget('world_prison_husk', '万囮牢·朽躯'),
+    # Observed guidebook OCR variants in the 2026-10-06 diagnostic log.
+    WorldBossTarget('world_prison_husk', '万囮牢·朽躯', ('万@牢·朽躯', '万车·朽躯')),
     WorldBossTarget('world_adam_smasher', '梦魔亚当·重锤'),
     WorldBossTarget('world_explorer', '无铭探索者', farm_profile='Nameless Explorer'),
     WorldBossTarget('world_hyvatia', '海维夏', farm_profile='Hyvatia'),
