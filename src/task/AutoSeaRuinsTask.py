@@ -139,10 +139,11 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
     def _detail(self, frame, floor=None):
         if floor is not None:
             return self._detail_floor(frame) == floor
-        return bool(self._button(frame, (.025, .035, .15, .095), '海墟详情'))
+        return bool(self._button(frame, (.025, .035, .15, .095), '海域详情')
+                    or self._button(frame, (.025, .035, .15, .095), '海墟详情'))
 
     def _detail_floor(self, frame):
-        if not self._button(frame, (.025, .035, .15, .095), '海墟详情'):
+        if not self._detail(frame):
             return None
         numbers = [text for text in self._small_text(frame, (.150, .12, .195, .168)) if text.isdigit()]
         number = ''.join(numbers)
