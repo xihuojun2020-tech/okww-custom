@@ -617,6 +617,10 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         return self._readonly_profile_config()
 
     def _run_profile_stamina(self, config, *, activity_ready, used_stamina):
+        from src.task.farming_task_queue import FARMING_TASKS
+        if FARMING_TASKS in config:
+            from src.task.farming_task_scheduler import run_stamina_queue
+            return run_stamina_queue(self, config, activity_ready=activity_ready, used_stamina=used_stamina)
         from src.task.world_boss_material_progress import WorldBossMaterialProgress
         from src.task.forgery_quota_progress import ForgeryQuotaProgress
         rows = material_plan(config)
@@ -838,6 +842,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         for key in PROFILE_KEYS:
             result[key] = copy.deepcopy(self._profile_get(key,{MATERIAL_PLANNER:False,WEEKLY_TARGET:WEEKLY_AUTO,
                                                               'Forgery Material Goals': []}.get(key)))
+        if result.get('Farming Tasks') is None:
+            result.pop('Farming Tasks', None)
         return result
 
     def bind_verified_profile(self, profile_name, expected_profile_id=None, *, snapshot_profile=None):
@@ -1083,7 +1089,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             if not isinstance(profiles, dict) or not profiles:
                 return
             changed = False
-            defaults = {key: self.default_config.get(key) for key in PROFILE_KEYS}
+            defaults = {key: self.default_config.get(key) for key in PROFILE_KEYS if key != 'Farming Tasks'}
             old_merge = 'Merge Echo If discarded > 1000'
             for profile in profiles.values():
                 if not isinstance(profile, dict):
@@ -1900,15 +1906,22 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         from src.game_period import beijing_now
 
     def check_weekly_boss(self):
+        from src.task.farming_task_queue import FARMING_TASKS, ordered_tasks
+        from src.config_integrity import fingerprint
         identity = self._active_profile_id()
         window = weekly_check_window()
-        rows = weekly_plan(self._weekly_plan_tasks())
-        checked = (identity, window, plan_revision(rows))
+        tasks = self._weekly_plan_tasks()
+        queue = FARMING_TASKS in tasks
+        rows = ordered_tasks(tasks, weekly=True) if queue else weekly_plan(tasks)
+        checked = (identity, window, fingerprint(rows) if queue else plan_revision(rows))
         if getattr(self, '_weekly_checked_run', None) == checked:
             return True
         self.info_set('周本检查结果', '无需检查')
-        target = WEEKLY_AUTO if plan_enabled(rows) else WEEKLY_DISABLED
-        if not weekly_check_due(target, self.get_last_completed(window[1])):
+        target = WEEKLY_AUTO if (bool(rows) if queue else plan_enabled(rows)) else WEEKLY_DISABLED
+        completed = self.get_last_completed(window[1])
+        if queue and self.integrity_service.get_progress('weekly_boss:' + identity, {}).get('queue_revision') != fingerprint(rows):
+            completed = None
+        if not weekly_check_due(target, completed):
             return False
         self._weekly_checked_run = checked
         profile_id = self._active_profile_id()
@@ -1916,8 +1929,12 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self._publish_daily_stage('清理体力', '优先检查每周周本')
         DailyTask._overview_event(self, 'weekly_boss', 'running')
         try:
-            result = self.get_task_by_class(WeeklyBossTask).run_for_plan(
-                profile_id, self._weekly_plan_tasks, self.integrity_service)
+            if queue:
+                from src.task.farming_task_scheduler import run_weekly_queue
+                result = run_weekly_queue(self, tasks)
+            else:
+                result = self.get_task_by_class(WeeklyBossTask).run_for_plan(
+                    profile_id, self._weekly_plan_tasks, self.integrity_service)
             if result is not None and result.reason == '计划未启用':
                 self.info_set('周本检查结果', '计划未启用')
                 return False
@@ -1928,7 +1945,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 self.log_info(status)
                 DailyTask._overview_event(self, 'weekly_boss', 'resource_shortfall', reason=status)
                 return True
-            if result is None or not result.complete:
+            goals_complete = queue and result is not None and result.reason == '目标已达标'
+            if result is None or (not result.complete and not goals_complete):
                 raise RuntimeError('周本尚未确认剩余次数为零')
             if weekly_check_window() != window:
                 raise RuntimeError('周本执行跨越刷新边界，下次重新检查')
@@ -1937,8 +1955,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                     profile_id, window[1], datetime.now(timezone(timedelta(hours=8))).isoformat())
             else:
                 self.record_last_completed(window[1], profile_id=profile_id)
-            self.info_set('周本检查结果', '已确认次数耗尽')
-            self._record_weekly_outcome(target, '已确认次数耗尽', result.remaining)
+            status = '创建的周本目标已达标' if goals_complete else '已确认次数耗尽'
+            self.info_set('周本检查结果', status)
+            self._record_weekly_outcome(target, status, result.remaining)
             DailyTask._overview_event(self, 'weekly_boss', 'completed')
         except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked,
                 GameProcessLost, FrameUnavailable):
@@ -1964,15 +1983,25 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             self.integrity_service.guard_task_start()
             return dict(AccountRepository(paths=self.integrity_service.paths,
                 integrity_service=self.integrity_service).load_profile(self._active_profile_id()).tasks)
-        return {WEEKLY_TARGET: self._profile_get(WEEKLY_TARGET, WEEKLY_AUTO),
-                WEEKLY_PLAN: self._profile_get(WEEKLY_PLAN, [])}
+        tasks = {WEEKLY_TARGET: self._profile_get(WEEKLY_TARGET, WEEKLY_AUTO),
+                 WEEKLY_PLAN: self._profile_get(WEEKLY_PLAN, [])}
+        queue = self._profile_get('Farming Tasks')
+        if queue is not None:
+            tasks['Farming Tasks'] = queue
+        return tasks
 
     def _record_weekly_outcome(self, target, status, remaining):
         if self.integrity_service is not None:
-            self.integrity_service.set_progress(f'weekly_boss:{self._active_profile_id()}', {
+            outcome = {
                 'target': target, 'status': status, 'remaining': remaining,
                 'time': datetime.now(timezone(timedelta(hours=8))).isoformat(),
-            })
+            }
+            from src.task.farming_task_queue import FARMING_TASKS, ordered_tasks
+            from src.config_integrity import fingerprint
+            tasks = self._weekly_plan_tasks()
+            if FARMING_TASKS in tasks:
+                outcome['queue_revision'] = fingerprint(ordered_tasks(tasks, weekly=True))
+            self.integrity_service.set_progress(f'weekly_boss:{self._active_profile_id()}', outcome)
 
     def run_weekly_boss_only(self):
         with self.runtime_config_override('_weekly_boss_only', True):

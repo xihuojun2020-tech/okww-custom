@@ -617,6 +617,9 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
             raise
         self._stage('等待领奖结算，不重复确认')
         self._wait_for(self._settlement, '领奖结果未确认，停止再次挑战', 20)
+        policy = getattr(self.executor, '_daily_reserve_policy', None)
+        if policy is not None:
+            policy.spend(cost)
         if progress is not None:
             progress.resolve(self._claim_event, True)
             self._stage(f'周本领取已保存：{self._entry_boss.key}；事件={self._claim_event}；累计={progress.counts().get(self._entry_boss.key, 0)}')
@@ -716,11 +719,11 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
                 break
         return self._recheck(initial, claimed, reason)
 
-    def run_for_plan(self, profile_id, read_tasks, service):
+    def run_for_plan(self, profile_id, read_tasks, service, *, progress=None, fallback=True):
         from src.task.weekly_boss import weekly_check_window
         from src.task.weekly_boss_plan import weekly_plan, choose_weekly_target, plan_revision
         from src.task.weekly_boss_progress import WeeklyBossProgress
-        progress = WeeklyBossProgress(service, profile_id)
+        progress = progress if progress is not None else WeeklyBossProgress(service, profile_id)
         if progress.pending():
             self._open_weekly_book()
             remaining = self._read_remaining()
@@ -738,9 +741,10 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
                     raise RuntimeError('周本执行跨越刷新边界，下次重新核验')
                 self.sleep(.01)  # Preserve task stop/pause checks between targets.
                 rows = weekly_plan(read_tasks())
-                choice = choose_weekly_target(rows, progress.counts())
+                choice = choose_weekly_target(rows, progress.counts(), fallback=fallback)
                 if choice is None:
-                    result = WeeklyBossResult(initial or 0, claimed_total, last_remaining, '计划未启用')
+                    result = WeeklyBossResult(initial or 0, claimed_total, last_remaining,
+                                              '目标已达标' if not fallback else '计划未启用')
                     self.last_result = result
                     return result
                 target, needed, stage = choice

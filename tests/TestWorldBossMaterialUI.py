@@ -68,7 +68,8 @@ class TestWorldBossMaterialUI(unittest.TestCase):
         dialog = self.dispose(AccountTemplateDialog({MATERIAL_TARGETS: ROWS, 'Weekly Boss Target': '无'}))
         self.assertEqual(ROWS, dialog.tasks()[MATERIAL_TARGETS])
         self.assertEqual('无', dialog.tasks()['Weekly Boss Target'])
-        self.assertIsNone(dialog._widgets[MATERIAL_TARGETS].progress)
+        from src.task.farming_task_queue import FARMING_TASKS
+        self.assertIsNone(dialog._widgets[FARMING_TASKS].service)
         old = self.dispose(AccountTemplateDialog({}))
         self.assertEqual([], old.tasks()[MATERIAL_TARGETS])
 
@@ -95,16 +96,15 @@ class TestWorldBossMaterialUI(unittest.TestCase):
         self.assertEqual({}, WorldBossMaterialProgress(self.env.integrity, 'other-account').counts())
 
     def test_account_save_reload_preserves_weekly_and_links_stamina_choice(self):
+        from src.task.farming_task_queue import FARMING_TASKS, new_task
         tab = self.dispose(AccountConfigTab(AccountConfigEditor(self.env.repository)))
         original_weekly = tab.draft.tasks['Weekly Boss Target']
-        widget = tab.form_widgets[MATERIAL_TARGETS]
-        for row, (target, limit, _) in zip(ROWS, widget.rows):
-            target.setCurrentIndex(target.findData(row['boss']))
-            limit.setText(str(row['limit']))
+        widget = tab.form_widgets[FARMING_TASKS]
+        rows = [new_task('world_boss', row) for row in ROWS]
+        fallback = new_task('forgery', dict(mode='unlimited', domain=1))
+        widget.items = rows + [fallback]
+        widget._edited()
         self.assertTrue(tab.dirty)
-        fallback = tab.form_widgets['Which to Farm']
-        fallback.setCurrentIndex(fallback.findData('Forgery Challenge'))
-        self.assertIn('凝素领域', widget.summary.text())
         with patch.object(QMessageBox, 'question', return_value=QMessageBox.Yes):
             tab.save()
             deadline = time.monotonic() + 5
@@ -114,9 +114,8 @@ class TestWorldBossMaterialUI(unittest.TestCase):
         self.assertFalse(tab.operation.busy)
         self.assertFalse(tab.dirty)
         saved = self.env.repository.load_profile(tab.selected_profile_id)
-        self.assertEqual(ROWS, saved.tasks[MATERIAL_TARGETS])
+        self.assertEqual(rows + [fallback], saved.tasks[FARMING_TASKS])
         self.assertEqual(original_weekly, saved.tasks['Weekly Boss Target'])
-        self.assertEqual('Forgery Challenge', saved.tasks['Which to Farm'])
 
     def test_production_bundle_restore_keeps_higher_count_and_pending(self):
         self.progress.correct(BOSSES[0], 2)
@@ -173,7 +172,7 @@ class TestWorldBossMaterialUI(unittest.TestCase):
                 time.sleep(.005)
             self.app.processEvents()
             self.assertFalse(page.load_operation.busy)
-            self.assertIn('无冠者：已领 2/2 次 · 已达标', page._material_summary)
+            self.assertTrue(any('无冠者：已领取 2 / 2 次' in text for text in page._material_summary))
             self.assertTrue(any('待核验' in text for text in page._material_summary))
         finally:
             QThreadPool.globalInstance().waitForDone(5000)

@@ -21,6 +21,8 @@ from src.account_display import account_display_label, account_sort_key
 from src.account_rebind_service import AccountRebindService, rebind_confirmation_identity
 from src.account_repository import AccountRepository, AccountRepositoryError, get_default_repository
 from src.gui.ForgeryQuotaWidget import ForgeryQuotaWidget
+from src.gui.FarmingTaskQueueWidget import FarmingTaskQueueWidget
+from src.task.farming_task_queue import FARMING_TASKS, LEGACY_FARM_FIELDS, migrate_farming_tasks
 from src.task.forgery_quota_plan import FORGERY_GOALS, FORGERY_MODE
 from src.gui.WorldBossMaterialPlanWidget import WorldBossMaterialPlanWidget
 from src.task.world_boss_material_plan import MATERIAL_TARGETS, material_plan
@@ -224,6 +226,7 @@ class AccountTemplateDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("编辑新账号模板")
         self._tasks = dict(tasks)
+        migrate_farming_tasks(self._tasks)
         self._tasks.setdefault(WEEKLY_PLAN, [])
         self._tasks.setdefault(MATERIAL_TARGETS, [])
         self._tasks.setdefault(FORGERY_GOALS, [])
@@ -241,6 +244,8 @@ class AccountTemplateDialog(QDialog):
         content = QWidget(scroll)
         form = QVBoxLayout(content)
         for field in account_field_metadata(self._tasks):
+            if field.key in LEGACY_FARM_FIELDS:
+                continue
             if field.key in ('Nightmare Which to Farm', 'Nightmare Settlements to Farm', 'Weekly Boss Target',
                              'Material Planner Enabled', 'Auto Farm all Nightmare Nest', 'Farm Nightmare Nest for Daily Echo',
                              FORGERY_MODE, 'Merge Echo on Sunday', 'Logout After Daily Task'):
@@ -248,7 +253,9 @@ class AccountTemplateDialog(QDialog):
             if field.affects_identity or field.key in ("备用识别名称", "备用识别名称内容"):
                 continue
             value = self._tasks.get(field.key)
-            if field.key == FORGERY_GOALS:
+            if field.key == FARMING_TASKS:
+                widget = FarmingTaskQueueWidget(self._tasks, parent=self)
+            elif field.key == FORGERY_GOALS:
                 widget = ForgeryQuotaWidget(self._tasks, parent=self)
             elif field.key == MATERIAL_TARGETS:
                 widget = WorldBossMaterialPlanWidget(self._tasks, parent=self)
@@ -272,7 +279,7 @@ class AccountTemplateDialog(QDialog):
                 widget.setText(json.dumps(display, ensure_ascii=False)
                                if isinstance(display, (list, dict)) else str(display))
             self._widgets[field.key] = widget
-            if isinstance(widget, (ForgeryQuotaWidget, WeeklyBossPlanWidget, WorldBossMaterialPlanWidget)):
+            if isinstance(widget, (FarmingTaskQueueWidget, ForgeryQuotaWidget, WeeklyBossPlanWidget, WorldBossMaterialPlanWidget)):
                 form.addWidget(QLabel(field.label, content))
                 form.addWidget(widget)
             else:
@@ -295,7 +302,9 @@ class AccountTemplateDialog(QDialog):
         target = self._widgets.get('Which to Farm')
         farm_kind = target.currentData() if target is not None else result.get('Which to Farm', 'Forgery Challenge')
         for key, widget in self._widgets.items():
-            if isinstance(widget, ForgeryQuotaWidget):
+            if isinstance(widget, FarmingTaskQueueWidget):
+                result[key] = widget.values()
+            elif isinstance(widget, ForgeryQuotaWidget):
                 result[key] = widget.values(farm_kind=farm_kind)
                 if FORGERY_MODE in result or widget.mode.currentData() != ('materials' if result[key] else 'unlimited'):
                     result[FORGERY_MODE] = widget.mode.currentData()
@@ -554,9 +563,9 @@ class AccountConfigTab(CustomTab):
                 ('overview', '任务总览', ()), ('sequences', '账号序列', ()),
                 ('sequence_order', '账号执行顺序', ()),
                 ('identity', '账号识别信息', ()), ('reminders', '待办提醒', ()),
-                ('daily', '日常与声骸', (('nightmare_nest', '残像聚落'), ('world_boss', '讨伐强敌'),
-                                       ('stamina', '体力刷取'))),
-                ('weekly', '周常安排', (('weekly_boss', '战歌重奏'), ('weekly_garden', '每周乐园'))),
+                ('daily', '日常与声骸', (('nightmare_nest', '残像聚落'),)),
+                ('stamina', '刷取任务', ()),
+                ('weekly', '周常安排', (('weekly_garden', '每周乐园'),)),
                 ('manual', '海墟与活动提醒', ()),
                 ('recording', '截图与录像', ()), ('advanced', '高级设置', ())):
             item = QTreeWidgetItem([title])
@@ -615,7 +624,8 @@ class AccountConfigTab(CustomTab):
                 'elapsed': max(0, int(time.time() - getattr(task, 'start_time', time.time())))}
 
     def _select_route(self, route):
-        route = {'forgery': 'stamina', 'tacet': 'stamina', 'daily_activity': 'overview', 'closing': 'overview',
+        route = {'forgery': 'stamina', 'tacet': 'stamina', 'world_boss': 'stamina', 'weekly_boss': 'stamina',
+                 'daily_activity': 'overview', 'closing': 'overview',
                  'merge_echo': 'overview', 'adversity_tower': 'reminder:adversity_tower'}.get(route, route)
         route = route if route in self._nav_items else 'daily'
         item = self._nav_items[route]
@@ -625,7 +635,8 @@ class AccountConfigTab(CustomTab):
         self._navigate(route)
 
     def _navigate(self, route):
-        route = {'forgery': 'stamina', 'tacet': 'stamina', 'daily_activity': 'overview',
+        route = {'forgery': 'stamina', 'tacet': 'stamina', 'world_boss': 'stamina', 'weekly_boss': 'stamina',
+                 'daily_activity': 'overview',
                  'merge_echo': 'overview', 'closing': 'overview', 'adversity_tower': 'reminder:adversity_tower'}.get(route, route)
         self._route = route
         self.content_stack.setCurrentWidget(self.overview if route == 'overview' else self.settings_scroll)
@@ -655,10 +666,10 @@ class AccountConfigTab(CustomTab):
         if route == 'advanced':
             self.maintenance.set_expanded(True)
         groups = {'daily': 0, 'weekly': 1, 'closing': 2, 'advanced': 3, 'recording': 4,
-                  'nightmare_nest': 0, 'world_boss': 0, 'stamina': 0,
+                  'nightmare_nest': 0, 'world_boss': 0, 'stamina': 5,
                   'weekly_boss': 1, 'weekly_garden': 1, 'merge_echo': 1}
         filters = {'nightmare_nest': {'Tacet Discord Nests to Farm'}, 'world_boss': {MATERIAL_TARGETS},
-                   'stamina': {FORGERY_GOALS, 'Which to Farm', 'Which Forgery Challenge to Farm', 'Which Tacet Suppression to Farm', 'Material Selection'},
+                   'stamina': {FARMING_TASKS},
                    'weekly_boss': {WEEKLY_PLAN},
                    'weekly_garden': {'Garden Execution Mode', 'Weekly Garden Check Day'},
                    'merge_echo': {'Merge Echo on Sunday'}, 'daily_activity': set()}
@@ -915,7 +926,9 @@ class AccountConfigTab(CustomTab):
         for key, widget in self.form_widgets.items():
             if not widget.isEnabled():
                 continue
-            if isinstance(widget, ForgeryQuotaWidget):
+            if isinstance(widget, FarmingTaskQueueWidget):
+                self.draft.tasks[key] = widget.values()
+            elif isinstance(widget, ForgeryQuotaWidget):
                 self.draft.tasks[key] = widget.values(farm_kind=farm_kind)
                 if FORGERY_MODE in self.draft.tasks or widget.mode.currentData() != ('materials' if self.draft.tasks[key] else 'unlimited'):
                     self.draft.tasks[FORGERY_MODE] = widget.mode.currentData()
@@ -994,6 +1007,7 @@ class AccountConfigTab(CustomTab):
     def _render_form(self):
         from src.gui.SectionPanel import SectionPanel
         from src.recording_policy import RECORDING_PAGES
+        migrate_farming_tasks(self.draft.tasks)
         self.draft.tasks.setdefault(WEEKLY_PLAN, [])
         self.draft.tasks.setdefault(MATERIAL_TARGETS, [])
         self.draft.tasks['Record Pages'] = list(RECORDING_PAGES)
@@ -1009,12 +1023,13 @@ class AccountConfigTab(CustomTab):
         while self.identity_task_layout.count():
             item = self.identity_task_layout.takeAt(0)
             if item.widget(): item.widget().deleteLater()
-        stamina = {FORGERY_GOALS, MATERIAL_TARGETS, 'Material Planner Enabled', 'Which to Farm', 'Which Tacet Suppression to Farm', 'Which Forgery Challenge to Farm',
+        stamina = {FARMING_TASKS, FORGERY_GOALS, MATERIAL_TARGETS, 'Material Planner Enabled', 'Which to Farm', 'Which Tacet Suppression to Farm', 'Which Forgery Challenge to Farm',
                    'Material Selection'}
         daily = {'Farm Nightmare Nest for Daily Echo', 'Nightmare Which to Farm', 'Tacet Discord Nests to Farm',
                  'Nightmare Settlements to Farm', 'Auto Farm all Nightmare Nest'}
         weekly = {'Garden Execution Mode', 'Weekly Garden Check Day', 'Merge Echo on Sunday'}
         def group(field):
+            if field.key == FARMING_TASKS: return 5
             if field.key in ('Record Pages', 'Screenshot After Daily Task', 'Record After Daily Task', 'Record Duration'): return 4
             if field.key in ('Weekly Boss Target', WEEKLY_PLAN): return 1
             if field.key in stamina: return 0
@@ -1025,6 +1040,8 @@ class AccountConfigTab(CustomTab):
         last_group = None
         fields = sorted(account_field_metadata(self.draft.tasks), key=group)
         for field in fields:
+            if field.key in LEGACY_FARM_FIELDS:
+                continue
             if field.key in ('Nightmare Which to Farm', 'Nightmare Settlements to Farm', 'Weekly Boss Target',
                              'Material Planner Enabled', 'Auto Farm all Nightmare Nest', 'Farm Nightmare Nest for Daily Echo',
                              FORGERY_MODE, 'Merge Echo on Sunday', 'Logout After Daily Task'):
@@ -1032,13 +1049,16 @@ class AccountConfigTab(CustomTab):
             identity_field = field.key in ('备用识别名称', '备用识别名称内容')
             if not identity_field and group(field) != last_group:
                 last_group = group(field)
-                heading = SectionPanel(('日常与声骸', '周常安排', '收尾行为', '高级任务参数', '截图与录像')[last_group],
+                heading = SectionPanel(('日常与声骸', '周常安排', '收尾行为', '高级任务参数', '截图与录像', '刷取任务')[last_group],
                                        parent=self.form_host, collapsible=True,
                                        expanded=states.get(last_group, False))
                 self.form_sections[last_group] = heading
                 self.form_layout.addRow(heading)
             value = self.draft.tasks.get(field.key)
-            if field.key == FORGERY_GOALS:
+            if field.key == FARMING_TASKS:
+                widget = FarmingTaskQueueWidget(self.draft.tasks, self.editor.repository.integrity_service,
+                                               self.draft.profile_id, self.form_host)
+            elif field.key == FORGERY_GOALS:
                 widget = ForgeryQuotaWidget(self.draft.tasks, self.editor.repository.integrity_service,
                                             self.draft.profile_id, self.form_host)
             elif field.key == MATERIAL_TARGETS:
@@ -1072,12 +1092,12 @@ class AccountConfigTab(CustomTab):
             if identity_field:
                 self.identity_task_layout.addWidget(FlatSettingRow(field.label, widget, field.help_text,
                                                                   self.identity_task_fields))
-            elif isinstance(widget, (ForgeryQuotaWidget, WeeklyBossPlanWidget, WorldBossMaterialPlanWidget)):
+            elif isinstance(widget, (FarmingTaskQueueWidget, ForgeryQuotaWidget, WeeklyBossPlanWidget, WorldBossMaterialPlanWidget)):
                 heading.add_widget(widget)
                 self.form_rows[field.key] = widget
             else:
                 self.form_rows[field.key] = heading.add_row(field.label, widget, field.help_text)
-            if isinstance(widget, (NestSelection, ForgeryQuotaWidget, WeeklyBossPlanWidget, WorldBossMaterialPlanWidget)):
+            if isinstance(widget, (FarmingTaskQueueWidget, NestSelection, ForgeryQuotaWidget, WeeklyBossPlanWidget, WorldBossMaterialPlanWidget)):
                 widget.changed.connect(self._mark_draft_edited)
             elif isinstance(widget, QCheckBox):
                 widget.toggled.connect(self._mark_draft_edited)

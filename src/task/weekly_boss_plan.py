@@ -38,7 +38,7 @@ def plan_enabled(rows):
     return any(row['boss'] != WEEKLY_DISABLED and row['limit'] != 0 for row in rows)
 
 
-def choose_weekly_target(rows, counts):
+def choose_weekly_target(rows, counts, *, fallback=True):
     if not plan_enabled(rows):
         return None
     for row in rows:
@@ -50,7 +50,7 @@ def choose_weekly_target(rows, counts):
         needed = max(0, limit - counts.get(boss, 0))
         if needed:
             return boss, needed, '优先目标'
-    return WEEKLY_AUTO, None, '游戏列表首项保底'
+    return (WEEKLY_AUTO, None, '游戏列表首项保底') if fallback else None
 
 
 def plan_revision(rows):

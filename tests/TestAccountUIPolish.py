@@ -25,38 +25,34 @@ class TestAccountUIPolish(unittest.TestCase):
     def test_tacet_save_does_not_require_unlimited_forgery_and_keeps_inactive_mode(self):
         from PySide6.QtWidgets import QMessageBox
         from src.gui.AccountConfigTab import AccountTemplateDialog
+        from src.task.farming_task_queue import FARMING_TASKS
         from src.task.forgery_quota_plan import FORGERY_MODE, FORGERY_GOALS
+        from src.account_repository import ProfileEditScope
         with tempfile.TemporaryDirectory() as root:
             env = make_account_environment(root)
+            record = env.repository.list_profiles()[0]
+            tasks = dict(record.tasks, **{FORGERY_MODE: 'materials', FORGERY_GOALS: []})
+            env.repository.publish_profile(ProfileEditScope(record.profile_id, record.revision),
+                {'account': record.account, 'tasks': tasks})
             page = AccountConfigTab(AccountConfigEditor(env.repository))
             try:
-                identity = page.selected_profile_id
                 page._select_route('stamina')
-                quota = page.form_widgets[FORGERY_GOALS]
-                quota.mode.setCurrentIndex(quota.mode.findData('materials'))
-                target = page.form_widgets['Which to Farm']
-                target.setCurrentIndex(target.findData('Tacet Suppression'))
-                self.assertTrue(page.form_rows[FORGERY_GOALS].isHidden())
+                self.assertNotIn(FORGERY_GOALS, page.form_widgets)
+                self.assertEqual('tacet', page.form_widgets[FARMING_TASKS].values()[-1]['kind'])
                 with patch.object(QMessageBox, 'question', return_value=QMessageBox.Yes):
                     page.save()
                     self.drain(lambda: not page.operation.busy)
                 self.assertIn('保存成功', page.status.text())
-                saved = env.repository.load_profile(identity).tasks
-                self.assertEqual('Tacet Suppression', saved['Which to Farm'])
+                saved = env.repository.load_profile(page.selected_profile_id).tasks
                 self.assertEqual('materials', saved[FORGERY_MODE])
                 self.assertEqual([], saved[FORGERY_GOALS])
                 dialog = AccountTemplateDialog(saved)
                 try:
-                    self.assertEqual(saved[FORGERY_MODE], dialog.tasks()[FORGERY_MODE])
+                    self.assertEqual(saved[FARMING_TASKS], dialog.tasks()[FARMING_TASKS])
                 finally:
                     dialog.deleteLater()
                 page.refresh()
-                self.assertEqual('materials', page.form_widgets[FORGERY_GOALS].mode.currentData())
-                target = page.form_widgets['Which to Farm']
-                target.setCurrentIndex(target.findData('Forgery Challenge'))
-                with self.assertRaisesRegex(ValueError, '至少一个领域目标'):
-                    page._apply_text()
-                self.assertEqual(saved, env.repository.load_profile(identity).tasks)
+                self.assertEqual(saved[FARMING_TASKS], page.form_widgets[FARMING_TASKS].values())
             finally:
                 self.cleanup_page(page)
 
@@ -165,18 +161,18 @@ class TestAccountUIPolish(unittest.TestCase):
                     self.assertNotIn(hidden, page.form_widgets)
                 page._select_route('stamina')
                 self.app.processEvents()
-                quota = page.form_widgets[FORGERY_GOALS]
-                self.assertTrue(quota.goal_host.isVisible())
-                self.assertTrue(page.form_rows['Which Tacet Suppression to Farm'].isVisible())
-                self.assertFalse(page.form_rows['Which Forgery Challenge to Farm'].isVisible())
-                quota.mode.setCurrentIndex(quota.mode.findData('unlimited'))
-                self.app.processEvents()
-                self.assertFalse(quota.goal_host.isVisible())
-                self.assertFalse(page.form_rows['Which Tacet Suppression to Farm'].isVisible())
-                self.assertTrue(page.form_rows['Which Forgery Challenge to Farm'].isVisible())
+                from src.task.farming_task_queue import FARMING_TASKS
+                from src.gui.FarmingTaskQueueWidget import FarmingTaskDialog
+                queue = page.form_widgets[FARMING_TASKS]
+                item = next(row for row in queue.values() if row['kind'] == 'forgery')
+                dialog = FarmingTaskDialog(item)
+                self.assertEqual(len(dialog.quota.rows), 1)
+                self.assertTrue(dialog.quota.goal_host.isVisibleTo(dialog))
+                self.assertFalse(dialog.target.isEnabled())
+                self.assertNotIn('Which Tacet Suppression to Farm', page.form_rows)
+                dialog.deleteLater()
                 page._select_route('weekly_boss')
-                weekly = page.form_widgets['Weekly Boss Targets']
-                self.assertIsInstance(weekly.rows[0][0], QtComboBox)
+                self.assertEqual('stamina', page._route)
                 page._select_route('reminder:adversity_tower')
                 box, state, date = page.reminder_panel.task_choices['adversity_tower']
                 self.assertEqual([state.itemText(i) for i in range(state.count())], ['完成', '未完成', '前置未完成'])

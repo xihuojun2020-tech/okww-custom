@@ -40,6 +40,7 @@ class AccountFieldMetadata:
 
 
 _LABELS = {
+    'Farming Tasks': ('刷取任务', '每项任务独立保存目标与进度；组内排序，按模块优先级执行。'),
     'Forgery Material Goals': ('凝素材料目标', '输入已有材料与目标所需；按27/9/3/1折算缺口，达标后刷本账号无音区。'),
     'Forgery Limit Mode': ('凝素上限', '不限，或按已有库存与目标需求计算缺口。'),
     'World Boss Material Targets': ('讨伐强敌', '按1→2→3累计领奖，0跳过；全部达标后跟随本账号体力用途。次数跨日保留，只计成功领取，不计材料产出数量。'),

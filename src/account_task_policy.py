@@ -14,4 +14,6 @@ def migrate_task_policy(master):
         tasks.pop('Merge Echo If discarded > 1000', None)
         # A legacy farming choice carries no explicit quota-mode selection.
         tasks.setdefault(FORGERY_MODE, 'unlimited')
+        from src.task.farming_task_queue import migrate_farming_tasks
+        migrate_farming_tasks(tasks)
     return result, result != master

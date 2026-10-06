@@ -366,8 +366,11 @@ except ProfileRevisionConflict:
 
         self.assertTrue(imported.ok)
         restored = json.loads(self.service.paths.master.read_text(encoding="utf-8"))
-        self.assertEqual(restored["extensions"]["new_profile_template"],
+        from src.task.farming_task_queue import FARMING_TASKS, farming_tasks
+        saved = restored["extensions"]["new_profile_template"]
+        self.assertEqual({key: value for key, value in saved.items() if key != FARMING_TASKS},
                          {**template, 'Forgery Limit Mode': 'unlimited'})
+        self.assertTrue(farming_tasks(saved))
 
     def test_export_recursively_redacts_credentials_but_keeps_full_phone_identity(self):
         self.master["extensions"] = {

@@ -280,17 +280,18 @@ class TestAccountNavigationUI(unittest.TestCase):
                 if not page.overview.loading.busy:
                     break
                 time.sleep(.02)
-            widget = page.form_widgets['Which to Farm']
-            original = widget.currentData()
+            from src.task.farming_task_queue import FARMING_TASKS
+            widget = page.form_widgets[FARMING_TASKS]
+            original = widget.values()
             page._select_route('tacet')
             self.assertEqual(page.content_stack.currentWidget(), page.settings_scroll)
-            widget.setCurrentIndex((widget.currentIndex() + 1) % widget.count())
-            edited = widget.currentData()
+            widget.toggle(0)
+            edited = widget.values()
             self.assertNotEqual(edited, original)
             page._select_route('weekly')
             page._select_route('tacet')
-            self.assertIs(page.form_widgets['Which to Farm'], widget)
-            self.assertEqual(widget.currentData(), edited)
+            self.assertIs(page.form_widgets[FARMING_TASKS], widget)
+            self.assertEqual(widget.values(), edited)
             self.assertTrue(page.dirty)
             page._select_route('overview')
             page.overview.refresh(force=True)
@@ -301,9 +302,9 @@ class TestAccountNavigationUI(unittest.TestCase):
                 time.sleep(.02)
             self.assertTrue(page.overview._cards, page.overview.notice.text())
             self.assertFalse(page.overview.notice.text())
-            self.assertIs(page.form_widgets['Which to Farm'], widget)
-            self.assertEqual(widget.currentData(), edited)
-            self.assertEqual(env.repository.load_profile(page.selected_profile_id).tasks['Which to Farm'], original)
+            self.assertIs(page.form_widgets[FARMING_TASKS], widget)
+            self.assertEqual(widget.values(), edited)
+            self.assertNotIn(FARMING_TASKS, env.repository.load_profile(page.selected_profile_id).tasks)
             Path('test_out').mkdir(exist_ok=True)
             page.grab().save('test_out/account-overview-1.97.12.png')
             page.close()

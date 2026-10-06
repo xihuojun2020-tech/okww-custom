@@ -21,14 +21,19 @@ class TestForgeryQuotaIntegration(unittest.TestCase):
         migrated, _ = migrate_task_policy({'profiles': {'one': {'task_config': config}}})
         config = migrated['profiles']['one']['task_config']
         task = Mock(spec=DailyTask)
-        task.integrity_service = None
+        task.integrity_service = Mock(spec=ConfigIntegrityService)
+        task.integrity_service.get_progress_entries.return_value = {}
+        task.integrity_service.get_progress.side_effect = lambda key, default=None: default
+        task._active_profile_id.return_value = 'one'
+        task._material_plan_tasks.return_value = config
         task._verified_profile_id = 'one'
         task.support_tasks = ['Tacet Suppression', 'Forgery Challenge', 'Simulation Challenge']
         task._profile_get.side_effect = lambda key, default=None: config.get(key, default)
         forgery, tacet = Mock(), Mock()
         task.get_task_by_class.side_effect = lambda cls: {ForgeryTask: forgery, TacetTask: tacet}[cls]
         DailyTask._run_profile_stamina(task, config, activity_ready=True, used_stamina=0)
-        forgery.farm_forgery.assert_called_once_with(daily=True, config=config, activity_ready=True, used_stamina=0)
+        from src.task.farming_task_queue import project_task, FARMING_TASKS
+        forgery.farm_forgery.assert_called_once_with(daily=True, config={**config, **project_task(next(row for row in config[FARMING_TASKS] if row['kind'] == 'forgery'))}, activity_ready=True, used_stamina=0)
         forgery.farm_quota.assert_not_called()
         tacet.farm_tacet.assert_not_called()
         legacy = Mock(spec=DailyTask)

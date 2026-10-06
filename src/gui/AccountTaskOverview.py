@@ -193,7 +193,7 @@ class AccountTaskOverview(QWidget):
             return card.state
         if card.manual:
             return 'manual'
-        if card.task_id in ('weekly_boss', 'weekly_garden'):
+        if card.task_id in ('weekly_boss', 'weekly_garden') or card.route == 'weekly_boss':
             return 'weekly'
         return 'daily'
 

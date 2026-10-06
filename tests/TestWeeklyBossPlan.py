@@ -180,6 +180,9 @@ class TestWeeklyBossPlan(unittest.TestCase):
 
     def claim_task(self):
         task = object.__new__(WeeklyBossTask)
+        from types import SimpleNamespace
+        from src.task.daily_reserve_policy import DailyReservePolicy
+        task._executor = SimpleNamespace(_daily_reserve_policy=DailyReservePolicy('one', stamina_used=0))
         task._fight = Mock()
         task._stage = Mock()
         task._seek_reward_interaction = Mock()
@@ -201,6 +204,7 @@ class TestWeeklyBossPlan(unittest.TestCase):
             task._fight_and_claim(60)
         self.assertEqual({A: 1}, self.progress.counts())
         self.assertFalse(self.progress.pending())
+        self.assertEqual(task.executor._daily_reserve_policy.stamina_used, 60)
 
     def test_real_claim_unknown_result_keeps_pending_without_increment(self):
         task = self.claim_task()

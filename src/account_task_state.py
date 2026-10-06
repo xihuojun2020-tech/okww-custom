@@ -25,6 +25,10 @@ class AccountTaskCard:
 def task_signature(task_id, tasks):
     import hashlib
     import json
+    if task_id.startswith('farming:'):
+        from src.task.farming_task_queue import farming_tasks
+        row = next((row for row in farming_tasks(tasks) if 'farming:' + row['id'] == task_id), None)
+        return hashlib.sha256(json.dumps(row, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     keys = {'nightmare_nest': ('Tacet Discord Nests to Farm', 'Nightmare Settlements to Farm'),
             'world_boss': ('World Boss Material Targets',),
             'forgery': ('Forgery Material Goals', 'Forgery Limit Mode', 'Which to Farm', 'Which Forgery Challenge to Farm'),
@@ -119,69 +123,112 @@ def build_account_task_cards(profile, service, *, now=None, live=None):
         add('nightmare_nest', '残像聚落', stamp=stamp, done=completed_in_period(stamp, now=now),
             detail=f'全部所选聚落：{len(nests) + len(nightmare)} 个', next_at=next_daily_reset(now).isoformat())
 
-    material = material_plan(tasks)
-    progress = WorldBossMaterialProgress(service, identity)
-    counts = progress.counts()
-    enabled = [r for r in material if r['boss'] != 'none' and r['limit'] > 0]
-    if enabled or progress.pending() or events.get('world_boss', {}).get('result') == 'completed':
-        done = bool(enabled) and all(counts.get(r['boss'], 0) >= r['limit'] for r in enabled)
-        done |= not enabled and events.get('world_boss', {}).get('result') == 'completed'
-        detail = '；'.join(f"{TARGETS_BY_ID[r['boss']].name} {counts.get(r['boss'], 0)}/{r['limit']} 次" for r in enabled)
-        add('world_boss', '讨伐强敌', done=done, detail=detail or '累计目标已达标，已自动关闭',
-            stamp=events.get('world_boss', {}).get('finished_at'),
-            state='attention' if progress.pending() else None)
-    goals = forgery_plan(tasks)
-    quota = ForgeryQuotaProgress(service, identity)
-    earned = quota.earned()
-    target = tasks.get('Which to Farm', 'Tacet Suppression')
-    if target in ('Forgery Challenge', 'Simulation Challenge', 'Tacet Suppression'):
-        limited = target == 'Forgery Challenge' and forgery_limited(tasks)
-        all_done = limited and all(earned.get(r['goal_id'], 0) >= goal_units(r) for r in goals)
-        active = 'tacet' if all_done or target == 'Tacet Suppression' else 'forgery' if target == 'Forgery Challenge' else 'simulation'
-        checkpoint = 'Tacet Suppression' if all_done else target
-        stamp = completed.get(checkpoint)
-        done = completed_in_period(stamp, now=now) and completed_in_period(daily_stamp, now=now)
-        if limited:
-            done = done and all_done
-            detail = '；'.join(f"目标{i + 1}：新增当量 {earned.get(r['goal_id'], 0)}/{goal_units(r)}" for i, r in enumerate(goals))
-            detail += '；凝素达标，后续刷无音区' if all_done else '；达标后转所选无音区'
-        else:
-            detail = {'Forgery Challenge': f'凝素不限 · 领域 {tasks.get("Which Forgery Challenge to Farm", 1)}',
-                      'Tacet Suppression': f'无音区 · {tasks.get("Which Tacet Suppression to Farm", "未设置")}',
-                      'Simulation Challenge': '模拟训练 · ' + str(tasks.get('Material Selection', ''))}[target]
-        event = events.get(active, {})
-        valid = not event.get('signature') or event['signature'] == task_signature(active, tasks)
-        if not valid:
-            done = False
-        current = valid and event.get('period_id') == game_day_key(now)
-        state = 'completed' if done else 'pending'
-        if quota.pending():
-            state, detail = 'attention', '凝素领取待核验；请先核对消费记录'
-        elif current and event.get('result') in ('failed', 'unconfirmed', 'running') and not done:
-            state = 'attention'
-            detail = event.get('reason') or '上次体力刷取未确认结束，请核对记录'
-        elif current and event.get('result') == 'resource_shortfall' and not done:
-            state = 'waiting'
-            detail += '；当前体力不足，下次手动启动继续'
-        if (live and live.get('profile_id') == identity and live.get('task_id') in ('forgery', 'tacet', 'simulation')
-                and live.get('run_id') and events.get(live['task_id'], {}).get('run_id') == live['run_id']):
-            state = 'running'
-            detail = live.get('detail') or detail
-        cards.append(AccountTaskCard('stamina', '体力刷取', state, detail, stamp if done else '',
-                                     next_daily_reset(now).isoformat(), event.get('started_at') or '',
-                                     route='stamina', last_attempt_at=event.get('finished_at') or ''))
-
-    if plan_enabled(weekly_plan(tasks)):
+    from src.task.farming_task_queue import FARMING_TASKS, farming_tasks, task_status, task_order_key, task_target_label
+    if FARMING_TASKS in tasks:
         weekday = (now - timedelta(hours=4)).weekday()
-        key = WEEKLY_SUNDAY if weekday == 6 else WEEKLY_MONDAY
-        stamp = completed.get(key)
-        done = completed_in_period(stamp, weekly=True, now=now)
-        sunday = next_weekly_reset(now) - timedelta(days=1)
-        next_at = next_weekly_reset(now) if weekday == 6 else sunday
+        weekly_key = WEEKLY_SUNDAY if weekday == 6 else WEEKLY_MONDAY
+        weekly_stamp = completed.get(weekly_key)
+        weekly_done = completed_in_period(weekly_stamp, weekly=True, now=now)
         outcome = service.get_progress('weekly_boss:' + identity, {})
-        detail = ('周日复检' if weekday == 6 else '周一检查') + '；' + str(outcome.get('status', '尚未执行'))
-        add('weekly_boss', '战歌重奏', stamp=stamp, done=done, detail=detail, next_at=next_at.isoformat(),
-            state='waiting' if weekday not in (0, 6) and not done else None)
+        for item in sorted(farming_tasks(tasks), key=task_order_key):
+            done, pending, detail, stamp = task_status(item, service, identity)
+            key = 'farming:' + item['id']
+            weekly = item['kind'] == 'weekly'
+            finite = (item['kind'] == 'world_boss' or
+                      weekly and item['params']['limit'] > 0 or
+                      item['kind'] == 'forgery' and item['params']['mode'] == 'materials')
+            if not finite:
+                if weekly:
+                    done, stamp = weekly_done, weekly_stamp
+                else:
+                    event = events.get(key, {})
+                    done = (event.get('result') == 'returned' and event.get('period_id') == game_day_key(now)
+                            and event.get('signature') == task_signature(key, tasks)
+                            and completed_in_period(daily_stamp, now=now))
+                    stamp = event.get('finished_at') if done else None
+            detail = task_target_label(item) + '；' + detail
+            state = 'attention' if pending else None
+            if not item['enabled'] and not done:
+                state, detail = 'waiting', '已暂停；' + detail
+            elif weekly and not done and not pending:
+                quota_used = weekly_done and outcome.get('remaining') == 0
+                if quota_used or weekday not in (0, 6):
+                    state = 'waiting'
+                    detail += '；本周领取次数耗尽，下周继续' if quota_used else '；周一执行，周日复核'
+            if finite and done:
+                next_at = ''
+            elif weekly:
+                quota_used = weekly_done and outcome.get('remaining') == 0
+                check_at = next_weekly_reset(now) - timedelta(days=0 if weekday == 6 or quota_used else 1)
+                next_at = check_at.isoformat()
+            else:
+                next_at = '' if finite else next_daily_reset(now).isoformat()
+            add(key, item['name'], done=done, stamp=stamp, detail=detail, state=state,
+                next_at=next_at, route='weekly_boss' if weekly else 'stamina')
+    else:
+        material = material_plan(tasks)
+        progress = WorldBossMaterialProgress(service, identity)
+        counts = progress.counts()
+        enabled = [r for r in material if r['boss'] != 'none' and r['limit'] > 0]
+        if enabled or progress.pending() or events.get('world_boss', {}).get('result') == 'completed':
+            done = bool(enabled) and all(counts.get(r['boss'], 0) >= r['limit'] for r in enabled)
+            done |= not enabled and events.get('world_boss', {}).get('result') == 'completed'
+            detail = '；'.join(f"{TARGETS_BY_ID[r['boss']].name} {counts.get(r['boss'], 0)}/{r['limit']} 次" for r in enabled)
+            add('world_boss', '讨伐强敌', done=done, detail=detail or '累计目标已达标，已自动关闭',
+                stamp=events.get('world_boss', {}).get('finished_at'),
+                state='attention' if progress.pending() else None)
+        goals = forgery_plan(tasks)
+        quota = ForgeryQuotaProgress(service, identity)
+        earned = quota.earned()
+        target = tasks.get('Which to Farm', 'Tacet Suppression')
+        if target in ('Forgery Challenge', 'Simulation Challenge', 'Tacet Suppression'):
+            limited = target == 'Forgery Challenge' and forgery_limited(tasks)
+            all_done = limited and all(earned.get(r['goal_id'], 0) >= goal_units(r) for r in goals)
+            active = 'tacet' if all_done or target == 'Tacet Suppression' else 'forgery' if target == 'Forgery Challenge' else 'simulation'
+            checkpoint = 'Tacet Suppression' if all_done else target
+            stamp = completed.get(checkpoint)
+            done = completed_in_period(stamp, now=now) and completed_in_period(daily_stamp, now=now)
+            if limited:
+                done = done and all_done
+                detail = '；'.join(f"目标{i + 1}：新增当量 {earned.get(r['goal_id'], 0)}/{goal_units(r)}" for i, r in enumerate(goals))
+                detail += '；凝素达标，后续刷无音区' if all_done else '；达标后转所选无音区'
+            else:
+                detail = {'Forgery Challenge': f'凝素不限 · 领域 {tasks.get("Which Forgery Challenge to Farm", 1)}',
+                          'Tacet Suppression': f'无音区 · {tasks.get("Which Tacet Suppression to Farm", "未设置")}',
+                          'Simulation Challenge': '模拟训练 · ' + str(tasks.get('Material Selection', ''))}[target]
+            event = events.get(active, {})
+            valid = not event.get('signature') or event['signature'] == task_signature(active, tasks)
+            if not valid:
+                done = False
+            current = valid and event.get('period_id') == game_day_key(now)
+            state = 'completed' if done else 'pending'
+            if quota.pending():
+                state, detail = 'attention', '凝素领取待核验；请先核对消费记录'
+            elif current and event.get('result') in ('failed', 'unconfirmed', 'running') and not done:
+                state = 'attention'
+                detail = event.get('reason') or '上次体力刷取未确认结束，请核对记录'
+            elif current and event.get('result') == 'resource_shortfall' and not done:
+                state = 'waiting'
+                detail += '；当前体力不足，下次手动启动继续'
+            if (live and live.get('profile_id') == identity and live.get('task_id') in ('forgery', 'tacet', 'simulation')
+                    and live.get('run_id') and events.get(live['task_id'], {}).get('run_id') == live['run_id']):
+                state = 'running'
+                detail = live.get('detail') or detail
+            cards.append(AccountTaskCard('stamina', '体力刷取', state, detail, stamp if done else '',
+                                         next_daily_reset(now).isoformat(), event.get('started_at') or '',
+                                         route='stamina', last_attempt_at=event.get('finished_at') or ''))
+
+        if plan_enabled(weekly_plan(tasks)):
+            weekday = (now - timedelta(hours=4)).weekday()
+            key = WEEKLY_SUNDAY if weekday == 6 else WEEKLY_MONDAY
+            stamp = completed.get(key)
+            done = completed_in_period(stamp, weekly=True, now=now)
+            sunday = next_weekly_reset(now) - timedelta(days=1)
+            next_at = next_weekly_reset(now) if weekday == 6 else sunday
+            outcome = service.get_progress('weekly_boss:' + identity, {})
+            detail = ('周日复检' if weekday == 6 else '周一检查') + '；' + str(outcome.get('status', '尚未执行'))
+            add('weekly_boss', '战歌重奏', stamp=stamp, done=done, detail=detail, next_at=next_at.isoformat(),
+                state='waiting' if weekday not in (0, 6) and not done else None)
     mode = tasks.get('Garden Execution Mode', 'closed')
     if mode != 'closed':
         stamp = completed.get('Weekly Garden')

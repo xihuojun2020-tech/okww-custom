@@ -481,16 +481,24 @@ class CompletionCheckTab(QWidget):
                     from src.task.world_boss_material_plan import material_plan
                     from src.task.world_boss_material_progress import WorldBossMaterialProgress
                     from src.task.world_boss_materials import TARGETS_BY_ID
-                    plan = material_plan(source.load_profile(identity).tasks)
-                    progress = WorldBossMaterialProgress(source.integrity_service, identity)
-                    counts = progress.counts()
-                    for row in plan:
-                        if row['boss'] != 'none' and row['limit'] > 0:
-                            count = counts.get(row['boss'], 0)
-                            material_summary.append(f"{TARGETS_BY_ID[row['boss']].name}：已领 {count}/{row['limit']} 次" +
-                                                    (' · 已达标' if count >= row['limit'] else ' · 待领取'))
-                    if progress.pending():
-                        material_summary.append('有材料领奖待核验，请停止任务后到账号设置核对。')
+                    from src.task.farming_task_queue import FARMING_TASKS, farming_tasks, task_status, task_target_label
+                    tasks = source.load_profile(identity).tasks
+                    if FARMING_TASKS in tasks:
+                        for item in farming_tasks(tasks):
+                            done, pending, detail, _ = task_status(item, source.integrity_service, identity)
+                            state = '领取待核验' if pending else '已达标' if done else '已暂停' if not item['enabled'] else '待执行'
+                            material_summary.append(f'{item["name"]} · {task_target_label(item)}：{detail} · {state}')
+                    else:
+                        plan = material_plan(tasks)
+                        progress = WorldBossMaterialProgress(source.integrity_service, identity)
+                        counts = progress.counts()
+                        for row in plan:
+                            if row['boss'] != 'none' and row['limit'] > 0:
+                                count = counts.get(row['boss'], 0)
+                                material_summary.append(f"{TARGETS_BY_ID[row['boss']].name}：已领 {count}/{row['limit']} 次" +
+                                                        (' · 已达标' if count >= row['limit'] else ' · 待领取'))
+                        if progress.pending():
+                            material_summary.append('有材料领奖待核验，请停止任务后到账号设置核对。')
             except Exception:
                 error = '完成记录或首领材料进度暂不可读取；截图记录不受影响。'
             migration = json.loads(repo.get_preference('daily_periods_v2') or '{}')

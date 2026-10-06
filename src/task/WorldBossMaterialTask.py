@@ -401,10 +401,10 @@ class WorldBossMaterialTask(FarmEchoTask):
         self._material_reenter = self._in_realm
         return used
 
-    def run_for_profile(self, profile_id, read_tasks, guard, service, *, activity_ready, used_stamina, request=None):
+    def run_for_profile(self, profile_id, read_tasks, guard, service, *, activity_ready, used_stamina, request=None, progress=None):
         if request is not None:
             boss, claims = validate_material_request(*request)
-        progress = WorldBossMaterialProgress(service, profile_id)
+        progress = progress if progress is not None else WorldBossMaterialProgress(service, profile_id)
         if progress.pending():
             raise RuntimeError('有首领材料领奖待核验，请在账号设置中核对；未继续消费')
         claimed, spent, current_target = 0, 0, None

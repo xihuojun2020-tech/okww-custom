@@ -373,6 +373,8 @@ class AccountRepository:
             task_config = copy.deepcopy(dict(tasks))
             from src.task.forgery_quota_plan import FORGERY_GOALS, fresh_forgery_goals, forgery_plan
             task_config[FORGERY_GOALS] = fresh_forgery_goals(forgery_plan(task_config))
+            from src.task.farming_task_queue import fresh_farming_tasks
+            task_config = fresh_farming_tasks(task_config)
             # New accounts always start closed, even when the shared template enables garden runs.
             task_config['Garden Execution Mode'] = 'closed'
             profile = {

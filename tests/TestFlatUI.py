@@ -950,7 +950,9 @@ class TestFlatUI(unittest.TestCase):
             self.assertTrue(all(not section.toggle_button.isChecked() for section in tab.form_sections.values()))
             self.assertEqual(tab.form_sections[0].title, '日常与声骸')
             self.assertEqual(tab.form_sections[1].title, '周常安排')
-            self.assertTrue(tab.form_sections[1].isAncestorOf(tab.form_widgets[WEEKLY_PLAN]))
+            from src.task.farming_task_queue import FARMING_TASKS
+            self.assertEqual(tab.form_sections[5].title, '刷取任务')
+            self.assertTrue(tab.form_sections[5].isAncestorOf(tab.form_widgets[FARMING_TASKS]))
             self.assertTrue(tab.identity_group.isAncestorOf(tab.sequence_group))
             tab.deleteLater()
 

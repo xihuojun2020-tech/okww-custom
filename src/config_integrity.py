@@ -58,6 +58,7 @@ PROTECTED_PROFILE_FIELDS = (
 )
 
 PROTECTED_TASK_KEYS = (
+    "Farming Tasks",
     "Forgery Material Goals",
     "Forgery Limit Mode",
     "World Boss Material Targets",
@@ -80,6 +81,7 @@ PROTECTED_TASK_KEYS = (
     "备用识别名称内容",
 )
 _TASK_KEY_TYPES = {
+    "Farming Tasks": list,
     "Forgery Material Goals": list,
     "Forgery Limit Mode": str,
     "World Boss Material Targets": list,
@@ -344,7 +346,7 @@ def validate_master(data: Any) -> list[str]:
             # not rewrite stored account intent; explicit disabled remains disabled.
             missing_keys = [key for key in PROTECTED_TASK_KEYS
                             if key not in task_config and key not in (
-                                'Weekly Boss Target', 'Weekly Boss Targets', 'Material Planner Enabled',
+                                'Farming Tasks', 'Weekly Boss Target', 'Weekly Boss Targets', 'Material Planner Enabled',
                                 'Nightmare Settlements to Farm', 'Garden Execution Mode', 'World Boss Material Targets', 'Forgery Material Goals', 'Forgery Limit Mode')]
             from src.task.weekly_boss import WEEKLY_BOSSES
             from src.task.weekly_boss_plan import weekly_plan
@@ -354,6 +356,8 @@ def validate_master(data: Any) -> list[str]:
                 material_plan(task_config)
                 from src.task.forgery_quota_plan import forgery_plan
                 forgery_plan(task_config)
+                from src.task.farming_task_queue import farming_tasks
+                farming_tasks(task_config)
             except ValueError as error:
                 errors.append(f'{path}.task_config: {error}')
             if task_config.get('Weekly Boss Target', '无') not in ('无', '自动（列表首项）', *(b.key for b in WEEKLY_BOSSES)):
@@ -1624,6 +1628,15 @@ class ConfigIntegrityService:
             runtime.setdefault("progress", {})[str(key)] = copy.deepcopy(value)
             atomic_write_json(self.paths.runtime, runtime)
             return copy.deepcopy(runtime)
+
+    def get_progress_entries(self, prefix: str) -> dict[str, Any]:
+        """Enumerate instance journals, including deleted tasks with pending claims."""
+        with self._lock:
+            runtime = self._runtime()
+            if self._runtime_error:
+                raise ConfigIntegrityBlocked('runtime state is corrupt')
+            return copy.deepcopy({key: value for key, value in (runtime.get('progress') or {}).items()
+                                  if key == prefix or key.startswith(prefix + ':')})
 
     def update_progress(self, key: str, update) -> Any:
         """Read/modify/write one progress record under the existing account lock."""

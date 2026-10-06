@@ -26,84 +26,83 @@ from tests.fixture_support import make_account_environment
 
 class TestAccountManagementTabs(unittest.TestCase):
     def test_weekly_three_targets_save_reload_and_show_shared_counts(self):
-        from src.task.weekly_boss_plan import WEEKLY_PLAN
+        from src.task.farming_task_queue import FARMING_TASKS, new_task, task_progress
         from src.task.weekly_boss import WEEKLY_BOSSES
-        from src.task.weekly_boss_progress import WeeklyBossProgress
         from src.gui.AccountConfigTab import AccountTemplateDialog
-        bosses = [b.key for b in WEEKLY_BOSSES[:3]]
+        rows = [new_task('weekly', dict(boss=b.key, limit=n)) for b,n in zip(WEEKLY_BOSSES[:3], (6,4,3))]
         with tempfile.TemporaryDirectory() as temp:
             env = make_account_environment(Path(temp))
             tab = AccountConfigTab(AccountConfigEditor(env.repository))
             try:
-                widget = tab.form_widgets[WEEKLY_PLAN]
-                rows = [{'boss': boss, 'limit': limit} for boss, limit in zip(bosses, (6, 4, 3))]
-                for row, (target, limit, _) in zip(rows, widget.rows):
-                    target.setCurrentIndex(target.findData(row['boss']))
-                    limit.setText(str(row['limit']))
+                widget = tab.form_widgets[FARMING_TASKS]
+                widget.items = rows
+                widget._edited()
                 self.assertTrue(tab.dirty)
                 with patch.object(QMessageBox, 'question', return_value=QMessageBox.Yes):
                     tab.save()
                     self._drain_until(lambda: not tab.operation.busy)
                 saved = env.repository.load_profile(tab.selected_profile_id)
-                self.assertEqual(rows, saved.tasks[WEEKLY_PLAN])
-                self.assertEqual(bosses[0], saved.tasks['Weekly Boss Target'])
-                WeeklyBossProgress(env.integrity, tab.selected_profile_id).correct(bosses[0], 6)
+                self.assertEqual(rows, saved.tasks[FARMING_TASKS])
+                task_progress(rows[0], env.integrity, tab.selected_profile_id).correct(rows[0]['params']['boss'], 6)
                 widget.refresh()
-                self.assertIn('6/6', widget.rows[0][2].text())
-                self.assertIn('已达标', widget.rows[0][2].text())
+                from PySide6.QtWidgets import QLabel
+                self.assertTrue(any('6 / 6' in label.text() for label in widget.findChildren(QLabel)))
                 dialog = AccountTemplateDialog(saved.tasks)
-                self.assertEqual(rows, dialog.tasks()[WEEKLY_PLAN])
+                self.assertEqual(rows, dialog.tasks()[FARMING_TASKS])
                 dialog.deleteLater()
             finally:
                 tab.deleteLater()
 
     def test_tacet_template_preserves_ids_and_invalid_value_requires_selection(self):
-        from src.gui.AccountConfigTab import AccountTemplateDialog
+        from src.gui.FarmingTaskQueueWidget import FarmingTaskDialog
+        from src.task.farming_task_queue import new_task
+        from src.task.tacet_targets import tacet_label
         for value in (1, 19, 20, 21):
-            dialog = AccountTemplateDialog({'Which Tacet Suppression to Farm': value})
-            control = dialog._widgets['Which Tacet Suppression to Farm']
-            self.assertEqual(21, control.count())
-            self.assertEqual(value, control.currentData())
-            from src.task.tacet_targets import tacet_label
-            self.assertEqual(tacet_label(value), control.currentText())
-            self.assertEqual(value, dialog.tasks()['Which Tacet Suppression to Farm'])
+            dialog = FarmingTaskDialog(new_task('tacet', dict(target=value)))
+            self.assertEqual(21, dialog.target.count())
+            self.assertEqual(value, dialog.target.currentData())
+            self.assertEqual(tacet_label(value), dialog.target.currentText())
+            self.assertEqual(value, dialog.values()['params']['target'])
             dialog.deleteLater()
-        dialog = AccountTemplateDialog({'Which Tacet Suppression to Farm': 22})
-        self.assertEqual(-1, dialog._widgets['Which Tacet Suppression to Farm'].currentIndex())
+        dialog = FarmingTaskDialog()
+        dialog.target.setCurrentIndex(-1)
         with self.assertRaises(ValueError):
-            dialog.tasks()
+            dialog.values()
         dialog.deleteLater()
 
     def test_forgery_template_shows_names_and_keeps_integer_values(self):
-        from src.gui.AccountConfigTab import AccountTemplateDialog
+        from src.gui.FarmingTaskQueueWidget import FarmingTaskDialog
+        from src.task.farming_task_queue import new_task
         from src.task.forgery_targets import FORGERY_DOMAIN_NAMES
         for value in (1, 5, 20):
-            dialog = AccountTemplateDialog({'Which Forgery Challenge to Farm': value})
-            control = dialog._widgets['Which Forgery Challenge to Farm']
-            self.assertEqual(20, control.count())
-            self.assertEqual(FORGERY_DOMAIN_NAMES[value], control.currentText())
-            self.assertEqual(value, dialog.tasks()['Which Forgery Challenge to Farm'])
+            dialog = FarmingTaskDialog(new_task('forgery', dict(mode='unlimited', domain=value)))
+            self.assertEqual(20, dialog.target.count())
+            self.assertEqual(FORGERY_DOMAIN_NAMES[value], dialog.target.currentText())
+            self.assertEqual(value, dialog.values()['params']['domain'])
             dialog.deleteLater()
-        dialog = AccountTemplateDialog({'Which Forgery Challenge to Farm': 21})
-        self.assertEqual(-1, dialog._widgets['Which Forgery Challenge to Farm'].currentIndex())
+        dialog = FarmingTaskDialog()
+        dialog.kind.setCurrentIndex(dialog.kind.findData('forgery'))
+        dialog.target.setCurrentIndex(-1)
         with self.assertRaises(ValueError):
-            dialog.tasks()
+            dialog.values()
         dialog.deleteLater()
 
     def test_forgery_profile_form_uses_named_choices(self):
+        from src.gui.FarmingTaskQueueWidget import FarmingTaskDialog
         from src.task.forgery_targets import FORGERY_DOMAIN_NAMES
-        with tempfile.TemporaryDirectory() as temp:
-            env = make_account_environment(Path(temp))
-            tab = AccountConfigTab(AccountConfigEditor(env.repository))
-            try:
-                control = tab.form_widgets['Which Forgery Challenge to Farm']
-                self.assertIsInstance(control, ClickOnlyComboBox)
-                self.assertEqual(20, control.count())
-                self.assertEqual(FORGERY_DOMAIN_NAMES[1], control.currentText())
-                control.setCurrentIndex(control.findData(5))
-                self.assertEqual(FORGERY_DOMAIN_NAMES[5], control.currentText())
-            finally:
-                tab.deleteLater()
+        dialog = FarmingTaskDialog()
+        try:
+            dialog.kind.setCurrentIndex(dialog.kind.findData('forgery'))
+            control = dialog.target
+            self.assertIsInstance(control, ClickOnlyComboBox)
+            self.assertEqual(20, control.count())
+            self.assertEqual(FORGERY_DOMAIN_NAMES[1], control.currentText())
+            control.setCurrentIndex(control.findData(5))
+            self.assertEqual(FORGERY_DOMAIN_NAMES[5], control.currentText())
+            self.assertEqual(5, dialog.values()['params']['domain'])
+        finally:
+            dialog.deleteLater()
+
     def test_fifth_nest_is_available_without_changing_legacy_template(self):
         from src.gui.AccountConfigTab import AccountTemplateDialog
         from src.nightmare_nests import NEST_NAMES
