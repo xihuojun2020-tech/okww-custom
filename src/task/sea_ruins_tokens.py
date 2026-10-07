@@ -1,6 +1,6 @@
 """Version-owned token catalogue. Runtime reads inventory, never effect text.
 
-Sources/verification limits: docs/references/sea-ruins-tokens.md (2026-09-20).
+Sources/verification limits: docs/references/sea-ruins-tokens.md (2026-10-07).
 Names are canonical; list captions may be truncated, but must match uniquely.
 """
 from dataclasses import dataclass
@@ -17,9 +17,10 @@ class TokenRule:
 
 WIKI = 'https://wuwa.huijiwiki.com/wiki/'
 CATALOG = (
-    TokenRule('那映照虚幻的燃灯', 'gold', '获得护盾：自身热熔伤害加成+3%、重击最终伤害+2.5%，3秒，最多15层。', WIKI+'那映照虚幻的燃灯'),
+    TokenRule('那徒具空壳的愿景', 'gold', '敌方受到导电伤害最终提升30%；角色施放变奏技能时，自身导电伤害最终提升30%，持续15秒。', 'tests/fixtures/sea_ruins/gold_vision_20261007.png'),
+    TokenRule('那映照虚幻的燃灯', 'gold', '获得护盾：自身热熔伤害加成+3%、重击最终伤害+2.5%，3秒，最多15层。', 'tests/fixtures/sea_ruins/gold_lamp_20261007.png'),
     TokenRule('那凝望深渊的眼眸', 'gold', '敌人受到霜渐最终伤害+50%；附加霜渐使敌人受到冷凝最终伤害+50%，5秒。', 'https://phro.love/db/item/71500088?lang=zh'),
-    TokenRule('那丈量心魂的天平', 'gold', '附加集谐·偏移后自身最终伤害+40%，30秒；谐度破坏后全队全属性加成+30%、气动额外+30%，30秒。', 'https://encore.moe/item/71500105?lang=zh-Hans'),
+    TokenRule('那丈量心魂的天平', 'gold', '附加集谐·偏移后自身最终伤害+40%，30秒；谐度破坏后全队全属性加成+30%、气动额外+30%，30秒。', 'tests/fixtures/sea_ruins/gold_scales_20261007.png'),
     TokenRule('眷属-珍奇契约', 'purple', '召唤声骸协同作战，不受玩家角色伤害。', WIKI+'眷属-珍奇契约'),
     TokenRule('狂欢者-船长印章', 'purple', '全属性伤害加深25%。', "https://wutheringwaves.fandom.com/wiki/Reveler_Captain%27s_Seal"),
     TokenRule('镌刻者-长夜孤灯', 'purple', '敌人受到最终伤害+15%、震谐伤害+50%。', 'tests/fixtures/sea_ruins/tokens.png'),

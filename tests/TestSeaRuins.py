@@ -12,6 +12,17 @@ ROOT = Path('tests/fixtures/sea_ruins')
 
 
 class TestSeaRuins(unittest.TestCase):
+    def test_new_gold_vision_matches_electro_team(self):
+        from src.task.sea_ruins_tokens import identify_token
+        rule = identify_token('那徒具空.', 'gold')
+        self.assertEqual(rule.name, '那徒具空壳的愿景')
+        token = Token(rule.name, rule.effect, 2)
+        electro = Preset(1, ('char_xiangliyao', 'char_yinlin', 'char_verina'))
+        wind = Preset(2, ('char_qingxiao', 'char_denia', 'char_chisa'))
+        self.assertGreater(token_score(electro, token, 11), 0)
+        self.assertEqual(token_score(wind, token, 11), 0)
+        self.assertEqual(token_score(electro, Token(rule.name, rule.effect, 0), 11), -10000)
+
     def setUp(self):
         self.wind = Preset(1, ('char_qingxiao', 'char_denia', 'char_verina'))
         self.ice = Preset(2, ('char_hiyuki', 'char_lucilla', 'char_suisui'))

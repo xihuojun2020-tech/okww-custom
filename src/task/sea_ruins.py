@@ -196,6 +196,8 @@ def token_score(team, token, floor):
                     for p in ps if '护盾' in p.triggers) / total
     elif '凝望深' in name or '凝视深' in name:
         score = 50 * share('冷凝') if '霜渐' in triggers else 0
+    elif '徒具空' in name:
+        score = 60 * share('导电')
     elif '镌刻者' in name:
         score = 15  # universal part only; preset portraits cannot prove rupture mode
     elif '希冀者' in name:

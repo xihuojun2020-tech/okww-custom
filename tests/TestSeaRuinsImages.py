@@ -120,6 +120,14 @@ class TestSeaRuinsImages(TaskTestCase):
         self.assertEqual(complete[1].members, ('yangyang_sp', 'char_rover', 'char_verina'))
         self.assertFalse(next(preset for preset, _ in records if preset.number == 3).valid)
 
+    def test_october07_gold_inventory(self):
+        expected = ['那映照虚幻的燃灯', '那徒具空壳的愿景', '那丈量心魂的天平']
+        for selected in ('lamp', 'vision', 'scales'):
+            with self.subTest(selected=selected):
+                records = self.task._page_tokens(self.image(f'gold_{selected}_20261007'))
+                self.assertEqual([token.name for token, _ in records[:3]], expected)
+                self.assertEqual([token.remaining for token, _ in records[:3]], [2, 2, 2])
+
     def test_token_counts(self):
         task = self.task
         frame = self.image('tokens')
