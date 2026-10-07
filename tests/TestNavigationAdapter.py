@@ -9,6 +9,34 @@ from src.task.ui_transition import TransitionContextChanged, TransitionTimeout
 
 
 class TestNavigationAdapter(unittest.TestCase):
+    def test_sea_failed_f_reacquires_entrance_then_retries(self):
+        from src.task.AutoSeaRuinsTask import AutoSeaRuinsTask
+        task = self.task()
+        task._floor = 11
+        task._wait = Mock()
+        task.send_key = Mock()
+        task._approach_lower_exit = Mock(side_effect=lambda: task.send_key('f'))
+        task.in_team_and_world = Mock(return_value=True)
+        task._upper_end = lambda frame: task.send_key.call_count < 2
+        task._prompt = Mock(return_value=False)
+        AutoSeaRuinsTask._enter_lower(task)
+        self.assertEqual(task._approach_lower_exit.call_count, 2)
+        self.assertEqual(task.send_key.call_count, 2)
+
+    def test_sea_loading_does_not_repeat_entrance_input(self):
+        from src.task.AutoSeaRuinsTask import AutoSeaRuinsTask
+        task = self.task()
+        task._floor = 11
+        task._wait = Mock()
+        task.send_key = Mock()
+        task._approach_lower_exit = Mock(side_effect=lambda: task.send_key('f'))
+        task.in_team_and_world = lambda frame: not task.send_key.called or self.clock[0] >= 10
+        task._upper_end = lambda frame: not task.send_key.called
+        task._prompt = Mock(return_value=False)
+        AutoSeaRuinsTask._enter_lower(task)
+        task._approach_lower_exit.assert_called_once()
+        task.send_key.assert_called_once_with('f')
+
     def test_activity_title_accepts_actual_mixed_script_ocr(self):
         task = BaseWWTask.__new__(BaseWWTask)
         task._guidebook_tab = Mock(return_value=object())

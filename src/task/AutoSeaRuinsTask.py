@@ -439,7 +439,7 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
     def _upper_end(self, frame):
         boxes = self.ocr(.005, .23, .25, .32, frame=frame)
         text = ''.join(compact(b.name) for b in boxes)
-        return '前往下半海域' in text and re.search(r'上半得分[:：]?[0-9]+', text) is not None
+        return '前往下半海域' in text and re.search(r'上半得分[:：]?[·.]?[0-9]+', text) is not None
 
     def _result(self, frame):
         return bool(self._button(frame, (.40, .28, .59, .34), '挑战结束')
@@ -579,6 +579,14 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
 
     def _enter_lower(self):
         self._wait(self._upper_end, '未确认前往下半海域')
+        self.navigate_ui('海墟进入下半海域',
+                         lambda f: self.in_team_and_world(frame=f) and self._upper_end(f),
+                         lambda f: self.in_team_and_world(frame=f) and not self._upper_end(f)
+                                   and not self._prompt(f, '进入下半海域'),
+                         action=lambda _: self._approach_lower_exit(), attempts=3,
+                         retry_after=5, timeout=120, identity=('sea_lower', self._floor))
+
+    def _approach_lower_exit(self):
         self._release()
         self.middle_click(after_sleep=.3)
         self._status('后台寻路前往下半海域出口')
@@ -645,8 +653,6 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
             if not self._prompt(self.frame, '进入下半海域'):
                 raise RuntimeError('进入下半海域提示消失，未按F')
             self.send_key('f')
-            self._wait(lambda f: self.in_team_and_world(frame=f) and not self._upper_end(f)
-                       and not self._prompt(f, '进入下半海域'), '进入下半海域后加载未确认', timeout=120)
         finally:
             self._release()
 

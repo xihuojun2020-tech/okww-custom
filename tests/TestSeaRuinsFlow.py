@@ -27,6 +27,8 @@ class TestSeaRuinsFlow(unittest.TestCase):
         t.frame = object()
         t._floor = 7
         t._backstep_sea_exit = MethodType(AutoSeaRuinsTask._backstep_sea_exit, t)
+        t._approach_lower_exit = MethodType(AutoSeaRuinsTask._approach_lower_exit, t)
+        t.navigate_ui.side_effect = lambda step, source, target, action=None, **kw: action(None) if action else None
         t.in_team_and_world.return_value = True
         return t
 

@@ -187,6 +187,12 @@ class TestSeaRuinsImages(TaskTestCase):
                 patch.object(task, 'screenshot'), patch.object(task, 'info_set'):
             self.assertEqual(task._read_result(), (1410, 1490, 2900))
 
+    def test_october07_exit_failures_keep_upper_state(self):
+        for name in ('exit_ocr_20261007', 'exit_f_missed_20261007'):
+            frame = self.image(name)
+            self.assertTrue(self.task._upper_end(frame))
+            self.assertFalse(self.task._prompt(frame, '进入下半海域'))
+
     def test_september27_exit_crossing_frames_keep_upper_state_without_f(self):
         for name, side in (('exit_cross_left_20260927', -1), ('exit_cross_right_20260927', 1)):
             frame = self.image(name)
