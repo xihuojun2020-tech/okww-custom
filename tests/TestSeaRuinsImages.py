@@ -24,6 +24,17 @@ class TestSeaRuinsImages(TaskTestCase):
         self.set_image(str(ROOT/f'{name}.png'))
         return frame
 
+    def test_failed_selected_vision_title_actual_ocr(self):
+        from src.task.sea_ruins_tokens import identify_token
+        title = cv2.imread(str(ROOT/'vision_title_20261007.png'))
+        for height in (43, 65, 86):
+            with self.subTest(height=height):
+                crop = cv2.resize(title, (round(title.shape[1]*height/title.shape[0]), height))
+                text = ''.join(b.name for b in self.task.ocr(frame=crop))
+                rule = identify_token(text)
+                self.assertIsNotNone(rule, text)
+                self.assertEqual(rule.name, '那徒具空壳的愿景')
+
     def test_actual_ocr_states(self):
         task = self.task
         self.assertTrue(task._detail(self.image('detail'), 7))

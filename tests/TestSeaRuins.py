@@ -23,6 +23,12 @@ class TestSeaRuins(unittest.TestCase):
         self.assertEqual(token_score(wind, token, 11), 0)
         self.assertEqual(token_score(electro, Token(rule.name, rule.effect, 0), 11), -10000)
 
+    def test_vision_title_observed_ocr_glyph_keeps_unique_name_matching(self):
+        from src.task.sea_ruins_tokens import identify_token
+        self.assertEqual(identify_token('那徒具空売的愿景').name, '那徒具空壳的愿景')
+        self.assertIsNone(identify_token('那徒具空売的未知'))
+        self.assertIsNone(identify_token('那徒具空売的愿景', 'purple'))
+
     def setUp(self):
         self.wind = Preset(1, ('char_qingxiao', 'char_denia', 'char_verina'))
         self.ice = Preset(2, ('char_hiyuki', 'char_lucilla', 'char_suisui'))

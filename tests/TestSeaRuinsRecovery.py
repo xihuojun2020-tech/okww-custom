@@ -47,7 +47,7 @@ class TestSeaRuinsRecovery(unittest.TestCase):
         preach = next(t for t in tokens if '布道' in t.name)
         self.assertGreater(token_score(heavy, hunt, 7), token_score(heavy, preach, 7))
         self.assertGreater(token_score(normal, preach, 7), token_score(normal, hunt, 7))
-        plan = choose_loadout([heavy, normal], tokens, 7, date(2026, 9, 20))
+        plan = choose_loadout([heavy, normal], tokens, 7, date(2026, 10, 7))
         self.assertEqual({plan.upper, plan.lower}, {heavy, normal})
 
     def test_last_finite_use_is_reserved_more_strongly(self):
@@ -146,6 +146,7 @@ class TestSeaRuinsRecovery(unittest.TestCase):
 
     def test_floor_parser_joins_valid_split_digits_and_rejects_unknown_values(self):
         t = self.task()
+        t._detail.return_value = True
         t._button.return_value = True
         for numbers, expected in ((['10'], 10), (['11'], 11), (['CR', '8'], 8),
                                   (['1', '1'], 11), (['8', '9'], None), (['12'], None)):
@@ -156,6 +157,7 @@ class TestSeaRuinsRecovery(unittest.TestCase):
 
     def test_endless_name_requires_detail_header(self):
         t = self.task()
+        t._detail.return_value = True
         t._small_text.side_effect = lambda frame, region: [] if region == (.150, .12, .195, .168) else ['无尽湍渊']
         t._button.side_effect = lambda frame, region, text: text == '海墟详情'
         self.assertEqual(AutoSeaRuinsTask._detail_floor(t, t.frame), ENDLESS)
@@ -163,6 +165,8 @@ class TestSeaRuinsRecovery(unittest.TestCase):
         self.assertIsNone(AutoSeaRuinsTask._detail_floor(t, t.frame))
         t._button.return_value = False
         t._button.side_effect = None
+        t._detail.return_value = False
+        t._small_text.side_effect = lambda frame, region: ['无尽湍渊']
         self.assertIsNone(AutoSeaRuinsTask._detail_floor(t, t.frame))
 
     def test_start_from_eight_does_not_repeat_seven(self):

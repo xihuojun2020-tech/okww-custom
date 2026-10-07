@@ -34,8 +34,8 @@ CATALOG = (
 
 
 def name_key(text):
-    # PaddleOCR may emit the traditional glyph for this simplified UI name.
-    text = (text or '').translate(str.maketrans({'虛': '虚'}))
+    # Real title OCR emits 売 for 壳 and 虛 for 虚 in these token names.
+    text = (text or '').translate(str.maketrans({'虛': '虚', '売': '壳'}))
     return re.sub(r'[\s—–一\-·.…。]', '', text)
 
 
