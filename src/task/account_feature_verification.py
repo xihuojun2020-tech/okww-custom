@@ -194,6 +194,13 @@ def begin_account_visit(task, expected):
         # than be recorded as a farming failure and advance to another account.
         raise ConfigIntegrityBlocked(str(error)) from error
     task.executor._account_feature_run = verification
+    from src.task.MultiAccountDailyTask import MultiAccountDailyTask, CURRENT_ACCOUNT
+    if isinstance(task, MultiAccountDailyTask):
+        owner = task.get_task_by_class(MultiAccountDailyTask)
+        name = verification.record.account['display_name']
+        owner.config[CURRENT_ACCOUNT] = name
+        if task is not owner:
+            task.config[CURRENT_ACCOUNT] = name
     return verification
 
 

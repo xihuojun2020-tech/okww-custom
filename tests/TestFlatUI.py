@@ -636,20 +636,20 @@ class TestFlatUI(unittest.TestCase):
 
     def test_targeted_task_descriptions_hidden_without_metadata_change(self):
         from ok.gui.tasks.TaskCard import TaskCard
-        for name in ('DailyTask', 'MultiAccountDailyTask', 'GardenTask', 'WeeklyBossTask', 'EventTask'):
+        for name in ('DailyTask', 'MultiAccountDailyTask', 'MultiAccountWeeklyGardenTask',
+                     'AutoAbyssTask', 'AutoSeaRuinsTask', 'CharacterTrialTask',
+                     'GardenTask', 'WeeklyBossTask', 'EventTask'):
             task = type(name, (), {})()
             task.__dict__.update(vars(example_task()))
+            if name in ('AutoAbyssTask', 'AutoSeaRuinsTask'):
+                task.name = '自动深塔' if name == 'AutoAbyssTask' else '自动冥歌海墟'
             with patch.object(og, 'app', SimpleNamespace(tr=str)), patch.object(
                     og, 'executor', SimpleNamespace(waiting_for_task=lambda _: '')):
                 card = TaskCard(task, True, fluent_sample=True)
-                if name in ('DailyTask', 'MultiAccountDailyTask'):
-                    self.assertFalse(card.card.contentLabel.isHidden())
-                    self.assertEqual(card.card.contentLabel.text(), task.description)
-                    self.assertTrue(card.card.expandButton.isHidden())
-                    self.assertTrue(card.state_label.isHidden())
-                else:
-                    self.assertTrue(card.card.contentLabel.isHidden())
-                    self.assertEqual(card.card.contentLabel.text(), '')
+                self.assertTrue(card.card.contentLabel.isHidden())
+                self.assertEqual(card.card.contentLabel.text(), '')
+                if name in ('AutoAbyssTask', 'AutoSeaRuinsTask'):
+                    self.assertEqual(card.card.titleLabel.text(), task.name.removeprefix('自动'))
                 self.assertTrue(task.description)
                 self.assertEqual(card.card.minimumHeight(), 56)
                 card.deleteLater()
@@ -947,9 +947,11 @@ class TestFlatUI(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             env = make_account_environment(Path(temp))
             tab = AccountConfigTab(AccountConfigEditor(env.repository))
-            self.assertTrue(all(not section.toggle_button.isChecked() for section in tab.form_sections.values()))
-            self.assertEqual(tab.form_sections[0].title, '日常与声骸')
-            self.assertEqual(tab.form_sections[1].title, '周常安排')
+            self.assertTrue(all(section.toggle_button.isChecked() for section in tab.form_sections.values()))
+            self.assertEqual(tab.form_sections[0].title, '残像聚落')
+            self.assertEqual(tab.form_sections[1].title, '周常乐园')
+            self.assertFalse(tab.form_sections[0].property('flat'))
+            self.assertFalse(tab.identity_group.property('flat'))
             from src.task.farming_task_queue import FARMING_TASKS
             self.assertEqual(tab.form_sections[5].title, '刷取任务')
             self.assertTrue(tab.form_sections[5].isAncestorOf(tab.form_widgets[FARMING_TASKS]))
@@ -992,11 +994,11 @@ class TestFlatUI(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             env = make_account_environment(Path(temp))
             tab = AccountConfigTab(AccountConfigEditor(env.repository))
-            self.assertFalse(tab.form_sections[1].toggle_button.isChecked())
+            self.assertTrue(tab.form_sections[1].toggle_button.isChecked())
             tab.form_sections[1].set_expanded(True)
             tab._render_form()
             self.assertTrue(tab.form_sections[1].toggle_button.isChecked())
-            self.assertFalse(tab.identity_group.toggle_button.isChecked())
+            self.assertTrue(tab.identity_group.toggle_button.isChecked())
             tab.deleteLater()
 
     def test_small_screen_window_geometry_stays_reachable(self):
@@ -1024,10 +1026,10 @@ class TestFlatUI(unittest.TestCase):
                                     '备用识别名称': True, '备用识别名称内容': 'fixture'})
             before = dict(tab.draft.tasks)
             tab._render_form()
-            for index, title in ((0, '日常与声骸'), (1, '周常安排')):
+            for index, title in ((0, '残像聚落'), (1, '周常乐园')):
                 section = tab.form_sections[index]
                 self.assertEqual(section.title_label.text(), title)
-                self.assertFalse(section.toggle_button.isChecked())
+                self.assertTrue(section.toggle_button.isChecked())
             for key in ('Weekly Garden Check Day',):
                 self.assertTrue(tab.form_sections[1].isAncestorOf(tab.form_widgets[key]))
             self.assertNotIn(2, tab.form_sections)

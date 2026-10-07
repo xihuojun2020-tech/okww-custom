@@ -15,12 +15,9 @@ class TaskCard(ConfigCard):
         config_type = dict(task.config_type or {})
         config_description = task.config_description
         if type(task).__name__ in ('DailyTask', 'MultiAccountDailyTask', 'MultiAccountWeeklyGardenTask'):
-            allowed = ({'本次最多处理账号数', '本次时间预算（分钟）'}
-                       if type(task).__name__ == 'MultiAccountWeeklyGardenTask' else set())
             config_type = {key: dict(value) if isinstance(value, dict) else value for key, value in config_type.items()}
             for key in set(task.config) | set(config_type):
-                if key not in allowed:
-                    config_type[key] = {'hidden': True}
+                config_type[key] = {'hidden': True}
             config_description = {key: '' for key in task.config}
             for value in config_type.values():
                 if isinstance(value, dict):
@@ -28,7 +25,10 @@ class TaskCard(ConfigCard):
         if type(task).__name__ in ('DailyTask', 'MultiAccountDailyTask', 'MultiAccountWeeklyGardenTask'):
             config_type['Manage Daily Profiles'] = {'hidden': True}
             config_type['管理序列'] = {'hidden': True}
-        description = '' if (fluent_sample and type(task).__name__ in ('GardenTask', 'WeeklyBossTask', 'EventTask')) else task.description
+        compact_tasks = ('DailyTask', 'MultiAccountDailyTask', 'MultiAccountWeeklyGardenTask',
+                         'AutoAbyssTask', 'AutoSeaRuinsTask', 'CharacterTrialTask')
+        description = '' if (fluent_sample and type(task).__name__ in
+                             (*compact_tasks, 'GardenTask', 'WeeklyBossTask', 'EventTask')) else task.description
         super().__init__(task, task.name, task.config, description, task.default_config, config_description,
                          config_type, config_icon=task.icon or FluentIcon.INFO)
         self.task = task
@@ -148,6 +148,8 @@ class TaskCard(ConfigCard):
         import re
         # Display-only cleanup: task names remain stable for config and execution.
         self.card.titleLabel.setText(re.sub(r'^[^\w]+', '', self.card.titleLabel.text()))
+        if type(self.task).__name__ in ('AutoAbyssTask', 'AutoSeaRuinsTask'):
+            self.card.titleLabel.setText(self.card.titleLabel.text().removeprefix('自动'))
         if not self.task.icon:
             icon = {'每日执行': FluentIcon.CALENDAR, '每周任务': FluentIcon.SYNC,
                     '声骸获取与整理': FluentIcon.BOOK_SHELF}.get(task_category(self.task), FluentIcon.GAME)

@@ -1,20 +1,13 @@
 """Sequence-driven weekly garden runner using the production account switcher."""
 
-import time
-
 from ok import TaskDisabledException
 from ok.task.exceptions import FinishedException
 from ok.util.file import get_relative_path
 from src.task.DailyTask import DailyTask
-from src.task.MultiAccountDailyTask import (MultiAccountDailyTask, CURRENT_ACCOUNT,
-                                            CURRENT_SEQUENCE, CURRENT_SEQUENCE_MEMBERS)
+from src.task.MultiAccountDailyTask import MultiAccountDailyTask, CURRENT_SEQUENCE_MEMBERS
 from src.task.weekly_garden import (GARDEN_CLOSED, GARDEN_DAILY, GARDEN_INDEPENDENT,
                                     garden_completed_this_week, garden_week_key)
 from src.config_integrity import ConfigIntegrityBlocked, ConfigWriteBlocked
-
-MAX_ACCOUNTS = '本次最多处理账号数'
-TIME_BUDGET = '本次时间预算（分钟）'
-
 
 class MultiAccountWeeklyGardenTask(MultiAccountDailyTask):
     """Reuse account selection/login/recovery while replacing only per-account work."""
@@ -23,15 +16,7 @@ class MultiAccountWeeklyGardenTask(MultiAccountDailyTask):
         super().__init__(*args, **kwargs)
         self.name = '👥 多账号每周乐园'
         self.description = '按当前序列逐账号检查并完成本周乐园，和每日入口共享完成记录。'
-        self.default_config[MAX_ACCOUNTS] = 0
-        self.config_description[MAX_ACCOUNTS] = '0 表示不限制；已完成和关闭账号不计入。失败账号计入一次。'
-        self.config_type[MAX_ACCOUNTS] = {'min': 0, 'max': 99}
-        self.default_config[TIME_BUDGET] = 0
-        self.config_description[TIME_BUDGET] = '0 表示不限制；仅在账号之间停止，不中断当前乐园。'
-        self.config_type[TIME_BUDGET] = {'min': 0, 'max': 1440}
         self._garden_week_key = None
-        self._garden_started_at = None
-        self._garden_entered = set()
         self._garden_progress_file = get_relative_path('configs', 'multi_account_garden_progress.json')
 
     def _progress_namespace(self):
@@ -51,8 +36,6 @@ class MultiAccountWeeklyGardenTask(MultiAccountDailyTask):
 
     def run(self):
         self._garden_week_key = garden_week_key()
-        self._garden_started_at = time.monotonic()
-        self._garden_entered = set()
         super().run()
 
     def _garden_mode(self, account):
@@ -133,22 +116,10 @@ class MultiAccountWeeklyGardenTask(MultiAccountDailyTask):
         return profile_status_label(account)
 
     def _next_target_account(self):
-        limit = max(0, int(self.config.get(MAX_ACCOUNTS, 0) or 0))
-        budget = max(0, int(self.config.get(TIME_BUDGET, 0) or 0))
-        time_limit = (time.monotonic() - (self._garden_started_at or time.monotonic()) >= budget * 60
-                      if budget else False)
-        if time_limit or (limit and len(self._garden_entered) >= limit):
-            return None
         snapshot = getattr(self, '_active_run_snapshot', None)
         sequence = self._snapshot_profile_names(snapshot) if snapshot is not None else self.get_sequence_accounts()
         self._reconcile_failures(sequence)
         return super()._next_target_account()
-
-    def _account_start_allowed(self, _account):
-        budget = max(0, int(self.config.get(TIME_BUDGET, 0) or 0))
-        limit = max(0, int(self.config.get(MAX_ACCOUNTS, 0) or 0))
-        time_expired = budget and time.monotonic() - (self._garden_started_at or time.monotonic()) >= budget * 60
-        return not (time_expired or (limit and len(self._garden_entered) >= limit))
 
     def _task_label(self):
         return '每周乐园'
@@ -156,7 +127,6 @@ class MultiAccountWeeklyGardenTask(MultiAccountDailyTask):
     def _execute_account_task(self, account):
         self._check_progress_date()
         identity = self._failure_key(account)
-        self._garden_entered.add(identity)
         self._account_attempts[identity] = self._account_attempts.get(identity, 0) + 1
         self._attempt_scope = 'weekly'
         retry = '失败补跑 1/1' if getattr(self, '_retry_phase', False) else '正常执行'

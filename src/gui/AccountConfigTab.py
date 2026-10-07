@@ -421,7 +421,7 @@ class AccountConfigTab(CustomTab):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
         row = QHBoxLayout()
-        row.addWidget(QLabel("账号"))
+        row.addWidget(QLabel("编辑账号"))
         self.profile_combo = ClickOnlyComboBox(root)
         row.addWidget(self.profile_combo, 1)
         layout.addLayout(row)
@@ -431,8 +431,6 @@ class AccountConfigTab(CustomTab):
         self.draft_status.setProperty('role', 'description')
         from src.gui.SectionPanel import SectionPanel
         self.identity_group = SectionPanel("账号识别信息", parent=root)
-        self.identity_group.set_flat()
-        self.identity_group.title_label.setProperty('role', 'pageTitle')
         from src.gui.AccountSlotEditor import AccountSlotEditor
         self.slot_editor = AccountSlotEditor(self.identity_group)
         self.slot_editor.toggle.hide()
@@ -973,8 +971,6 @@ class AccountConfigTab(CustomTab):
                 last_group = group(field)
                 heading = SectionPanel(('残像聚落', '周常乐园', '收尾行为', '高级任务参数', '截图与录像', '刷取任务')[last_group],
                                        parent=self.form_host)
-                heading.set_flat()
-                heading.title_label.setProperty('role', 'pageTitle')
                 self.form_sections[last_group] = heading
                 self.form_layout.addRow(heading)
             value = self.draft.tasks.get(field.key)

@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 from uuid import UUID
 import numpy as np
 
-from ok import TaskDisabledException
+from ok import TaskDisabledException, og
 from src.account_identity import match_profile_identity, AccountIdentityError
 from src.task.account_feature_verification import (parse_feature_code, observe, resolve, Observation,
                                                    FeatureRun, region, expected_profile)
@@ -23,6 +23,27 @@ def record(number, code):
 
 
 class TestAccountFeatureVerification(unittest.TestCase):
+    def test_multi_account_selection_follows_verified_login_only(self):
+        from src.task.MultiAccountDailyTask import MultiAccountDailyTask, CURRENT_ACCOUNT
+        from src.task.MultiAccountWeeklyGardenTask import MultiAccountWeeklyGardenTask
+        from src.task.account_feature_verification import begin_account_visit
+
+        owner = object.__new__(MultiAccountDailyTask)
+        owner.config = {CURRENT_ACCOUNT: 'A1'}
+        weekly = object.__new__(MultiAccountWeeklyGardenTask)
+        weekly.config = {CURRENT_ACCOUNT: 'A1'}
+        executor = SimpleNamespace(_account_feature_run=None)
+        weekly._executor = executor
+        weekly.get_task_by_class = lambda _: owner
+        verified = SimpleNamespace(record=record(2, '456'), profile_id=record(2, '456').profile_id)
+        with patch.object(og, 'executor', executor), \
+             patch('src.account_repository.get_default_repository', return_value=Mock()), \
+             patch('src.task.account_feature_verification.FeatureRun') as feature:
+            feature.return_value.begin.return_value = verified
+            begin_account_visit(weekly, verified.profile_id)
+        self.assertEqual(owner.config[CURRENT_ACCOUNT], 'A2')
+        self.assertEqual(weekly.config[CURRENT_ACCOUNT], 'A2')
+
     def test_parser_preserves_zero_and_rejects_guessing(self):
         self.assertEqual(parse_feature_code('特征码：001234'), '001234')
         self.assertEqual(parse_feature_code('特徵碼:１２３４'), '1234')

@@ -1,7 +1,6 @@
 import os
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
-import time
 import unittest
 from datetime import datetime
 from types import SimpleNamespace
@@ -11,9 +10,7 @@ from ok import og, TaskDisabledException
 from ok.task.exceptions import FinishedException
 from src.task.MultiAccountDailyTask import MultiAccountDailyTask
 from src.task.MultiAccountDailyTask import CURRENT_SEQUENCE
-from src.task.MultiAccountWeeklyGardenTask import (
-    MAX_ACCOUNTS, TIME_BUDGET, MultiAccountWeeklyGardenTask,
-)
+from src.task.MultiAccountWeeklyGardenTask import MultiAccountWeeklyGardenTask
 from src.task.weekly_garden import BEIJING, GARDEN_INDEPENDENT, garden_week_key
 
 
@@ -37,42 +34,15 @@ class TestMultiAccountWeeklyGardenTask(unittest.TestCase):
         task.integrity_service.get_completion = lambda *_: datetime.now(BEIJING).isoformat()
         self.assertTrue(task._garden_done('A1'))
 
-    def test_batch_limits_stop_new_accounts_and_retries_at_account_boundary(self):
+    def test_next_account_uses_shared_sequence_without_batch_limits(self):
         task = object.__new__(MultiAccountWeeklyGardenTask)
-        task.config = {MAX_ACCOUNTS: 1, TIME_BUDGET: 0}
-        task._garden_entered = {'profile-a1'}
-        task._garden_started_at = time.monotonic()
-        task.get_sequence_accounts = lambda: ['A1', 'A3']
-        task._active_run_snapshot = None
-        task._reconcile_failures = Mock()
-        with patch.object(MultiAccountDailyTask, '_next_target_account', return_value='A1') as parent:
-            self.assertIsNone(task._next_target_account())
-            parent.assert_not_called()
-
-    def test_time_budget_can_stop_before_first_account_and_unlimited_retry_stays_at_boundary(self):
-        task = object.__new__(MultiAccountWeeklyGardenTask)
-        task.config = {MAX_ACCOUNTS: 0, TIME_BUDGET: 1}
-        task._garden_entered = set()
-        task._garden_started_at = time.monotonic() - 61
-        self.assertFalse(task._account_start_allowed('A1'))
-
-        task.config[TIME_BUDGET] = 0
-        task._garden_entered = {'profile-a1'}
-        task._garden_started_at = time.monotonic()
         task._active_run_snapshot = None
         task.get_sequence_accounts = lambda: ['A1', 'A3']
-        task._failure_key = lambda account: {'A1': 'profile-a1', 'A3': 'profile-a3'}[account]
         task._reconcile_failures = Mock()
         with patch.object(MultiAccountDailyTask, '_next_target_account', return_value='A1') as parent:
             self.assertEqual(task._next_target_account(), 'A1')
             parent.assert_called_once_with()
-
-        task._garden_entered.clear()
-        task.config[TIME_BUDGET] = 5
-        task._garden_started_at = time.monotonic() - 301
-        with patch.object(MultiAccountDailyTask, '_next_target_account', return_value='A1') as parent:
-            self.assertIsNone(task._next_target_account())
-            parent.assert_not_called()
+        task._reconcile_failures.assert_called_once_with(['A1', 'A3'])
 
     def test_weekly_progress_uses_separate_file_and_shared_failure_key(self):
         task = object.__new__(MultiAccountWeeklyGardenTask)
@@ -87,7 +57,6 @@ class TestMultiAccountWeeklyGardenTask(unittest.TestCase):
             task = object.__new__(MultiAccountWeeklyGardenTask)
             task._check_progress_date = Mock()
             task._failure_key = lambda _account: 'profile-a1'
-            task._garden_entered = set()
             task._account_attempts = {}
             task._retry_phase = False
             task.info_set = Mock()
@@ -165,6 +134,8 @@ class TestMultiAccountWeeklyGardenTask(unittest.TestCase):
                 real = module.MultiAccountWeeklyGardenTask(executor=executor, app=None)
                 real.config = MemoryConfig(real.default_config)
                 real.config[CURRENT_SEQUENCE] = 'S1'
+                real.config['本次最多处理账号数'] = 1
+                real.config['本次时间预算（分钟）'] = 5
                 real.running = False
                 real.start_time = 0
                 real.info = {}
@@ -176,8 +147,8 @@ class TestMultiAccountWeeklyGardenTask(unittest.TestCase):
                     self.assertFalse(card.instructions_button.isVisible())
                     self.assertNotIn('当前序列', card.config_widget_by_key)
                     self.assertNotIn('当前执行账号', card.config_widget_by_key)
-                    self.assertIn('本次最多处理账号数', card.config_widget_by_key)
-                    self.assertIn('本次时间预算（分钟）', card.config_widget_by_key)
+                    self.assertNotIn('本次最多处理账号数', card.config_widget_by_key)
+                    self.assertNotIn('本次时间预算（分钟）', card.config_widget_by_key)
                 finally:
                     card.close()
                 daily_multi = MultiAccountDailyTask(executor=executor, app=None)
