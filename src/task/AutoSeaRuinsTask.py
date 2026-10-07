@@ -439,7 +439,7 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
     def _upper_end(self, frame):
         boxes = self.ocr(.005, .23, .25, .32, frame=frame)
         text = ''.join(compact(b.name) for b in boxes)
-        return '前往下半海域' in text and re.search(r'上半得分[:：]?[·.]?[0-9]+', text) is not None
+        return '前往下半海域' in text and re.search(r'上半得分[:：]?[-·.]?[0-9]+', text) is not None
 
     def _result(self, frame):
         return bool(self._button(frame, (.40, .28, .59, .34), '挑战结束')
@@ -591,7 +591,6 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
         self.middle_click(after_sleep=.3)
         self._status('后台寻路前往下半海域出口')
         self._exit_detours = 0
-        self._exit_last_marker = None
 
         def arrived():
             if self._prompt(self.frame, '进入下半海域'):
@@ -608,7 +607,6 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
                 self._release()
                 raise SeaExitMarkerLost()
             x, y, _ = marker
-            self._exit_last_marker = marker
             return self.box_of_screen(x-.005, y-.005, x+.005, y+.005)
 
         try:
@@ -620,31 +618,14 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
                     break
                 except SeaExitMarkerLost:
                     self._release()
-                    self._status('出口标记暂时丢失，停步重新识别')
+                    self._status('出口标记丢失，短按S后退后重新寻找')
                     if arrived():
                         reached = True
                         break
-                    # Restart the walker after recovery: its last_direction and
-                    # cached target are invalid once movement keys are released.
-                    for retry in range(10):
-                        remaining = deadline - time.monotonic()
-                        if remaining <= 0:
-                            break
-                        if retry == 3 and self._exit_last_marker is not None:
-                            if self._backstep_sea_exit(deadline, arrived):
-                                reached = True
-                                break
-                            remaining = deadline - time.monotonic()
-                            if remaining <= 0:
-                                break
-                        self.sleep(min(.3, remaining))
-                        self.next_frame()
-                        reached = arrived()
-                        if reached or vision.exit_marker(self.frame) is not None:
-                            break
-                    else:
-                        raise RuntimeError('出口标记丢失，停步重试后仍未识别')
-                    if reached:
+                    # Back away even when this visit has not seen a marker yet;
+                    # proximity can hide it. Restart with a fresh target afterwards.
+                    if self._backstep_sea_exit(deadline, arrived):
+                        reached = True
                         break
             if not reached:
                 raise RuntimeError('60秒内未找到F进入下半海域')

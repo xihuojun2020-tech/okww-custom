@@ -35,6 +35,12 @@ class TestSeaRuinsImages(TaskTestCase):
                 self.assertIsNotNone(rule, text)
                 self.assertEqual(rule.name, '那徒具空壳的愿景')
 
+    def test_local_exit_score_dash_does_not_hide_upper_end(self):
+        frame = self.image('exit_score_dash_20261007')
+        for height in (720, 1080, 1440):
+            with self.subTest(height=height):
+                self.assertTrue(self.task._upper_end(cv2.resize(frame, (height*16//9, height))))
+
     def test_actual_ocr_states(self):
         task = self.task
         self.assertTrue(task._detail(self.image('detail'), 7))

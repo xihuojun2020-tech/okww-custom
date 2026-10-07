@@ -101,24 +101,25 @@ class TestSeaRuinsFlow(unittest.TestCase):
         t.send_key.assert_not_called()
         self.assertGreaterEqual(t._release.call_count, 2)
 
-    def test_missing_marker_stops_and_releases_without_f(self):
+    def test_initial_missing_marker_backs_away_before_bounded_failure_without_f(self):
         t = self.task()
         t._prompt.return_value = False
         t._upper_end.return_value = True
         t._walk_sea_exit.side_effect = lambda find, **kw: find()
         with patch('src.task.AutoSeaRuinsTask.vision.exit_marker', return_value=None):
-            with self.assertRaisesRegex(RuntimeError, '标记丢失'):
+            with self.assertRaisesRegex(RuntimeError, '3轮后退'):
                 AutoSeaRuinsTask._enter_lower(t)
-        t.send_key.assert_not_called()
+        self.assertEqual([c.args[0] for c in t.send_key.call_args_list], ['s'] * 12)
         self.assertGreaterEqual(t._release.call_count, 2)
-        self.assertEqual(t.sleep.call_count, 10)
+        t.sleep.assert_not_called()
 
     def test_transient_marker_loss_restarts_walker(self):
         t = self.task()
-        t._prompt.side_effect = [False, False, True, True]
+        t._prompt.return_value = False
         t._upper_end.return_value = True
         def walk(find, **kw):
             find()
+            t._prompt.return_value = True
             return kw['end_condition']()
         t._walk_sea_exit.side_effect = walk
         with patch('src.task.AutoSeaRuinsTask.vision.exit_marker',
@@ -128,7 +129,18 @@ class TestSeaRuinsFlow(unittest.TestCase):
         self.assertEqual(t.middle_click.call_count, 1)
         self.assertLessEqual(t._walk_sea_exit.call_args.kwargs['time_out'],
                              t._walk_sea_exit.call_args_list[0].kwargs['time_out'])
-        t.send_key.assert_called_once_with('f')
+        self.assertEqual([c.args[0] for c in t.send_key.call_args_list], ['s'] * 4 + ['f'])
+
+    def test_first_marker_missing_s_reveals_prompt_then_f(self):
+        t = self.task()
+        t._prompt.side_effect = [False, False, True, True]
+        t._upper_end.return_value = True
+        t._walk_sea_exit.side_effect = lambda find, **kw: find()
+        with patch('src.task.AutoSeaRuinsTask.vision.exit_marker', return_value=None):
+            AutoSeaRuinsTask._enter_lower(t)
+        self.assertEqual([c.args[0] for c in t.send_key.call_args_list], ['s', 'f'])
+        t.sleep.assert_not_called()
+        t._walk_sea_exit.assert_called_once()
 
     def test_prompt_during_recovery_does_not_restart_walker(self):
         t = self.task()
@@ -146,7 +158,7 @@ class TestSeaRuinsFlow(unittest.TestCase):
             t._upper_end.return_value = cancel
             t._walk_sea_exit.side_effect = lambda find, **kw: find()
             if cancel:
-                t.sleep.side_effect = InterruptedError('cancelled')
+                t.next_frame.side_effect = InterruptedError('cancelled')
             with patch('src.task.AutoSeaRuinsTask.vision.exit_marker', return_value=None):
                 with self.assertRaises(InterruptedError if cancel else RuntimeError):
                     AutoSeaRuinsTask._enter_lower(t)
