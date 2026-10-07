@@ -16,6 +16,7 @@ class TestWorldBossMaterialNavigation(unittest.TestCase):
         harness = navigation_tests.TestNavigationAdapter()
         self.addCleanup(harness.doCleanups)
         base = harness.task()
+        self.clock = harness.clock
         task = object.__new__(WorldBossMaterialTask)
         task.__dict__.update(base.__dict__)
         task.executor.current_task = task
@@ -87,6 +88,33 @@ class TestWorldBossMaterialNavigation(unittest.TestCase):
         self.assertTrue(task.teleport_to_configured_boss())
         self.assertEqual(4, task.click_relative.call_count)
 
+    def test_story_confirmation_loads_directly_into_material_world(self):
+        task = self.task()
+        self.direct(task, story=True)
+        task._button = lambda region, text, frame: self.button if (
+            region == (.55, .59, .76, .67) and task.click_relative.call_count == 1) else None
+        world_at = [None]
+        def in_world(**kwargs):
+            if task.click_relative.call_count != 2:
+                return False
+            if world_at[0] is None:
+                world_at[0] = self.clock[0] + 25
+            return self.clock[0] >= world_at[0]
+        task.in_team_and_world = in_world
+        self.assertTrue(task.teleport_to_configured_boss())
+        self.assertEqual(2, task.click_relative.call_count)
+        task.wait_click_travel.assert_not_called()
+
+    def test_story_loading_timeout_does_not_resubmit_entry_or_confirmation(self):
+        task = self.task()
+        self.direct(task, story=True)
+        task._button = lambda region, text, frame: self.button if (
+            region == (.55, .59, .76, .67) and task.click_relative.call_count == 1) else None
+        task.in_team_and_world = lambda **kwargs: False
+        with self.assertRaises(TransitionTimeout):
+            task.teleport_to_configured_boss()
+        self.assertEqual(2, task.click_relative.call_count)
+
     def formation(self, task, *, quick=True, entry=True):
         task._ocr = Mock(side_effect=lambda *args: [self.title, self.button]
                          if entry and not task.click_relative.called else [])
@@ -114,6 +142,14 @@ class TestWorldBossMaterialNavigation(unittest.TestCase):
     def test_unsubmitted_formation_cannot_bypass_named_target_selection(self):
         task = self.task()
         self.formation(task, entry=False)
+        with self.assertRaises(TransitionTimeout):
+            task._open_material_target(task._material_target, self.button)
+        task.click_relative.assert_not_called()
+
+    def test_world_without_confirmed_story_entry_is_not_a_destination(self):
+        task = self.task()
+        self.formation(task, entry=False)
+        task.in_team_and_world = lambda **kwargs: True
         with self.assertRaises(TransitionTimeout):
             task._open_material_target(task._material_target, self.button)
         task.click_relative.assert_not_called()

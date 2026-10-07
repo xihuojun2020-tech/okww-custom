@@ -265,7 +265,8 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         if self._story_entry_warning(frame):
             return self._button((.55, .59, .76, .67), '确认', frame)
 
-    def _open_weekly_target(self, boss, *, button_match=None, title_match=None, label='周本', formation_ready=None):
+    def _open_weekly_target(self, boss, *, button_match=None, title_match=None, label='周本', formation_ready=None,
+                            world_ready=None):
         button_match = button_match or (lambda boxes: match_target_button(boxes, boss.name, self.height))
         title_match = title_match or (lambda text: boss_title(text) == boss.name)
         submitted = False
@@ -274,6 +275,8 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         def destination(frame):
             if self._story_entry_warning(frame):
                 return False
+            if story_confirmed and world_ready and world_ready(frame):
+                return True
             # World bosses can enter formation straight from the named row.
             # Accept it only after this transition submitted that exact entry.
             if submitted and formation_ready and formation_ready(frame):
@@ -300,7 +303,14 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
             else:
                 submitted = True
             self.click(button)
-        self.navigate_ui(label + '目标详情', source, destination, identity=boss.key, action=act)
+        self.navigate_ui(label + '目标详情', source,
+            lambda frame: bool(story_confirmed and world_ready) or destination(frame),
+            identity=boss.key, action=act)
+        if story_confirmed and world_ready:
+            # The story confirmation can teleport directly into the boss arena.
+            # Hand loading off without replaying the named row or confirmation.
+            self.navigate_ui(label + '剧情前往加载', lambda frame: None, destination,
+                identity=boss.key, timeout=120, attempts=1)
 
     def _detail_ready(self, boss):
         frame = self.frame

@@ -229,7 +229,8 @@ class WorldBossMaterialTask(FarmEchoTask):
         if compact(button.name) == '直接挑战':
             WeeklyBossTask._open_weekly_target(self, target, button_match=match_button,
                 title_match=lambda text: matches_target(text, target), label='首领材料',
-                formation_ready=self._material_formation_ready)
+                formation_ready=self._material_formation_ready,
+                world_ready=lambda frame: self.in_team_and_world(frame=frame))
             return True
         self.navigate_ui('首领材料前往地图',
             lambda frame: match_button(self._ocr(self.LIST, frame)), self._travel_button,
@@ -245,11 +246,11 @@ class WorldBossMaterialTask(FarmEchoTask):
         self.openF2Book('gray_book_boss')
         self.open_boss_book('qiangdi')
         is_team = self.select_configured_boss(None, None)
-        if is_team:
+        if is_team and not self.in_team_and_world():
             target = self._material_target
             WeeklyBossTask._enter_challenge(self, target,
                 title_match=lambda text: matches_target(text, target), label='首领材料')
-        else:
+        elif not is_team:
             self.wait_click_travel()
             self.wait_in_team_and_world(time_out=120)
         self.sleep(2)
