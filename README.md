@@ -1,5 +1,5 @@
 <div align="center">
-  <p>当前版本：<a href="更新日志.md">1.97.39 深塔预设识别修复</a> · <a href="docs/references/world-boss-materials.md">首领材料设置与单独执行</a> · <a href="docs/references/solo-combat.md">单人输出支持清单</a> · <a href="docs/references/completion-evidence.md">完成检查分组与图片复制</a> · <a href="docs/superpowers/plans/2026-10-06-stamina-farming-and-manual-reminders.md">体力材料计算与提醒</a></p>
+  <p>当前版本：<a href="更新日志.md">1.97.40 海墟本期顺逆属性更新</a> · <a href="docs/references/world-boss-materials.md">首领材料设置与单独执行</a> · <a href="docs/references/solo-combat.md">单人输出支持清单</a> · <a href="docs/references/completion-evidence.md">完成检查分组与图片复制</a> · <a href="docs/superpowers/plans/2026-10-06-stamina-farming-and-manual-reminders.md">体力材料计算与提醒</a></p>
   <h1 align="center">
     <img src="icons/icon.png" width="200" alt="ok-ww logo"/>
     <br/>

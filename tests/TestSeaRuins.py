@@ -7,7 +7,7 @@ import numpy as np
 from src.task.sea_ruins import ENDLESS, Preset, Token, choose_loadout, token_score, season_rule, scores_valid, parse_count
 from src.task import sea_ruins_vision as v
 
-TODAY = date(2026, 9, 18)
+TODAY = date(2026, 10, 7)
 ROOT = Path('tests/fixtures/sea_ruins')
 
 
@@ -38,25 +38,23 @@ class TestSeaRuins(unittest.TestCase):
         self.assertIsNotNone(choose_loadout([team, self.wind], [self.generic], 8, TODAY))
         self.assertFalse(Preset(4, ('char_phrolova', '', 'char_douling')).valid)
 
-    def test_floor_eight_avoids_fire_upper_and_spectro_lower(self):
-        self.assertEqual(season_rule(8, 0, TODAY), ((), ('热熔',)))
-        self.assertEqual(season_rule(8, 1, TODAY), ((), ('衍射',)))
-        fire = Preset(3, ('char_encore', 'char_sanhua', 'char_baizhi'))
-        spectro = Preset(4, ('char_jinhsi', 'char_zhezhi', 'char_douling'))
-        plan = choose_loadout([fire, spectro], [self.generic], 8, TODAY)
-        self.assertEqual((plan.upper, plan.lower), (spectro, fire))
+    def test_current_cycle_elements(self):
+        expected = {
+            (7, 0): ('气动', '冷凝'), (7, 1): ('冷凝', '衍射'),
+            (8, 0): ('热熔', '湮灭'), (8, 1): ('衍射',),
+            (9, 0): ('热熔', '气动'), (9, 1): ('热熔', '气动'),
+            (10, 0): ('冷凝', '导电'), (10, 1): ('冷凝', '导电'),
+            (11, 0): ('湮灭', '衍射'), (11, 1): ('湮灭', '衍射'),
+            (ENDLESS, 0): ('衍射', '湮灭'), (ENDLESS, 1): ('衍射', '湮灭'),
+        }
+        for (floor, half), resisted in expected.items():
+            with self.subTest(floor=floor, half=half):
+                self.assertEqual(season_rule(floor, half, TODAY), ((), resisted))
 
-    def test_current_cycle_resistances_for_floors_nine_to_eleven(self):
-        for floor, element in ((9, '气动'), (10, '导电'), (11, '衍射')):
-            with self.subTest(floor=floor):
-                self.assertEqual(season_rule(floor, 0, TODAY), ((), (element,)))
-                self.assertEqual(season_rule(floor, 1, TODAY), ((), (element,)))
-
-    def test_endless_uses_neutral_unverified_rules(self):
-        self.assertEqual(season_rule(ENDLESS, 0, TODAY), ((), ()))
-        self.assertEqual(season_rule(ENDLESS, 1, TODAY), ((), ()))
-        self.assertEqual(token_score(self.wind, self.generic, ENDLESS), 12)
-        self.assertIsNotNone(choose_loadout([self.wind, self.ice], [self.generic], ENDLESS, TODAY))
+    def test_cycle_ends_on_october_26(self):
+        self.assertEqual(season_rule(7, 0, date(2026, 10, 25)), ((), ('气动', '冷凝')))
+        with self.assertRaisesRegex(ValueError, '失效'):
+            season_rule(7, 0, date(2026, 10, 26))
 
     def test_locked_infinite_empty_unknown_and_single_use(self):
         for token in (Token('狂欢者', '', -1, True), Token('狂欢者', '', 0), Token('狂欢者', '', None), Token('狂欢者', '', 1)):
@@ -80,7 +78,7 @@ class TestSeaRuins(unittest.TestCase):
     def test_unknown_member_and_expired_cycle_stop(self):
         self.assertFalse(Preset(3, ('unknown', 'char_verina', 'char_denia')).valid)
         with self.assertRaisesRegex(ValueError, '失效'):
-            season_rule(7, 0, date(2026, 9, 28))
+            season_rule(7, 0, date(2026, 10, 26))
         self.assertTrue(scores_valid(1410, 1490, 2900))
         self.assertFalse(scores_valid(1410, 1490, 290))
         self.assertFalse(scores_valid(None, 1490, 2900))

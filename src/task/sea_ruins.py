@@ -8,8 +8,8 @@ from datetime import date
 from itertools import permutations, product
 import re
 
-SEASON_START = date(2026, 8, 31)
-SEASON_END = date(2026, 9, 28)  # exclusive; AI must review a new cycle
+SEASON_START = date(2026, 9, 28)
+SEASON_END = date(2026, 10, 26)  # exclusive Beijing game day
 FLOORS = {7: '险滩', 8: '涡流'}  # names verified in supplied screenshots
 ENDLESS = 'endless'
 
@@ -20,15 +20,14 @@ def floor_label(floor):
 
 def next_floor(floor):
     return ENDLESS if floor == 11 else floor + 1
-# User-confirmed current-cycle enemy resistances, 2026-09-22.
+# User-confirmed current-cycle enemy resistances, 2026-10-07.
 SEASON_RULES = {
-    (7, 0): ((), ()), (7, 1): ((), ()),
-    (8, 0): ((), ('热熔',)), (8, 1): ((), ('衍射',)),
-    (9, 0): ((), ('气动',)), (9, 1): ((), ('气动',)),
-    (10, 0): ((), ('导电',)), (10, 1): ((), ('导电',)),
-    (11, 0): ((), ('衍射',)), (11, 1): ((), ('衍射',)),
-    # Endless enemy resistances are unverified; do not infer an element bias.
-    (ENDLESS, 0): ((), ()), (ENDLESS, 1): ((), ()),
+    (7, 0): ((), ('气动', '冷凝')), (7, 1): ((), ('冷凝', '衍射')),
+    (8, 0): ((), ('热熔', '湮灭')), (8, 1): ((), ('衍射',)),
+    (9, 0): ((), ('热熔', '气动')), (9, 1): ((), ('热熔', '气动')),
+    (10, 0): ((), ('冷凝', '导电')), (10, 1): ((), ('冷凝', '导电')),
+    (11, 0): ((), ('湮灭', '衍射')), (11, 1): ((), ('湮灭', '衍射')),
+    (ENDLESS, 0): ((), ('衍射', '湮灭')), (ENDLESS, 1): ((), ('衍射', '湮灭')),
 }
 
 
@@ -158,7 +157,9 @@ class Loadout:
 
 
 def season_rule(floor, half, today=None):
-    today = today or date.today()
+    if today is None:
+        from src.game_period import game_day_key
+        today = date.fromisoformat(game_day_key())
     if not SEASON_START <= today < SEASON_END:
         raise ValueError(f'海墟周期规则已失效：适用{SEASON_START}至{SEASON_END}之前，请更新代码规则')
     return SEASON_RULES[(floor, half)]
