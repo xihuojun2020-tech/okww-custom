@@ -15,6 +15,10 @@ class TestSeaRuinsImages(TaskTestCase):
     task_class = AutoSeaRuinsTask
     config = dict(config, debug=True)
 
+    def test_unrecognized_avatar_preserves_sea_local_matcher_without_tower_state(self):
+        avatar = np.random.default_rng(42).integers(0, 256, (120, 150, 3), dtype=np.uint8)
+        self.assertIsNone(self.task._identify_character(avatar))
+
     def image(self, name):
         frame = cv2.imread(str(ROOT/f'{name}.png'))
         self.set_image(str(ROOT/f'{name}.png'))

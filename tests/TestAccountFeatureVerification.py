@@ -44,6 +44,36 @@ class TestAccountFeatureVerification(unittest.TestCase):
         self.assertEqual(owner.config[CURRENT_ACCOUNT], 'A2')
         self.assertEqual(weekly.config[CURRENT_ACCOUNT], 'A2')
 
+    def test_task_start_verifies_current_screen_without_returning_to_main(self):
+        from src.task.account_feature_verification import begin_task_run
+        from src.gui.navigation_sections import TASKS
+        expected = record(1, '001234')
+        expected.tasks = {}
+        task = SimpleNamespace(executor=SimpleNamespace(_account_feature_run=None),
+                               ensure_main=Mock(), get_task_by_class=Mock(return_value=None))
+        verified = SimpleNamespace(record=expected)
+        with patch('src.gui.navigation_sections.classify_task', return_value=TASKS), \
+                patch('src.task.account_feature_verification.expected_profile', return_value=expected.profile_id), \
+                patch.object(WWOneTimeTask, 'run') as prepare, \
+                patch('src.task.account_feature_verification.begin_account_visit', return_value=verified) as verify:
+            begin_task_run(task)
+        prepare.assert_called_once_with(task)
+        verify.assert_called_once_with(task, expected.profile_id)
+        task.ensure_main.assert_not_called()
+
+    def test_unreadable_current_screen_reports_failure_without_navigation(self):
+        from src.task.account_feature_verification import begin_task_run
+        from src.gui.navigation_sections import TASKS
+        task = SimpleNamespace(executor=SimpleNamespace(_account_feature_run=None), ensure_main=Mock())
+        with patch('src.gui.navigation_sections.classify_task', return_value=TASKS), \
+                patch('src.task.account_feature_verification.expected_profile', return_value='selected-account'), \
+                patch.object(WWOneTimeTask, 'run'), \
+                patch('src.task.account_feature_verification.begin_account_visit',
+                      side_effect=RuntimeError('无法稳定读取')):
+            with self.assertRaisesRegex(RuntimeError, '无法稳定读取'):
+                begin_task_run(task)
+        task.ensure_main.assert_not_called()
+
     def test_parser_preserves_zero_and_rejects_guessing(self):
         self.assertEqual(parse_feature_code('特征码：001234'), '001234')
         self.assertEqual(parse_feature_code('特徵碼:１２３４'), '1234')
