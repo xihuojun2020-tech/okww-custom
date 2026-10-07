@@ -112,6 +112,14 @@ class TestSeaRuinsImages(TaskTestCase):
         self.assertTrue(task._members_match(frame, 0, Preset(1, ('char_qingxiao', 'char_denia', 'char_verina'))))
         self.assertTrue(task._members_match(frame, 1, Preset(2, ('yangyang_sp', 'char_rover', 'char_sanhua'))))
 
+    def test_october07_complete_presets_are_not_skipped(self):
+        records = self.task._page_presets(self.image('presets_20261007'))
+        complete = [preset for preset, _ in records if preset.valid]
+        self.assertEqual([preset.number for preset in complete], [1, 2])
+        self.assertEqual(complete[0].members, ('char_qingxiao', 'char_denia', 'char_chisa'))
+        self.assertEqual(complete[1].members, ('yangyang_sp', 'char_rover', 'char_verina'))
+        self.assertFalse(next(preset for preset, _ in records if preset.number == 3).valid)
+
     def test_token_counts(self):
         task = self.task
         frame = self.image('tokens')

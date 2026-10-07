@@ -156,7 +156,7 @@ def preset_card_tops(frame):
     tops = []
     for contour in contours:
         x, y, w, h = cv2.boundingRect(contour)
-        if 280 < w < 310 and 120 < h < 150 and y > 120:
+        if 280 <= w < 310 and 120 < h < 150 and y > 120:
             top = y/720
             if not any(abs(top-other) < .01 for other in tops):
                 tops.append(top)

@@ -1,5 +1,5 @@
 <div align="center">
-  <p>当前版本：<a href="更新日志.md">1.97.45 特征码核验多余退场修复</a> · <a href="docs/references/world-boss-materials.md">首领材料设置与单独执行</a> · <a href="docs/references/solo-combat.md">单人输出支持清单</a> · <a href="docs/references/completion-evidence.md">完成检查分组与图片复制</a> · <a href="docs/superpowers/plans/2026-10-06-stamina-farming-and-manual-reminders.md">体力材料计算与提醒</a></p>
+  <p>当前版本：<a href="更新日志.md">1.97.46 海墟预设卡片漏检修复</a> · <a href="docs/references/world-boss-materials.md">首领材料设置与单独执行</a> · <a href="docs/references/solo-combat.md">单人输出支持清单</a> · <a href="docs/references/completion-evidence.md">完成检查分组与图片复制</a> · <a href="docs/superpowers/plans/2026-10-06-stamina-farming-and-manual-reminders.md">体力材料计算与提醒</a></p>
   <h1 align="center">
     <img src="icons/icon.png" width="200" alt="ok-ww logo"/>
     <br/>
