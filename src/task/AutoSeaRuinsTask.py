@@ -34,6 +34,8 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
         self._avatar_orb = cv2.ORB_create(nfeatures=300, edgeThreshold=5, fastThreshold=5)
         self._avatar_matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
         self._character_descriptors = None
+        # Sea-local templates do not include the tower's supplementary portrait.
+        self._hiyuki_preset_descriptor = None
         self._observing_half = None
         self._next_observation = 0.
         self._phase_seen = 0

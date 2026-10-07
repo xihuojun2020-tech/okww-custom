@@ -168,7 +168,6 @@ def begin_task_run(task):
     expected = expected_profile(task)
     from src.task.WWOneTimeTask import WWOneTimeTask
     WWOneTimeTask.run(task)
-    task.ensure_main(time_out=180)
     verification = begin_account_visit(task, expected)
     from src.task.DailyTask import DailyTask
     daily = task.get_task_by_class(DailyTask)
