@@ -49,9 +49,14 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         self.group_name = None
         self.supported_languages = ['zh_CN']
         self.default_config.update({
+            '目标周本': '按账号刷取任务执行',
             'Use Liberation': True,
             'Switch to Healer before and after Combat': True,
         })
+        self.config_type['目标周本'] = {
+            'type': 'drop_down',
+            'options': ['按账号刷取任务执行', *(boss.name for boss in WEEKLY_BOSSES)],
+        }
         self.target_enemy_time_out = 3
         self.switch_char_time_out = 5
         self.combat_end_condition = self._battle_finished
@@ -770,7 +775,9 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
     def run(self):
         from src.task.DailyTask import DailyTask
         # The independent entry uses the same account confirmation and scheduler.
-        return self.get_task_by_class(DailyTask).run_weekly_boss_only()
+        selected = self.config.get('目标周本', '按账号刷取任务执行')
+        boss = next((item.key for item in WEEKLY_BOSSES if item.name == selected), None)
+        return self.get_task_by_class(DailyTask).run_weekly_boss_only(boss)
 
     def run_for_target(self, target_key, max_claims=None):
         if self.game_lang != 'zh_CN':

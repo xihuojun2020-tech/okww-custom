@@ -14,6 +14,17 @@ def box(name, x=0, y=0, width=100, height=30):
 
 
 class TestWeeklyBossParsing(unittest.TestCase):
+    def test_task_card_selects_named_boss(self):
+        task = object.__new__(WeeklyBossTask)
+        daily = SimpleNamespace(run_weekly_boss_only=Mock())
+        task.get_task_by_class = Mock(return_value=daily)
+        task.config = {'目标周本': WEEKLY_BOSSES[0].name}
+        task.run()
+        daily.run_weekly_boss_only.assert_called_once_with(WEEKLY_BOSSES[0].key)
+        task.config = {'目标周本': '按账号刷取任务执行'}
+        task.run()
+        daily.run_weekly_boss_only.assert_called_with(None)
+
     def test_remaining_requires_label_and_valid_unique_fraction(self):
         for n in range(4):
             self.assertEqual(parse_remaining(f'本周剩余可收取次数：{n}/3'), n)

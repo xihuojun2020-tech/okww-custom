@@ -445,6 +445,16 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             # run uses current stamina only, with no daily reserve authorization.
             return self._run_world_boss_materials(activity_ready=True, used_stamina=None)
         if self._runtime_overrides.get('_weekly_boss_only', False):
+            target = self._runtime_overrides.get('_weekly_boss_target')
+            if target is not None:
+                from src.task.WeeklyBossTask import WeeklyBossTask
+                from src.task.weekly_boss_plan import WEEKLY_PLAN
+                rows = [{'boss': target, 'limit': -1},
+                        {'boss': WEEKLY_DISABLED, 'limit': 0},
+                        {'boss': WEEKLY_DISABLED, 'limit': 0}]
+                return self.get_task_by_class(WeeklyBossTask).run_for_plan(
+                    self._active_profile_id(), lambda: {WEEKLY_PLAN: rows},
+                    self.integrity_service, fallback=False)
             return self.check_weekly_boss()
 
         verified_id = getattr(self, '_verified_profile_id', None)
@@ -2003,8 +2013,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 outcome['queue_revision'] = fingerprint(ordered_tasks(tasks, weekly=True))
             self.integrity_service.set_progress(f'weekly_boss:{self._active_profile_id()}', outcome)
 
-    def run_weekly_boss_only(self):
-        with self.runtime_config_override('_weekly_boss_only', True):
+    def run_weekly_boss_only(self, target=None):
+        with self.runtime_config_override('_weekly_boss_only', True), \
+                self.runtime_config_override('_weekly_boss_target', target):
             return self.run()
 
     def run_world_boss_material_only(self, boss, claims):
