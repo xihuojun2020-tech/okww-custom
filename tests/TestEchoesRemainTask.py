@@ -110,11 +110,13 @@ class TestEchoesRemainTask(unittest.TestCase):
         verification=Mock();verification.begin.return_value=verification
         verification.finish.return_value='verified';verification.profile_id='test';verification.run_id='run'
         task.ensure_main=Mock()
-        verification.finish.side_effect=lambda: (task.ensure_main.assert_called_once_with(time_out=60) or 'verified')
-        with patch('src.task.WWOneTimeTask.WWOneTimeTask.run'), patch('src.account_repository.get_default_repository',return_value=Mock()), \
-                patch('src.task.account_feature_verification.FeatureRun',return_value=verification), \
-                patch('src.task.account_feature_verification.expected_profile',return_value='test'):
+        verification.finish.side_effect=lambda: (task.ensure_main.assert_not_called() or 'verified')
+        with patch('src.task.WWOneTimeTask.WWOneTimeTask.run'), \
+                patch('src.task.account_feature_verification.current_feature_run',return_value=verification) as current:
             task.run()
+        current.assert_called_once_with(task)
+        verification.begin.assert_not_called()
+        verification.finish.assert_called_once()
         task._continue_event.assert_called_once()
         self.assertEqual(task.last_result['phase'],'challenge_failed')
         self.assertFalse(task.last_result['activity_complete'])

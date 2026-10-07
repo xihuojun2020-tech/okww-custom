@@ -681,7 +681,6 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
         self._abyss_run_config = dict(self.config)
         self.log_info("自动深渊开始：先扫描三塔，再按设置逐塔扫描预设、疲劳值和挑战")
         try:
-            self.ensure_main(time_out=30)
             from src.task.account_feature_verification import current_feature_run
             from src.task.abyss_cycle_progress import AbyssCycleProgress
             self._abyss_feature_run = current_feature_run(self)
@@ -711,7 +710,6 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
             self.info_set("扫描结果", summary)
             self.log_info(f"深塔关卡扫描完成：{summary}", notify=True)
             outcomes = self._run_towers(results)
-            self.ensure_main(time_out=30)
             verified = self._abyss_feature_run.finish() == 'verified'
             self._abyss_journal.verify_run(verified)
             if not verified:
