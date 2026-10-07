@@ -121,7 +121,7 @@ class DiagnosticDetails(QDialog):
         self.summary.setText(f'NAS：{DEFAULT_TARGET}\n状态刷新：{stamp(snapshot["updated_at"])} | '
             f'待传 {snapshot["pending_bytes"]:,} 字节 | 批次：'+
             '，'.join(f'{STATUS.get(k,k)} {v}' for k,v in snapshot['counts'].items())+
-            '\n采集与上传分别统计；上传器已校验表示当时成功，远端核验需点击按钮。'+
+            '\n采集与上传分别统计；上传完成表示传输结束，上传过程不做内容校验。'+
             ('\n'+'；'.join(snapshot['warnings'][:3]) if snapshot['warnings'] else ''))
         scheduler=snapshot.get('scheduler',{})
         self.summary.setText(self.summary.text()+f'\n上传模式：手动压缩包；旧后台任务：{scheduler.get("status", "未记录")}；'

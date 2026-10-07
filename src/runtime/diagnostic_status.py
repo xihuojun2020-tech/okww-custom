@@ -8,7 +8,7 @@ from pathlib import Path
 from src.runtime.diagnostic_export import safe_path, atomic_json, sanitize_text
 
 STATUS = {'pending':'排队', 'uploading':'上传中', 'retrying':'等待重试', 'blocked':'被阻塞',
-          'uploaded':'上传器已校验', 'logs_purged':'日志已按策略清理', 'unknown':'状态不可读',
+          'uploaded':'上传完成', 'logs_purged':'日志已按策略清理', 'unknown':'状态不可读',
           'copied':'已复制，待批次完成确认', 'partial':'部分截图尚未上传', 'missing':'未找到封存文件'}
 
 

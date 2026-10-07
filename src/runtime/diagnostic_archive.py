@@ -1,4 +1,4 @@
-"""Explicit, verified ZIP handoff; originals and sealed batches remain intact."""
+"""Pack and transfer sealed diagnostics once; originals remain intact."""
 import argparse
 from collections import deque
 from datetime import date, datetime
@@ -100,11 +100,11 @@ def build_archive(root, *, day=None, mode='manual', flush_current=True):
             with zipfile.ZipFile(pending, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=1, allowZip64=True) as package:
                 for ready, batch, key, manifest in selected:
                     manifest_path = batch / 'manifest.json'
-                    sha = hash_file(manifest_path)
-                    if ready.read_text(encoding='ascii') != sha:
-                        skipped.append({'key': key, 'reason': '封存标记与清单不一致'})
+                    sha = ready.read_text(encoding='ascii')
+                    if len(sha) != 64 or any(c not in '0123456789abcdef' for c in sha):
+                        skipped.append({'key': key, 'reason': '封存标记不可读'})
                         continue
-                    manifest = validate_manifest(batch, manifest)
+                    manifest = validate_manifest(batch, manifest, verify_checksums=False)
                     prefix = 'batches/' + key + '/'
                     package.write(manifest_path, prefix + 'manifest.json')
                     package.write(ready, prefix + '_READY')
@@ -136,8 +136,8 @@ def build_archive(root, *, day=None, mode='manual', flush_current=True):
                     if name in names:
                         continue
                     source = safe_path(root, run + '/batches/' + frame['batch_id'] + '/' + relative)
-                    if not source.is_file() or hash_file(source) != frame.get('sha256'):
-                        missing.append({'run': run, 'path': relative, 'reason': '本地缺失或校验不匹配'})
+                    if not source.is_file():
+                        missing.append({'run': run, 'path': relative, 'reason': '本地缺失'})
                         continue
                     package.write(source, name, compress_type=zipfile.ZIP_STORED)
                     names.add(name)
@@ -150,17 +150,13 @@ def build_archive(root, *, day=None, mode='manual', flush_current=True):
                                 shutil.copyfileobj(stream, out, 1024**2)
                 package.writestr('说明.txt', '每次启动按会话分组。日志汇总为按批次时间排列的来源片段；原始日志和截图位于 batches。\n'
                     '运行中的会话仅覆盖打包时已封存范围；之后的记录保留下次上传。\n'
-                    'SHA256 清单位于 manifest.json，可直接分析本 ZIP，无需展开到 NAS。')
+                    '文件摘要位于 manifest.json；上传过程不校验内容，可直接分析本 ZIP，无需展开到 NAS。')
                 package.writestr('manifest.json', json.dumps({'schema': 1, 'created_at': time.time(),
                     'day': day, 'mode': mode,
                     'batches': entries, 'sessions': list(logs), 'image_dependencies': dependencies,
                     'missing_dependencies': missing, 'skipped_batches': skipped}, ensure_ascii=False))
-            with zipfile.ZipFile(pending) as package:
-                broken = package.testzip()
-                if broken:
-                    raise ValueError('压缩包校验失败：' + broken)
             pending.replace(archive)
-            atomic_json(receipt, {'schema': 1, 'root': str(root), 'sha256': hash_file(archive),
+            atomic_json(receipt, {'schema': 1, 'root': str(root),
                                   'size': archive.stat().st_size, 'batches': entries, 'status': 'packed',
                                   'day': day, 'mode': mode, 'skipped_batches': skipped})
             write_progress(root, mode=mode, day=day, stage='packed', archive=str(archive),
@@ -177,11 +173,8 @@ def upload_archive(archive, target=DEFAULT_TARGET):
     receipt = json.loads(receipt_path.read_text(encoding='utf-8'))
     root = Path(receipt['root']).resolve()
     mode, day = receipt.get('mode', 'manual'), receipt.get('day', date.today().isoformat())
-    if archive.parent != root / 'archives' or archive.stat().st_size != receipt['size']:
-        raise ValueError('本地压缩包路径或大小校验失败')
-    write_progress(root, mode=mode, day=day, stage='verifying_local', archive=str(archive))
-    if hash_file(archive) != receipt['sha256']:
-        raise ValueError('本地压缩包 SHA256 不匹配，未上传，原始批次已保留')
+    if archive.parent != root / 'archives':
+        raise ValueError('本地压缩包不在归档目录')
     write_progress(root, mode=mode, day=day, stage='connecting', archive=str(archive))
     connect(target)
     destination = Path(target) / '待分析/压缩包'
@@ -192,16 +185,26 @@ def upload_archive(archive, target=DEFAULT_TARGET):
         reviewed = safe_path(target, '已检查/压缩包/' + archive.name)
         if not remote.exists() and reviewed.exists():
             remote = reviewed
-        if not remote.exists():
+        if receipt.get('status') != 'uploaded' or not remote.exists():
             copied = partial.stat().st_size if partial.exists() else 0
             if copied > receipt['size']:
                 copied = 0
             rate, updated = TransferRate(copied), 0
-            if copied < receipt['size']:
-                with archive.open('rb') as source, partial.open('ab' if copied else 'wb') as out:
-                    source.seek(copied)
+            checksum = hashlib.sha256()
+            with archive.open('rb') as source:
+                # Read the resumed prefix locally for the diagnostic summary;
+                # never read NAS bytes back or compare content checksums.
+                remaining = copied
+                while remaining:
+                    block = source.read(min(4 * 1024**2, remaining))
+                    if not block:
+                        raise OSError('本地压缩包读取中断，上传未完成')
+                    checksum.update(block)
+                    remaining -= len(block)
+                with partial.open('ab' if copied else 'wb') as out:
                     while block := source.read(4 * 1024**2):
                         out.write(block)
+                        checksum.update(block)
                         copied += len(block)
                         if time.monotonic() - updated >= 1:
                             updated = time.monotonic()
@@ -209,19 +212,8 @@ def upload_archive(archive, target=DEFAULT_TARGET):
                                            **rate.update(copied, receipt['size']))
                     out.flush()
                     os.fsync(out.fileno())
-            if partial.stat().st_size != receipt['size']:
-                raise ValueError('NAS 压缩包大小校验失败')
-            write_progress(root, mode=mode, day=day, stage='verifying_remote', archive=str(partial))
-            if hash_file(partial) != receipt['sha256']:
-                partial.unlink()  # Discard only this corrupt transfer, so retry starts clean.
-                raise ValueError('NAS 临时压缩包 SHA256 不匹配，未确认上传，请重试')
+            receipt['sha256'] = checksum.hexdigest()
             partial.replace(remote)
-        else:
-            if remote.stat().st_size != receipt['size']:
-                raise ValueError('NAS 已有同名压缩包大小冲突')
-            write_progress(root, mode=mode, day=day, stage='verifying_remote', archive=str(remote))
-            if hash_file(remote) != receipt['sha256']:
-                raise ValueError('NAS 已有同名压缩包 SHA256 冲突，未确认上传')
         final_rate = locals().get('rate', TransferRate(receipt['size'])).update(receipt['size'], receipt['size'])
         write_progress(root, mode=mode, day=day, stage='recording', archive=str(remote), **final_rate)
         remote_receipt = remote.with_suffix('.json')
@@ -229,21 +221,20 @@ def upload_archive(archive, target=DEFAULT_TARGET):
         if remote_receipt.exists():
             uploaded_at = json.loads(remote_receipt.read_text(encoding='utf-8')).get('uploaded_at', uploaded_at)
         atomic_json(remote_receipt, {'sha256': receipt['sha256'], 'size': receipt['size'],
-                                    'uploaded_at': uploaded_at, 'verified_at': time.time()})
+                                    'uploaded_at': uploaded_at})
         for item in receipt['batches']:
             run, batch_id = item['key'].split('--', 1)
             batch = safe_path(root, f'{run}/batches/{batch_id}')
-            if hash_file(batch / 'manifest.json') != item['manifest_sha256']:
-                raise ValueError('上传期间本地批次变化，未确认：' + item['key'])
             state_path = root / 'states' / (item['key'] + '.json')
             state = json.loads(state_path.read_text(encoding='utf-8')) if state_path.exists() else {}
             state.update(status='uploaded', transport='archive', archive=str(remote),
-                         archive_sha256=receipt['sha256'], uploaded_at=time.time(), last_error=None,
-                         archive_verified_at=time.time())
+                         archive_sha256=receipt['sha256'], uploaded_at=time.time(), last_error=None)
+            state.pop('archive_verified_at', None)
             atomic_json(state_path, state)
             from src.runtime.diagnostic_queue import acknowledge
             acknowledge(batch)
-        receipt.update(status='uploaded', remote=str(remote), uploaded_at=time.time(), verified_at=time.time())
+        receipt.update(status='uploaded', remote=str(remote), uploaded_at=time.time())
+        receipt.pop('verified_at', None)
         atomic_json(receipt_path, receipt)
         write_progress(root, mode=mode, day=day, stage='uploaded', archive=str(remote),
                        skipped_batches=receipt.get('skipped_batches', []), **final_rate)

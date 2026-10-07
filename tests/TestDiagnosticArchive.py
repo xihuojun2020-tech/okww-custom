@@ -95,7 +95,7 @@ class TestDiagnosticArchive(unittest.TestCase):
             owned.terminate.assert_called_once()
             other.terminate.assert_not_called()
 
-    def test_archive_keeps_sources_and_marks_only_after_verified_upload(self):
+    def test_archive_keeps_sources_and_marks_only_after_upload(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)/'root'
             session=DiagnosticSession(root,'test')
@@ -114,7 +114,7 @@ class TestDiagnosticArchive(unittest.TestCase):
             self.assertTrue(all(json.loads(path.read_text())['transport']=='archive' for path in (root/'states').glob('*.json')))
             with self.assertRaisesRegex(ValueError,'没有尚未上传'):build_archive(root)
 
-    def test_remote_conflict_does_not_acknowledge_batches(self):
+    def test_existing_remote_is_replaced_without_readback(self):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary)/'root'
             session=DiagnosticSession(root,'test');session.finish(timeout=5)
@@ -122,8 +122,8 @@ class TestDiagnosticArchive(unittest.TestCase):
             target=Path(temporary)/'nas'
             remote=target/'待分析/压缩包'/archive.name
             remote.parent.mkdir(parents=True);remote.write_bytes(b'conflict')
-            with self.assertRaisesRegex(ValueError,'冲突'):upload_archive(archive,target)
-            self.assertFalse(list((root/'states').glob('*.json')))
+            upload_archive(archive,target)
+            self.assertEqual(archive.read_bytes(),remote.read_bytes())
 
     def test_broken_ready_does_not_block_other_batches_or_get_acknowledged(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -150,23 +150,31 @@ class TestDiagnosticArchive(unittest.TestCase):
             wake_uploader(Path(temporary))
             spawn.assert_not_called()
 
-    def test_same_size_remote_conflict_never_acknowledges_or_writes_success_receipt(self):
+    def test_pack_and_upload_never_hash_or_read_back_contents(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / 'root'
             session = DiagnosticSession(root, 'test')
             session.finish(timeout=5)
-            archive = build_archive(root)
             target = Path(temporary) / 'nas'
-            remote = target / '待分析/压缩包' / archive.name
-            remote.parent.mkdir(parents=True)
-            remote.write_bytes(b'x' * archive.stat().st_size)
-            with self.assertRaisesRegex(ValueError, 'SHA256 冲突'):
+            opened = Path.open
+            def no_remote_read(path, mode='r', *args, **kwargs):
+                if path.is_relative_to(target) and mode == 'rb':
+                    raise AssertionError('upload must not read NAS content')
+                return opened(path, mode, *args, **kwargs)
+            with patch('src.runtime.diagnostic_archive.hash_file', side_effect=AssertionError('no full file hashing')), \
+                    patch('src.runtime.diagnostic_export.digest', side_effect=AssertionError('no member hashing')), \
+                    patch('zipfile.ZipFile.testzip', side_effect=AssertionError('no ZIP reread')), \
+                    patch.object(Path, 'open', no_remote_read):
+                archive = build_archive(root)
+                remote = Path(upload_archive(archive, target))
                 upload_archive(archive, target)
-            self.assertFalse(remote.with_suffix('.json').exists())
-            self.assertFalse(list((root / 'states').glob('*.json')))
-            self.assertEqual('packed', json.loads(archive.with_suffix('.json').read_text())['status'])
+            self.assertEqual(archive.read_bytes(), remote.read_bytes())
+            receipt = json.loads(archive.with_suffix('.json').read_text())
+            self.assertEqual(hash_file(archive), receipt['sha256'])
+            self.assertNotIn('verified_at', receipt)
+            self.assertNotIn('verified_at', json.loads(remote.with_suffix('.json').read_text()))
 
-    def test_corrupt_resumed_prefix_is_rejected_and_clean_retry_succeeds(self):
+    def test_resume_appends_without_remote_content_validation(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / 'root'
             session = DiagnosticSession(root, 'test'); session.finish(timeout=5)
@@ -175,24 +183,38 @@ class TestDiagnosticArchive(unittest.TestCase):
             remote = target / '待分析/压缩包' / archive.name
             remote.parent.mkdir(parents=True)
             partial = remote.with_name(remote.name + '.partial')
-            partial.write_bytes(b'x' * 100)
-            with self.assertRaisesRegex(ValueError, 'SHA256 不匹配'):
-                upload_archive(archive, target)
-            self.assertFalse(remote.exists())
-            self.assertFalse(partial.exists())
-            self.assertFalse(list((root / 'states').glob('*.json')))
+            partial.write_bytes(archive.read_bytes()[:100])
             uploaded = Path(upload_archive(archive, target))
             self.assertEqual(hash_file(archive), hash_file(uploaded))
-            self.assertTrue(json.loads(archive.with_suffix('.json').read_text())['verified_at'])
+            self.assertEqual(hash_file(archive), json.loads(archive.with_suffix('.json').read_text())['sha256'])
+            self.assertFalse(partial.exists())
 
-    def test_local_same_size_corruption_is_rejected_before_network(self):
+    def test_legacy_receipt_checksum_is_not_compared_before_upload(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / 'root'
             session = DiagnosticSession(root, 'test'); session.finish(timeout=5)
             archive = build_archive(root)
-            archive.write_bytes(b'x' * archive.stat().st_size)
-            with patch('src.runtime.diagnostic_archive.connect') as connect:
-                with self.assertRaisesRegex(ValueError, '本地压缩包 SHA256'):
+            receipt_path = archive.with_suffix('.json')
+            receipt = json.loads(receipt_path.read_text())
+            receipt['sha256'] = '0' * 64
+            receipt_path.write_text(json.dumps(receipt))
+            remote = Path(upload_archive(archive, Path(temporary) / 'nas'))
+            self.assertEqual(archive.read_bytes(), remote.read_bytes())
+            self.assertEqual(hash_file(archive), json.loads(receipt_path.read_text())['sha256'])
+
+    def test_network_write_failure_keeps_archive_and_batches_pending(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / 'root'
+            session = DiagnosticSession(root, 'test'); session.finish(timeout=5)
+            archive = build_archive(root)
+            opened = Path.open
+            def fail_upload(path, mode='r', *args, **kwargs):
+                if path.suffix == '.partial' and mode == 'wb':
+                    raise OSError('synthetic network failure')
+                return opened(path, mode, *args, **kwargs)
+            with patch.object(Path, 'open', fail_upload):
+                with self.assertRaisesRegex(OSError, 'synthetic network failure'):
                     upload_archive(archive, Path(temporary) / 'nas')
-                connect.assert_not_called()
+            self.assertTrue(archive.exists())
+            self.assertEqual('packed', json.loads(archive.with_suffix('.json').read_text())['status'])
             self.assertFalse(list((root / 'states').glob('*.json')))

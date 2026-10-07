@@ -51,7 +51,7 @@ def format_archive_progress(progress):
     labels = {'discovering':'检查待传日期', 'sealing':'封存当前日志', 'packing':'正在打包',
               'packed':'压缩包已生成', 'connecting':'连接 NAS', 'uploading':'正在上传',
               'verifying_local':'校验本地压缩包', 'verifying_remote':'校验 NAS 压缩包',
-              'recording':'写入回执', 'uploaded':'已上传并校验', 'failed':'上传失败', 'idle':'无历史待传资料'}
+              'recording':'写入回执', 'uploaded':'上传完成', 'failed':'上传失败', 'idle':'无历史待传资料'}
     lines = [f'{mode}：{progress.get("day", "-")}', f'阶段：{labels.get(progress.get("stage") or progress.get("status"), "等待") }']
     if progress.get('stage') == 'packing':
         lines.append(f'批次：{progress.get("completed_batches", 0)} / {progress.get("total_batches", 0)}')

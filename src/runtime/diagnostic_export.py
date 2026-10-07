@@ -133,7 +133,7 @@ def sanitize_file(path, *, reviewed_image=False, prepared_png=False):
     return text.encode('utf-8')
 
 
-def validate_manifest(root, manifest):
+def validate_manifest(root, manifest, *, verify_checksums=True):
     if not isinstance(manifest, dict) or manifest.get('schema_version') != 1 or not isinstance(manifest.get('files'), list):
         raise ValueError('unsupported diagnostic manifest')
     if not 1 <= len(manifest['files']) <= 4096:
@@ -155,6 +155,6 @@ def validate_manifest(root, manifest):
         total += size
         if size != item['size'] or size > MAX_FILE or total > MAX_BATCH:
             raise ValueError('diagnostic size mismatch or limit exceeded')
-        if digest(path.read_bytes()) != item['sha256']:
+        if verify_checksums and digest(path.read_bytes()) != item['sha256']:
             raise ValueError('diagnostic checksum mismatch')
     return manifest
