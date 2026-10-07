@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import Mock, patch
 from types import MethodType
 from src.task.AutoSeaRuinsTask import AutoSeaRuinsTask, SeaPhaseEnded, SeaExitMarkerLost
-from src.task.BaseCombatTask import NotInCombatException
+from src.task.BaseCombatTask import BaseCombatTask, NotInCombatException
 
 
 class TestSeaRuinsFlow(unittest.TestCase):
@@ -55,6 +55,22 @@ class TestSeaRuinsFlow(unittest.TestCase):
         t._wait.assert_called_once()
         self.assertIsNone(t._observing_half)
         self.assertTrue(t.skip_combat_check)
+
+    def test_half_end_exits_shared_rotation_without_recovery(self):
+        for half in (0, 1):
+            with self.subTest(half=half):
+                t = self.task()
+                t._combat_held_keys = set()
+                t._combat_held_mouse = set()
+                t.get_current_char.return_value.perform.side_effect = SeaPhaseEnded()
+                t._wait_combat_recovery.side_effect = AssertionError('normal half end entered recovery')
+                t.combat_once.side_effect = lambda **kwargs: BaseCombatTask.perform_combat_rotation(t)
+                AutoSeaRuinsTask._fight(t, half)
+                t.record_combat_error.assert_not_called()
+                t._wait_combat_recovery.assert_not_called()
+                t._wait.assert_not_called()
+                self.assertIsNone(t._observing_half)
+                self.assertTrue(t.skip_combat_check)
 
     def test_lower_transition_reuses_background_walker(self):
         t = self.task()

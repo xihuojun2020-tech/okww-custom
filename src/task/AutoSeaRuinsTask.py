@@ -7,6 +7,7 @@ from ok.feature.FeatureSet import FeatureSet
 
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.BaseCombatTask import BaseCombatTask, CombatStateUnknown, NotInCombatException, CharDeadException
+from src.combat.CombatCheck import CombatFlowInterrupt
 from src.task.AutoAbyssTask import AutoAbyssTask, exact_ocr_box, match_travel_button, char_names, char_dict
 from src.task.sea_ruins import ENDLESS, Preset, Token, compact, next_floor, parse_count, scores_valid, floor_label
 from src.task import sea_ruins_vision as vision
@@ -14,7 +15,7 @@ from src.task.sea_ruins_tokens import identify_token
 from src.task.sea_ruins_recovery import SeaRuinsRecovery, SeaLoadoutChanged
 
 
-class SeaPhaseEnded(Exception):
+class SeaPhaseEnded(CombatFlowInterrupt):
     pass
 
 
