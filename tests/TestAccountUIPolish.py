@@ -169,7 +169,7 @@ class TestAccountUIPolish(unittest.TestCase):
                 dialog = FarmingTaskDialog(item)
                 self.assertEqual(len(dialog.quota.rows), 1)
                 self.assertTrue(dialog.quota.goal_host.isVisibleTo(dialog))
-                self.assertFalse(dialog.target.isEnabled())
+                self.assertTrue(dialog.target.isEnabled())
                 self.assertNotIn('Which Tacet Suppression to Farm', page.form_rows)
                 dialog.deleteLater()
                 page._select_route('weekly_boss')
@@ -459,7 +459,7 @@ class TestAccountUIPolish(unittest.TestCase):
                         section = editor.order_section
                         self.assertLessEqual(section.header.height(), 72, (route, width, section.header.height()))
                         self.assertLessEqual(section.height(), section.header.height() + 34, (route, width, section.height()))
-                        self.assertLessEqual(editor.help.height(), editor.help.sizeHint().height() + 4)
+                        self.assertTrue(page.section_panels[0].title_label.isHidden())
                         self.assertGreaterEqual(expanded_height - editor.view.height(), 300,
                                                 (route, width, expanded_height, editor.view.height()))
                         account._select_route('identity')

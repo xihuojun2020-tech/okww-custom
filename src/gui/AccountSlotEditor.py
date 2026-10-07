@@ -8,7 +8,6 @@ from src.account_display import account_display_label
 
 class AccountSlotEditor(QWidget):
     edited = Signal()
-    order_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -45,14 +44,11 @@ class AccountSlotEditor(QWidget):
         row.addWidget(self.sequence)
         row.addWidget(self.slot)
         row.addStretch(1)
-        order = QPushButton('查看执行顺序', self)
-        order.clicked.connect(self.order_requested)
         detail_layout.addLayout(row)
         self.participating = QCheckBox('参与该序列执行', self)
         footer = QHBoxLayout()
         footer.addWidget(self.participating)
         footer.addStretch(1)
-        footer.addWidget(order)
         detail_layout.addLayout(footer)
         self.error = QLabel('', self)
         self.error.setWordWrap(True)

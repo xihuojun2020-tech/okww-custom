@@ -12,7 +12,7 @@ from src.task.forgery_quota_progress import ForgeryQuotaProgress
 class ForgeryQuotaWidget(QWidget):
     changed = Signal()
 
-    def __init__(self, tasks, service=None, profile_id=None, parent=None, *, max_goals=2):
+    def __init__(self, tasks, service=None, profile_id=None, parent=None, *, max_goals=2, show_notes=True):
         super().__init__(parent)
         from src.task.forgery_targets import FORGERY_DOMAIN_OPTIONS
         self.progress = ForgeryQuotaProgress(service, profile_id) if service and profile_id else None
@@ -30,9 +30,10 @@ class ForgeryQuotaWidget(QWidget):
         outer.addWidget(self.goal_host)
         layout = QGridLayout(self.goal_host)
         layout.setContentsMargins(0, 0, 0, 0)
-        header = QLabel('输入已有材料与目标所需，程序统一折算绿色当量并计算缺口。', self)
-        header.setWordWrap(True)
-        layout.addWidget(header, 0, 0, 1, 8)
+        if show_notes:
+            header = QLabel('输入已有材料与目标所需，程序统一折算绿色当量并计算缺口。', self)
+            header.setWordWrap(True)
+            layout.addWidget(header, 0, 0, 1, 8)
         for index in range(max_goals):
             goal = deepcopy(goals[index]) if index < len(goals) else {
                 'goal_id': str(uuid4()), 'domain': 0, 'need': dict.fromkeys(TIERS, 0), 'inventory': dict.fromkeys(TIERS, 0)}
@@ -82,10 +83,11 @@ class ForgeryQuotaWidget(QWidget):
         self.resolve_button = QPushButton('核对未确认的凝素领取（0 / 40 / 80体力）', self)
         self.resolve_button.clicked.connect(self._resolve)
         outer.addWidget(self.resolve_button)
-        note = QLabel('金×27 + 紫×9 + 蓝×3 + 绿；80体力估算50当量，40体力估算25当量。'
-                      '已有与所需均按上述比例折算。进度按已核验消费估算，库存不会被估算值自动覆盖。', self)
-        note.setWordWrap(True)
-        layout.addWidget(note, max_goals * 7 + 1, 0, 1, 8)
+        if show_notes:
+            note = QLabel('金×27 + 紫×9 + 蓝×3 + 绿；80体力估算50当量，40体力估算25当量。'
+                          '已有与所需均按上述比例折算。进度按已核验消费估算，库存不会被估算值自动覆盖。', self)
+            note.setWordWrap(True)
+            layout.addWidget(note, max_goals * 7 + 1, 0, 1, 8)
         self.mode.currentIndexChanged.connect(self._edited)
         self.timer = QTimer(self)
         self.timer.setInterval(3000)

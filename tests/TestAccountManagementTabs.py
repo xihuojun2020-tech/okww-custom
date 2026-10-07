@@ -90,9 +90,13 @@ class TestAccountManagementTabs(unittest.TestCase):
     def test_forgery_profile_form_uses_named_choices(self):
         from src.gui.FarmingTaskQueueWidget import FarmingTaskDialog
         from src.task.forgery_targets import FORGERY_DOMAIN_NAMES
+        from PySide6.QtWidgets import QLabel
         dialog = FarmingTaskDialog()
         try:
             dialog.kind.setCurrentIndex(dialog.kind.findData('forgery'))
+            self.assertEqual('materials', dialog.quota.mode.currentData())
+            self.assertNotIn('输入已有材料与目标所需', ' '.join(label.text() for label in dialog.findChildren(QLabel)))
+            self.assertNotIn('金×27', ' '.join(label.text() for label in dialog.findChildren(QLabel)))
             control = dialog.target
             self.assertIsInstance(control, ClickOnlyComboBox)
             self.assertEqual(20, control.count())
@@ -100,6 +104,7 @@ class TestAccountManagementTabs(unittest.TestCase):
             control.setCurrentIndex(control.findData(5))
             self.assertEqual(FORGERY_DOMAIN_NAMES[5], control.currentText())
             self.assertEqual(5, dialog.values()['params']['domain'])
+            self.assertEqual('materials', dialog.values()['params']['mode'])
         finally:
             dialog.deleteLater()
 

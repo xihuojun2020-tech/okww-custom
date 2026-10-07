@@ -98,10 +98,13 @@ class FarmingTaskDialog(QDialog):
                 '累计成功领取次数，跨日保留；达到目标后归入已完成。', self.params_host))
         elif kind == 'forgery':
             tasks = project_task(self.item) if self.item else {FORGERY_MODE: 'unlimited', FORGERY_GOALS: []}
-            self.quota = ForgeryQuotaWidget(tasks, self.service, self.profile_id, self.params_host, max_goals=1)
+            self.quota = ForgeryQuotaWidget(tasks, self.service, self.profile_id, self.params_host,
+                                           max_goals=1, show_notes=False)
             row = self.quota.rows[0]
             row['target'].setCurrentIndex(row['target'].findData(value))
             row['target'].hide()
+            if self.item is None:
+                self.quota.mode.setCurrentIndex(self.quota.mode.findData('materials'))
             def select_domain(*_):
                 row['target'].setCurrentIndex(row['target'].findData(self.target.currentData()))
                 # The quota editor rejects a change while a claim is pending.
@@ -174,11 +177,6 @@ class FarmingTaskQueueWidget(QWidget):
         tools.addWidget(self.resolve_button)
         tools.addStretch()
         self.outer.addLayout(tools)
-        note = QLabel('周本 → 每日所选聚落 → 全部突破 → 全部凝素 → 无限保底。组内按顺序执行。\n'
-                      '有限任务达标后归入已完成；修改后点击“确认保存”生效。', self)
-        note.setWordWrap(True)
-        note.setProperty('role', 'description')
-        self.outer.addWidget(note)
         self.error = QLabel(self)
         self.error.setWordWrap(True)
         self.error.setProperty('role', 'error')

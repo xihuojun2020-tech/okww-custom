@@ -60,12 +60,12 @@ _LABELS = {
     "Tacet Discord Nests to Farm": ("残象聚落目标", "勾选哪些聚落就刷取哪些；全部取消则跳过残象聚落。"),
     "Nightmare Settlements to Farm": ("梦魇聚落目标", "补充刷取目标，默认全部不选。"),
     "Auto Farm all Nightmare Nest": ("自动刷取所选目标", "开启后依次刷取勾选的残象聚落和梦魇聚落。"),
-    "Weekly Garden Check Day": ("周常乐园检查日", "仅在乐园执行安排为“随每日执行”时生效；无表示每日入口不执行乐园。"),
-    "Garden Execution Mode": ("乐园执行安排", "随每日执行会按下方检查日及补检规则运行；跟随多账号每周乐园仅由独立周任务运行；关闭会跳过所有自动乐园入口。"),
+    "Weekly Garden Check Day": ("周常乐园检查日", ""),
+    "Garden Execution Mode": ("乐园执行安排", ""),
     "Merge Echo on Sunday": ("周日合成声骸", "开启后在周日执行声骸合成。"),
     "Logout After Daily Task": ("每日任务后自动退登", "单账号运行结束后的退登行为；多账号任务会临时接管。"),
-    "备用识别名称": ("使用备用识别名称", "选择“使用”后，下面填写的名称才参与登录账号识别。"),
-    "备用识别名称内容": ("备用识别名称内容", "可填写 U…A 等登录页显示名称；停用时保留但不会用于识别。"),
+    "备用识别名称": ("使用备用识别名称", ""),
+    "备用识别名称内容": ("备用识别名称内容", ""),
 }
 _OPTIONS = {
     'Which Tacet Suppression to Farm': TACET_IDS,

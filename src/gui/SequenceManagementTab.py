@@ -32,9 +32,6 @@ class SequenceManagementTab(CustomTab):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
         layout.setAlignment(Qt.AlignTop)
-        self.help = BodyLabel('固定顺序 A1 → A10 / B1 → B10；空槽位与未参与账号跳过。双击账号可设置归属。')
-        self.help.setWordWrap(True)
-        layout.addWidget(self.help)
         self.snapshot_label = BodyLabel('')
         self.snapshot_label.setWordWrap(True)
         self.snapshot_label.setProperty('role', 'description')
@@ -77,10 +74,6 @@ class SequenceManagementTab(CustomTab):
         layout.addWidget(self.sequence_choices)
         layout.addWidget(self.legacy_choice, 0, Qt.AlignLeft)
         layout.addWidget(self.sequences)
-        self.chain = BodyLabel('', root)
-        self.chain.setWordWrap(True)
-        self.chain.setProperty('role', 'sectionTitle')
-        layout.addWidget(self.chain)
         self.order_section = SectionPanel('固定槽位' if self.readonly else '账号执行顺序', parent=root, collapsible=True)
         self.order_section.add_widget(self.members)
         layout.addWidget(self.order_section)
@@ -236,17 +229,6 @@ class SequenceManagementTab(CustomTab):
             for button in self.choice_buttons.values():
                 button.setChecked(False)
             self.choice_group.setExclusive(True)
-        from src.account_slots import account_slot
-        chain = []
-        for identity in item.profile_ids:
-            if identity in self._accounts:
-                try:
-                    slot = account_slot(self._accounts[identity])
-                    chain.append(slot['slot'] if slot else profiles[identity])
-                except ValueError:
-                    chain.append('归属待核对')
-        self.chain.setText(('有效执行顺序：' + ' → '.join(chain)) if item.enabled and chain else
-                           '序列已停用' if not item.enabled else '暂无参与账号；启动时跳过空槽位和未参与账号。')
         self.enabled_button.setText('停用序列' if item.enabled else '启用序列')
         from src.account_slots import FIXED_SEQUENCES, slot_owners, slots_for
         fixed = item.sequence_id in FIXED_SEQUENCES
@@ -279,8 +261,7 @@ class SequenceManagementTab(CustomTab):
                                      row.flags() | Qt.ItemIsUserCheckable)
                         if self.readonly:
                             row.setData(Qt.CheckStateRole, None)
-                self.order_section.set_description('勾选表示参与执行；槽位归属在对应账号的账号识别信息中设置。'
-                                                   if not self.readonly else '执行顺序固定；此页只读。')
+                self.order_section.set_description('' if not self.readonly else '执行顺序固定；此页只读。')
                 self.order_section.set_summary(f'{FIXED_SEQUENCES[item.sequence_id][0]} · {len(item.profile_ids)} 个参与账号')
                 self.members.setFixedHeight(648)
             except ValueError as error:

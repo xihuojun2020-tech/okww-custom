@@ -425,8 +425,6 @@ class AccountConfigTab(CustomTab):
         self.profile_combo = ClickOnlyComboBox(root)
         row.addWidget(self.profile_combo, 1)
         layout.addLayout(row)
-        self.metadata = BodyLabel("")
-        self.metadata.setWordWrap(True)
         self.draft_status = QLabel('尚未编辑', root)
         self.draft_status.setProperty('role', 'description')
         from src.gui.SectionPanel import SectionPanel
@@ -437,10 +435,8 @@ class AccountConfigTab(CustomTab):
         self.slot_editor.details.show()
         self.identity_group.add_widget(self.slot_editor)
         self.slot_editor.edited.connect(self._mark_draft_edited)
-        self.slot_editor.order_requested.connect(lambda: self._select_route('sequences'))
         self.identity_layout = QFormLayout()
         self.identity_group.content_layout.addLayout(self.identity_layout)
-        self.identity_layout.addRow(self.metadata)
         self.identity_widgets = {}
         for key, label in (("phone", "完整手机号"), ("masked_phone", "带星号手机号（切换关键依据）"),
                            ("nickname", "游戏昵称"), ("alternate_login_name", "U…A 备用识别名")):
@@ -797,9 +793,6 @@ class AccountConfigTab(CustomTab):
         masked_phone = self.draft.account.get("masked_phone") or "未记录"
         alternate = self.draft.account.get("alternate_login_name") or "未记录"
         feature_code = self.draft.account.get("game_feature_code") or "未绑定（初露峥嵘执行前需核验）"
-        self.metadata.setText(
-            f"唯一编号：{self.draft.profile_id}"
-        )
         self._render_sequences()
         self._render_identity()
         self.task_editor.setPlainText(json.dumps(self.draft.tasks, ensure_ascii=False, indent=2))

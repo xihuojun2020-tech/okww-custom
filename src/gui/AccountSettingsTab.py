@@ -22,7 +22,7 @@ class AccountSettingsTab(CustomTab):
         self.sequence_tab.changed.connect(self._on_account_changed)
         section = SectionPanel('账号序列', parent=self.account_tab.settings_host)
         section.set_flat()
-        section.title_label.setProperty('role', 'pageTitle')
+        section.title_label.hide()
         section.add_embedded_widget(self.sequence_tab)
         self.section_panels = [section]
         self.account_tab.settings_layout.addWidget(section)
