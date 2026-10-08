@@ -51,6 +51,12 @@ class OneTimeTaskTab(TaskTab):
         from ok.gui.Communicate import communicate
         communicate.task_list_updated.connect(self.refresh_ui)
         self.refresh_ui()
+        if self.group_tasks:
+            from PySide6.QtCore import QTimer
+            self.activity_timer = QTimer(self)
+            self.activity_timer.setInterval(60000)
+            self.activity_timer.timeout.connect(self.refresh_activity_period)
+            self.activity_timer.start()
 
         # Runtime logs remain in the configured file logger only. Do not
         # subscribe task pages to communicate.log: the task UI is for controls
@@ -65,6 +71,8 @@ class OneTimeTaskTab(TaskTab):
             og.task_manager.delete_imported_script(self.imported_file_name)
 
     def refresh_ui(self):
+        from src.evidence.model import current_projects
+        self._current_activities = current_projects()
         for card in getattr(self, '_activity_placeholders', []):
             self.remove_task_card(card)
             card.deleteLater()
@@ -78,8 +86,9 @@ class OneTimeTaskTab(TaskTab):
         
         self.tasks = []
         from src.gui.navigation_sections import HIDDEN_TASKS
+        from src.gui.activity_catalog import current_activity_task
         for task in og.executor.onetime_tasks:
-            if not getattr(task, 'visible', True) or type(task).__name__ in HIDDEN_TASKS:
+            if not getattr(task, 'visible', True) or type(task).__name__ in HIDDEN_TASKS or not current_activity_task(task):
                 continue
             task_group = getattr(task, 'group_name', None)
             if self.section:
@@ -96,9 +105,9 @@ class OneTimeTaskTab(TaskTab):
         from src.gui.navigation_sections import task_category, TASK_CATEGORIES, task_order
         entries = list(self.tasks)
         if self.group_tasks:
-            from src.gui.activity_catalog import PLACEHOLDERS, PLACEHOLDER_REVISION
+            from src.gui.activity_catalog import current_placeholders, PLACEHOLDER_REVISION
             self.tasks.sort(key=task_order)
-            entries = list(PLACEHOLDERS) + self.tasks
+            entries = list(current_placeholders()) + self.tasks
             entries.sort(key=lambda entry: (TASK_CATEGORIES.index('活动'), -PLACEHOLDER_REVISION)
                          if isinstance(entry, tuple) else task_order(entry))
         self.empty_label.setVisible(not entries)
@@ -117,3 +126,8 @@ class OneTimeTaskTab(TaskTab):
 
     def in_current_list(self, task):
         return getattr(self, 'tasks', None) and task in self.tasks
+
+    def refresh_activity_period(self):
+        from src.evidence.model import current_projects
+        if self._current_activities != current_projects():
+            self.refresh_ui()

@@ -11,7 +11,7 @@ import win32process
 
 from ok import PostMessageInteraction
 
-from src.activity_catalog import ACTIVITIES
+from src.activity_catalog import LEGACY_ACTIVITIES as ACTIVITIES
 from src.runtime.game_runtime_errors import GameProcessLost
 from src.task.BaseWWTask import BaseWWTask
 from src.task.resonance_simulation import liberation_ready, skill_bar_visible

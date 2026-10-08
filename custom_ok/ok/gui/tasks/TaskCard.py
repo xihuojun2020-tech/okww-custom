@@ -33,7 +33,7 @@ class TaskCard(ConfigCard):
                          config_type, config_icon=task.icon or FluentIcon.INFO)
         self.task = task
         if type(task).__name__ == 'PianoTeachingTask':
-            from src.activity_catalog import ACTIVITIES
+            from src.activity_catalog import LEGACY_ACTIVITIES as ACTIVITIES
             self.card.titleLabel.setText(ACTIVITIES['piano_activity'])
         from src.evidence.model import TASK_PROJECTS
         self._evidence_project = TASK_PROJECTS.get(type(task).__name__)
@@ -100,6 +100,13 @@ class TaskCard(ConfigCard):
         self.waiting_label.setWordWrap(True)
         self.viewLayout.addWidget(self.waiting_label)
         self.viewLayout.addWidget(self.instructions_button)
+        from src.evidence.cycles import CYCLE_PROJECTS
+        if self._evidence_project in CYCLE_PROJECTS:
+            self.evidence_button = PushButton('保存当前画面为证据', self)
+            self.evidence_button.clicked.connect(self.capture_current_evidence)
+            self.viewLayout.addWidget(self.evidence_button)
+            self._expand_enabled = True
+            self.card.expandButton.show()
         if self.edit_button is not None:
             self.viewLayout.addWidget(self.edit_button)
         if getattr(task, 'instructions', None) or self.edit_button is not None:
@@ -135,10 +142,13 @@ class TaskCard(ConfigCard):
         menu = QMenu(self)
         action = menu.addAction('保存当前画面为证据')
         if menu.exec(self.card.mapToGlobal(position)) == action:
-            page = getattr(og.main_window, 'completion_check_tab', None)
-            if page is not None:
-                og.main_window.switchTo(page)
-                page.capture_evidence(self._evidence_project)
+            self.capture_current_evidence()
+
+    def capture_current_evidence(self):
+        page = getattr(og.main_window, 'completion_check_tab', None)
+        if page is not None:
+            og.main_window.switchTo(page)
+            page.capture_evidence(self._evidence_project)
 
     def _apply_fluent_sample(self):
         """Task-page pilot only; shared configuration and execution stay unchanged."""
@@ -159,7 +169,8 @@ class TaskCard(ConfigCard):
         self.card.text_layout.addWidget(self.card.contentLabel)
         self.card.contentLabel.setAttribute(Qt.WA_TransparentForMouseEvents)
         self._expand_enabled = bool(self.config_widgets or self.reset_config or
-                                    self.task.show_create_shortcut or self.task.instructions or self.edit_button)
+                                    self.task.show_create_shortcut or self.task.instructions or self.edit_button
+                                    or hasattr(self, 'evidence_button'))
         self.card.expandButton.setVisible(self._expand_enabled)
         if not self._expand_enabled:
             self.card.layout_row.addSpacing(self.card.expandButton.width() + self.card.layout_row.spacing())

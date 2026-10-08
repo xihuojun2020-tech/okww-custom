@@ -5,7 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from ok import TaskDisabledException
-from src.activity_catalog import ACTIVITIES
+from src.activity_catalog import LEGACY_ACTIVITIES as ACTIVITIES
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.character_trial import compact, exact_button
 from src.task.echoes_remain import INITIAL, FINAL, inspect_roster, correction

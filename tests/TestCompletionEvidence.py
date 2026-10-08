@@ -23,24 +23,24 @@ class TestCompletionEvidence(unittest.TestCase):
             self.assertEqual(period_for(project, '2026-09-15T04:00:00+08:00'), 'week:2026-09-14')
         from src.activity_catalog import ACTIVITIES
         for project in (*ACTIVITIES, 'adversity_tower', 'sea_ruins', 'matrix'):
-            self.assertIsNone(period_for(project, '2026-09-15T04:00:00+08:00'))
+            self.assertEqual(period_for(project, '2026-09-15T04:00:00+08:00'), 'unconfirmed:' + project)
 
     def test_new_photo_replaces_old_verdict_but_failed_capture_does_not_hide_photo(self):
         with tempfile.TemporaryDirectory() as root:
             repo = EvidenceRepository(root)
-            common = dict(profile_id=ACCOUNT, project_id='sea_ruins')
+            common = dict(profile_id=ACCOUNT, project_id='echoes_remain')
             old = repo.save(dict(common, captured_at='2026-09-01T12:00:00+08:00',
                 source='manual_confirmation', completion_status='completed'), np.zeros((5, 5, 3), np.uint8))
             new = repo.save(dict(common, captured_at='2026-09-02T12:00:00+08:00'), np.ones((5, 5, 3), np.uint8))
             repo.save(dict(common, captured_at='2026-09-03T12:00:00+08:00'), None)
             repo.save(dict(common, captured_at='2026-08-01T12:00:00+08:00'), np.zeros((5, 5, 3), np.uint8))
-            chosen, conflict = summarize(repo.read_current(ACCOUNT, 'sea_ruins'))
+            chosen, conflict = summarize(repo.read_current(ACCOUNT, 'echoes_remain'))
             self.assertEqual(chosen['evidence_id'], new['evidence_id'])
             self.assertEqual(chosen['completion_status'], 'unknown')
             self.assertFalse(conflict)
             self.assertTrue(repo.asset_path(old['image_path']).exists())
             equal_time = repo.save(dict(common, captured_at=new['captured_at']), np.full((5, 5, 3), 2, np.uint8))
-            self.assertEqual(summarize(repo.read_current(ACCOUNT, 'sea_ruins'))[0]['evidence_id'], equal_time['evidence_id'])
+            self.assertEqual(summarize(repo.read_current(ACCOUNT, 'echoes_remain'))[0]['evidence_id'], equal_time['evidence_id'])
 
     def test_daily_period_migration_is_backed_up_idempotent_and_keeps_originals(self):
         import json

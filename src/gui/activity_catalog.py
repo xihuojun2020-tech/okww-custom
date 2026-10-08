@@ -4,7 +4,19 @@ ACTIVITY_REVISIONS = {'ResonanceSimulationTask': 2026091601, 'EchoesRemainTask':
                       'PianoTeachingTask': 2026091101, 'CharacterTrialTask': 2026091100,
                       'SecondSolTask': 2026091001}
 PLACEHOLDER_REVISION = 2026091101
-PLACEHOLDERS = ()
+PLACEHOLDERS = tuple((key, ACTIVITIES[key]) for key in ('tiangong_treasure', 'dango_brawl', 'dream_box'))
+
+
+def current_placeholders():
+    from src.evidence.model import current_projects
+    current = current_projects()
+    return tuple(entry for entry in PLACEHOLDERS if entry[0] in current)
+
+
+def current_activity_task(task):
+    from src.evidence.model import TASK_PROJECTS, current_projects
+    project = TASK_PROJECTS.get(type(task).__name__)
+    return project is None or project in current_projects()
 
 
 def activity_revision(task):
@@ -22,9 +34,10 @@ def placeholder_card(project, title, parent):
 
         def setExpand(self, expanded):
             self.set_expanded(expanded)
-    card = PlaceholderCard(title, '尚未实现自动执行；可手动保存截图。', parent, collapsible=True)
+    from src.evidence.cycles import cycle_label
+    card = PlaceholderCard(title, cycle_label(project), parent, collapsible=True)
     card.task = project
-    card.set_summary('待实现')
+    card.set_summary('手动留证')
     from src.gui.CodexTheme import COLORS
     card.layout().setContentsMargins(0, 0, 0, 0)
     card.layout().setSpacing(0)

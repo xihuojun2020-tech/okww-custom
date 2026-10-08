@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 
 from src.evidence.model import GAME_ZONE, PROJECTS, SOURCES, STATUSES, now_iso, period_for
+from src.evidence.cycles import CYCLE_PROJECTS, cycle_for, seed_cycles, observed_end, stamp
 
 
 class EvidenceRepository:
@@ -237,8 +238,11 @@ class EvidenceRepository:
         record['captured_at'] = timestamp.astimezone(GAME_ZONE).isoformat()
         if record['source'] == 'manual_capture' and record['completion_status'] != 'unknown':
             raise ValueError('人工结论必须明确标记为手动确认')
-        record['period_id'] = period_for(project, record['captured_at'])
-        record['period_rule'] = PROJECTS[project][1] or 'snapshot'
+        cycles = self.cycles() if project in CYCLE_PROJECTS else None
+        record['period_id'] = period_for(project, record['captured_at'], cycles=cycles)
+        record['period_rule'] = 'cycle' if project in CYCLE_PROJECTS else PROJECTS[project][1] or 'snapshot'
+        if project in CYCLE_PROJECTS:
+            record['valid_until'] = (cycle_for(project, record['captured_at'], cycles) or {}).get('end_at')
         record.update(schema_version=1, evidence_id=str(uuid4()), created_at=now_iso(), trashed=False)
         record.setdefault('identity_source', 'user_confirmed')
         for key in ('target_id', 'run_id', 'event_id', 'reason', 'note'):
@@ -324,6 +328,23 @@ class EvidenceRepository:
             db.execute('INSERT INTO preferences VALUES (?, ?) ON CONFLICT(key) DO UPDATE '
                        'SET value=excluded.value WHERE preferences.value IS NOT excluded.value', (key, value))
 
+    def cycles(self):
+        value = self.get_preference('project_cycles_v1')
+        return dict(seed_cycles(), **(json.loads(value) if value else {}))
+
+    def observe_cycle(self, project, text, captured_at):
+        cycles = self.cycles()
+        # An OCR sample must never shift the user-confirmed current deadline.
+        if cycle_for(project, captured_at, cycles):
+            return False
+        end = observed_end(PROJECTS[project][0], text, captured_at)
+        if end is None:
+            return False
+        cycles[project] = dict(start_at=stamp(captured_at).isoformat(), end_at=end.isoformat(),
+                               source='screen_countdown')
+        self.set_preference('project_cycles_v1', json.dumps(cycles, ensure_ascii=False))
+        return True
+
     def read_page(self, profile_id, project_id=None, trashed=False, limit=60, offset=0):
         rows = self.list_records(profile_id, project_id, trashed, limit, offset)
         return self._thumbnails(rows)
@@ -333,8 +354,13 @@ class EvidenceRepository:
         if not self.database.exists():
             return []
         result = []
+        cycles = self.cycles()
         with self._connect() as db:
             for project in ([project_id] if project_id else PROJECTS):
+                period = period_for(project, cycles=cycles)
+                if project in CYCLE_PROJECTS and period.startswith('unconfirmed:'):
+                    # Previous or undated completion cannot stand in for a new season.
+                    continue
                 rows = db.execute('''SELECT metadata FROM (
                     SELECT metadata, captured_at, rowid AS seq,
                         ROW_NUMBER() OVER (PARTITION BY json_extract(metadata, '$.source'),
@@ -344,7 +370,7 @@ class EvidenceRepository:
                     FROM evidence WHERE profile_id=? AND project_id=?
                         AND period_id IS ? AND trashed=0)
                     WHERE rank=1 ORDER BY captured_at DESC, seq DESC''',
-                    (profile_id, project, period_for(project))).fetchall()
+                    (profile_id, project, period)).fetchall()
                 for (payload,) in rows:
                     record = json.loads(payload)
                     record['trashed'] = False

@@ -6,16 +6,100 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
-from PySide6.QtWidgets import QApplication, QDialogButtonBox, QMessageBox, QDialog, QLabel
+from PySide6.QtWidgets import QApplication, QDialog, QLabel, QPushButton
 from PySide6.QtCore import QThreadPool
 from src.evidence.repository import EvidenceRepository
 from src.evidence.model import now_iso
-from src.gui.CompletionCheckTab import CompletionCheckTab, EvidenceCaptureDialog
+from src.gui.CompletionCheckTab import CompletionCheckTab
 
 ACCOUNT = '00000000-0000-4000-8000-000000000001'
 
 
 class TestCompletionCheckUI(unittest.TestCase):
+    def test_task_card_evidence_button_is_accessible_and_uses_shared_capture(self):
+        from custom_ok.ok.gui.tasks.TaskCard import TaskCard
+        from tests.TestFlatUI import example_task
+        from ok import og
+        from unittest.mock import Mock
+        task = type('AutoSeaRuinsTask', (), {})()
+        task.__dict__.update(vars(example_task()))
+        page = SimpleNamespace(capture_evidence=Mock())
+        window = SimpleNamespace(completion_check_tab=page, switchTo=Mock())
+        with patch.object(og, 'app', SimpleNamespace(tr=str)), \
+             patch.object(og, 'executor', SimpleNamespace(waiting_for_task=lambda _: '')), \
+             patch.object(og, 'main_window', window):
+            card = TaskCard(task, True, fluent_sample=True)
+            try:
+                self.assertTrue(card._expand_enabled)
+                card.setExpand(True)
+                card.evidence_button.click()
+                page.capture_evidence.assert_called_once_with('sea_ruins')
+                window.switchTo.assert_called_once_with(page)
+            finally:
+                card.close()
+
+    def test_one_click_capture_uses_selected_account_without_dialog_and_freezes_selection(self):
+        from concurrent.futures import Future
+        import time
+        other = '00000000-0000-4000-8000-000000000002'
+        with tempfile.TemporaryDirectory() as root:
+            repo = EvidenceRepository(root)
+            page = CompletionCheckTab(SimpleNamespace(), repository=repo, account_provider=lambda: None)
+            page.timer.stop()
+            page._profiles = {ACCOUNT: 'A1', other: 'A2'}
+            page._selected = ACCOUNT
+            page._display_records()
+            future = Future()
+            try:
+                with patch('src.gui.CompletionCheckTab.request_capture', return_value=future) as capture, \
+                     patch.object(page, 'reload_records'), patch.object(QDialog, 'exec', side_effect=AssertionError('unexpected confirmation')):
+                    card = next(card for card in page._cards if card.property('project_id') == 'sea_ruins')
+                    card.findChild(QPushButton, 'saveCurrentEvidence').click()
+                    self.assertTrue(page.capture_operation.busy)
+                    page._selected = other
+                    future.set_result(dict(frame=np.ones((10, 12, 3), np.uint8), profile_id=other,
+                                           captured_at='2026-10-08T20:27:00+08:00'))
+                    deadline = time.monotonic() + 5
+                    while page.capture_operation.busy and time.monotonic() < deadline:
+                        self.app.processEvents()
+                        time.sleep(.005)
+                    self.assertFalse(page.capture_operation.busy)
+                    capture.assert_called_once_with(page.executor)
+                row = repo.list_records(ACCOUNT)[0]
+                self.assertEqual(row['project_id'], 'sea_ruins')
+                self.assertEqual(row['completion_status'], 'completed')
+                self.assertEqual(row['source'], 'manual_confirmation')
+                self.assertEqual(row['runtime_profile_id'], other)
+                self.assertEqual(repo.list_records(other), [])
+                self.assertTrue(repo.asset_path(row['image_path']).exists())
+            finally:
+                page.service.close()
+                page.close()
+
+    def test_failed_capture_does_not_create_completed_record(self):
+        from concurrent.futures import Future
+        import time
+        with tempfile.TemporaryDirectory() as root:
+            repo = EvidenceRepository(root)
+            page = CompletionCheckTab(SimpleNamespace(), repository=repo, account_provider=lambda: None)
+            page.timer.stop()
+            page._profiles = {ACCOUNT: 'A1'}
+            page._selected = ACCOUNT
+            future = Future()
+            future.set_exception(RuntimeError('游戏窗口不可用'))
+            try:
+                with patch('src.gui.CompletionCheckTab.request_capture', return_value=future):
+                    page.capture_evidence('matrix')
+                    deadline = time.monotonic() + 5
+                    while page.capture_operation.busy and time.monotonic() < deadline:
+                        self.app.processEvents()
+                        time.sleep(.005)
+                self.assertIn('游戏窗口不可用', page.notice.text())
+                self.assertEqual(repo.list_records(ACCOUNT), [])
+            finally:
+                page.service.close()
+                page.close()
+
     def test_accounts_follow_current_slots_in_all_and_filtered_views(self):
         from PySide6.QtCore import Qt
         from src.account_slots import SLOT_KEY
@@ -56,42 +140,9 @@ class TestCompletionCheckUI(unittest.TestCase):
                 page.service.close()
                 page.close()
 
-    def test_manual_account_mismatch_requires_confirmation(self):
-        other = '00000000-0000-4000-8000-000000000002'
-        capture = dict(frame=np.zeros((50, 80, 3), np.uint8), profile_id=ACCOUNT, captured_at=now_iso())
-        dialog = EvidenceCaptureDialog(capture, {ACCOUNT: 'A1', other: 'A2'}, ACCOUNT)
-        dialog.account.setCurrentIndex(dialog.account.findData(other))
-        dialog.confirm.setChecked(True)
-        with patch.object(QMessageBox, 'question', return_value=QMessageBox.No):
-            dialog.confirm_accept()
-            self.assertNotEqual(dialog.result(), QDialog.Accepted)
-        with patch.object(QMessageBox, 'question', return_value=QMessageBox.Yes):
-            dialog.confirm_accept()
-            self.assertEqual(dialog.result(), QDialog.Accepted)
-        self.assertEqual(dialog.metadata()['profile_id'], other)
-        self.assertEqual(dialog.metadata()['runtime_profile_id'], ACCOUNT)
-        dialog.close()
-
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
-
-    def test_manual_confirmation_defaults_unknown_and_freezes_binding(self):
-        capture = dict(frame=np.zeros((50, 80, 3), np.uint8), profile_id=ACCOUNT,
-                       captured_at=now_iso(), identity_source='runtime_bound')
-        dialog = EvidenceCaptureDialog(capture, {ACCOUNT: 'A1-测试-19910000001'}, ACCOUNT)
-        self.assertTrue(dialog.account.isEnabled())
-        self.assertIsNone(dialog.account.currentData())
-        self.assertFalse(dialog.buttons.button(QDialogButtonBox.Save).isEnabled())
-        dialog.confirm.setChecked(True)
-        self.assertFalse(dialog.buttons.button(QDialogButtonBox.Save).isEnabled())
-        dialog.account.setCurrentIndex(dialog.account.findData(ACCOUNT))
-        self.assertEqual(dialog.metadata()['identity_source'], 'user_confirmed')
-        self.assertEqual(dialog.metadata()['source'], 'manual_capture')
-        self.assertEqual(dialog.metadata()['completion_status'], 'unknown')
-        dialog.status.setCurrentIndex(dialog.status.findData('completed'))
-        self.assertEqual(dialog.metadata()['source'], 'manual_confirmation')
-        dialog.close()
 
     def test_synthetic_dashboard_layout_and_selection_are_read_only(self):
         with tempfile.TemporaryDirectory() as root:

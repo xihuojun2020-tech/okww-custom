@@ -4,7 +4,7 @@ import time
 
 import win32gui
 from ok import BaseTask
-from src.activity_catalog import ACTIVITIES
+from src.activity_catalog import LEGACY_ACTIVITIES as ACTIVITIES
 
 
 class SecondSolTask(BaseTask):

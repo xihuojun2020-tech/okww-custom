@@ -20,7 +20,7 @@ class TestTaskNavigationClassification(unittest.TestCase):
     def test_echoes_remain_uses_executable_activity_card(self):
         from src.task.EchoesRemainTask import EchoesRemainTask
         from src.gui.activity_catalog import PLACEHOLDERS, PLACEHOLDER_REVISION, activity_revision
-        from src.activity_catalog import ACTIVITIES
+        from src.activity_catalog import LEGACY_ACTIVITIES as ACTIVITIES
         task = object.__new__(EchoesRemainTask)
         self.assertEqual(classify_task(task), TASKS)
         self.assertEqual(task_category(task), '活动')

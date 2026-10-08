@@ -8,14 +8,15 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QTimer, Signal, QUrl
 from PySide6.QtGui import QPixmap, QImage, QDesktopServices
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
-    QListWidget, QListWidgetItem, QLineEdit, QScrollArea, QDialog, QDialogButtonBox,
-    QMessageBox, QCheckBox, QPlainTextEdit, QSizePolicy, QPushButton, QApplication, QMenu)
+    QListWidget, QListWidgetItem, QLineEdit, QScrollArea, QDialog,
+    QMessageBox, QCheckBox, QSizePolicy, QPushButton, QApplication, QMenu)
 from qfluentwidgets import FluentIcon, PushButton, PrimaryPushButton
 
 from src.account_display import account_display_label, account_sort_key, parse_account_label
 from src.account_repository import get_default_repository
 from src.evidence.model import (PROJECTS, CURRENT_PROJECTS, GROUPS, project_group,
-    STATUSES, SOURCES, ASSETS, period_for, period_label, summarize, now_iso)
+    STATUSES, SOURCES, ASSETS, period_for, period_label, summarize, now_iso, current_projects)
+from src.evidence.cycles import CYCLE_PROJECTS, cycle_for, cycle_label, seed_cycles
 from src.evidence.export import export_screenshots, export_state
 from src.evidence.service import EvidenceService, get_evidence_service, request_capture
 from src.gui.BackgroundOperation import BackgroundOperation
@@ -45,83 +46,6 @@ def image_copy_menu(widget, callback):
         menu.addAction('复制图片', callback)
         menu.exec(widget.mapToGlobal(position))
     widget.customContextMenuRequested.connect(show)
-
-
-class EvidenceCaptureDialog(QDialog):
-    def __init__(self, capture, profiles, selected, project=None, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle('保存当前画面为完成证据')
-        self.resize(660, 600)
-        self.capture = capture
-        layout = QVBoxLayout(self)
-        frame = capture['frame']
-        image = QImage(frame.data, frame.shape[1], frame.shape[0], frame.strides[0], QImage.Format_BGR888)
-        preview = QLabel(self)
-        preview.setAlignment(Qt.AlignCenter)
-        preview.setPixmap(QPixmap.fromImage(image).scaled(600, 280, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-        layout.addWidget(preview)
-        self.account = QtComboBox(self)
-        self.account.addItem('请选择账号', None)
-        for profile_id, label in profiles.items():
-            self.account.addItem(label, profile_id)
-        binding = capture.get('profile_id')
-        self.account.setCurrentIndex(0)
-        layout.addWidget(QLabel('截图所属账号（不是游戏自动登录操作）'))
-        layout.addWidget(self.account)
-        if binding:
-            hint = QLabel('采集时运行绑定：' + profiles.get(binding, binding), self)
-            hint.setWordWrap(True)
-            layout.addWidget(hint)
-        self.project = QtComboBox(self)
-        for key in CURRENT_PROJECTS:
-            self.project.addItem(PROJECTS[key][0], key)
-        if project in PROJECTS:
-            self.project.setCurrentIndex(self.project.findData(project))
-        layout.addWidget(QLabel('证据项目'))
-        layout.addWidget(self.project)
-        self.status = QtComboBox(self)
-        for key in ('unknown', 'completed', 'partial', 'incomplete', 'not_applicable'):
-            self.status.addItem(STATUSES[key], key)
-        layout.addWidget(QLabel('人工核验状态'))
-        layout.addWidget(self.status)
-        self.note = QPlainTextEdit(self)
-        self.note.setPlaceholderText('备注或进度，例如：已完成所选聚落中的 3 个；不修改自动任务断点')
-        self.note.setMaximumHeight(75)
-        layout.addWidget(self.note)
-        self.confirm = QCheckBox('我确认画面属于上述账号；完成状态仅用于证据看板', self)
-        layout.addWidget(self.confirm)
-        self.buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel, self)
-        self.buttons.button(QDialogButtonBox.Save).setText('保存证据')
-        self.buttons.button(QDialogButtonBox.Cancel).setText('取消')
-        self.buttons.button(QDialogButtonBox.Save).setEnabled(False)
-        self.confirm.toggled.connect(lambda checked: self.buttons.button(QDialogButtonBox.Save).setEnabled(
-            checked and self.account.currentData() is not None))
-        self.account.currentIndexChanged.connect(lambda _: self.buttons.button(QDialogButtonBox.Save).setEnabled(
-            self.confirm.isChecked() and self.account.currentData() is not None))
-        self.buttons.accepted.connect(self.confirm_accept)
-        self.buttons.rejected.connect(self.reject)
-        layout.addWidget(self.buttons)
-
-    def confirm_accept(self):
-        if not self.confirm.isChecked() or not self.account.currentData():
-            return
-        binding = self.capture.get('profile_id')
-        if binding and binding != self.account.currentData():
-            if QMessageBox.question(self, '确认截图归属',
-                    '所选账号与采集时的运行绑定不同，确认将此截图保存到所选账号？',
-                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
-                return
-        self.accept()
-
-    def metadata(self):
-        if not self.confirm.isChecked() or self.account.currentData() is None:
-            raise ValueError('请明确确认截图所属账号')
-        status = self.status.currentData()
-        return dict(profile_id=self.account.currentData(), project_id=self.project.currentData(),
-                    completion_status=status, source='manual_capture' if status == 'unknown' else 'manual_confirmation',
-                    captured_at=self.capture['captured_at'], identity_source='user_confirmed',
-                    runtime_profile_id=self.capture.get('profile_id'),
-                    note=self.note.toPlainText().strip())
 
 
 class EvidenceDetailDialog(QDialog):
@@ -198,10 +122,11 @@ class CompletionCheckTab(QWidget):
         self.destroyed.connect(lambda: cancel_on_destroy.set())
         self._export_path = None
         self._selected = None
+        self._cycles = seed_cycles()
         self._offset = 0
         self._loaded = False
         self._revision = self.service.revision
-        self._periods = (period_for('daily_activity'), period_for('weekly_boss'))
+        self._periods = tuple(period_for(key, cycles=self._cycles) for key in CURRENT_PROJECTS)
         self._reload_pending = False
         self._cards = []
         self._group_headers = {}
@@ -248,8 +173,8 @@ class CompletionCheckTab(QWidget):
             self.mode.addItem(title, key)
         self.project_filter = QtComboBox(right)
         self.project_filter.addItem('全部项目', None)
-        for key, (name, _) in PROJECTS.items():
-            self.project_filter.addItem(name, key)
+        for key in current_projects(cycles=self._cycles):
+            self.project_filter.addItem(PROJECTS[key][0], key)
         tools.addWidget(self.mode)
         tools.addWidget(self.project_filter)
         content.addLayout(tools)
@@ -301,6 +226,7 @@ class CompletionCheckTab(QWidget):
         self.load_operation = BackgroundOperation(self)
         self.load_operation.busy_changed.connect(self._load_state_changed)
         self.capture_operation = BackgroundOperation(self, (self.capture_button,))
+        self.capture_operation.busy_changed.connect(self._capture_busy_changed)
         self.action_operation = BackgroundOperation(self)
         self.export_operation = BackgroundOperation(self)
         self.export_operation.busy_changed.connect(self._export_busy_changed)
@@ -504,12 +430,12 @@ class CompletionCheckTab(QWidget):
             migration = json.loads(repo.get_preference('daily_periods_v2') or '{}')
             if migration.get('invalid'):
                 error += f" {len(migration['invalid'])} 条旧证据时间无效，保留在历史记录中，未猜测周期。"
-            return rows, repo.latest_run(identity), completions, error, export_state(repo, identity), material_summary
+            return rows, repo.latest_run(identity), completions, error, export_state(repo, identity), material_summary, repo.cycles()
         def loaded(result):
             if (identity, project, mode, offset) != (self._selected, self.project_filter.currentData(), self.mode.currentData(), self._offset):
                 self._load_records()
                 return
-            rows, self._run_record, self._completions, self._history_error, state, self._material_summary = result
+            rows, self._run_record, self._completions, self._history_error, state, self._material_summary, self._cycles = result
             if not self.export_operation.busy:
                 self._show_export_state(state)
             self._rows = rows
@@ -581,6 +507,7 @@ class CompletionCheckTab(QWidget):
             self._load_records()
 
     def _display_records(self, *_):
+        self._update_project_choices()
         expanded = bool(self._run_panel and self._run_panel.toggle_button.isChecked())
         while self.grid.count():
             item = self.grid.takeAt(0)
@@ -594,12 +521,13 @@ class CompletionCheckTab(QWidget):
         self._add_run_panel(expanded)
         mode = self.mode.currentData()
         if mode == 'current':
-            projects = [self.project_filter.currentData()] if self.project_filter.currentData() else list(PROJECTS)
+            projects = [self.project_filter.currentData()] if self.project_filter.currentData() else current_projects(cycles=self._cycles)
             for project in projects:
                 if project not in CURRENT_PROJECTS and not any(r['project_id'] == project for r in self._rows):
                     continue
-                period = period_for(project)
-                rows = [r for r in self._rows if r['project_id'] == project and r['period_id'] == period]
+                period = period_for(project, cycles=self._cycles)
+                rows = [r for r in self._rows if r['project_id'] == project and r['period_id'] == period
+                        and not (project in CYCLE_PROJECTS and period.startswith('unconfirmed:'))]
                 record, conflict = summarize(rows)
                 if self.pending_only.isChecked() and record and record['completion_status'] == 'completed' and not conflict:
                     continue
@@ -687,6 +615,11 @@ class CompletionCheckTab(QWidget):
         title = QLabel(PROJECTS[project][0], card)
         title.setWordWrap(True)
         layout.addWidget(title)
+        if project in CYCLE_PROJECTS:
+            deadline = QLabel(cycle_label(project, cycles=self._cycles), card)
+            deadline.setObjectName('cycleDeadline')
+            deadline.setWordWrap(True)
+            layout.addWidget(deadline)
         if record:
             text = (f"{STATUSES[record['completion_status']]} · {SOURCES[record['source']]}\n"
                     f"{ASSETS[record['asset_status']]}\n{record['captured_at'][:19].replace('T', ' ')}\n"
@@ -698,12 +631,19 @@ class CompletionCheckTab(QWidget):
                 text += (f"\n本周期另有记录：{STATUSES[observation['completion_status']]}"
                          f" · {SOURCES[observation['source']]}\n{observation['captured_at'][:19]}（不替代本图判断）")
         else:
-            text = {'day': '本日暂无记录', 'week': '本周暂无记录'}.get(PROJECTS[project][1], '暂无截图')
+            text = ('本期暂无记录' if project in CYCLE_PROJECTS else
+                    {'day': '本日暂无记录', 'week': '本周暂无记录'}.get(PROJECTS[project][1], '暂无截图'))
             text += '\n可查看历史或手动保存；没有记录不代表未完成'
         description = QLabel(text, card)
         description.setWordWrap(True)
         description.setProperty('role', 'description')
         layout.addWidget(description)
+        if project in CYCLE_PROJECTS and self.mode.currentData() == 'current':
+            save_button = PushButton('保存当前画面为证据', card)
+            save_button.setObjectName('saveCurrentEvidence')
+            save_button.setEnabled(not self.capture_operation.busy)
+            save_button.clicked.connect(partial(self.capture_evidence, project))
+            layout.addWidget(save_button)
         if record:
             copy_button = PushButton('复制图片', card)
             copy_button.clicked.connect(partial(self.copy_record, record))
@@ -790,6 +730,28 @@ class CompletionCheckTab(QWidget):
         work = (lambda: repo.permanently_delete(identity, confirmed=True)) if action == 'delete' else partial(getattr(repo, action), identity)
         self.action_operation.start(work, lambda _: self.reload_records(), self._error)
 
+    def _update_project_choices(self):
+        keys = (current_projects(cycles=self._cycles) if self.mode.currentData() == 'current' else tuple(PROJECTS))
+        choices = [self.project_filter.itemData(i) for i in range(1, self.project_filter.count())]
+        if choices == list(keys):
+            return
+        selected = self.project_filter.currentData()
+        self.project_filter.blockSignals(True)
+        self.project_filter.clear()
+        self.project_filter.addItem('全部项目', None)
+        for key in keys:
+            self.project_filter.addItem(PROJECTS[key][0], key)
+        self.project_filter.setCurrentIndex(max(0, self.project_filter.findData(selected)))
+        self.project_filter.blockSignals(False)
+        if selected is not None and selected not in keys:
+            QTimer.singleShot(0, self.reload_records)
+
+    def _capture_busy_changed(self, busy):
+        for card in self._cards:
+            button = card.findChild(QPushButton, 'saveCurrentEvidence')
+            if button:
+                button.setEnabled(not busy)
+
     def capture_evidence(self, project_id=None):
         if self.capture_operation.busy:
             return
@@ -800,30 +762,57 @@ class CompletionCheckTab(QWidget):
             self._pending_capture = project_id or ''
             self.reload_accounts()
             return
-        selected, profiles = self._selected, dict(self._profiles)
+        selected = self._selected
+        if selected is None:
+            self._error(ValueError('请先在完成检查中选择账号'))
+            return
+        project_id = project_id or self.project_filter.currentData()
+        if project_id is None:
+            menu = QMenu(self)
+            for key in current_projects(cycles=self._cycles):
+                menu.addAction(PROJECTS[key][0], partial(self.capture_evidence, key))
+            menu.exec(self.capture_button.mapToGlobal(self.capture_button.rect().bottomLeft()))
+            return
+        if project_id not in current_projects(cycles=self._cycles):
+            self._error(ValueError('该活动已结束，请查看历史证据'))
+            return
+        service, repo = self.service, self.repository
+        needs_period = project_id in CYCLE_PROJECTS and not cycle_for(project_id, cycles=self._cycles)
         try:
-            future = request_capture(self.executor)
+            future = request_capture(self.executor, **({'period_project': project_id} if needs_period else {}))
         except Exception as error:
             self._error(error)
             return
         def failed(error):
             future.cancel()
             self._error(error)
-        def captured(value):
-            dialog = EvidenceCaptureDialog(value, profiles, selected, project_id, self)
-            if dialog.exec() != QDialog.Accepted:
-                return
-            metadata = dialog.metadata()
-            service, frame = self.service, value['frame']
-            self.capture_operation.start(lambda: service.submit(metadata, frame).result(),
-                lambda _: self.reload_records(), self._error)
-        self.capture_operation.start(lambda: future.result(timeout=9), captured, failed)
+        def work():
+            value = future.result(timeout=9)
+            if needs_period:
+                repo.observe_cycle(project_id, value.get('countdown_text', ''), value['captured_at'])
+            metadata = dict(profile_id=selected, project_id=project_id,
+                            completion_status='completed', source='manual_confirmation',
+                            captured_at=value['captured_at'], identity_source='user_selected',
+                            runtime_profile_id=value.get('profile_id'), note=value.get('period_error', ''))
+            return service.submit(metadata, value['frame']).result()
+        def saved(record):
+            self.notice.setText(f'{PROJECTS[project_id][0]}截图已保存到所选账号，已标记完成。' +
+                                ('有效期待确认；本图保留在历史。' if record.get('period_rule') == 'cycle'
+                                 and not record.get('valid_until') else '') + record.get('note', ''))
+            self.reload_records()
+        self.capture_operation.start(work, saved, failed)
 
     def _poll(self):
-        periods = (period_for('daily_activity'), period_for('weekly_boss'))
+        periods = tuple(period_for(key, cycles=self._cycles) for key in CURRENT_PROJECTS)
         if self.isVisible() and (self.service.revision != self._revision or periods != self._periods):
             self._periods = periods
             self._revision = self.service.revision
             self.reload_records()
+        elif self.isVisible():
+            for card in self._cards:
+                project = card.property('project_id')
+                label = card.findChild(QLabel, 'cycleDeadline')
+                if label:
+                    label.setText(cycle_label(project, cycles=self._cycles))
         if self.isVisible() and self.service.last_error:
             self.notice.setText(self.service.last_error + '；旧截图不会自动删除。')

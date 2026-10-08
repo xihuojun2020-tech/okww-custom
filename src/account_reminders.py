@@ -19,10 +19,12 @@ LEGACY_REMINDER_MAP = {
 NOTE_KEY = 'account_reminder_note'
 NOTE_LIMIT = 2000
 
-from src.activity_catalog import ACTIVITIES
+from src.activity_catalog import LEGACY_ACTIVITIES
 
 TASK_REMINDERS = {'adversity_tower': '深塔（单独启动）', 'sea_ruins': '海墟',
-                 'matrix': '矩阵', 'character_trial': '初露峥嵘', **ACTIVITIES,
+                 'matrix': '矩阵', 'character_trial': '初露峥嵘',
+                 **{key: LEGACY_ACTIVITIES[key] for key in
+                    ('echoes_remain', 'resonance_simulation', 'piano_activity', 'second_sol')},
                  'other': '其他待办'}
 RESET_RULES = {'none': '不自动重置', 'day': '每日 04:00', 'week': '周一 04:00', 'custom': '自定义重置时间'}
 REMINDER_STATES = {'completed': '完成', 'pending': '未完成', 'blocked': '前置未完成'}

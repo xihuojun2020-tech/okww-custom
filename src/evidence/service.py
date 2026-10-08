@@ -148,12 +148,13 @@ def bound_profile(executor):
     return None
 
 
-def request_capture(executor, *, feature_code=False):
+def request_capture(executor, *, feature_code=False, period_project=None):
     requests = getattr(executor, '_completion_capture_requests', None)
     if requests is None:
         requests = executor._completion_capture_requests = queue.Queue(maxsize=1)
     future = Future()
     future.feature_code = feature_code
+    future.period_project = period_project
     try:
         requests.put_nowait((future, time.monotonic() + 8, bound_profile(executor)))
     except queue.Full:
@@ -223,6 +224,15 @@ def process_capture(executor):
             raise RuntimeError('截图期间窗口或账号变化')
         value = dict(frame=frame.copy(), profile_id=profile_id, captured_at=now_iso(),
                      identity_source='runtime_bound' if profile_id else 'user_confirmed')
+        if getattr(future, 'period_project', None):
+            try:
+                from src.task.CharacterTrialTask import CharacterTrialTask
+                reader = executor.get_task_by_class(CharacterTrialTask)
+                value['countdown_text'] = ' '.join(str(box.name) for box in
+                    reader.ocr(frame=frame, threshold=.8, log=False, screenshot=False))
+            except Exception as error:
+                # Screenshot saving still succeeds; missing deadlines stay explicit.
+                value['period_error'] = f'本期倒计时读取失败：{error}'
         future.set_result(value)
     except Exception as error:
         future.set_exception(error)

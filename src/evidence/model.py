@@ -1,6 +1,7 @@
 """Pure project, status and game-period rules, independent of production progress."""
 from datetime import datetime, timedelta, timezone
 from src.activity_catalog import ACTIVITIES, LEGACY_ACTIVITIES
+from src.evidence.cycles import CYCLE_PROJECTS, cycle_for
 
 GAME_ZONE = timezone(timedelta(hours=8))
 PROJECTS = {
@@ -13,15 +14,21 @@ PROJECTS = {
     'adversity_tower': ('深塔', None),
     'sea_ruins': ('海墟', None),
     'matrix': ('矩阵', None),
-    'character_trial': ('初露峥嵘', None),
     **{key: (title, None) for key, title in LEGACY_ACTIVITIES.items()},
 }
 CURRENT_PROJECTS = tuple(key for key in PROJECTS if key not in LEGACY_ACTIVITIES)
-GROUPS = {'day': '每日更新', 'week': '每周更新', None: '新截图更新', 'legacy': '旧版活动记录（待归类）'}
+GROUPS = {'day': '每日更新', 'week': '每周更新', None: '活动', 'legacy': '已结束活动（历史）'}
 
 
 def project_group(project):
+    if project in ('adversity_tower', 'sea_ruins', 'matrix'):
+        return 'week'
     return 'legacy' if project in LEGACY_ACTIVITIES else PROJECTS[project][1]
+
+
+def current_projects(when=None, *, cycles=None):
+    return tuple(key for key in CURRENT_PROJECTS
+                 if key not in ACTIVITIES or cycle_for(key, when, cycles))
 
 
 TASK_PROJECTS = {
@@ -47,20 +54,29 @@ def now_iso():
 
 def period_label(value, project=None):
     if not value:
+        if project in CYCLE_PROJECTS:
+            return '周期未知 · 仅保留历史记录'
         if project and PROJECTS[project][1]:
             return '周期未知 · 仅保留历史记录'
         return '新截图更新 · 保留至下一张截图'
     kind, _, day = value.partition(':')
+    if kind == 'cycle':
+        return '本期结束：' + day.replace('T', ' ')
+    if kind == 'unconfirmed':
+        return '本期有效期待确认'
     return {'day': '游戏日：', 'week': '游戏周起始：'}.get(kind, '周期：') + day
 
 
-def period_for(project_id, when=None):
+def period_for(project_id, when=None, *, cycles=None):
     rule = PROJECTS[project_id][1]
     when = when or datetime.now(GAME_ZONE)
     if isinstance(when, str):
         when = datetime.fromisoformat(when)
     if when.tzinfo is None:
         raise ValueError('证据时间必须包含时区')
+    if project_id in CYCLE_PROJECTS:
+        cycle = cycle_for(project_id, when, cycles)
+        return 'cycle:' + cycle['end_at'] if cycle else 'unconfirmed:' + project_id
     from src.game_period import game_day_key, game_week_key
     if rule == 'day':
         return f'day:{game_day_key(when)}'
