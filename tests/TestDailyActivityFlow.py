@@ -18,6 +18,16 @@ class TestDailyActivityFlow(unittest.TestCase):
         self.assertIsNone(activity_points([SimpleNamespace(name='100'), SimpleNamespace(name='300')]))
         self.assertIsNone(activity_points([SimpleNamespace(name='180/180')]))
 
+    def test_activity_leading_dot_from_a6_ocr(self):
+        from src.task.DailyTask import DAILY_POINTS_RE
+        from src.task.daily_observation import activity_points
+        self.assertIsNotNone(DAILY_POINTS_RE.fullmatch('.140'))
+        self.assertEqual(140, activity_points([SimpleNamespace(name='.140')]))
+        self.assertIsNone(activity_points([SimpleNamespace(name='.140'), SimpleNamespace(name='100')]))
+        for text in ('..140', '1.40', '140/180'):
+            self.assertIsNone(DAILY_POINTS_RE.fullmatch(text))
+            self.assertIsNone(activity_points([SimpleNamespace(name=text)]))
+
     def test_daily_points_ocr_miss_is_unknown_instead_of_zero(self):
         class FakeTask:
             def __init__(self):

@@ -19,3 +19,9 @@ class TestDailyNasImages(TaskTestCase):
     def test_resource_bar_zero_reserve_is_valid(self):
         self.set_image(FOLDER+'resource_234.png')
         self.assertEqual((234,0,234),self.task.get_stamina())
+
+    def test_a6_claimed_rewards_activity_with_ocr_leading_dot(self):
+        from src.task.daily_observation import claimable_tiers
+        self.set_image('tests/images/daily_nas_20261008/activity_140_claimed.png')
+        self.assertEqual(140, self.task.get_total_daily_points(attempts=1))
+        self.assertEqual([], claimable_tiers(self.task.frame))

@@ -62,7 +62,7 @@ class DailyActivityDetectionError(RuntimeError):
     pass
 
 
-DAILY_POINTS_RE = re.compile(r'^\s*\d{1,3}\s*$')
+DAILY_POINTS_RE = re.compile(r'^\s*\.?\d{1,3}\s*$')
 DAILY_CLAIM_RE = re.compile(r'领取|領取|Claim', re.IGNORECASE)
 
 CHECK_WEEKLY_GARDEN = 'Check Weekly Garden'

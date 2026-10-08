@@ -9,8 +9,8 @@ CHESTS = ((20, .392), (40, .526), (60, .660), (80, .794), (100, .927))
 
 def activity_points(boxes):
     """One unambiguous score in the anchored activity region, not objective progress."""
-    values = {int(text) for box in boxes
-              if re.fullmatch(r'\d{1,3}', text := str(box.name).strip())}
+    values = {int(text.removeprefix('.')) for box in boxes
+              if re.fullmatch(r'\.?\d{1,3}', text := str(box.name).strip())}
     return next(iter(values)) if len(values) == 1 else None
 
 
