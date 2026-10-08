@@ -40,6 +40,60 @@ def combat_task(executor=None):
 
 
 class TestTrioCombatRecovery(unittest.TestCase):
+    def test_confirmed_battle_rechecks_status_without_identity_scan_or_state_reset(self):
+        task = combat_task()
+        task._battle_roster_confirmed = True
+        task._refresh_battle_roster = Mock()
+        old = tuple(task.chars)
+        old[1].has_intro = True
+        with patch('src.task.BaseCombatTask.get_char_by_pos') as identify:
+            self.assertTrue(task.load_chars(force_full_scan=True))
+            task._rotation_roster_recheck = True
+            self.assertTrue(task.prepare_character_rotation(old[0]))
+        identify.assert_not_called()
+        self.assertEqual(tuple(task.chars), old)
+        self.assertTrue(old[1].has_intro)
+        self.assertEqual(task._refresh_battle_roster.call_count, 2)
+
+    def test_explicit_end_invalidates_identity_but_recovery_reset_preserves_it(self):
+        from src.combat.CombatCheck import CombatCheck
+        task = combat_task()
+        task._battle_roster_confirmed = True
+        task.do_reset_to_false = Mock()
+        task.reset_to_false('temporary HUD loss')
+        self.assertTrue(task._battle_roster_confirmed)
+        task.reset_to_false(CombatCheck.EXPLICIT_END_REASON)
+        self.assertFalse(task._battle_roster_confirmed)
+        with patch('src.task.BaseCombatTask.get_char_by_pos', side_effect=lambda t,b,i,c,**kw: c) as identify:
+            task.load_chars(force_full_scan=True)
+        self.assertEqual(identify.call_count, 3)
+        self.assertTrue(all(c.kwargs['force_full_scan'] for c in identify.call_args_list))
+
+    def test_dead_slots_keep_numbers_and_do_not_block_remaining_characters(self):
+        task = combat_task()
+        task._battle_roster_confirmed = True
+        task._refresh_battle_roster = Mock()
+        main, healer, sub = task.chars
+        healer._switch_unrevivable = True
+        self.assertIs(task._choose_switch_target(main, False), sub)
+        self.assertEqual(sub.index, 2)
+        sub._switch_unrevivable = True
+        self.assertIs(task._choose_switch_target(main, False), main)
+        task.switch_healer_enabled = Mock(return_value=True)
+        main.switch_other_char = Mock()
+        task.switch_healer()
+        main.switch_other_char.assert_not_called()
+
+    def test_context_change_discards_confirmed_battle_identity(self):
+        task = combat_task()
+        task._battle_roster_confirmed = True
+        task.executor.device_manager.hwnd_window.hwnd = 456
+        with patch('src.task.BaseCombatTask.get_char_by_pos', side_effect=lambda t,b,i,c,**kw: BaseChar(t,i)) as identify:
+            task.load_chars()
+        self.assertEqual(identify.call_count, 3)
+        self.assertTrue(all(call.args[3] is None for call in identify.call_args_list))
+        self.assertFalse(task._battle_roster_confirmed)
+
     def test_all_reused_children_discard_previous_account_on_bind(self):
         first = combat_task()
         daily = DailyTask.__new__(DailyTask)
@@ -263,7 +317,7 @@ class TestTrioCombatRecovery(unittest.TestCase):
         self.assertEqual(char.get_switch_priority(task.chars[2], False), SwitchPriority.NORMAL)
         task.load_chars = Mock(return_value=True)
         task.prepare_character_rotation(char)
-        task.load_chars.assert_called_once_with(reset_state=False, force_full_scan=True)
+        task.load_chars.assert_called_once_with(reset_state=False, force_full_scan=False)
         char.do_perform()
         char.switch_next_char.assert_called_once()
 

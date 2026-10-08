@@ -43,12 +43,14 @@ class TestBaseCombatTask(unittest.TestCase):
     def test_rotation_recovers_more_than_old_retry_limit_then_uses_character_script(self):
         task = self.recovery_task()
         char = task.get_current_char.return_value
+        task.chars = identities = [char]
         char.perform.side_effect = [ValueError('skill failed')] * 8 + [None]
         task.perform_combat_rotation()
         self.assertEqual(9, char.perform.call_count)
+        self.assertIs(task.chars, identities)
         self.assertEqual(8, task.load_chars.call_count)
         self.assertEqual([2, 4, 8, 16, 30, 30, 30, 30], [c.args[0] for c in task.sleep.call_args_list])
-        task.load_chars.assert_called_with(force_full_scan=True)
+        task.load_chars.assert_called_with(reset_state=False)
 
     def test_combat_probe_recovers_and_wait_disables_stale_sleep_checks(self):
         task = self.recovery_task()
@@ -76,7 +78,7 @@ class TestBaseCombatTask(unittest.TestCase):
         char.perform.side_effect = [NotInCombatException('team briefly missing'), None]
         task.perform_combat_rotation()
         self.assertEqual(2, char.perform.call_count)
-        task.load_chars.assert_called_once_with(force_full_scan=True)
+        task.load_chars.assert_called_once_with(reset_state=False)
         self.assertFalse(task._rotation_recovering)
 
     def test_death_rejection_requires_gray_portrait_and_explicit_no_revival_message(self):

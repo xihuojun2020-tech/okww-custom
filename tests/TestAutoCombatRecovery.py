@@ -10,6 +10,20 @@ from custom_ok.ok.task.TaskExecutor import TaskExecutor
 
 
 class TestAutoCombatRecovery(unittest.TestCase):
+    def test_errors_and_ui_stop_preserve_this_battle_identity(self):
+        task = self.make_task()
+        identities = [object(), object(), object()]
+        task.chars = identities
+        task._battle_roster_confirmed = True
+        task.handle_execution_error(ValueError('switch timeout'))
+        self.assertIs(task.chars, identities)
+        self.assertTrue(task._battle_roster_confirmed)
+        task.set_enabled_from_ui(False)
+        with patch('src.task.AutoCombatTask.threading.Thread'):
+            task.set_enabled_from_ui(True)
+        self.assertIs(task.chars, identities)
+        self.assertTrue(task._battle_roster_confirmed)
+
     def make_task(self):
         executor = SimpleNamespace(scene=None, text_fix={}, remove_onetime_task=Mock(), _wake_executor=Mock(),
                                    global_config=SimpleNamespace(get_config=lambda _: {}))

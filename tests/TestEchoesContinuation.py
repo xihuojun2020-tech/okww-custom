@@ -392,6 +392,7 @@ class TestEchoesContinuation(unittest.TestCase):
     def test_combat_slot_identity_uses_verified_order(self):
         task=Mock(spec=EchoesRemainTask)
         task.in_team.return_value=(True,1,3)
+        task._battle_roster_confirmed = False
         task.last_result={'members':[{'identity':name,'confidence':1} for name in ('a','b','c')]}
         classes=[Mock(return_value=Mock()) for _ in range(3)]
         info={n:{'cls':cls,'canonical_name':n,'char_type':CharType.MAIN_DPS}

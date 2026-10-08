@@ -385,8 +385,8 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
             return True, 0, 1
         return result
 
-    def load_chars(self):
-        loaded = super().load_chars()
+    def load_chars(self, *, reset_state=True, force_full_scan=False):
+        loaded = super().load_chars(reset_state=reset_state, force_full_scan=force_full_scan)
         if loaded:
             for i, char in enumerate(self.chars):
                 if type(char) is BaseChar:

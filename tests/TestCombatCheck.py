@@ -110,9 +110,10 @@ class TestCombatCheck(TaskTestCase):
 
         self.assertTrue(lucilla.target_box_short_combat_check)
 
-    def test_enter_combat_loads_chars_before_target_check(self):
+    def test_enter_combat_confirms_roster_after_battle_detection(self):
         task = AutoCombatTask.__new__(AutoCombatTask)
         task._in_combat = False
+        task._battle_roster_confirmed = False
         task.in_liberation = False
         task.chars = [None, None, None]
         task.config = {'Auto Target': True}
@@ -124,7 +125,8 @@ class TestCombatCheck(TaskTestCase):
         class Char:
             is_current_char = True
 
-        def load_chars():
+        def load_chars(**kwargs):
+            self.assertEqual(kwargs, {'force_full_scan': True})
             order.append('load_chars')
             task.chars = [Char()]
             return True
@@ -137,7 +139,8 @@ class TestCombatCheck(TaskTestCase):
         task.has_target = has_target
 
         self.assertTrue(task.do_check_in_combat(False))
-        self.assertEqual(order, ['load_chars', ('has_target', True)])
+        self.assertEqual(order, [('has_target', False), 'load_chars'])
+        self.assertTrue(task._battle_roster_confirmed)
 
 
 class TestCombatTargetLossGuard(unittest.TestCase):

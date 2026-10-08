@@ -1366,7 +1366,9 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
                 if char:
                     char.reset_state()
         try:
-            return self._wait_abyss_result()
+            result = self._wait_abyss_result()
+            self._battle_roster_confirmed = False
+            return result
         except Exception as result_error:
             if combat_error is not None:
                 raise combat_error from result_error

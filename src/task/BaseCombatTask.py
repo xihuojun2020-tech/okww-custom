@@ -219,7 +219,7 @@ class BaseCombatTask(CombatCheck):
                     if not self.in_combat():
                         raise NotInCombatException('recovering rotation left combat')
                     battle_confirmed = True
-                    if not self.load_chars(force_full_scan=True):
+                    if not self.load_chars(reset_state=False):
                         raise CombatStateUnknown('恢复时无法确认队伍')
                 current = self.get_current_char()
                 if current is None:
@@ -238,7 +238,6 @@ class BaseCombatTask(CombatCheck):
                 errors += 1
                 self._rotation_recovering = True
                 self._release_combat_inputs()
-                self.chars = [None, None, None]
                 self.freeze_durations = []
                 self._in_liberation = False
                 delay = min(30, 2 ** min(errors, 5))
@@ -540,6 +539,7 @@ class BaseCombatTask(CombatCheck):
                 self._local_revive_count += 1
                 self.info_set('Revive', '原地复苏成功')
                 raise CharRevivedInPlace(message)
+            self._battle_roster_confirmed = False
             if not isinstance(self, AutoCombatTask) and self.revive_action():
                 exception_type = CharRevivedException
                 self.info_set('Revive', 'Success')
@@ -774,6 +774,11 @@ class BaseCombatTask(CombatCheck):
         return self._switch_rule_3_target(candidates)
 
     def _choose_switch_target(self, current_char, has_intro, target_low_con=False):
+        if self.__dict__.get('_battle_roster_confirmed', False):
+            if not self.load_chars(reset_state=False):
+                raise CombatStateUnknown('切人前无法确认队伍状态')
+            if self.get_current_char() is not current_char:
+                return current_char  # Game auto-switched; yield to the next character rotation.
         candidates = [
             char for char in self.chars
             if char is not None and char != current_char and not self._unrevivable_switch_target(char)
@@ -797,12 +802,13 @@ class BaseCombatTask(CombatCheck):
                 current_char, current_char, has_intro, 'no_candidate_above_no_priority')
 
         state = self.__dict__.get('_rotation_state')
-        if state and not getattr(self, 'use_original_multi_rotation', False) and state.main_due(self.chars, current_char):
+        available = [current_char] + candidates
+        if state and not getattr(self, 'use_original_multi_rotation', False) and state.main_due(available, current_char):
             mains = [char for _, char in prioritized_candidates
                      if char.is_main_dps and not self._target_has_switch_cd(char)]
             if mains:
                 target = self._oldest_switch_target(mains)
-                if any(not char.has_buff() for char in self.chars if char and not char.is_main_dps):
+                if any(not char.has_buff() for char in available if not char.is_main_dps):
                     self.report_rotation_anomaly('support_preparation_exhausted', current_char)
                 return self._log_switch_choice(current_char, target, has_intro, 'support_attempts_return_to_main')
 
@@ -853,6 +859,29 @@ class BaseCombatTask(CombatCheck):
         hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
         return bool(np.mean(hsv[:, :, 1] > 30) < .03)
 
+    def _refresh_battle_roster(self, current_index, frame):
+        """Refresh HUD state without re-identifying this battle's portraits."""
+        for char in self.chars:
+            char.is_current_char = char.index == current_index
+            gray = self._switch_portrait_gray(char, frame)
+            box = self.get_box_by_name(f'box_char_{char.index + 1}')
+            bar = frame[box.y + box.height + max(1, int(box.height * .02)):
+                        box.y + box.height + max(2, int(box.height * .05)),
+                        box.x + int(box.width * .05):box.x + int(box.width * .9)]
+            if not bar.size:
+                continue
+            has_health = bool(np.any(np.min(bar, axis=2) > 160))
+            if gray is True and not has_health:
+                if not char.__dict__.get('_switch_unrevivable', False):
+                    self.log_warning(f'队友阵亡：{char}，保留身份并使用存活队友')
+                char._switch_unrevivable = True
+                char.has_intro = char.has_sub_dps_intro = False
+            elif gray is False and has_health:
+                char._switch_unrevivable = False
+        if all(c.__dict__.get('_switch_unrevivable', False) for c in self.chars):
+            self._battle_roster_confirmed = False
+            raise CharDeadException()
+
     def _unrevivable_switch_target(self, char):
         cooldown_until = char.__dict__.get('_switch_cooldown_until', 0)
         if cooldown_until:
@@ -861,12 +890,18 @@ class BaseCombatTask(CombatCheck):
             char._switch_cooldown_until = 0
         if not char.__dict__.get('_switch_unrevivable', False):
             return False
-        if self._switch_portrait_gray(char) is False:
+        if (not self.__dict__.get('_battle_roster_confirmed', False)
+                and self._switch_portrait_gray(char) is False):
             char._switch_unrevivable = False  # Revived teammates become eligible again.
             return False
         return True
 
     def _switch_rejected_by_death(self, char):
+        if self.__dict__.get('_battle_roster_confirmed', False):
+            if not self.load_chars(reset_state=False):
+                raise CombatStateUnknown('切人后无法确认队伍状态')
+            if self._unrevivable_switch_target(char):
+                return True
         frame = self.frame
         messages = self.ocr(.25, .14, .75, .25, frame=frame)
         for box in messages:
@@ -1100,7 +1135,8 @@ class BaseCombatTask(CombatCheck):
     def switch_healer(self):
         if self.switch_healer_enabled():
             current_char = self.get_current_char()
-            has_healer = any(char and char.is_healer for char in self.chars)
+            has_healer = any(char and char.is_healer and not self._unrevivable_switch_target(char)
+                             for char in self.chars)
             if current_char and not current_char.is_healer and has_healer:
                 current_char.switch_other_char(allow_auto_combat=True)
 
@@ -1178,6 +1214,14 @@ class BaseCombatTask(CombatCheck):
         in_team, current_index, count = self.in_team()
         if not in_team:
             return
+        context = roster_context(self)
+        team_size = max(1, min(3, int(count or 1)))
+        if (self.__dict__.get('_battle_roster_confirmed', False)
+                and self.__dict__.get('_char_context') == context
+                and len(self.chars) == team_size and all(self.chars)):
+            self._refresh_battle_roster(current_index, self.require_game_frame())
+            return True
+        self._battle_roster_confirmed = False
         previous_char_identity = self._char_identity(self.chars)
         deadline = time.monotonic() + 4
         for attempt in range(6):
@@ -1226,6 +1270,8 @@ class BaseCombatTask(CombatCheck):
             if char is not None:
                 if reset_state or identity_changed:
                     char.reset_state()
+                char._switch_unrevivable = False
+                char._switch_cooldown_until = 0
                 if char.index == current_index:
                     char.is_current_char = True
                 else:
@@ -1250,13 +1296,14 @@ class BaseCombatTask(CombatCheck):
             self.info_set('Chars', ', '.join(translated_names))
             for c in self.chars:
                 self.log_info(f'loaded chars success {c} {c.confidence}')
+        self._battle_roster_confirmed = self.__dict__.get('_in_combat', False)
         return True
 
     def prepare_character_rotation(self, char):
         context_changed = self.__dict__.get('_char_context') != roster_context(self)
         recheck = self.__dict__.pop('_rotation_roster_recheck', False)
-        if context_changed or recheck:
-            if not self.load_chars(reset_state=context_changed, force_full_scan=True):
+        if context_changed or recheck or self.__dict__.get('_battle_roster_confirmed', False):
+            if not self.load_chars(reset_state=context_changed, force_full_scan=context_changed):
                 raise CombatStateUnknown('战斗动作前未能确认队伍')
             if self.get_current_char() is not char:
                 return False

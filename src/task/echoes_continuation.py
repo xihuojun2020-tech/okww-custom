@@ -262,14 +262,18 @@ class EchoesContinuation:
         outcome = self._settlement(frame)
         if outcome:
             self._event_outcome = outcome
+            self._battle_roster_confirmed = False
             raise EventSettlement()
 
-    def load_chars(self):
+    def load_chars(self, *, reset_state=True, force_full_scan=False):
         # Identities were independently checked on the roster and formation page.
         self.load_hotkey()
         ready, current, count = self.in_team()
         if not ready or count != 3:
             return False
+        if self._battle_roster_confirmed and self.chars:
+            self._refresh_battle_roster(current, self.require_game_frame())
+            return True
         self.chars = []
         for index, member in enumerate(self.last_result['members']):
             info = char_dict[member['identity']]

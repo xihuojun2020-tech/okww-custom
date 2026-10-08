@@ -117,6 +117,7 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
                 ended = self._upper_end(self.frame) if self._observing_half == 0 else self._result(self.frame)
                 self._phase_seen = self._phase_seen+1 if ended else 0
                 if self._phase_seen >= 2:
+                    self._battle_roster_confirmed = False
                     raise SeaPhaseEnded()
         return self.frame
 
@@ -639,6 +640,7 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
 
     def _check_world_team(self, preset):
         self.chars = [None, None, None]
+        self._battle_roster_confirmed = False
         self.reset_to_false('海墟换半场，重新识别角色')
         def loaded(frame):
             self.load_chars()

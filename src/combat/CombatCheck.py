@@ -27,6 +27,7 @@ class CombatCheck(BaseWWTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._in_combat = False
+        self._battle_roster_confirmed = False
         self.skip_combat_check = False
         self.boss_lv_template = None
         self.boss_lv_mask = None
@@ -68,6 +69,8 @@ class CombatCheck(BaseWWTask):
 
     def reset_to_false(self, reason=""):
         self.out_of_combat_reason = reason
+        if reason in self.EXPECTED_COMBAT_END_REASONS:
+            self._battle_roster_confirmed = False
         self.do_reset_to_false()
         return False
 
@@ -194,7 +197,6 @@ class CombatCheck(BaseWWTask):
             return self.reset_to_false(reason=self.TARGET_GONE_END_REASON)
         else:
             from src.task.AutoCombatTask import AutoCombatTask
-            chars_loaded = self.load_chars()
             has_target = self.has_target()
             if not has_target and target:
                 self.log_debug('try target')
@@ -212,7 +214,9 @@ class CombatCheck(BaseWWTask):
                     return False
                 self.has_lavitator = self.find_one('edge_levitator', threshold=0.65)
                 self.log_info(f'enter combat {self.has_lavitator}')
-                self._in_combat = chars_loaded or self.load_chars()
+                self._in_combat = bool(self.load_chars(
+                    force_full_scan=not self._battle_roster_confirmed))
+                self._battle_roster_confirmed = self._in_combat
                 return self._in_combat
 
     def in_combat(self, target=False):

@@ -138,7 +138,6 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
         self._error_count += 1
         delay = min(30, 2 ** min(self._error_count, 5))
         self._retry_at = time.monotonic() + delay
-        self.chars = [None, None, None]
         self.freeze_durations = []
         try:
             self.do_reset_to_false()
