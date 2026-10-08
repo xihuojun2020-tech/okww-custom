@@ -16,7 +16,7 @@ _NIGHTMARE_GAME_NAMES = {name.replace('梦魇聚落', '梦魔聚落'): name for 
 def normalize_nest_text(value):
     normalized = ''.join(str(value).split()).translate(str.maketrans(
         {'像': '象', '夢': '梦', '樞': '枢', '羅': '罗', '淵': '渊',
-         '殘': '残', '復': '复'}))
+         '殘': '残', '復': '复', '穂': '穗'}))
     return _NIGHTMARE_GAME_NAMES.get(normalized, normalized)
 
 
