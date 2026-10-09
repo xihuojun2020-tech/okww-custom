@@ -109,6 +109,23 @@ class EvidenceRepository:
                              (profile_id,)).fetchone()
         return json.loads(row[0]) if row else None
 
+    def save_daily_timing(self, record):
+        with self._connect() as db:
+            db.execute('CREATE TABLE IF NOT EXISTS daily_timings '
+                       '(id TEXT PRIMARY KEY, game_day TEXT NOT NULL, metadata TEXT NOT NULL)')
+            db.execute('INSERT OR REPLACE INTO daily_timings VALUES (?, ?, ?)',
+                       (record['batch_id'], record['game_day'], json.dumps(record, ensure_ascii=False)))
+
+    def daily_timings(self, profile_id):
+        if not self.database.exists():
+            return []
+        with self._connect() as db:
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE name='daily_timings'").fetchone():
+                return []
+            rows = db.execute('SELECT metadata FROM daily_timings ORDER BY game_day DESC, rowid DESC').fetchall()
+        return [record for row in rows for record in [json.loads(row[0])]
+                if any(a['profile_id'] == profile_id for a in record['attempts'])]
+
     def backup(self):
         """Explicit consistent snapshot under a new folder; no backup rotation."""
         import shutil

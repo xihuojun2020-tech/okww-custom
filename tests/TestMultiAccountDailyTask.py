@@ -356,7 +356,7 @@ class TestPersistentDailyRetry(unittest.TestCase):
         observed = []
         task._run_inner = lambda: observed.append((dict(task.failed_accounts), dict(task._account_attempts), task._retry_phase))
         with patch('src.task.MultiAccountDailyTask.require_account_runtime_for_task'), patch.object(WWOneTimeTask, 'run'):
-            task.run()
+            task.run.__wrapped__(task)  # Scheduling body; observer is covered in TestDailyTiming.
         self.assertEqual(observed, [(failure, {}, False)])
 
     def test_daily_completion_write_errors_propagate(self):
@@ -597,7 +597,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         task = self._run_task(fail_run)
         with patch.object(WWOneTimeTask, 'run', return_value=None):
             with self.assertRaisesRegex(RuntimeError, 'login timeout'):
-                task.run()
+                task.run.__wrapped__(task)
         self.assertEqual(task.run_coordinator.state, TaskRunState.FAILED)
 
         snapshot = SimpleNamespace(profile_ids=('a3',), sequence_id='序列1', revision='r', run_id='retry')
@@ -611,13 +611,13 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         task = self._run_task(stop_run, TaskRunState.RUNNING)
         with patch.object(WWOneTimeTask, 'run', return_value=None):
             with self.assertRaises(TaskDisabledException):
-                task.run()
+                task.run.__wrapped__(task)
         self.assertEqual(task.run_coordinator.state, TaskRunState.STOPPED)
 
     def test_run_marks_coordinator_stopped_after_success(self):
         task = self._run_task(lambda: None, TaskRunState.RUNNING)
         with patch.object(WWOneTimeTask, 'run', return_value=None):
-            task.run()
+            task.run.__wrapped__(task)
         self.assertEqual(task.run_coordinator.state, TaskRunState.STOPPED)
 
     def test_current_account_rotates_a4_a3_sequence_to_a3_then_a4(self):

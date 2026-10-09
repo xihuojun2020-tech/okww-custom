@@ -6,6 +6,7 @@ import inspect
 import hashlib
 import json
 from contextlib import contextmanager
+from src.daily_timing import record_daily_duration
 from datetime import datetime, timedelta, timezone
 
 from PySide6.QtCore import QThread
@@ -364,6 +365,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             self.log_error('after_init 同步序列选项失败', e)
             return None
 
+    @record_daily_duration
     def run(self):
         self._completion_run_record = None
         self._weekly_checked_run = None
@@ -392,6 +394,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         else:
             from src.evidence.service import finish_daily_run
             finish_daily_run(self, 'returned')
+            from src.daily_timing import observe
+            observe(self, 'result', True)
             return result
         finally:
             self.executor._daily_reserve_policy = previous_policy
@@ -411,6 +415,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         verification = current_feature_run(self)
         if verification.profile_id != self._verified_profile_id:
             raise ConfigIntegrityBlocked('每日任务配置账号与特征码核验账号不一致，已停止任务')
+        from src.daily_timing import observe
+        observe(self, 'begin_account', self._verified_profile_id, self._verified_profile_name, '首次')
+        observe(self, 'executing')
 
     def _run_daily_inner(self):
         material_only = (getattr(self, '_runtime_overrides', None) or {}).get('_world_boss_material_only', False)

@@ -208,6 +208,8 @@ class TaskCard(ConfigCard):
         self.card.contentLabel.setWordWrap(True)
 
     def update_content(self):
+        from src.daily_timing import observe
+        observe(self.task, 'publish')
         content = ""
         if self.onetime:
             waiting_for = og.executor.waiting_for_task(self.task)
@@ -236,6 +238,8 @@ class TaskCard(ConfigCard):
             logger.info(f"resume paused task {self.task}")
             self.task.unpause()
             return
+        from src.daily_timing import note_requested_start
+        note_requested_start(self.task)
         og.app.start_controller.start(self.task)
 
     def stop_clicked(self):

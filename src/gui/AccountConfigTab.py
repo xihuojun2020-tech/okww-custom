@@ -489,6 +489,9 @@ class AccountConfigTab(CustomTab):
         self.save_button.setProperty('role', 'primary')
         self.delete_button.setProperty('role', 'danger')
         row.addWidget(self.new_button)
+        self.timing_button = QPushButton('每日耗时记录', root)
+        self.timing_button.clicked.connect(self.show_daily_timings)
+        row.addWidget(self.timing_button)
         self.more_button = _AccountMoreButton('更多', root)
         self.more_button.setFixedHeight(36)
         self.more_button.setMinimumWidth(88)
@@ -584,6 +587,12 @@ class AccountConfigTab(CustomTab):
             self.slot_editor))
         self.refresh()
         self.navigation.setCurrentItem(self._nav_items['identity'])
+
+    def show_daily_timings(self):
+        from src.evidence.service import get_evidence_service
+        from src.gui.DailyTimingDialog import DailyTimingDialog
+        if self.selected_profile_id:
+            DailyTimingDialog(get_evidence_service().repository, self.selected_profile_id, self).exec()
 
     def _select_route(self, route):
         route = {'forgery': 'stamina', 'tacet': 'stamina', 'world_boss': 'stamina', 'weekly_boss': 'stamina',

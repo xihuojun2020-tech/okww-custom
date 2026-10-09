@@ -21,6 +21,7 @@ import os
 import re
 import time
 from contextlib import contextmanager, nullcontext
+from src.daily_timing import record_daily_duration
 
 from ok import Box, Logger, TaskDisabledException
 from ok.util.file import get_relative_path, read_json_file, write_json_file
@@ -899,6 +900,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     # ==================== 主流程 ====================
 
+    @record_daily_duration
     def run(self):
         from datetime import datetime
         from src.game_period import game_day_key
@@ -1209,9 +1211,12 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         """Only leave the current account when another target needs execution."""
         if success:
             self.ensure_main(time_out=100)
-        if self._next_target_account() is None:
+        next_account = self._next_target_account()
+        if next_account is None:
             self._finish_sequence(account if success else None)
             return True
+        from src.daily_timing import observe_account
+        observe_account(self, next_account, handoff=True)
         if success:
             self._switch_to_login()
         else:
@@ -1406,10 +1411,14 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         target profile; production and test tasks therefore share exactly the
         same wait/select/verify/login/ensure-main chain.
         """
+        from src.daily_timing import observe_account
+        observe_account(self, profile_name)
         service = getattr(self, 'login_flow_service', None) or LoginFlowService(self)
         return service.switch_to_account(profile_name, max_retries=max_retries)
 
     def _switch_to_login(self):
+        from src.daily_timing import observe
+        observe(self, 'begin_handoff')
         self.executor._account_feature_run = None
         MultiAccountDailyTask._guard_account_transition(self)
         _publish_status_safe(self, stage='账号切换', detail='正在退出当前账号')
@@ -2147,6 +2156,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _run_daily_account(self, account):
         """Run one account atomically; only successful accounts enter done_set."""
+        from src.daily_timing import observe, observe_account
+        observe_account(self, account)
+        observe(self, 'executing')
         MultiAccountDailyTask._check_progress_date(self)
         if not hasattr(self, '_account_attempts'):
             self._account_attempts = {}
@@ -2179,6 +2191,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked):
             raise
         except Exception as error:
+            observe(self, 'result', False, error)
             self._mark_failed(account, error)
             self.log_error(f'账号 {profile_status_label(account)} {phase}失败，保留记录并继续调度', error)
             try:
@@ -2201,6 +2214,7 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         self._mark_done(account)
         self._save_today_progress()
         MultiAccountDailyTask._resolve_failure(self, account)
+        observe(self, 'result', True)
         return True, None
 
     def _execute_account_task(self, account):
