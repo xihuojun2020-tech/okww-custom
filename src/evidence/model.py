@@ -37,6 +37,7 @@ TASK_PROJECTS = {
     'WeeklyBossTask': 'weekly_boss', 'AutoAbyssTask': 'adversity_tower',
     'AutoSeaRuinsTask': 'sea_ruins',
     'CharacterTrialTask': 'character_trial',
+    'TiangongTreasureTask': 'tiangong_treasure',
     'PianoTeachingTask': 'piano_activity', 'SecondSolTask': 'second_sol',
     'ResonanceSimulationTask': 'resonance_simulation',
 }

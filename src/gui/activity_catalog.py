@@ -2,9 +2,9 @@
 from src.activity_catalog import ACTIVITIES
 ACTIVITY_REVISIONS = {'ResonanceSimulationTask': 2026091601, 'EchoesRemainTask': 2026091401,
                       'PianoTeachingTask': 2026091101, 'CharacterTrialTask': 2026091100,
-                      'SecondSolTask': 2026091001}
+                      'SecondSolTask': 2026091001, 'TiangongTreasureTask': 2026100901}
 PLACEHOLDER_REVISION = 2026091101
-PLACEHOLDERS = tuple((key, ACTIVITIES[key]) for key in ('tiangong_treasure', 'dango_brawl', 'dream_box'))
+PLACEHOLDERS = tuple((key, ACTIVITIES[key]) for key in ('dango_brawl', 'dream_box'))
 
 
 def current_placeholders():
