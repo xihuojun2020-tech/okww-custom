@@ -128,6 +128,8 @@ def bound_profile(executor):
     task = getattr(executor, 'current_task', None)
     if task is None:
         return None
+    if getattr(executor, '_unregistered_task', None) is task:
+        return None
     if getattr(task, '_active_account_switch_capture', None) is not None:
         return None
     verified = getattr(task, '_verified_profile_id', None)
@@ -242,6 +244,8 @@ def record_task_evidence(task, project_id, status, reason, frame=_CURRENT_FRAME,
     """Best-effort observer: cannot change task success or production completion data."""
     try:
         executor = getattr(task, 'executor', None)
+        if getattr(executor, '_unregistered_task', None) is not None and executor._unregistered_task is executor.current_task:
+            return None
         # UI installation owns the service; unit tests/headless runs do not create a real store.
         service = getattr(executor, 'completion_evidence_service', None)
         if not isinstance(service, EvidenceService):

@@ -15,6 +15,14 @@ from src.config_integrity import ConfigIntegrityBlocked
 STATUS_LABELS = {'verified': '已核验', 'unreadable': '无法稳定读取', 'unbound': '未绑定',
                  'mismatch': '账号不一致', 'ambiguous': '重复绑定', 'context_invalid': '核验上下文失效'}
 
+IDENTITY_REQUIRED = frozenset(('MultiAccountDailyTask', 'MultiAccountWeeklyGardenTask',
+                               'DailyTask', 'AutoSeaRuinsTask', 'AutoAbyssTask'))
+
+
+def unregistered_run(task):
+    owner = getattr(task.executor, '_unregistered_task', None)
+    return owner is not None and owner is task.executor.current_task
+
 
 def parse_feature_code(text):
     text = unicodedata.normalize('NFKC', str(text)).strip()
@@ -155,6 +163,23 @@ def begin_task_run(task):
     if classify_task(task) != TASKS:
         return
     task.executor._account_feature_run = None
+    task.executor._unregistered_task = None
+    owner = task.get_task_by_class(MultiAccountDailyTask)
+    from src.task.MultiAccountDailyTask import UNREGISTERED_ACCOUNT
+    if owner is not None and owner.config.get(CURRENT_ACCOUNT) == UNREGISTERED_ACCOUNT:
+        if type(task).__name__ in IDENTITY_REQUIRED:
+            raise ConfigIntegrityBlocked('此任务必须验证身份，请选择已注册账号；不能使用“无序列”')
+        task.executor._unregistered_task = task.executor.current_task
+        task._verified_profile_id = None
+        task.executor._daily_reserve_policy = None
+        from src.task.DailyTask import DailyTask
+        daily = task.get_task_by_class(DailyTask)
+        if daily is not None:
+            daily.clear_profile_binding()
+        task.info_set('账号核验', '无序列：不读取特征码，不写入注册账号进度或完成状态')
+        from src.task.WWOneTimeTask import WWOneTimeTask
+        WWOneTimeTask.run(task)
+        return
     if isinstance(task, MultiAccountDailyTask):
         owner = task.get_task_by_class(MultiAccountDailyTask)
         if task is not owner:
@@ -204,6 +229,8 @@ def begin_account_visit(task, expected):
 
 
 def current_feature_run(task):
+    if unregistered_run(task):
+        return None
     verification = getattr(task.executor, '_account_feature_run', None)
     if verification is None:
         verification = begin_account_visit(task, expected_profile(task))

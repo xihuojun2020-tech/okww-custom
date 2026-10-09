@@ -91,6 +91,12 @@ class WorldBossMaterialTask(FarmEchoTask):
         self.reset_to_false('material_entry')
         self.skip_combat_check = False
         try:
+            from src.task.account_feature_verification import unregistered_run
+            if unregistered_run(self):
+                from src.task.world_boss_material_progress import SessionMaterialProgress
+                return self.run_for_profile(None, lambda: {}, self.executor.check_enabled, None,
+                    activity_ready=True, used_stamina=None, request=(boss, claims),
+                    progress=SessionMaterialProgress())
             return self.get_task_by_class(DailyTask).run_world_boss_material_only(boss, claims)
         finally:
             self.reset_to_false('material_exit')

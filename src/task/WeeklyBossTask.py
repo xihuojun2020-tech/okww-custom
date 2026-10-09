@@ -787,6 +787,10 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         # The independent entry uses the same account confirmation and scheduler.
         selected = self.config.get('目标周本', '按账号刷取任务执行')
         boss = next((item.key for item in WEEKLY_BOSSES if item.name == selected), None)
+        from src.task.account_feature_verification import unregistered_run
+        if unregistered_run(self):
+            # No account plan exists in this mode: use the explicit target or the game list's first item.
+            return self.run_for_target(boss if boss is not None else WEEKLY_AUTO)
         return self.get_task_by_class(DailyTask).run_weekly_boss_only(boss)
 
     def run_for_target(self, target_key, max_claims=None):

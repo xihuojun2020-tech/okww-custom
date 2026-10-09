@@ -92,6 +92,21 @@ class WorldBossMaterialProgress:
         self._update(change)
 
 
+class SessionMaterialProgress(WorldBossMaterialProgress):
+    """Use the production claim operations without an account or disk writes."""
+    def __init__(self):
+        self._ledger = {'counts': {}, 'events': {}}
+
+    def read(self):
+        return deepcopy(self._ledger)
+
+    def _update(self, callback):
+        value = self.read()
+        callback(value)
+        self._ledger = validate_ledger(value)
+        return deepcopy(self._ledger)
+
+
 def preserve_material_progress(incoming, current):
     merged = incoming.setdefault('progress', {})
     for key, existing in (current.get('progress') or {}).items():

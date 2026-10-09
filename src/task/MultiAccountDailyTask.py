@@ -76,6 +76,7 @@ profile_short_name_pattern = re.compile(
 CURRENT_SEQUENCE = '当前序列'
 CURRENT_SEQUENCE_MEMBERS = '当前序列账号'
 CURRENT_ACCOUNT = '当前执行账号'
+UNREGISTERED_ACCOUNT = '无序列'
 MANAGE_SEQUENCES = '管理序列'
 MAX_SEQUENCES = 10
 SEQ_ACCOUNTS = ['序列 %d 账号' % i for i in range(1, MAX_SEQUENCES + 1)]
@@ -207,10 +208,11 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         self.config_description[CURRENT_ACCOUNT] = (
             '当前世界中已经登录的账号，从此账号开始按序号执行，末尾回到前面的未完成账号；结束后保留最后执行账号。'
             '留空时才退登并自动识别当前账号'
+            '；“无序列”供允许免认证的独立任务使用，不用于多账号任务'
         )
         self.config_type[CURRENT_ACCOUNT] = {
             'type': 'drop_down',
-            'options': [''] + account_names,
+            'options': ['', UNREGISTERED_ACCOUNT] + account_names,
         }
         # 管理序列（增删/重命名账号归属序列）
         self.default_config[MANAGE_SEQUENCES] = ''
@@ -555,10 +557,10 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         }
         self.config_type.setdefault(CURRENT_SEQUENCE_MEMBERS, {'type': 'label'})['options'] = profile_names
         current_account = (self.config.get(CURRENT_ACCOUNT) or '').strip()
-        if sequence_members_available and current_account and current_account not in account_options:
+        if sequence_members_available and current_account and current_account != UNREGISTERED_ACCOUNT and current_account not in account_options:
             current_account = ''
             self.config[CURRENT_ACCOUNT] = ''
-        self.config_type[CURRENT_ACCOUNT]['options'] = [''] + account_options
+        self.config_type[CURRENT_ACCOUNT]['options'] = ['', UNREGISTERED_ACCOUNT] + account_options
         try:
             from ok import og
             main_window = getattr(og, 'main_window', None)
@@ -577,14 +579,14 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                         combo.blockSignals(False)
                     elif key == CURRENT_ACCOUNT and hasattr(widget, 'combo_box'):
                         if hasattr(widget, 'set_options'):
-                            widget.set_options([''] + account_options)
+                            widget.set_options(['', UNREGISTERED_ACCOUNT] + account_options)
                             continue
                         combo = widget.combo_box
                         current = self.config.get(CURRENT_ACCOUNT) or ''
                         combo.blockSignals(True)
                         combo.clear()
-                        combo.addItems([''] + account_options)
-                        combo.setCurrentText(current if current in account_options else '')
+                        combo.addItems(['', UNREGISTERED_ACCOUNT] + account_options)
+                        combo.setCurrentText(current if current in [UNREGISTERED_ACCOUNT] + account_options else '')
                         combo.blockSignals(False)
                     elif key == CURRENT_SEQUENCE_MEMBERS and hasattr(widget, 'update_value'):
                         widget.update_value()

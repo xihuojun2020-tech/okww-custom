@@ -193,11 +193,13 @@ class TiangongTreasureTask(WWOneTimeTask, BaseCombatTask):
             self._release_combat_inputs()
 
     def _checkpoint(self, index, state):
-        if self._verification.finish() != 'verified':
+        if self._verification is not None and self._verification.finish() != 'verified':
             raise RuntimeError('关卡进度保存前账号特征码核验未通过')
         self._progress.update(index, state)
 
     def _evidence(self, status, reason):
+        if self._verification is None:
+            return
         from src.task.account_feature_verification import region
         frame = self.require_game_frame().copy()
         x, y, w, h = region(frame)
@@ -219,7 +221,7 @@ class TiangongTreasureTask(WWOneTimeTask, BaseCombatTask):
             cycle = cycle_for('tiangong_treasure', cycles=self._service.repository.cycles())
             if cycle is None:
                 raise RuntimeError('天工寻物本期有效期未确认或已经结束')
-            self._progress = Progress(self._verification.profile_id, cycle['end_at'])
+            self._progress = Progress(self._verification.profile_id if self._verification else None, cycle['end_at'])
             self._wait(self._page, '请先打开天工寻物关卡页面')
             for index in range(6):
                 self.info_set('活动阶段', f'检查见习札记{STAGES[index]}（{index+1}/6）')
@@ -252,7 +254,10 @@ class TiangongTreasureTask(WWOneTimeTask, BaseCombatTask):
             complete = all(s['status'] == 'completed' for s in self._progress.stages.values())
             self._evidence('completed' if complete else 'partial',
                            '六关最高款项均达到80000' if complete else '本轮已结束；未达标或未解锁关卡下次继续')
-            self.info_set('活动阶段', '六关全部达标，存档已保存' if complete else '本轮结束，账号进度已保存，下次继续未达标关卡')
+            if self._verification is None:
+                self.info_set('活动阶段', '本轮结束；无序列不保存账号存档，下次按游戏成绩继续')
+            else:
+                self.info_set('活动阶段', '六关全部达标，存档已保存' if complete else '本轮结束，账号进度已保存，下次继续未达标关卡')
         except TaskDisabledException:
             raise
         except Exception:

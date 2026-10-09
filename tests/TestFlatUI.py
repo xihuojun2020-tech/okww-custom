@@ -59,7 +59,7 @@ class TestFlatUI(unittest.TestCase):
                     self.assertEqual(page.sequence_combo.currentData(), 'S1')
                     self.assertEqual(page.account_combo.currentData(), 'A3')
                     self.assertEqual([page.account_combo.itemData(i) for i in range(page.account_combo.count())],
-                                     ['', 'A1', 'A3', 'A4'])
+                                     ['', '无序列', 'A1', 'A3', 'A4'])
                     self.assertEqual(daily.config['Daily Profile'], 'A1')
                     self.assertFalse(page.account_panel.content.isVisible())
                     for card in page.task_tab.card_widgets:
@@ -68,6 +68,10 @@ class TestFlatUI(unittest.TestCase):
                         self.assertFalse(card.isExpand)
                         self.assertTrue(card.card.expandButton.isHidden())
                         self.assertTrue(card.state_label.isHidden())
+                    page.account_combo.setCurrentIndex(page.account_combo.findData('无序列'))
+                    self.assertEqual(owner.config['当前执行账号'], '无序列')
+                    page._select_sequence(0)
+                    self.assertEqual(page.account_combo.currentData(), '无序列')
                     page.account_combo.setCurrentIndex(page.account_combo.findData('A4'))
                     self.assertEqual(owner.config['当前执行账号'], 'A4')
                     owner.enabled = True

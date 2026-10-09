@@ -514,6 +514,8 @@ class EchoesContinuation:
         return storage_path('logs', Path('logs')) / 'echoes_progress' / f'{identity}.json'
 
     def _record_stage_result(self):
+        if self.last_result['profile_id'] is None:
+            return
         path = self._progress_path()
         data = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
         # Namespace prevents future activities reusing historical stage records.

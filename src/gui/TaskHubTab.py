@@ -9,7 +9,7 @@ from ok.gui.Communicate import communicate
 from src.gui.ChoiceControls import QtComboBox
 from src.account_display import account_option_items
 from src.config_integrity import ConfigIntegrityBlocked
-from src.task.MultiAccountDailyTask import CURRENT_SEQUENCE, CURRENT_ACCOUNT
+from src.task.MultiAccountDailyTask import CURRENT_SEQUENCE, CURRENT_ACCOUNT, UNREGISTERED_ACCOUNT
 
 
 class TaskHubTab(CustomTab):
@@ -62,7 +62,7 @@ class TaskHubTab(CustomTab):
                                 if profile['profile_id'] == verification.profile_id)
                 sequence = next((name for name in sequences if selected in owner.get_sequence_accounts(name)), sequence)
                 accounts = owner.get_sequence_accounts(sequence)
-            items = account_option_items([''] + accounts)
+            items = account_option_items(['', UNREGISTERED_ACCOUNT] + accounts)
         except ConfigIntegrityBlocked as error:
             self.account_panel.set_summary(str(error))
             self.sequence_combo.setEnabled(False)
@@ -80,14 +80,16 @@ class TaskHubTab(CustomTab):
                         combo.addItem(label or '请选择账号', key)
                 combo.setCurrentIndex(combo.findData(value))
         label = dict(items).get(selected, '')
-        self.account_panel.set_summary(f'{sequence} · {label}' if label else f'{sequence} · 请选择账号')
+        self.account_panel.set_summary('无序列 · 不认证、不写入账号进度（每日、海墟、深塔及多账号任务除外）'
+                                       if selected == UNREGISTERED_ACCOUNT else
+                                       f'{sequence} · {label}' if label else f'{sequence} · 请选择账号')
 
     def _select_sequence(self, index):
         if index < 0:
             return
         owner = self._account_owner()
         owner.config[CURRENT_SEQUENCE] = self.sequence_combo.itemData(index)
-        if owner.config.get(CURRENT_ACCOUNT) not in owner.get_sequence_accounts():
+        if owner.config.get(CURRENT_ACCOUNT) != UNREGISTERED_ACCOUNT and owner.config.get(CURRENT_ACCOUNT) not in owner.get_sequence_accounts():
             owner.config[CURRENT_ACCOUNT] = ''
         self.refresh_account_choices()
 

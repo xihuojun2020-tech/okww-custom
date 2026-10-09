@@ -64,7 +64,8 @@ class TestAccountFeatureVerification(unittest.TestCase):
     def test_unreadable_current_screen_reports_failure_without_navigation(self):
         from src.task.account_feature_verification import begin_task_run
         from src.gui.navigation_sections import TASKS
-        task = SimpleNamespace(executor=SimpleNamespace(_account_feature_run=None), ensure_main=Mock())
+        task = SimpleNamespace(executor=SimpleNamespace(_account_feature_run=None), ensure_main=Mock(),
+                               get_task_by_class=Mock(return_value=None))
         with patch('src.gui.navigation_sections.classify_task', return_value=TASKS), \
                 patch('src.task.account_feature_verification.expected_profile', return_value='selected-account'), \
                 patch.object(WWOneTimeTask, 'run'), \

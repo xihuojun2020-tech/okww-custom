@@ -74,6 +74,11 @@ def zero_score(frame, index):
 
 class Progress:
     def __init__(self, profile_id, period, root=None):
+        if profile_id is None:
+            self.path = None
+            self.data = {'profile_id': None, 'periods': {}}
+            self.stages = self.data['periods'].setdefault(period, {})
+            return
         identity = str(UUID(profile_id))
         root = storage_path('logs', Path('logs')) / 'tiangong_progress' if root is None else Path(root)
         self.path = root / f'{identity}.json'
@@ -83,4 +88,5 @@ class Progress:
     def update(self, index, state):
         key = str(index+1)
         self.stages[key] = {**self.stages.get(key, {}), **state, 'checked_at': now_iso()}
-        atomic_json(self.path, self.data)
+        if self.path is not None:
+            atomic_json(self.path, self.data)

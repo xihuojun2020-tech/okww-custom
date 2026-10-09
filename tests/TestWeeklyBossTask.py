@@ -16,6 +16,7 @@ def box(name, x=0, y=0, width=100, height=30):
 class TestWeeklyBossParsing(unittest.TestCase):
     def test_task_card_selects_named_boss(self):
         task = object.__new__(WeeklyBossTask)
+        task._executor = SimpleNamespace(current_task=task)
         daily = SimpleNamespace(run_weekly_boss_only=Mock())
         task.get_task_by_class = Mock(return_value=daily)
         task.config = {'目标周本': WEEKLY_BOSSES[0].name}

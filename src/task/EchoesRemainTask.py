@@ -276,13 +276,14 @@ class EchoesRemainTask(EchoesContinuation, WWOneTimeTask, BaseCombatTask):
         try:
             from src.task.account_feature_verification import current_feature_run
             self._verification = current_feature_run(self)
-            self.last_result['profile_id'] = self._verification.profile_id
-            self.last_result['run_id'] = self._verification.run_id
+            self.last_result['profile_id'] = self._verification.profile_id if self._verification else None
+            self.last_result['run_id'] = self._verification.run_id if self._verification else str(uuid4())
             if self._navigate() is not False:
                 self._continue_event()
-            if self._verification.finish() != 'verified':
+            if self._verification is not None and self._verification.finish() != 'verified':
                 raise RuntimeError('活动结束账号核验未通过')
-            self._save_run_summary()
+            if self._verification is not None:
+                self._save_run_summary()
             self.log_info(str(self.last_result))
             status = {'challenge_failed': '挑战失败，已退出副本，本轮停止',
                       'waiting_unlock': '下一关尚未解锁，本轮结束',

@@ -499,6 +499,10 @@ class CharacterTrialTask(WWOneTimeTask, BaseCombatTask):
                 if self._state() != 'complete':
                     raise RuntimeError('最终复核发现角色未完成')
             self.last_result['game_complete'] = True
+            if verification is None:
+                self.last_result['verification'] = 'unregistered'
+                self._stage(f'配置的{len(targets)}个角色奖励已领取；无序列不写入账号完成记录')
+                return
             final_frame = self.require_game_frame().copy()
             try:
                 status = verification.finish()

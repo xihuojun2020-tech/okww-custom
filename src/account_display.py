@@ -51,7 +51,7 @@ def account_option_items(values, *, sort=True):
             pass
     items = []
     for index, value in enumerate(values):
-        if not value or value in ('无', '（自动识别）'):
+        if not value or value in ('无', '（自动识别）', '无序列'):
             items.append(((-1, index, '', ''), value, value))
             continue
         exact = [r for r in records if value in (r.profile_id, r.account.get('display_name'))]
