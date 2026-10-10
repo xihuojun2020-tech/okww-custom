@@ -1,0 +1,782 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Native UI translations authored on 2026-10-11. See i18n/README.native.md.
+msgid ""
+msgstr ""
+"Project-Id-Version: OK-WW native UI\n"
+"Language: ko_KR\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Language"
+msgstr "언어"
+
+msgid "Set your preferred language"
+msgstr "사용할 언어 설정"
+
+msgid ""
+"Language changes apply after restarting the application and task session."
+msgstr "언어 변경은 앱과 작업 세션을 다시 시작한 후 적용됩니다."
+
+msgid "鸣潮账号与完成证据管理"
+msgstr "명조 계정 및 완료 증거 관리"
+
+msgid "建立首个账号"
+msgstr "첫 계정 만들기"
+
+msgid "导入账号配置包"
+msgstr "계정 설정 패키지 가져오기"
+
+msgid "导出账号配置包"
+msgstr "계정 설정 패키지 내보내기"
+
+msgid "完整性检查 / 锚定旧配置"
+msgstr "무결성 검사 / 이전 설정 기준 등록"
+
+msgid "打开本地资料目录"
+msgstr "로컬 데이터 폴더 열기"
+
+msgid "日志与诊断"
+msgstr "로그 및 진단"
+
+msgid "任务与配置"
+msgstr "작업 및 설정"
+
+msgid "用户任务代码"
+msgstr "사용자 작업 코드"
+
+msgid "角色代码"
+msgstr "캐릭터 코드"
+
+msgid "配置备份与恢复"
+msgstr "설정 백업 및 복원"
+
+msgid "输出目录"
+msgstr "출력 폴더"
+
+msgid "系统定时任务"
+msgstr "예약 작업"
+
+msgid "账号与序列"
+msgstr "계정 및 순서"
+
+msgid "游戏包更新"
+msgstr "게임 패키지 업데이트"
+
+msgid "完成检查"
+msgstr "완료 확인"
+
+msgid "执行状态与每日耗时（只读）"
+msgstr "실행 상태 및 일일 소요 시간 (읽기 전용)"
+
+msgid "每日耗时记录"
+msgstr "일일 소요 시간 기록"
+
+msgid "账号"
+msgstr "계정"
+
+msgid "执行进程"
+msgstr "실행 프로세스"
+
+msgid "刷新"
+msgstr "새로 고침"
+
+msgid "添加"
+msgstr "추가"
+
+msgid "删除"
+msgstr "삭제"
+
+msgid "上移"
+msgstr "위로 이동"
+
+msgid "下移"
+msgstr "아래로 이동"
+
+msgid "保存"
+msgstr "저장"
+
+msgid "保存列表"
+msgstr "목록 저장"
+
+msgid "保存选择"
+msgstr "선택 저장"
+
+msgid "选择文件"
+msgstr "파일 선택"
+
+msgid "编辑全局配置"
+msgstr "전역 설정 편집"
+
+msgid "刷新配置"
+msgstr "설정 새로 고침"
+
+msgid "刷新任务"
+msgstr "작업 새로 고침"
+
+msgid "刷新角色"
+msgstr "캐릭터 새로 고침"
+
+msgid "刷新目录"
+msgstr "폴더 새로 고침"
+
+msgid "新任务"
+msgstr "새 작업"
+
+msgid "新建任务"
+msgstr "작업 만들기"
+
+msgid "稳定ID"
+msgstr "고정 ID"
+
+msgid "导出类名"
+msgstr "내보낼 클래스 이름"
+
+msgid "所需能力 JSON"
+msgstr "필요 기능 JSON"
+
+msgid "验证并保存"
+msgstr "검증 후 저장"
+
+msgid "删除任务"
+msgstr "작업 삭제"
+
+msgid "导入脚本包"
+msgstr "스크립트 패키지 가져오기"
+
+msgid "导出所选任务"
+msgstr "선택한 작업 내보내기"
+
+msgid "删除脚本包"
+msgstr "스크립트 패키지 삭제"
+
+msgid "脚本包导入预览"
+msgstr "스크립트 패키지 가져오기 미리 보기"
+
+msgid "导出独立任务"
+msgstr "독립 작업 내보내기"
+
+msgid "脚本包标识"
+msgstr "스크립트 패키지 ID"
+
+msgid "显示名称"
+msgstr "표시 이름"
+
+msgid "版本"
+msgstr "버전"
+
+msgid "导出原生脚本包"
+msgstr "네이티브 스크립트 패키지 내보내기"
+
+msgid "导出完整脚本包"
+msgstr "전체 스크립트 패키지 내보내기"
+
+msgid "删除用户任务"
+msgstr "사용자 작업 삭제"
+
+msgid "未保存的代码"
+msgstr "저장하지 않은 코드"
+
+msgid "选择用户脚本包"
+msgstr "사용자 스크립트 패키지 선택"
+
+msgid "原生包任务定义"
+msgstr "네이티브 패키지 작업 정의"
+
+msgid "确认导入"
+msgstr "가져오기 확인"
+
+msgid "迁移并导入"
+msgstr "이전 후 가져오기"
+
+msgid "验证并导入"
+msgstr "검증 후 가져오기"
+
+msgid "恢复内置代码"
+msgstr "내장 코드 복원"
+
+msgid "恢复内置角色"
+msgstr "내장 캐릭터 복원"
+
+msgid "复制修改提示"
+msgstr "수정 프롬프트 복사"
+
+msgid "修改说明"
+msgstr "수정 설명"
+
+msgid "贡献代码"
+msgstr "코드 기여"
+
+msgid "修改角色代码"
+msgstr "캐릭터 코드 수정"
+
+msgid "请选择角色"
+msgstr "캐릭터를 선택하세요"
+
+msgid "输出资料目标目录"
+msgstr "출력 데이터 대상 폴더"
+
+msgid "选择输出目录"
+msgstr "출력 폴더 선택"
+
+msgid "预览输出迁移"
+msgstr "출력 데이터 이전 미리 보기"
+
+msgid "确认迁移输出"
+msgstr "출력 데이터 이전 확인"
+
+msgid "确认迁移输出资料"
+msgstr "출력 데이터 이전 확인"
+
+msgid "选择空输出目录"
+msgstr "비어 있는 출력 폴더 선택"
+
+msgid "打开目录"
+msgstr "폴더 열기"
+
+msgid "选择账号配置包"
+msgstr "계정 설정 패키지 선택"
+
+msgid "确认建立首账号"
+msgstr "첫 계정 생성 확인"
+
+msgid "配置操作失败："
+msgstr "설정 작업 실패: "
+
+msgid "操作失败："
+msgstr "작업 실패: "
+
+msgid "配置进程不可用："
+msgstr "설정 프로세스를 사용할 수 없음: "
+
+msgid "配置进程不可用，草稿保留："
+msgstr "설정 프로세스를 사용할 수 없습니다. 초안 보존: "
+
+msgid "操作失败，草稿保留："
+msgstr "작업 실패. 초안 보존: "
+
+msgid "能力JSON无效："
+msgstr "기능 JSON이 잘못됨: "
+
+msgid "迁移任务 JSON 无效："
+msgstr "이전 작업 JSON이 잘못됨: "
+
+msgid "脚本包已导出："
+msgstr "스크립트 패키지 내보내기 완료: "
+
+msgid "正在加载任务配置…"
+msgstr "작업 설정을 불러오는 중…"
+
+msgid "正在加载…"
+msgstr "불러오는 중…"
+
+msgid "正在保存…"
+msgstr "저장 중…"
+
+msgid "正在执行设备动作…"
+msgstr "장치 작업 실행 중…"
+
+msgid "设备动作已执行。"
+msgstr "장치 작업을 완료했습니다."
+
+msgid "配置已保存。"
+msgstr "설정을 저장했습니다."
+
+msgid "配置已加载。"
+msgstr "설정을 불러왔습니다."
+
+msgid "等待配置进程加载。"
+msgstr "설정 프로세스 대기 중."
+
+msgid "正在读取任务…"
+msgstr "작업을 읽는 중…"
+
+msgid "正在验证代码并处理任务…"
+msgstr "코드 검증 및 작업 처리 중…"
+
+msgid "正在处理角色…"
+msgstr "캐릭터 처리 중…"
+
+msgid "正在验证并保存角色…"
+msgstr "캐릭터 검증 및 저장 중…"
+
+msgid "正在停止配置所有者并迁移输出…"
+msgstr "설정 프로세스 중지 및 출력 데이터 이전 중…"
+
+msgid "请先选择输出目录。"
+msgstr "먼저 출력 폴더를 선택하세요."
+
+msgid "请先选择已保存任务。"
+msgstr "먼저 저장된 작업을 선택하세요."
+
+msgid "请整组重导入更新脚本包。"
+msgstr "전체 패키지를 다시 가져와 업데이트하세요."
+
+msgid "内置代码"
+msgstr "내장 코드"
+
+msgid "自定义代码"
+msgstr "사용자 코드"
+
+msgid "无执行进程"
+msgstr "실행 프로세스 없음"
+
+msgid "请选择执行进程"
+msgstr "실행 프로세스를 선택하세요"
+
+msgid "已暂停"
+msgstr "일시 중지됨"
+
+msgid "执行中"
+msgstr "실행 중"
+
+msgid "空闲 / 后台服务"
+msgstr "대기 / 백그라운드 서비스"
+
+msgid "执行状态读取失败："
+msgstr "실행 상태 읽기 실패: "
+
+msgid "数据根（配置权威）"
+msgstr "데이터 루트 (설정 기준)"
+
+msgid "日志"
+msgstr "로그"
+
+msgid "截图"
+msgstr "스크린샷"
+
+msgid "诊断"
+msgstr "진단"
+
+msgid "配置备份"
+msgstr "설정 백업"
+
+msgid "完成证据"
+msgstr "완료 증거"
+
+msgid "运行控制状态（不迁移）"
+msgstr "실행 제어 상태 (이전하지 않음)"
+
+msgid "Close"
+msgstr "닫기"
+
+msgid "Cancel"
+msgstr "취소"
+
+msgid "OK"
+msgstr "확인"
+
+msgid "Yes"
+msgstr "예"
+
+msgid "No"
+msgstr "아니요"
+
+msgid " 正在重新加载配置进程…"
+msgstr " 설정 프로세스를 다시 불러오는 중…"
+
+msgid " 磁盘已提交，请重启管理窗口以重新加载账号；旧账号编辑已停用。"
+msgstr ""
+" 디스크에 변경 사항을 반영했습니다. 계정을 다시 불러오려면 관리 창을 다시 시작하세요. 이전 계정 편집은 비활성화되었습니다."
+
+msgid " 配置进程已重新加载。"
+msgstr " 설정 프로세스를 다시 불러왔습니다."
+
+msgid "任务注册已更新到磁盘，配置进程未应用；运行中保留旧注册表。"
+msgstr " 작업 등록을 디스크에 저장했지만 설정 프로세스에는 적용되지 않았습니다. 실행 중인 프로세스는 이전 등록을 유지합니다."
+
+msgid "修改提示已复制，可粘贴到聊天工具并补充需求。"
+msgstr " 수정 프롬프트를 복사했습니다. 채팅 도구에 붙여넣고 요구 사항을 추가하세요."
+
+msgid "删除整个脚本包的任务注册？配置和历史源码保留。"
+msgstr " 이 패키지의 모든 작업 등록을 삭제할까요? 설정과 이전 소스는 유지됩니다."
+
+msgid "删除此角色自定义代码并恢复内置模式？"
+msgstr " 이 캐릭터의 사용자 코드를 삭제하고 내장 모드로 복원할까요?"
+
+msgid "安全模式：请建立首账号、导入配置包或查看完整性检查。\n"
+msgstr "안전 모드: 첫 계정을 만들거나 설정 패키지를 가져오거나 무결성 검사를 확인하세요.\n"
+
+msgid "导入会执行可信 Python 验证代码。相同脚本包标识会整组更新；原配置和历史源码保留。"
+msgstr ""
+"가져올 때 신뢰할 수 있는 Python 검증 코드를 실행합니다. 같은 패키지 ID는 전체를 업데이트하며 기존 설정과 소스 기록은 "
+"유지됩니다."
+
+msgid "导入包成员不能单独删除，请使用删除脚本包。"
+msgstr "가져온 패키지 구성원은 개별 삭제할 수 없습니다. 스크립트 패키지 삭제를 사용하세요."
+
+msgid "导入包成员为只读；通过整组重导入更新代码和素材。"
+msgstr "가져온 패키지 구성원은 읽기 전용입니다. 코드와 리소스를 업데이트하려면 전체 패키지를 다시 가져오세요."
+
+msgid "当前为源码工作目录，不能在管理窗口替换游戏包；请使用已安装且带文件清单的游戏包。"
+msgstr "현재 소스 작업 폴더입니다. 관리 창에서 패키지를 교체하려면 파일 목록이 있는 설치된 패키지를 사용하세요."
+
+msgid "操作失败，输出迁移未提交："
+msgstr "작업 실패. 출력 데이터 이전은 반영되지 않았습니다: "
+
+msgid "放弃当前未保存的修改？"
+msgstr "현재 저장하지 않은 변경 사항을 버릴까요?"
+
+msgid "放弃当前未保存的角色修改？"
+msgstr "현재 저장하지 않은 캐릭터 변경 사항을 버릴까요?"
+
+msgid "新任务：保存时生成稳定ID"
+msgstr "새 작업: 저장 시 고정 ID 생성"
+
+msgid "旧包迁移任务：确认导出类、稳定 key 与设备能力"
+msgstr "이전 패키지 이전: 내보낼 클래스, 고정 키 및 장치 기능 확인"
+
+msgid "未选择执行进程；展示已保存记录。"
+msgstr "실행 프로세스를 선택하지 않았습니다. 저장된 기록을 표시합니다."
+
+msgid "正在编辑自定义草稿，保存后才启用。"
+msgstr "사용자 코드 초안을 편집 중입니다. 저장 후 활성화됩니다."
+
+msgid "此动作需要执行器连接游戏设备。"
+msgstr "이 작업에는 게임 장치에 연결된 실행 프로세스가 필요합니다."
+
+msgid "此页迁移输出资料，并保留原文件。账号、配置、用户脚本和数据根不迁移。迁移前停止本窗口配置进程；其他所有者仍占用数据时会明确失败。"
+msgstr ""
+"이 페이지는 출력 데이터를 이전하고 원본을 보존합니다. 계정, 설정, 사용자 스크립트와 데이터 루트는 이동하지 않습니다. 설정 프로세스를"
+" 먼저 중지하며 다른 프로세스가 데이터를 사용 중이면 이전을 거부합니다."
+
+msgid "每次导出一个完整脚本包，或一组独立任务。"
+msgstr "한 번에 전체 패키지 하나 또는 독립 작업 묶음을 내보내세요."
+
+msgid "源码已读取。修改类名仍保留这个稳定任务ID与配置。"
+msgstr "소스를 읽었습니다. 클래스 이름을 바꿔도 고정 작업 ID와 설정은 유지됩니다."
+
+msgid "独立管理窗口：账号设置、序列与已有完成证据；读取特征码和设备动作由已启动的任务进程执行。"
+msgstr ""
+"독립 관리 창: 계정 설정, 순서 및 저장된 완료 증거를 관리합니다. 식별 코드 읽기와 장치 작업은 이미 시작된 작업 프로세스에서 "
+"실행합니다."
+
+msgid ""
+"用户任务使用 NativeBaseTask / "
+"NativeTriggerTask。保存前独立验证代码；此处编辑的是可信可执行代码。保存只更新配置进程，实际运行进程需明确重载或重新启动。"
+msgstr ""
+"사용자 작업은 NativeBaseTask / NativeTriggerTask를 사용합니다. 신뢰할 수 있는 실행 코드를 저장 전에 "
+"검증합니다. 저장은 설정 프로세스만 업데이트하며 실행 프로세스는 명시적으로 다시 불러오거나 재시작해야 합니다."
+
+msgid "由已启动的任务进程连续读取特征码，再确认绑定账号"
+msgstr "실행 중인 작업 프로세스가 식별 코드를 연속해서 읽습니다. 확인 후 계정에 연결합니다."
+
+msgid "脚本包注册与素材已更新，配置进程已应用；实际 worker 需明确重载。"
+msgstr "패키지 등록과 리소스를 설정 프로세스에 적용했습니다. 실행 중인 프로세스는 명시적으로 다시 불러와야 합니다."
+
+msgid "角色代码已保存，配置进程未应用；运行进程保留旧代码。"
+msgstr "캐릭터 코드를 저장했지만 설정 프로세스에는 적용되지 않았습니다. 실행 프로세스는 이전 코드를 유지합니다."
+
+msgid "角色修改已保存，配置进程已应用。实际运行进程需明确重载或重启任务。"
+msgstr "캐릭터 변경 사항을 저장하고 설정 프로세스에 적용했습니다. 실행 프로세스는 다시 불러오거나 작업을 재시작해야 합니다."
+
+msgid "角色源码已读取。自定义代码须保留当前类名。"
+msgstr "캐릭터 소스를 읽었습니다. 사용자 코드는 현재 클래스 이름을 유지해야 합니다."
+
+msgid "请先选择角色并切换到自定义代码。"
+msgstr "먼저 캐릭터를 선택하고 사용자 코드로 전환하세요."
+
+msgid "请选择一个脚本包，或一个以上独立任务。"
+msgstr "스크립트 패키지 하나 또는 독립 작업을 하나 이상 선택하세요."
+
+msgid "账号配置包已导出。"
+msgstr "계정 설정 패키지를 내보냈습니다."
+
+msgid "账号配置已验证，可在任务窗口执行。"
+msgstr "계정 설정을 검증했습니다. 작업 창에서 실행할 수 있습니다."
+
+msgid "输出目录已提交，原文件保留；数据根未迁移。配置进程将重新加载目录配置。"
+msgstr "출력 폴더를 반영했습니다. 원본과 데이터 루트는 유지됩니다. 설정 프로세스가 폴더 설정을 다시 불러옵니다."
+
+msgid "输出目录已提交，收尾失败，请重新加载管理窗口："
+msgstr "출력 폴더는 반영되었지만 마무리에 실패했습니다. 관리 창을 다시 불러오세요: "
+
+msgid "选择内置或自定义角色代码。保存前独立验证；运行中的共享会话需要明确重载，单次任务重启后应用。"
+msgstr ""
+"내장 또는 사용자 캐릭터 코드를 선택하세요. 저장 전 검증합니다. 공유 세션은 명시적으로 다시 불러와야 하며 단일 작업은 재시작 후 "
+"적용됩니다."
+
+msgid "选择数据根所在本机磁盘上的空输出目录，先预览再迁移。"
+msgstr "데이터 루트와 같은 로컬 디스크의 빈 출력 폴더를 선택하세요. 미리 보기 후 이전하세요."
+
+msgid ""
+"选择角色和自定义模式，编辑或粘贴完整 Python 文件。改动行会高亮。\n"
+"保存前独立验证代码；失败会保留草稿。运行中的共享会话需在启动器明确重载，单次任务需重新启动。恢复内置会删除此角色的自定义源码。"
+msgstr ""
+"캐릭터와 사용자 모드를 선택하고 전체 Python 파일을 편집하거나 붙여넣으세요. 변경한 줄은 강조됩니다.\n"
+"저장 전 검증하며 실패 시 초안을 유지합니다. 공유 세션은 명시적으로 다시 불러오고 단일 작업은 재시작하세요. 내장 모드로 복원하면 사용자 소스를 삭제합니다."
+
+msgid "配置进程不可用，未提交代码。"
+msgstr "설정 프로세스를 사용할 수 없어 코드를 반영하지 않았습니다."
+
+msgid "配置进程不可用，未提交角色修改。"
+msgstr "설정 프로세스를 사용할 수 없어 캐릭터 변경 사항을 반영하지 않았습니다."
+
+msgid "验证与保存完成；配置进程已应用。实际worker需明确重载或重新启动。"
+msgstr "검증과 저장을 완료하고 설정 프로세스에 적용했습니다. 실행 프로세스는 다시 불러오거나 재시작해야 합니다."
+
+msgid "维护失败："
+msgstr "유지 관리 실패: "
+
+msgid "输出目录已提交。"
+msgstr "출력 폴더 변경을 반영했습니다."
+
+msgid "配置维护已提交。"
+msgstr "설정 유지 관리를 반영했습니다."
+
+msgid "配置备份已创建。"
+msgstr "설정 백업을 생성했습니다."
+
+msgid "配置进程启动失败。"
+msgstr "설정 프로세스를 시작하지 못했습니다."
+
+msgid " 配置进程未恢复："
+msgstr " 설정 프로세스가 복구되지 않았습니다: "
+
+msgid "已有操作正在进行，或账号运行时需要重新启动；暂不能维护配置"
+msgstr "작업이 진행 중이거나 계정 실행 환경을 다시 시작해야 하므로 설정을 유지 관리할 수 없습니다."
+
+msgid "建立账号 {label} 的可信总配置？请确认手机号、昵称及所选序列。"
+msgstr "계정 {label}의 신뢰할 수 있는 기본 설정을 만드시겠습니까? 전화번호, 닉네임, 선택한 순서를 확인하세요."
+
+msgid ""
+"将替换当前全部账号配置：{accounts} 个账号，{sequences} 个序列，{records} 条完成记录。\n"
+"导入前将保存事务备份。"
+msgstr ""
+"현재 모든 계정 설정을 교체합니다: 계정 {accounts}개, 순서 {sequences}개, 완료 기록 {records}개.\n"
+"가져오기 전에 트랜잭션 백업을 저장합니다."
+
+msgid ""
+"\n"
+"配置包已被外部修改；确认将明确接受这些修改。"
+msgstr ""
+"\n"
+"설정 패키지가 외부에서 수정되었습니다. 확인하면 해당 변경 사항을 명시적으로 수락합니다."
+
+msgid "目录尚未创建："
+msgstr "아직 생성되지 않은 폴더: "
+
+msgid "无法打开目录："
+msgstr "폴더를 열 수 없습니다: "
+
+msgid "输出迁移预览：{files}个文件，{size:.2f} MiB。保留原文件；账号、配置和用户脚本留在数据根。"
+msgstr ""
+"출력 이전 미리 보기: 파일 {files}개, {size:.2f} MiB. 원본 파일은 보존하며 계정, 설정, 사용자 스크립트는 데이터 "
+"루트에 남습니다."
+
+msgid ""
+"将输出复制并校验到：{destination}\n"
+"保留原文件，更新输出目录配置，随后重新加载配置进程。"
+msgstr ""
+"출력을 복사하고 검증할 위치: {destination}\n"
+"원본 파일을 보존하고 출력 폴더 설정을 업데이트한 다음 설정 프로세스를 다시 불러옵니다."
+
+msgid "已读取{count}个用户任务；已保存版本 {saved}，配置进程版本 {applied}；运行进程需单独重载。"
+msgstr ""
+"사용자 작업 {count}개를 불러왔습니다. 저장 버전 {saved}, 설정 프로세스 버전 {applied}. 실행 프로세스는 별도로 "
+"다시 불러오세요."
+
+msgid "已读取{count}个角色；已保存版本 {saved}，配置进程版本 {applied}。运行进程需单独重载。"
+msgstr ""
+"캐릭터 {count}개를 불러왔습니다. 저장 버전 {saved}, 설정 프로세스 버전 {applied}. 실행 프로세스는 별도로 다시 "
+"불러오세요."
+
+msgid "删除任务 {identity} 的注册？配置和历史源码保留。"
+msgstr "작업 {identity}의 등록을 삭제하시겠습니까? 설정과 소스 기록은 보존합니다."
+
+msgid "未知"
+msgstr "알 수 없음"
+
+msgid ""
+"\n"
+"\n"
+"无法迁移：\n"
+msgstr ""
+"\n"
+"\n"
+"이전할 수 없습니다:\n"
+
+msgid "全局："
+msgstr "전역: "
+
+msgid "Package"
+msgstr "게임 패키지"
+
+msgid "Execution mode"
+msgstr "실행 모드"
+
+msgid "Tasks"
+msgstr "작업"
+
+msgid "Task config JSON"
+msgstr "작업 설정 JSON"
+
+msgid "设备"
+msgstr "장치"
+
+msgid "高级设备 JSON"
+msgstr "고급 장치 JSON"
+
+msgid "能力匹配"
+msgstr "기능 호환성"
+
+msgid "暂停 / 恢复热键"
+msgstr "일시 중지 / 재개 단축키"
+
+msgid "系统托盘通知"
+msgstr "시스템 트레이 알림"
+
+msgid "关闭窗口时最小化到托盘"
+msgstr "창을 닫을 때 트레이로 최소화"
+
+msgid "保存截图"
+msgstr "스크린샷 저장"
+
+msgid "截图并识别文字"
+msgstr "스크린샷 및 텍스트 인식"
+
+msgid "打开资料目录"
+msgstr "데이터 폴더 열기"
+
+msgid "选择本地资料根"
+msgstr "로컬 데이터 루트 선택"
+
+msgid "打开应用时恢复已保存辅助服务"
+msgstr "앱 시작 시 저장된 보조 서비스 복원"
+
+msgid "仅启动会话"
+msgstr "세션만 시작"
+
+msgid "任务分类"
+msgstr "작업 분류"
+
+msgid "当前序列"
+msgstr "현재 순서"
+
+msgid "当前账号"
+msgstr "현재 계정"
+
+msgid "刷新账号上下文"
+msgstr "계정 상태 새로 고침"
+
+msgid "全部任务"
+msgstr "모든 작업"
+
+msgid "Start"
+msgstr "시작"
+
+msgid "Stop"
+msgstr "중지"
+
+msgid "Pause"
+msgstr "일시 중지"
+
+msgid "Resume"
+msgstr "재개"
+
+msgid "Install gamepack"
+msgstr "게임 패키지 설치"
+
+msgid "Update gamepack"
+msgstr "게임 패키지 업데이트"
+
+msgid "Disable selected service"
+msgstr "선택한 서비스 비활성화"
+
+msgid "Manage gamepack"
+msgstr "게임 패키지 관리"
+
+msgid "Read-only overview"
+msgstr "읽기 전용 개요"
+
+msgid "Refresh tasks"
+msgstr "작업 새로 고침"
+
+msgid "Apply user task reload"
+msgstr "사용자 작업 다시 불러오기 적용"
+
+msgid "Apply character code reload"
+msgstr "캐릭터 코드 다시 불러오기 적용"
+
+msgid "Worker output"
+msgstr "실행 프로세스 출력"
+
+msgid "显示窗口"
+msgstr "창 표시"
+
+msgid "暂停 / 恢复"
+msgstr "일시 중지 / 재개"
+
+msgid "退出"
+msgstr "종료"
+
+msgid "Run / enable task"
+msgstr "작업 실행 / 활성화"
+
+msgid "本次运行覆盖配置（长期设置在管理窗口保存）"
+msgstr "이번 실행의 설정 재정의 (영구 설정은 관리 창에서 저장)"
+
+msgid "Program Preferences"
+msgstr "프로그램 환경 설정"
+
+msgid "Window, audio and inference preferences"
+msgstr "창, 오디오 및 추론 환경 설정"
+
+msgid "Milliseconds between service scheduling passes."
+msgstr "서비스 스케줄링 주기 사이의 간격 (밀리초)."
+
+msgid "OCR provider changes apply after restarting the task session."
+msgstr "OCR 제공자 변경은 작업 세션을 다시 시작한 후 적용됩니다."
+
+msgid "Auto Resize Game Window"
+msgstr "게임 창 크기 자동 조정"
+
+msgid "Mute Game while in Background"
+msgstr "백그라운드에서 게임 음소거"
+
+msgid "Exit App when Game Exits"
+msgstr "게임 종료 시 앱 종료"
+
+msgid "Trigger Interval"
+msgstr "서비스 스케줄링 간격"
+
+msgid "Use DirectML"
+msgstr "DirectML 사용"
+
+msgid "Auto"
+msgstr "자동"
+
+msgid "不常用任务"
+msgstr "자주 사용하지 않는 작업"
+
+msgid "剧情与移动"
+msgstr "스토리와 이동"
+
+msgid "战斗与拾取"
+msgstr "전투와 수집"
+
+msgid "扩展任务"
+msgstr "확장 작업"
+
+msgid "每周任务"
+msgstr "주간 작업"
+
+msgid "每日执行"
+msgstr "일일 실행"
+
+msgid "活动"
+msgstr "이벤트"
+
+msgid "登录与输入"
+msgstr "로그인과 입력"
+
+msgid "已核验运行账号：{account}"
+msgstr "확인된 실행 계정: {account}"
+
+msgid ""
+"Windows 用户：{user}\n"
+"资料根：{root}\n"
+"游戏包资料：{package_root}"
+msgstr ""
+"Windows 사용자: {user}\n"
+"데이터 루트: {root}\n"
+"게임 패키지 데이터: {package_root}"

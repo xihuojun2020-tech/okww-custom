@@ -1,0 +1,837 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Native UI translations authored on 2026-10-11. See i18n/README.native.md.
+msgid ""
+msgstr ""
+"Project-Id-Version: OK-WW native UI\n"
+"Language: es_ES\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Language"
+msgstr "Idioma"
+
+msgid "Set your preferred language"
+msgstr "Selecciona tu idioma preferido"
+
+msgid ""
+"Language changes apply after restarting the application and task session."
+msgstr ""
+"Los cambios de idioma se aplican al reiniciar la aplicación y la sesión de "
+"tareas."
+
+msgid "鸣潮账号与完成证据管理"
+msgstr "Cuentas y pruebas de finalización de Wuthering Waves"
+
+msgid "建立首个账号"
+msgstr "Crear primera cuenta"
+
+msgid "导入账号配置包"
+msgstr "Importar paquete de cuentas"
+
+msgid "导出账号配置包"
+msgstr "Exportar paquete de cuentas"
+
+msgid "完整性检查 / 锚定旧配置"
+msgstr "Comprobar integridad / anclar configuración anterior"
+
+msgid "打开本地资料目录"
+msgstr "Abrir carpeta de datos locales"
+
+msgid "日志与诊断"
+msgstr "Registros y diagnósticos"
+
+msgid "任务与配置"
+msgstr "Tareas y configuración"
+
+msgid "用户任务代码"
+msgstr "Código de tareas del usuario"
+
+msgid "角色代码"
+msgstr "Código de personajes"
+
+msgid "配置备份与恢复"
+msgstr "Copia y restauración de configuración"
+
+msgid "输出目录"
+msgstr "Carpetas de salida"
+
+msgid "系统定时任务"
+msgstr "Tareas programadas"
+
+msgid "账号与序列"
+msgstr "Cuentas y secuencias"
+
+msgid "游戏包更新"
+msgstr "Actualizaciones del paquete"
+
+msgid "完成检查"
+msgstr "Comprobaciones de finalización"
+
+msgid "执行状态与每日耗时（只读）"
+msgstr "Estado y tiempos diarios (solo lectura)"
+
+msgid "每日耗时记录"
+msgstr "Registros de tiempos diarios"
+
+msgid "账号"
+msgstr "Cuenta"
+
+msgid "执行进程"
+msgstr "Proceso de ejecución"
+
+msgid "刷新"
+msgstr "Actualizar"
+
+msgid "添加"
+msgstr "Añadir"
+
+msgid "删除"
+msgstr "Eliminar"
+
+msgid "上移"
+msgstr "Subir"
+
+msgid "下移"
+msgstr "Bajar"
+
+msgid "保存"
+msgstr "Guardar"
+
+msgid "保存列表"
+msgstr "Guardar lista"
+
+msgid "保存选择"
+msgstr "Guardar selección"
+
+msgid "选择文件"
+msgstr "Seleccionar archivo"
+
+msgid "编辑全局配置"
+msgstr "Editar configuración global"
+
+msgid "刷新配置"
+msgstr "Actualizar configuración"
+
+msgid "刷新任务"
+msgstr "Actualizar tareas"
+
+msgid "刷新角色"
+msgstr "Actualizar personajes"
+
+msgid "刷新目录"
+msgstr "Actualizar carpetas"
+
+msgid "新任务"
+msgstr "Nueva tarea"
+
+msgid "新建任务"
+msgstr "Crear tarea"
+
+msgid "稳定ID"
+msgstr "ID estable"
+
+msgid "导出类名"
+msgstr "Nombre de clase exportada"
+
+msgid "所需能力 JSON"
+msgstr "Capacidades requeridas (JSON)"
+
+msgid "验证并保存"
+msgstr "Validar y guardar"
+
+msgid "删除任务"
+msgstr "Eliminar tarea"
+
+msgid "导入脚本包"
+msgstr "Importar paquete de scripts"
+
+msgid "导出所选任务"
+msgstr "Exportar tareas seleccionadas"
+
+msgid "删除脚本包"
+msgstr "Eliminar paquete de scripts"
+
+msgid "脚本包导入预览"
+msgstr "Vista previa de importación de scripts"
+
+msgid "导出独立任务"
+msgstr "Exportar tareas independientes"
+
+msgid "脚本包标识"
+msgstr "ID del paquete de scripts"
+
+msgid "显示名称"
+msgstr "Nombre visible"
+
+msgid "版本"
+msgstr "Versión"
+
+msgid "导出原生脚本包"
+msgstr "Exportar paquete de scripts nativo"
+
+msgid "导出完整脚本包"
+msgstr "Exportar paquete de scripts completo"
+
+msgid "删除用户任务"
+msgstr "Eliminar tarea del usuario"
+
+msgid "未保存的代码"
+msgstr "Código sin guardar"
+
+msgid "选择用户脚本包"
+msgstr "Seleccionar paquete de scripts"
+
+msgid "原生包任务定义"
+msgstr "Definiciones de tareas del paquete nativo"
+
+msgid "确认导入"
+msgstr "Confirmar importación"
+
+msgid "迁移并导入"
+msgstr "Migrar e importar"
+
+msgid "验证并导入"
+msgstr "Validar e importar"
+
+msgid "恢复内置代码"
+msgstr "Restaurar código integrado"
+
+msgid "恢复内置角色"
+msgstr "Restaurar personaje integrado"
+
+msgid "复制修改提示"
+msgstr "Copiar instrucciones de modificación"
+
+msgid "修改说明"
+msgstr "Instrucciones de modificación"
+
+msgid "贡献代码"
+msgstr "Contribuir código"
+
+msgid "修改角色代码"
+msgstr "Modificar código de personaje"
+
+msgid "请选择角色"
+msgstr "Selecciona un personaje"
+
+msgid "输出资料目标目录"
+msgstr "Destino de datos de salida"
+
+msgid "选择输出目录"
+msgstr "Seleccionar carpeta de salida"
+
+msgid "预览输出迁移"
+msgstr "Vista previa de migración"
+
+msgid "确认迁移输出"
+msgstr "Confirmar migración"
+
+msgid "确认迁移输出资料"
+msgstr "Confirmar migración de datos"
+
+msgid "选择空输出目录"
+msgstr "Seleccionar carpeta de salida vacía"
+
+msgid "打开目录"
+msgstr "Abrir carpeta"
+
+msgid "选择账号配置包"
+msgstr "Seleccionar paquete de cuentas"
+
+msgid "确认建立首账号"
+msgstr "Confirmar creación de la primera cuenta"
+
+msgid "配置操作失败："
+msgstr "Error de configuración: "
+
+msgid "操作失败："
+msgstr "Error de operación: "
+
+msgid "配置进程不可用："
+msgstr "Proceso de configuración no disponible: "
+
+msgid "配置进程不可用，草稿保留："
+msgstr "Proceso no disponible; borrador conservado: "
+
+msgid "操作失败，草稿保留："
+msgstr "Operación fallida; borrador conservado: "
+
+msgid "能力JSON无效："
+msgstr "JSON de capacidades inválido: "
+
+msgid "迁移任务 JSON 无效："
+msgstr "JSON de tareas de migración inválido: "
+
+msgid "脚本包已导出："
+msgstr "Paquete de scripts exportado: "
+
+msgid "正在加载任务配置…"
+msgstr "Cargando configuración de tareas…"
+
+msgid "正在加载…"
+msgstr "Cargando…"
+
+msgid "正在保存…"
+msgstr "Guardando…"
+
+msgid "正在执行设备动作…"
+msgstr "Ejecutando acción del dispositivo…"
+
+msgid "设备动作已执行。"
+msgstr "Acción del dispositivo completada."
+
+msgid "配置已保存。"
+msgstr "Configuración guardada."
+
+msgid "配置已加载。"
+msgstr "Configuración cargada."
+
+msgid "等待配置进程加载。"
+msgstr "Esperando al proceso de configuración."
+
+msgid "正在读取任务…"
+msgstr "Leyendo tarea…"
+
+msgid "正在验证代码并处理任务…"
+msgstr "Validando código y procesando tarea…"
+
+msgid "正在处理角色…"
+msgstr "Procesando personaje…"
+
+msgid "正在验证并保存角色…"
+msgstr "Validando y guardando personaje…"
+
+msgid "正在停止配置所有者并迁移输出…"
+msgstr "Deteniendo el propietario de configuración y migrando salidas…"
+
+msgid "请先选择输出目录。"
+msgstr "Selecciona primero una carpeta de salida."
+
+msgid "请先选择已保存任务。"
+msgstr "Selecciona primero una tarea guardada."
+
+msgid "请整组重导入更新脚本包。"
+msgstr "Reimporta el paquete completo para actualizarlo."
+
+msgid "内置代码"
+msgstr "Código integrado"
+
+msgid "自定义代码"
+msgstr "Código personalizado"
+
+msgid "无执行进程"
+msgstr "Sin proceso de ejecución"
+
+msgid "请选择执行进程"
+msgstr "Selecciona un proceso de ejecución"
+
+msgid "已暂停"
+msgstr "Pausado"
+
+msgid "执行中"
+msgstr "En ejecución"
+
+msgid "空闲 / 后台服务"
+msgstr "Inactivo / servicios en segundo plano"
+
+msgid "执行状态读取失败："
+msgstr "Error al leer el estado de ejecución: "
+
+msgid "数据根（配置权威）"
+msgstr "Raíz de datos (autoridad de configuración)"
+
+msgid "日志"
+msgstr "Registros"
+
+msgid "截图"
+msgstr "Capturas"
+
+msgid "诊断"
+msgstr "Diagnósticos"
+
+msgid "配置备份"
+msgstr "Copias de configuración"
+
+msgid "完成证据"
+msgstr "Pruebas de finalización"
+
+msgid "运行控制状态（不迁移）"
+msgstr "Estado de control (no se migra)"
+
+msgid "Close"
+msgstr "Cerrar"
+
+msgid "Cancel"
+msgstr "Cancelar"
+
+msgid "OK"
+msgstr "Aceptar"
+
+msgid "Yes"
+msgstr "Sí"
+
+msgid "No"
+msgstr "No"
+
+msgid " 正在重新加载配置进程…"
+msgstr " Recargando el proceso de configuración…"
+
+msgid " 磁盘已提交，请重启管理窗口以重新加载账号；旧账号编辑已停用。"
+msgstr ""
+" Los cambios se guardaron en disco. Reinicia la gestión para cargar las "
+"cuentas; la edición anterior está desactivada."
+
+msgid " 配置进程已重新加载。"
+msgstr " Proceso de configuración recargado."
+
+msgid "任务注册已更新到磁盘，配置进程未应用；运行中保留旧注册表。"
+msgstr ""
+" Registro de tareas guardado en disco, pero no aplicado; los procesos "
+"activos conservan el registro anterior."
+
+msgid "修改提示已复制，可粘贴到聊天工具并补充需求。"
+msgstr ""
+" Instrucciones copiadas. Pégalas en tu herramienta de chat y añade tus "
+"requisitos."
+
+msgid "删除整个脚本包的任务注册？配置和历史源码保留。"
+msgstr ""
+" ¿Eliminar todas las tareas registradas de este paquete? Se conservan la "
+"configuración y el código histórico."
+
+msgid "删除此角色自定义代码并恢复内置模式？"
+msgstr ""
+" ¿Eliminar el código personalizado de este personaje y restaurar el modo "
+"integrado?"
+
+msgid "安全模式：请建立首账号、导入配置包或查看完整性检查。\n"
+msgstr ""
+"Modo seguro: crea la primera cuenta, importa un paquete o revisa la "
+"integridad.\n"
+
+msgid "导入会执行可信 Python 验证代码。相同脚本包标识会整组更新；原配置和历史源码保留。"
+msgstr ""
+"La importación ejecuta código Python de confianza. Un ID coincidente "
+"actualiza todo el paquete; se conservan la configuración y el historial."
+
+msgid "导入包成员不能单独删除，请使用删除脚本包。"
+msgstr ""
+"No se pueden eliminar miembros importados por separado. Usa Eliminar paquete"
+" de scripts."
+
+msgid "导入包成员为只读；通过整组重导入更新代码和素材。"
+msgstr ""
+"Los miembros importados son de solo lectura. Reimporta todo el paquete para "
+"actualizar código y recursos."
+
+msgid "当前为源码工作目录，不能在管理窗口替换游戏包；请使用已安装且带文件清单的游戏包。"
+msgstr ""
+"Esta es una copia de código fuente. La gestión no puede sustituir su "
+"paquete; usa uno instalado con manifiesto de archivos."
+
+msgid "操作失败，输出迁移未提交："
+msgstr "Operación fallida; migración sin confirmar: "
+
+msgid "放弃当前未保存的修改？"
+msgstr "¿Descartar los cambios sin guardar?"
+
+msgid "放弃当前未保存的角色修改？"
+msgstr "¿Descartar los cambios del personaje sin guardar?"
+
+msgid "新任务：保存时生成稳定ID"
+msgstr "Nueva tarea: se genera un ID estable al guardar"
+
+msgid "旧包迁移任务：确认导出类、稳定 key 与设备能力"
+msgstr ""
+"Migración de paquete antiguo: confirma clases, claves estables y capacidades"
+
+msgid "未选择执行进程；展示已保存记录。"
+msgstr "No hay proceso seleccionado; se muestran los registros guardados."
+
+msgid "正在编辑自定义草稿，保存后才启用。"
+msgstr "Editando borrador personalizado; se activa al guardar."
+
+msgid "此动作需要执行器连接游戏设备。"
+msgstr "Esta acción requiere un proceso conectado al dispositivo de juego."
+
+msgid "此页迁移输出资料，并保留原文件。账号、配置、用户脚本和数据根不迁移。迁移前停止本窗口配置进程；其他所有者仍占用数据时会明确失败。"
+msgstr ""
+"Esta página migra las salidas y conserva los originales. Cuentas, "
+"configuración, scripts y raíz de datos no se mueven. El proceso de "
+"configuración se detiene; otros procesos activos bloquean la migración."
+
+msgid "每次导出一个完整脚本包，或一组独立任务。"
+msgstr ""
+"Exporta un paquete completo o un conjunto de tareas independientes cada vez."
+
+msgid "源码已读取。修改类名仍保留这个稳定任务ID与配置。"
+msgstr ""
+"Código cargado. Cambiar la clase conserva el ID estable y la configuración."
+
+msgid "独立管理窗口：账号设置、序列与已有完成证据；读取特征码和设备动作由已启动的任务进程执行。"
+msgstr ""
+"Gestión independiente: cuentas, secuencias y pruebas guardadas. Las lecturas"
+" de identidad y acciones del dispositivo se ejecutan en el proceso de tareas"
+" activo."
+
+msgid ""
+"用户任务使用 NativeBaseTask / "
+"NativeTriggerTask。保存前独立验证代码；此处编辑的是可信可执行代码。保存只更新配置进程，实际运行进程需明确重载或重新启动。"
+msgstr ""
+"Las tareas usan NativeBaseTask / NativeTriggerTask. El código ejecutable de "
+"confianza se valida antes de guardar. Los procesos activos necesitan recarga"
+" o reinicio explícitos."
+
+msgid "由已启动的任务进程连续读取特征码，再确认绑定账号"
+msgstr ""
+"El proceso activo lee el código de identidad varias veces; confirma antes de"
+" vincular la cuenta."
+
+msgid "脚本包注册与素材已更新，配置进程已应用；实际 worker 需明确重载。"
+msgstr ""
+"Registro y recursos actualizados; los procesos activos necesitan recarga "
+"explícita."
+
+msgid "角色代码已保存，配置进程未应用；运行进程保留旧代码。"
+msgstr ""
+"Código de personaje guardado, pero no aplicado; los procesos activos "
+"conservan el código anterior."
+
+msgid "角色修改已保存，配置进程已应用。实际运行进程需明确重载或重启任务。"
+msgstr ""
+"Cambios de personaje guardados y aplicados. Los procesos activos necesitan "
+"recarga o reinicio de la tarea."
+
+msgid "角色源码已读取。自定义代码须保留当前类名。"
+msgstr ""
+"Código de personaje cargado. El código personalizado debe conservar la clase"
+" actual."
+
+msgid "请先选择角色并切换到自定义代码。"
+msgstr "Selecciona un personaje y cambia primero a código personalizado."
+
+msgid "请选择一个脚本包，或一个以上独立任务。"
+msgstr "Selecciona un paquete de scripts o varias tareas independientes."
+
+msgid "账号配置包已导出。"
+msgstr "Paquete de cuentas exportado."
+
+msgid "账号配置已验证，可在任务窗口执行。"
+msgstr "Configuración de cuentas verificada; las tareas pueden ejecutarse."
+
+msgid "输出目录已提交，原文件保留；数据根未迁移。配置进程将重新加载目录配置。"
+msgstr ""
+"Carpetas confirmadas; originales conservados y raíz sin cambios. Se "
+"recargará la configuración de carpetas."
+
+msgid "输出目录已提交，收尾失败，请重新加载管理窗口："
+msgstr ""
+"Carpetas confirmadas, pero falló la finalización. Reinicia la gestión: "
+
+msgid "选择内置或自定义角色代码。保存前独立验证；运行中的共享会话需要明确重载，单次任务重启后应用。"
+msgstr ""
+"Elige código integrado o personalizado. Se valida antes de guardar. Las "
+"sesiones activas requieren recarga; las tareas únicas aplican cambios al "
+"reiniciar."
+
+msgid "选择数据根所在本机磁盘上的空输出目录，先预览再迁移。"
+msgstr ""
+"Elige una carpeta vacía en el disco local de los datos. Previsualiza antes "
+"de migrar."
+
+msgid ""
+"选择角色和自定义模式，编辑或粘贴完整 Python 文件。改动行会高亮。\n"
+"保存前独立验证代码；失败会保留草稿。运行中的共享会话需在启动器明确重载，单次任务需重新启动。恢复内置会删除此角色的自定义源码。"
+msgstr ""
+"Selecciona personaje y modo personalizado, y edita o pega el archivo Python completo. Los cambios se resaltan.\n"
+"Se valida antes de guardar; los fallos conservan el borrador. Recarga las sesiones activas o reinicia tareas únicas. Restaurar el modo integrado elimina el código personalizado."
+
+msgid "配置进程不可用，未提交代码。"
+msgstr "Proceso de configuración no disponible; código sin confirmar."
+
+msgid "配置进程不可用，未提交角色修改。"
+msgstr ""
+"Proceso de configuración no disponible; cambios del personaje sin confirmar."
+
+msgid "验证与保存完成；配置进程已应用。实际worker需明确重载或重新启动。"
+msgstr ""
+"Validación y guardado completados; configuración aplicada. Los procesos "
+"activos necesitan recarga o reinicio."
+
+msgid "维护失败："
+msgstr "Error de mantenimiento: "
+
+msgid "输出目录已提交。"
+msgstr "Cambios de la carpeta de salida confirmados."
+
+msgid "配置维护已提交。"
+msgstr "Mantenimiento de configuración confirmado."
+
+msgid "配置备份已创建。"
+msgstr "Copia de seguridad de configuración creada."
+
+msgid "配置进程启动失败。"
+msgstr "No se pudo iniciar el proceso de configuración."
+
+msgid " 配置进程未恢复："
+msgstr " El proceso de configuración no se recuperó: "
+
+msgid "已有操作正在进行，或账号运行时需要重新启动；暂不能维护配置"
+msgstr ""
+"Hay una operación en curso o se debe reiniciar el entorno de cuentas; el "
+"mantenimiento no está disponible."
+
+msgid "建立账号 {label} 的可信总配置？请确认手机号、昵称及所选序列。"
+msgstr ""
+"¿Crear la configuración maestra de confianza para la cuenta {label}? "
+"Confirma el teléfono, apodo y secuencias seleccionadas."
+
+msgid ""
+"将替换当前全部账号配置：{accounts} 个账号，{sequences} 个序列，{records} 条完成记录。\n"
+"导入前将保存事务备份。"
+msgstr ""
+"Se reemplazarán todas las configuraciones actuales: {accounts} cuentas, {sequences} secuencias y {records} registros de finalización.\n"
+"Se guardará una copia de la transacción antes de importar."
+
+msgid ""
+"\n"
+"配置包已被外部修改；确认将明确接受这些修改。"
+msgstr ""
+"\n"
+"El paquete fue modificado externamente; al confirmar aceptas esos cambios."
+
+msgid "目录尚未创建："
+msgstr "La carpeta aún no se ha creado: "
+
+msgid "无法打开目录："
+msgstr "No se puede abrir la carpeta: "
+
+msgid "输出迁移预览：{files}个文件，{size:.2f} MiB。保留原文件；账号、配置和用户脚本留在数据根。"
+msgstr ""
+"Vista previa de migración: {files} archivos, {size:.2f} MiB. Se conservan "
+"los originales; cuentas, configuración y scripts permanecen en la raíz de "
+"datos."
+
+msgid ""
+"将输出复制并校验到：{destination}\n"
+"保留原文件，更新输出目录配置，随后重新加载配置进程。"
+msgstr ""
+"Copiar y verificar los datos en: {destination}\n"
+"Conservar los originales, actualizar la carpeta de salida y recargar el proceso de configuración."
+
+msgid "已读取{count}个用户任务；已保存版本 {saved}，配置进程版本 {applied}；运行进程需单独重载。"
+msgstr ""
+"Se cargaron {count} tareas; revisión guardada {saved}, revisión del proceso "
+"de configuración {applied}. Recarga el proceso de ejecución por separado."
+
+msgid "已读取{count}个角色；已保存版本 {saved}，配置进程版本 {applied}。运行进程需单独重载。"
+msgstr ""
+"Se cargaron {count} personajes; revisión guardada {saved}, revisión del "
+"proceso de configuración {applied}. Recarga el proceso de ejecución por "
+"separado."
+
+msgid "删除任务 {identity} 的注册？配置和历史源码保留。"
+msgstr ""
+"¿Eliminar el registro de la tarea {identity}? Se conservarán la "
+"configuración y el historial del código."
+
+msgid "未知"
+msgstr "Desconocida"
+
+msgid ""
+"\n"
+"\n"
+"无法迁移：\n"
+msgstr ""
+"\n"
+"\n"
+"No se puede migrar:\n"
+
+msgid "全局："
+msgstr "Global: "
+
+msgid "Package"
+msgstr "Paquete"
+
+msgid "Execution mode"
+msgstr "Modo de ejecución"
+
+msgid "Tasks"
+msgstr "Tareas"
+
+msgid "Task config JSON"
+msgstr "Configuración de tarea JSON"
+
+msgid "设备"
+msgstr "Dispositivo"
+
+msgid "高级设备 JSON"
+msgstr "Dispositivo avanzado JSON"
+
+msgid "能力匹配"
+msgstr "Compatibilidad de capacidades"
+
+msgid "暂停 / 恢复热键"
+msgstr "Atajo para pausar / reanudar"
+
+msgid "系统托盘通知"
+msgstr "Notificaciones de la bandeja"
+
+msgid "关闭窗口时最小化到托盘"
+msgstr "Minimizar a la bandeja al cerrar"
+
+msgid "保存截图"
+msgstr "Guardar captura"
+
+msgid "截图并识别文字"
+msgstr "Capturar y reconocer texto"
+
+msgid "打开资料目录"
+msgstr "Abrir carpeta de datos"
+
+msgid "选择本地资料根"
+msgstr "Seleccionar raíz de datos local"
+
+msgid "打开应用时恢复已保存辅助服务"
+msgstr "Restaurar servicios auxiliares guardados al iniciar"
+
+msgid "仅启动会话"
+msgstr "Iniciar solo la sesión"
+
+msgid "任务分类"
+msgstr "Categoría de tareas"
+
+msgid "当前序列"
+msgstr "Secuencia actual"
+
+msgid "当前账号"
+msgstr "Cuenta actual"
+
+msgid "刷新账号上下文"
+msgstr "Actualizar contexto de cuenta"
+
+msgid "全部任务"
+msgstr "Todas las tareas"
+
+msgid "Start"
+msgstr "Iniciar"
+
+msgid "Stop"
+msgstr "Detener"
+
+msgid "Pause"
+msgstr "Pausar"
+
+msgid "Resume"
+msgstr "Reanudar"
+
+msgid "Install gamepack"
+msgstr "Instalar paquete de juego"
+
+msgid "Update gamepack"
+msgstr "Actualizar paquete de juego"
+
+msgid "Disable selected service"
+msgstr "Desactivar servicio seleccionado"
+
+msgid "Manage gamepack"
+msgstr "Administrar paquete de juego"
+
+msgid "Read-only overview"
+msgstr "Resumen de solo lectura"
+
+msgid "Refresh tasks"
+msgstr "Actualizar tareas"
+
+msgid "Apply user task reload"
+msgstr "Aplicar recarga de tareas de usuario"
+
+msgid "Apply character code reload"
+msgstr "Aplicar recarga de código de personajes"
+
+msgid "Worker output"
+msgstr "Salida del proceso de ejecución"
+
+msgid "显示窗口"
+msgstr "Mostrar ventana"
+
+msgid "暂停 / 恢复"
+msgstr "Pausar / reanudar"
+
+msgid "退出"
+msgstr "Salir"
+
+msgid "Run / enable task"
+msgstr "Ejecutar / activar tarea"
+
+msgid "本次运行覆盖配置（长期设置在管理窗口保存）"
+msgstr ""
+"Opciones para esta ejecución (guarda los ajustes permanentes en "
+"administración)"
+
+msgid "Program Preferences"
+msgstr "Preferencias del programa"
+
+msgid "Window, audio and inference preferences"
+msgstr "Preferencias de ventana, audio e inferencia"
+
+msgid "Milliseconds between service scheduling passes."
+msgstr "Intervalo entre ciclos de servicios, en milisegundos."
+
+msgid "OCR provider changes apply after restarting the task session."
+msgstr ""
+"Los cambios del proveedor OCR se aplican al reiniciar la sesión de tareas."
+
+msgid "Auto Resize Game Window"
+msgstr "Ajustar automáticamente la ventana del juego"
+
+msgid "Mute Game while in Background"
+msgstr "Silenciar el juego en segundo plano"
+
+msgid "Exit App when Game Exits"
+msgstr "Cerrar la aplicación al salir del juego"
+
+msgid "Trigger Interval"
+msgstr "Intervalo de servicios"
+
+msgid "Use DirectML"
+msgstr "Usar DirectML"
+
+msgid "Auto"
+msgstr "Automático"
+
+msgid "不常用任务"
+msgstr "Tareas poco usadas"
+
+msgid "剧情与移动"
+msgstr "Historia y movimiento"
+
+msgid "战斗与拾取"
+msgstr "Combate y recogida"
+
+msgid "扩展任务"
+msgstr "Tareas de extensión"
+
+msgid "每周任务"
+msgstr "Tareas semanales"
+
+msgid "每日执行"
+msgstr "Ejecución diaria"
+
+msgid "活动"
+msgstr "Eventos"
+
+msgid "登录与输入"
+msgstr "Inicio de sesión y entrada"
+
+msgid "已核验运行账号：{account}"
+msgstr "Cuenta en ejecución verificada: {account}"
+
+msgid ""
+"Windows 用户：{user}\n"
+"资料根：{root}\n"
+"游戏包资料：{package_root}"
+msgstr ""
+"Usuario de Windows: {user}\n"
+"Raíz de datos: {root}\n"
+"Datos del paquete: {package_root}"

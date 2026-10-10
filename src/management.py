@@ -64,6 +64,8 @@ def manage(data_dir, program_version, *, package_root=None):
 
 
 def _manage(data_dir, program_version, *, package_root=None):
+    from src.runtime.native_language import activate_language, load_language
+    activate_language(load_language(data_dir, pack_root=package_root))
     from src.runtime import combat_api
     from gameframe.process_locks import data_lease
     from src.native_maintenance import prepare_native_data

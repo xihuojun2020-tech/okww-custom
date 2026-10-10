@@ -41,6 +41,8 @@ class WutheringWavesNativePackage:
             raise
 
     def _definition(self, task_id, data_dir=None):
+        if task_id is None:
+            return {'class': 'Session', 'kind': 'session'}
         for task in self.manifest['tasks']:
             if task['id'] == task_id:
                 return task
@@ -69,6 +71,15 @@ class WutheringWavesNativePackage:
     def overview_command(self, data_dir):
         launch = self.management_command(data_dir)
         launch['command'][launch['command'].index('src.management')] = 'src.native_overview'
+        return launch
+
+    def configuration_command(self, data_dir):
+        launch = self.management_command(data_dir)
+        launch['command'] = [sys.executable, '-m', 'gameframe.package_process',
+                            '--package', str(self.root), '--expected-version', self.manifest['version'],
+                            '--module', 'src.runtime.native_configuration', '--',
+                            '--data-dir', str(data_dir), '--version', self.manifest['version'],
+                            '--manifest', str(self.root / 'manifest.json')]
         return launch
 
     def close(self):
@@ -100,11 +111,16 @@ class WutheringWavesNativePackage:
         from src.runtime.native_combat_host import NativeCombatHost
         from src.runtime.native_live_status import NativeLiveWriter
         from src.runtime.native_user_tasks import NativeUserTaskStore
+        from src.runtime.native_language import LANGUAGE_DEFAULTS, create_language_config, load_language
+        from src.runtime.native_program_preferences import DEFAULTS, NAME, NativeProgramPreferences
         from src.combat.settings import COMBAT_GLOBAL_DEFAULTS, TEMPLATE_MATCHING_DEFAULTS
 
         data_dir = Path(context.data_dir).resolve()
         data_dir.mkdir(parents=True, exist_ok=True)
         configure_logging(data_dir)
+        create_language_config(data_dir)
+        language = load_language(data_dir, pack_root=self.root)
+        preferences = NativeProgramPreferences(data_dir)
         user_store = NativeUserTaskStore(data_dir)
         user_tasks = user_store.load_tasks()
         user = next((item for item in user_tasks if item['id'] == task_id), None)
@@ -113,6 +129,7 @@ class WutheringWavesNativePackage:
                 raise ValueError('User task definition changed before execution; start it again')
             definition = {**user, 'class': user['class_name']}
         task_entry = (user['task_class'] if user is not None else
+                      'src.task.AutoCombatTask:AutoCombatTask' if task_id is None else
                       definition['module'] + ':' + definition['class'])
         writer = NativeLiveWriter(context, self.manifest['id'], self.manifest['version'])
         self._live_writer = writer
@@ -131,11 +148,12 @@ class WutheringWavesNativePackage:
             # This worker owns its process; private writable data stays outside the pack.
             os.chdir(data_dir)
             if self.engine is None:
-                from onnxocr.onnx_paddleocr import ONNXPaddleOcr
-                self.engine = ONNXPaddleOcr(use_angle_cls=False, use_npu=False, use_openvino=True)
+                from src.vision.native_ocr_factory import create_ocr
+                self.engine = create_ocr(preferences.config)
             host = NativeCombatHost(
                 context, coco_path=self.source / 'assets/coco_annotations.json',
-                global_options=COMBAT_GLOBAL_DEFAULTS, ocr_engine=self.engine,
+                global_options={**COMBAT_GLOBAL_DEFAULTS, NAME: DEFAULTS, 'Language': LANGUAGE_DEFAULTS},
+                ocr_engine=self.engine, translate=language.translate,
                 ocr_config={'default': {'lib': 'onnxocr'}},
                 template_matching=TEMPLATE_MATCHING_DEFAULTS, native=True,
                 window=getattr(context.device, 'window', None),
@@ -145,7 +163,12 @@ class WutheringWavesNativePackage:
                 task_requirements={task['id']: frozenset(task['required_capabilities'])
                                    for task in self.manifest['tasks']},
                 device_identity=type(context.device).__name__, live_status=writer,
-                user_tasks=user_tasks)
+                user_tasks=user_tasks, program_preferences=preferences.config)
+            host.task_metadata = {task['id']: task for task in self.manifest['tasks']}
+            host.program_preferences = host.global_configs[NAME]
+            configure_preferences = getattr(context.device, 'configure_preferences', None)
+            if configure_preferences is not None:
+                configure_preferences(host.program_preferences, **self.manifest['window_preferences'])
             host.applied_revision = user_store.revision
             attach_native_executor(host.executor)
             if session:

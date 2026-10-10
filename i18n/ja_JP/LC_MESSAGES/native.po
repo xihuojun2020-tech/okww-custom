@@ -1,0 +1,775 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Native UI translations authored on 2026-10-11. See i18n/README.native.md.
+msgid ""
+msgstr ""
+"Project-Id-Version: OK-WW native UI\n"
+"Language: ja_JP\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Language"
+msgstr "言語"
+
+msgid "Set your preferred language"
+msgstr "使用する言語を設定"
+
+msgid ""
+"Language changes apply after restarting the application and task session."
+msgstr "言語の変更はアプリとタスクセッションの再起動後に反映されます。"
+
+msgid "鸣潮账号与完成证据管理"
+msgstr "鳴潮のアカウントと完了証拠の管理"
+
+msgid "建立首个账号"
+msgstr "最初のアカウントを作成"
+
+msgid "导入账号配置包"
+msgstr "アカウント設定をインポート"
+
+msgid "导出账号配置包"
+msgstr "アカウント設定をエクスポート"
+
+msgid "完整性检查 / 锚定旧配置"
+msgstr "整合性確認 / 旧設定を基準に登録"
+
+msgid "打开本地资料目录"
+msgstr "ローカルデータフォルダーを開く"
+
+msgid "日志与诊断"
+msgstr "ログと診断"
+
+msgid "任务与配置"
+msgstr "タスクと設定"
+
+msgid "用户任务代码"
+msgstr "ユーザータスクコード"
+
+msgid "角色代码"
+msgstr "キャラクターコード"
+
+msgid "配置备份与恢复"
+msgstr "設定のバックアップと復元"
+
+msgid "输出目录"
+msgstr "出力フォルダー"
+
+msgid "系统定时任务"
+msgstr "スケジュール済みタスク"
+
+msgid "账号与序列"
+msgstr "アカウントとシーケンス"
+
+msgid "游戏包更新"
+msgstr "ゲームパックの更新"
+
+msgid "完成检查"
+msgstr "完了確認"
+
+msgid "执行状态与每日耗时（只读）"
+msgstr "実行状況と日次所要時間（読み取り専用）"
+
+msgid "每日耗时记录"
+msgstr "日次所要時間の記録"
+
+msgid "账号"
+msgstr "アカウント"
+
+msgid "执行进程"
+msgstr "実行プロセス"
+
+msgid "刷新"
+msgstr "更新"
+
+msgid "添加"
+msgstr "追加"
+
+msgid "删除"
+msgstr "削除"
+
+msgid "上移"
+msgstr "上に移動"
+
+msgid "下移"
+msgstr "下に移動"
+
+msgid "保存"
+msgstr "保存"
+
+msgid "保存列表"
+msgstr "リストを保存"
+
+msgid "保存选择"
+msgstr "選択を保存"
+
+msgid "选择文件"
+msgstr "ファイルを選択"
+
+msgid "编辑全局配置"
+msgstr "全体設定を編集"
+
+msgid "刷新配置"
+msgstr "設定を更新"
+
+msgid "刷新任务"
+msgstr "タスクを更新"
+
+msgid "刷新角色"
+msgstr "キャラクターを更新"
+
+msgid "刷新目录"
+msgstr "フォルダーを更新"
+
+msgid "新任务"
+msgstr "新しいタスク"
+
+msgid "新建任务"
+msgstr "タスクを作成"
+
+msgid "稳定ID"
+msgstr "固定 ID"
+
+msgid "导出类名"
+msgstr "エクスポートするクラス名"
+
+msgid "所需能力 JSON"
+msgstr "必要な機能（JSON）"
+
+msgid "验证并保存"
+msgstr "検証して保存"
+
+msgid "删除任务"
+msgstr "タスクを削除"
+
+msgid "导入脚本包"
+msgstr "スクリプトパックをインポート"
+
+msgid "导出所选任务"
+msgstr "選択したタスクをエクスポート"
+
+msgid "删除脚本包"
+msgstr "スクリプトパックを削除"
+
+msgid "脚本包导入预览"
+msgstr "スクリプトパックのインポート確認"
+
+msgid "导出独立任务"
+msgstr "単独タスクをエクスポート"
+
+msgid "脚本包标识"
+msgstr "スクリプトパック ID"
+
+msgid "显示名称"
+msgstr "表示名"
+
+msgid "版本"
+msgstr "バージョン"
+
+msgid "导出原生脚本包"
+msgstr "ネイティブスクリプトパックをエクスポート"
+
+msgid "导出完整脚本包"
+msgstr "スクリプトパック全体をエクスポート"
+
+msgid "删除用户任务"
+msgstr "ユーザータスクを削除"
+
+msgid "未保存的代码"
+msgstr "未保存のコード"
+
+msgid "选择用户脚本包"
+msgstr "ユーザースクリプトパックを選択"
+
+msgid "原生包任务定义"
+msgstr "ネイティブパックのタスク定義"
+
+msgid "确认导入"
+msgstr "インポートを確認"
+
+msgid "迁移并导入"
+msgstr "移行してインポート"
+
+msgid "验证并导入"
+msgstr "検証してインポート"
+
+msgid "恢复内置代码"
+msgstr "組み込みコードを復元"
+
+msgid "恢复内置角色"
+msgstr "組み込みキャラクターを復元"
+
+msgid "复制修改提示"
+msgstr "変更用プロンプトをコピー"
+
+msgid "修改说明"
+msgstr "変更の説明"
+
+msgid "贡献代码"
+msgstr "コードを提供"
+
+msgid "修改角色代码"
+msgstr "キャラクターコードを変更"
+
+msgid "请选择角色"
+msgstr "キャラクターを選択してください"
+
+msgid "输出资料目标目录"
+msgstr "出力データの保存先"
+
+msgid "选择输出目录"
+msgstr "出力フォルダーを選択"
+
+msgid "预览输出迁移"
+msgstr "出力データの移行を確認"
+
+msgid "确认迁移输出"
+msgstr "出力データの移行を確定"
+
+msgid "确认迁移输出资料"
+msgstr "出力データの移行を確認"
+
+msgid "选择空输出目录"
+msgstr "空の出力フォルダーを選択"
+
+msgid "打开目录"
+msgstr "フォルダーを開く"
+
+msgid "选择账号配置包"
+msgstr "アカウント設定パックを選択"
+
+msgid "确认建立首账号"
+msgstr "最初のアカウント作成を確認"
+
+msgid "配置操作失败："
+msgstr "設定操作に失敗しました："
+
+msgid "操作失败："
+msgstr "操作に失敗しました："
+
+msgid "配置进程不可用："
+msgstr "設定プロセスを利用できません："
+
+msgid "配置进程不可用，草稿保留："
+msgstr "設定プロセスを利用できません。下書きは保持されています："
+
+msgid "操作失败，草稿保留："
+msgstr "操作に失敗しました。下書きは保持されています："
+
+msgid "能力JSON无效："
+msgstr "機能の JSON が無効です："
+
+msgid "迁移任务 JSON 无效："
+msgstr "移行タスクの JSON が無効です："
+
+msgid "脚本包已导出："
+msgstr "スクリプトパックをエクスポートしました："
+
+msgid "正在加载任务配置…"
+msgstr "タスク設定を読み込み中…"
+
+msgid "正在加载…"
+msgstr "読み込み中…"
+
+msgid "正在保存…"
+msgstr "保存中…"
+
+msgid "正在执行设备动作…"
+msgstr "デバイス操作を実行中…"
+
+msgid "设备动作已执行。"
+msgstr "デバイス操作が完了しました。"
+
+msgid "配置已保存。"
+msgstr "設定を保存しました。"
+
+msgid "配置已加载。"
+msgstr "設定を読み込みました。"
+
+msgid "等待配置进程加载。"
+msgstr "設定プロセスを待機中。"
+
+msgid "正在读取任务…"
+msgstr "タスクを読み込み中…"
+
+msgid "正在验证代码并处理任务…"
+msgstr "コードを検証し、タスクを処理中…"
+
+msgid "正在处理角色…"
+msgstr "キャラクターを処理中…"
+
+msgid "正在验证并保存角色…"
+msgstr "キャラクターを検証して保存中…"
+
+msgid "正在停止配置所有者并迁移输出…"
+msgstr "設定プロセスを停止し、出力データを移行中…"
+
+msgid "请先选择输出目录。"
+msgstr "先に出力フォルダーを選択してください。"
+
+msgid "请先选择已保存任务。"
+msgstr "先に保存済みのタスクを選択してください。"
+
+msgid "请整组重导入更新脚本包。"
+msgstr "パック全体を再インポートして更新してください。"
+
+msgid "内置代码"
+msgstr "組み込みコード"
+
+msgid "自定义代码"
+msgstr "カスタムコード"
+
+msgid "无执行进程"
+msgstr "実行プロセスなし"
+
+msgid "请选择执行进程"
+msgstr "実行プロセスを選択してください"
+
+msgid "已暂停"
+msgstr "一時停止中"
+
+msgid "执行中"
+msgstr "実行中"
+
+msgid "空闲 / 后台服务"
+msgstr "待機中 / バックグラウンドサービス"
+
+msgid "执行状态读取失败："
+msgstr "実行状況の読み込みに失敗しました："
+
+msgid "数据根（配置权威）"
+msgstr "データルート（設定の基準）"
+
+msgid "日志"
+msgstr "ログ"
+
+msgid "截图"
+msgstr "スクリーンショット"
+
+msgid "诊断"
+msgstr "診断"
+
+msgid "配置备份"
+msgstr "設定のバックアップ"
+
+msgid "完成证据"
+msgstr "完了証拠"
+
+msgid "运行控制状态（不迁移）"
+msgstr "実行制御状態（移行しません）"
+
+msgid "Close"
+msgstr "閉じる"
+
+msgid "Cancel"
+msgstr "キャンセル"
+
+msgid "OK"
+msgstr "OK"
+
+msgid "Yes"
+msgstr "はい"
+
+msgid "No"
+msgstr "いいえ"
+
+msgid " 正在重新加载配置进程…"
+msgstr " 設定プロセスを再読み込み中…"
+
+msgid " 磁盘已提交，请重启管理窗口以重新加载账号；旧账号编辑已停用。"
+msgstr " ディスクへの確定は完了しています。管理画面を再起動してアカウントを読み込み直してください。旧データの編集は無効です。"
+
+msgid " 配置进程已重新加载。"
+msgstr " 設定プロセスを再読み込みしました。"
+
+msgid "任务注册已更新到磁盘，配置进程未应用；运行中保留旧注册表。"
+msgstr " タスク登録をディスクに保存しましたが、設定プロセスには未反映です。実行中のプロセスは旧登録を保持します。"
+
+msgid "修改提示已复制，可粘贴到聊天工具并补充需求。"
+msgstr " 変更用プロンプトをコピーしました。チャットツールに貼り付け、要件を追記してください。"
+
+msgid "删除整个脚本包的任务注册？配置和历史源码保留。"
+msgstr " このパックのタスク登録をすべて削除しますか？設定と過去のソースは保持されます。"
+
+msgid "删除此角色自定义代码并恢复内置模式？"
+msgstr " このキャラクターのカスタムコードを削除し、組み込みモードに戻しますか？"
+
+msgid "安全模式：请建立首账号、导入配置包或查看完整性检查。\n"
+msgstr "セーフモード：最初のアカウントを作成するか、設定パックのインポートまたは整合性確認を行ってください。\n"
+
+msgid "导入会执行可信 Python 验证代码。相同脚本包标识会整组更新；原配置和历史源码保留。"
+msgstr "インポート時に信頼済みの Python 検証コードを実行します。同じパック ID は全体を更新し、既存設定とソース履歴を保持します。"
+
+msgid "导入包成员不能单独删除，请使用删除脚本包。"
+msgstr "インポート済みのメンバーは個別に削除できません。パックの削除を使用してください。"
+
+msgid "导入包成员为只读；通过整组重导入更新代码和素材。"
+msgstr "インポート済みのメンバーは読み取り専用です。コードと素材の更新にはパック全体を再インポートしてください。"
+
+msgid "当前为源码工作目录，不能在管理窗口替换游戏包；请使用已安装且带文件清单的游戏包。"
+msgstr "現在はソース作業ディレクトリです。管理画面からのゲームパック置換には、ファイル一覧付きのインストール済みパックを使用してください。"
+
+msgid "操作失败，输出迁移未提交："
+msgstr "操作に失敗しました。出力データの移行は未確定です："
+
+msgid "放弃当前未保存的修改？"
+msgstr "現在の未保存の変更を破棄しますか？"
+
+msgid "放弃当前未保存的角色修改？"
+msgstr "キャラクターの未保存の変更を破棄しますか？"
+
+msgid "新任务：保存时生成稳定ID"
+msgstr "新しいタスク：保存時に固定 ID を生成します"
+
+msgid "旧包迁移任务：确认导出类、稳定 key 与设备能力"
+msgstr "旧パックの移行：クラス、固定キー、デバイス機能を確認してください"
+
+msgid "未选择执行进程；展示已保存记录。"
+msgstr "実行プロセスが未選択です。保存済みの記録を表示します。"
+
+msgid "正在编辑自定义草稿，保存后才启用。"
+msgstr "カスタムコードの下書きを編集中です。保存後に有効になります。"
+
+msgid "此动作需要执行器连接游戏设备。"
+msgstr "この操作には、ゲームデバイスに接続した実行プロセスが必要です。"
+
+msgid "此页迁移输出资料，并保留原文件。账号、配置、用户脚本和数据根不迁移。迁移前停止本窗口配置进程；其他所有者仍占用数据时会明确失败。"
+msgstr ""
+"このページでは出力データを移行し、原本を保持します。アカウント、設定、ユーザースクリプトとデータルートは移行しません。設定プロセスを停止し、他のプロセスがデータを使用中なら移行を拒否します。"
+
+msgid "每次导出一个完整脚本包，或一组独立任务。"
+msgstr "一度にパック全体、または単独タスクのグループをエクスポートしてください。"
+
+msgid "源码已读取。修改类名仍保留这个稳定任务ID与配置。"
+msgstr "ソースを読み込みました。クラス名を変更しても固定タスク ID と設定は保持されます。"
+
+msgid "独立管理窗口：账号设置、序列与已有完成证据；读取特征码和设备动作由已启动的任务进程执行。"
+msgstr "独立管理画面：アカウント設定、シーケンス、保存済みの完了証拠。識別コードの読み取りとデバイス操作は既存のタスクプロセスが実行します。"
+
+msgid ""
+"用户任务使用 NativeBaseTask / "
+"NativeTriggerTask。保存前独立验证代码；此处编辑的是可信可执行代码。保存只更新配置进程，实际运行进程需明确重载或重新启动。"
+msgstr ""
+"ユーザータスクは NativeBaseTask / NativeTriggerTask "
+"を使用します。信頼済みの実行コードを保存前に検証します。保存は設定プロセスだけを更新し、実行中のプロセスには明示的な再読み込みか再起動が必要です。"
+
+msgid "由已启动的任务进程连续读取特征码，再确认绑定账号"
+msgstr "実行中のタスクプロセスが識別コードを連続して読み取り、確認後にアカウントへ登録します。"
+
+msgid "脚本包注册与素材已更新，配置进程已应用；实际 worker 需明确重载。"
+msgstr "パック登録と素材を設定プロセスに反映しました。実行中のプロセスには明示的な再読み込みが必要です。"
+
+msgid "角色代码已保存，配置进程未应用；运行进程保留旧代码。"
+msgstr "キャラクターコードを保存しましたが、設定プロセスには未反映です。実行中のプロセスは旧コードを保持します。"
+
+msgid "角色修改已保存，配置进程已应用。实际运行进程需明确重载或重启任务。"
+msgstr "キャラクターの変更を保存し、設定プロセスに反映しました。実行中のプロセスは明示的な再読み込みかタスクの再起動が必要です。"
+
+msgid "角色源码已读取。自定义代码须保留当前类名。"
+msgstr "キャラクターのソースを読み込みました。カスタムコードでは現在のクラス名を保持してください。"
+
+msgid "请先选择角色并切换到自定义代码。"
+msgstr "先にキャラクターを選択し、カスタムコードに切り替えてください。"
+
+msgid "请选择一个脚本包，或一个以上独立任务。"
+msgstr "スクリプトパックを一つ、または単独タスクを一つ以上選択してください。"
+
+msgid "账号配置包已导出。"
+msgstr "アカウント設定パックをエクスポートしました。"
+
+msgid "账号配置已验证，可在任务窗口执行。"
+msgstr "アカウント設定を検証しました。タスク画面から実行できます。"
+
+msgid "输出目录已提交，原文件保留；数据根未迁移。配置进程将重新加载目录配置。"
+msgstr "出力フォルダーを確定しました。原本とデータルートは維持されます。設定プロセスがフォルダー設定を再読み込みします。"
+
+msgid "输出目录已提交，收尾失败，请重新加载管理窗口："
+msgstr "出力フォルダーは確定済みですが、後処理に失敗しました。管理画面を再読み込みしてください："
+
+msgid "选择内置或自定义角色代码。保存前独立验证；运行中的共享会话需要明确重载，单次任务重启后应用。"
+msgstr ""
+"組み込みまたはカスタムのキャラクターコードを選択してください。保存前に検証します。共有セッションには明示的な再読み込みが必要で、単発タスクは再起動後に反映します。"
+
+msgid "选择数据根所在本机磁盘上的空输出目录，先预览再迁移。"
+msgstr "データルートと同じローカルディスクの空フォルダーを選択し、確認後に移行してください。"
+
+msgid ""
+"选择角色和自定义模式，编辑或粘贴完整 Python 文件。改动行会高亮。\n"
+"保存前独立验证代码；失败会保留草稿。运行中的共享会话需在启动器明确重载，单次任务需重新启动。恢复内置会删除此角色的自定义源码。"
+msgstr ""
+"キャラクターとカスタムモードを選び、Python ファイル全体を編集または貼り付けてください。変更行を強調表示します。\n"
+"保存前に検証し、失敗時は下書きを保持します。共有セッションを明示的に再読み込みするか、単発タスクを再起動してください。組み込みモードへの復元はカスタムソースを削除します。"
+
+msgid "配置进程不可用，未提交代码。"
+msgstr "設定プロセスを利用できません。コードは未確定です。"
+
+msgid "配置进程不可用，未提交角色修改。"
+msgstr "設定プロセスを利用できません。キャラクターの変更は未確定です。"
+
+msgid "验证与保存完成；配置进程已应用。实际worker需明确重载或重新启动。"
+msgstr "検証と保存が完了し、設定プロセスに反映しました。実行中のプロセスには明示的な再読み込みか再起動が必要です。"
+
+msgid "维护失败："
+msgstr "メンテナンスに失敗しました："
+
+msgid "输出目录已提交。"
+msgstr "出力フォルダーの変更を確定しました。"
+
+msgid "配置维护已提交。"
+msgstr "設定のメンテナンスを確定しました。"
+
+msgid "配置备份已创建。"
+msgstr "設定のバックアップを作成しました。"
+
+msgid "配置进程启动失败。"
+msgstr "設定プロセスの起動に失敗しました。"
+
+msgid " 配置进程未恢复："
+msgstr " 設定プロセスが復旧しませんでした："
+
+msgid "已有操作正在进行，或账号运行时需要重新启动；暂不能维护配置"
+msgstr "操作中、またはアカウント実行環境の再起動が必要なため、設定をメンテナンスできません。"
+
+msgid "建立账号 {label} 的可信总配置？请确认手机号、昵称及所选序列。"
+msgstr "アカウント {label} の信頼済みマスター設定を作成しますか？電話番号、ニックネーム、選択したシーケンスを確認してください。"
+
+msgid ""
+"将替换当前全部账号配置：{accounts} 个账号，{sequences} 个序列，{records} 条完成记录。\n"
+"导入前将保存事务备份。"
+msgstr ""
+"現在の全アカウント設定を置換します：{accounts} アカウント、{sequences} シーケンス、{records} 完了記録。\n"
+"インポート前にトランザクションのバックアップを保存します。"
+
+msgid ""
+"\n"
+"配置包已被外部修改；确认将明确接受这些修改。"
+msgstr ""
+"\n"
+"設定パッケージは外部で変更されています。確認すると、この変更を明示的に受け入れます。"
+
+msgid "目录尚未创建："
+msgstr "フォルダーがまだ作成されていません："
+
+msgid "无法打开目录："
+msgstr "フォルダーを開けません："
+
+msgid "输出迁移预览：{files}个文件，{size:.2f} MiB。保留原文件；账号、配置和用户脚本留在数据根。"
+msgstr ""
+"出力移行のプレビュー：{files} ファイル、{size:.2f} "
+"MiB。元のファイルを保持し、アカウント、設定、ユーザースクリプトはデータルートに残します。"
+
+msgid ""
+"将输出复制并校验到：{destination}\n"
+"保留原文件，更新输出目录配置，随后重新加载配置进程。"
+msgstr ""
+"出力をコピーして検証します：{destination}\n"
+"元のファイルを保持し、出力フォルダー設定を更新した後、設定プロセスを再読み込みします。"
+
+msgid "已读取{count}个用户任务；已保存版本 {saved}，配置进程版本 {applied}；运行进程需单独重载。"
+msgstr ""
+"{count} 件のユーザータスクを読み込みました。保存済みリビジョン {saved}、設定プロセスのリビジョン "
+"{applied}。実行プロセスは別途再読み込みしてください。"
+
+msgid "已读取{count}个角色；已保存版本 {saved}，配置进程版本 {applied}。运行进程需单独重载。"
+msgstr ""
+"{count} 人のキャラクターを読み込みました。保存済みリビジョン {saved}、設定プロセスのリビジョン "
+"{applied}。実行プロセスは別途再読み込みしてください。"
+
+msgid "删除任务 {identity} 的注册？配置和历史源码保留。"
+msgstr "タスク {identity} の登録を削除しますか？設定とソース履歴は保持します。"
+
+msgid "未知"
+msgstr "不明"
+
+msgid ""
+"\n"
+"\n"
+"无法迁移：\n"
+msgstr ""
+"\n"
+"\n"
+"移行できません：\n"
+
+msgid "全局："
+msgstr "グローバル："
+
+msgid "Package"
+msgstr "ゲームパッケージ"
+
+msgid "Execution mode"
+msgstr "実行モード"
+
+msgid "Tasks"
+msgstr "タスク"
+
+msgid "Task config JSON"
+msgstr "タスク設定 JSON"
+
+msgid "设备"
+msgstr "デバイス"
+
+msgid "高级设备 JSON"
+msgstr "詳細デバイス設定 JSON"
+
+msgid "能力匹配"
+msgstr "機能の適合"
+
+msgid "暂停 / 恢复热键"
+msgstr "一時停止 / 再開ホットキー"
+
+msgid "系统托盘通知"
+msgstr "システムトレイ通知"
+
+msgid "关闭窗口时最小化到托盘"
+msgstr "閉じるときにトレイへ最小化"
+
+msgid "保存截图"
+msgstr "スクリーンショットを保存"
+
+msgid "截图并识别文字"
+msgstr "画面を撮影して文字認識"
+
+msgid "打开资料目录"
+msgstr "データフォルダーを開く"
+
+msgid "选择本地资料根"
+msgstr "ローカルデータルートを選択"
+
+msgid "打开应用时恢复已保存辅助服务"
+msgstr "起動時に保存済みの補助サービスを復元"
+
+msgid "仅启动会话"
+msgstr "セッションのみ開始"
+
+msgid "任务分类"
+msgstr "タスク分類"
+
+msgid "当前序列"
+msgstr "現在のシーケンス"
+
+msgid "当前账号"
+msgstr "現在のアカウント"
+
+msgid "刷新账号上下文"
+msgstr "アカウント状態を更新"
+
+msgid "全部任务"
+msgstr "すべてのタスク"
+
+msgid "Start"
+msgstr "開始"
+
+msgid "Stop"
+msgstr "停止"
+
+msgid "Pause"
+msgstr "一時停止"
+
+msgid "Resume"
+msgstr "再開"
+
+msgid "Install gamepack"
+msgstr "ゲームパッケージをインストール"
+
+msgid "Update gamepack"
+msgstr "ゲームパッケージを更新"
+
+msgid "Disable selected service"
+msgstr "選択したサービスを無効化"
+
+msgid "Manage gamepack"
+msgstr "ゲームパッケージを管理"
+
+msgid "Read-only overview"
+msgstr "読み取り専用の概要"
+
+msgid "Refresh tasks"
+msgstr "タスクを更新"
+
+msgid "Apply user task reload"
+msgstr "ユーザータスクの再読み込みを適用"
+
+msgid "Apply character code reload"
+msgstr "キャラクターコードの再読み込みを適用"
+
+msgid "Worker output"
+msgstr "実行プロセスの出力"
+
+msgid "显示窗口"
+msgstr "ウィンドウを表示"
+
+msgid "暂停 / 恢复"
+msgstr "一時停止 / 再開"
+
+msgid "退出"
+msgstr "終了"
+
+msgid "Run / enable task"
+msgstr "タスクを実行 / 有効化"
+
+msgid "本次运行覆盖配置（长期设置在管理窗口保存）"
+msgstr "今回の実行の設定上書き（永続設定は管理画面で保存）"
+
+msgid "Program Preferences"
+msgstr "プログラム設定"
+
+msgid "Window, audio and inference preferences"
+msgstr "ウィンドウ、音声、推論の設定"
+
+msgid "Milliseconds between service scheduling passes."
+msgstr "サービスのスケジューリング間隔（ミリ秒）。"
+
+msgid "OCR provider changes apply after restarting the task session."
+msgstr "OCR プロバイダーの変更はタスクセッションの再起動後に適用されます。"
+
+msgid "Auto Resize Game Window"
+msgstr "ゲームウィンドウを自動調整"
+
+msgid "Mute Game while in Background"
+msgstr "バックグラウンド時にゲームをミュート"
+
+msgid "Exit App when Game Exits"
+msgstr "ゲーム終了時にアプリを終了"
+
+msgid "Trigger Interval"
+msgstr "サービス実行間隔"
+
+msgid "Use DirectML"
+msgstr "DirectML を使用"
+
+msgid "Auto"
+msgstr "自動"
+
+msgid "不常用任务"
+msgstr "使用頻度の低いタスク"
+
+msgid "剧情与移动"
+msgstr "ストーリーと移動"
+
+msgid "战斗与拾取"
+msgstr "戦闘と回収"
+
+msgid "扩展任务"
+msgstr "拡張タスク"
+
+msgid "每周任务"
+msgstr "週間タスク"
+
+msgid "每日执行"
+msgstr "デイリー実行"
+
+msgid "活动"
+msgstr "イベント"
+
+msgid "登录与输入"
+msgstr "ログインと入力"
+
+msgid "已核验运行账号：{account}"
+msgstr "検証済みの実行アカウント：{account}"
+
+msgid ""
+"Windows 用户：{user}\n"
+"资料根：{root}\n"
+"游戏包资料：{package_root}"
+msgstr ""
+"Windows ユーザー：{user}\n"
+"データルート：{root}\n"
+"ゲームパッケージのデータ：{package_root}"

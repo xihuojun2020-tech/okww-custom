@@ -1,0 +1,767 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Native UI translations authored on 2026-10-11. See i18n/README.native.md.
+msgid ""
+msgstr ""
+"Project-Id-Version: OK-WW native UI\n"
+"Language: zh_CN\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Language"
+msgstr "语言"
+
+msgid "Set your preferred language"
+msgstr "设置首选语言"
+
+msgid ""
+"Language changes apply after restarting the application and task session."
+msgstr "语言更改在重启程序和任务会话后生效。"
+
+msgid "鸣潮账号与完成证据管理"
+msgstr "鸣潮账号与完成证据管理"
+
+msgid "建立首个账号"
+msgstr "建立首个账号"
+
+msgid "导入账号配置包"
+msgstr "导入账号配置包"
+
+msgid "导出账号配置包"
+msgstr "导出账号配置包"
+
+msgid "完整性检查 / 锚定旧配置"
+msgstr "完整性检查 / 锚定旧配置"
+
+msgid "打开本地资料目录"
+msgstr "打开本地资料目录"
+
+msgid "日志与诊断"
+msgstr "日志与诊断"
+
+msgid "任务与配置"
+msgstr "任务与配置"
+
+msgid "用户任务代码"
+msgstr "用户任务代码"
+
+msgid "角色代码"
+msgstr "角色代码"
+
+msgid "配置备份与恢复"
+msgstr "配置备份与恢复"
+
+msgid "输出目录"
+msgstr "输出目录"
+
+msgid "系统定时任务"
+msgstr "系统定时任务"
+
+msgid "账号与序列"
+msgstr "账号与序列"
+
+msgid "游戏包更新"
+msgstr "游戏包更新"
+
+msgid "完成检查"
+msgstr "完成检查"
+
+msgid "执行状态与每日耗时（只读）"
+msgstr "执行状态与每日耗时（只读）"
+
+msgid "每日耗时记录"
+msgstr "每日耗时记录"
+
+msgid "账号"
+msgstr "账号"
+
+msgid "执行进程"
+msgstr "执行进程"
+
+msgid "刷新"
+msgstr "刷新"
+
+msgid "添加"
+msgstr "添加"
+
+msgid "删除"
+msgstr "删除"
+
+msgid "上移"
+msgstr "上移"
+
+msgid "下移"
+msgstr "下移"
+
+msgid "保存"
+msgstr "保存"
+
+msgid "保存列表"
+msgstr "保存列表"
+
+msgid "保存选择"
+msgstr "保存选择"
+
+msgid "选择文件"
+msgstr "选择文件"
+
+msgid "编辑全局配置"
+msgstr "编辑全局配置"
+
+msgid "刷新配置"
+msgstr "刷新配置"
+
+msgid "刷新任务"
+msgstr "刷新任务"
+
+msgid "刷新角色"
+msgstr "刷新角色"
+
+msgid "刷新目录"
+msgstr "刷新目录"
+
+msgid "新任务"
+msgstr "新任务"
+
+msgid "新建任务"
+msgstr "新建任务"
+
+msgid "稳定ID"
+msgstr "稳定ID"
+
+msgid "导出类名"
+msgstr "导出类名"
+
+msgid "所需能力 JSON"
+msgstr "所需能力 JSON"
+
+msgid "验证并保存"
+msgstr "验证并保存"
+
+msgid "删除任务"
+msgstr "删除任务"
+
+msgid "导入脚本包"
+msgstr "导入脚本包"
+
+msgid "导出所选任务"
+msgstr "导出所选任务"
+
+msgid "删除脚本包"
+msgstr "删除脚本包"
+
+msgid "脚本包导入预览"
+msgstr "脚本包导入预览"
+
+msgid "导出独立任务"
+msgstr "导出独立任务"
+
+msgid "脚本包标识"
+msgstr "脚本包标识"
+
+msgid "显示名称"
+msgstr "显示名称"
+
+msgid "版本"
+msgstr "版本"
+
+msgid "导出原生脚本包"
+msgstr "导出原生脚本包"
+
+msgid "导出完整脚本包"
+msgstr "导出完整脚本包"
+
+msgid "删除用户任务"
+msgstr "删除用户任务"
+
+msgid "未保存的代码"
+msgstr "未保存的代码"
+
+msgid "选择用户脚本包"
+msgstr "选择用户脚本包"
+
+msgid "原生包任务定义"
+msgstr "原生包任务定义"
+
+msgid "确认导入"
+msgstr "确认导入"
+
+msgid "迁移并导入"
+msgstr "迁移并导入"
+
+msgid "验证并导入"
+msgstr "验证并导入"
+
+msgid "恢复内置代码"
+msgstr "恢复内置代码"
+
+msgid "恢复内置角色"
+msgstr "恢复内置角色"
+
+msgid "复制修改提示"
+msgstr "复制修改提示"
+
+msgid "修改说明"
+msgstr "修改说明"
+
+msgid "贡献代码"
+msgstr "贡献代码"
+
+msgid "修改角色代码"
+msgstr "修改角色代码"
+
+msgid "请选择角色"
+msgstr "请选择角色"
+
+msgid "输出资料目标目录"
+msgstr "输出资料目标目录"
+
+msgid "选择输出目录"
+msgstr "选择输出目录"
+
+msgid "预览输出迁移"
+msgstr "预览输出迁移"
+
+msgid "确认迁移输出"
+msgstr "确认迁移输出"
+
+msgid "确认迁移输出资料"
+msgstr "确认迁移输出资料"
+
+msgid "选择空输出目录"
+msgstr "选择空输出目录"
+
+msgid "打开目录"
+msgstr "打开目录"
+
+msgid "选择账号配置包"
+msgstr "选择账号配置包"
+
+msgid "确认建立首账号"
+msgstr "确认建立首账号"
+
+msgid "配置操作失败："
+msgstr "配置操作失败："
+
+msgid "操作失败："
+msgstr "操作失败："
+
+msgid "配置进程不可用："
+msgstr "配置进程不可用："
+
+msgid "配置进程不可用，草稿保留："
+msgstr "配置进程不可用，草稿保留："
+
+msgid "操作失败，草稿保留："
+msgstr "操作失败，草稿保留："
+
+msgid "能力JSON无效："
+msgstr "能力JSON无效："
+
+msgid "迁移任务 JSON 无效："
+msgstr "迁移任务 JSON 无效："
+
+msgid "脚本包已导出："
+msgstr "脚本包已导出："
+
+msgid "正在加载任务配置…"
+msgstr "正在加载任务配置…"
+
+msgid "正在加载…"
+msgstr "正在加载…"
+
+msgid "正在保存…"
+msgstr "正在保存…"
+
+msgid "正在执行设备动作…"
+msgstr "正在执行设备动作…"
+
+msgid "设备动作已执行。"
+msgstr "设备动作已执行。"
+
+msgid "配置已保存。"
+msgstr "配置已保存。"
+
+msgid "配置已加载。"
+msgstr "配置已加载。"
+
+msgid "等待配置进程加载。"
+msgstr "等待配置进程加载。"
+
+msgid "正在读取任务…"
+msgstr "正在读取任务…"
+
+msgid "正在验证代码并处理任务…"
+msgstr "正在验证代码并处理任务…"
+
+msgid "正在处理角色…"
+msgstr "正在处理角色…"
+
+msgid "正在验证并保存角色…"
+msgstr "正在验证并保存角色…"
+
+msgid "正在停止配置所有者并迁移输出…"
+msgstr "正在停止配置所有者并迁移输出…"
+
+msgid "请先选择输出目录。"
+msgstr "请先选择输出目录。"
+
+msgid "请先选择已保存任务。"
+msgstr "请先选择已保存任务。"
+
+msgid "请整组重导入更新脚本包。"
+msgstr "请整组重导入更新脚本包。"
+
+msgid "内置代码"
+msgstr "内置代码"
+
+msgid "自定义代码"
+msgstr "自定义代码"
+
+msgid "无执行进程"
+msgstr "无执行进程"
+
+msgid "请选择执行进程"
+msgstr "请选择执行进程"
+
+msgid "已暂停"
+msgstr "已暂停"
+
+msgid "执行中"
+msgstr "执行中"
+
+msgid "空闲 / 后台服务"
+msgstr "空闲 / 后台服务"
+
+msgid "执行状态读取失败："
+msgstr "执行状态读取失败："
+
+msgid "数据根（配置权威）"
+msgstr "数据根（配置权威）"
+
+msgid "日志"
+msgstr "日志"
+
+msgid "截图"
+msgstr "截图"
+
+msgid "诊断"
+msgstr "诊断"
+
+msgid "配置备份"
+msgstr "配置备份"
+
+msgid "完成证据"
+msgstr "完成证据"
+
+msgid "运行控制状态（不迁移）"
+msgstr "运行控制状态（不迁移）"
+
+msgid "Close"
+msgstr "关闭"
+
+msgid "Cancel"
+msgstr "取消"
+
+msgid "OK"
+msgstr "确定"
+
+msgid "Yes"
+msgstr "是"
+
+msgid "No"
+msgstr "否"
+
+msgid " 正在重新加载配置进程…"
+msgstr " 正在重新加载配置进程…"
+
+msgid " 磁盘已提交，请重启管理窗口以重新加载账号；旧账号编辑已停用。"
+msgstr " 磁盘已提交，请重启管理窗口以重新加载账号；旧账号编辑已停用。"
+
+msgid " 配置进程已重新加载。"
+msgstr " 配置进程已重新加载。"
+
+msgid "任务注册已更新到磁盘，配置进程未应用；运行中保留旧注册表。"
+msgstr "任务注册已更新到磁盘，配置进程未应用；运行中保留旧注册表。"
+
+msgid "修改提示已复制，可粘贴到聊天工具并补充需求。"
+msgstr "修改提示已复制，可粘贴到聊天工具并补充需求。"
+
+msgid "删除整个脚本包的任务注册？配置和历史源码保留。"
+msgstr "删除整个脚本包的任务注册？配置和历史源码保留。"
+
+msgid "删除此角色自定义代码并恢复内置模式？"
+msgstr "删除此角色自定义代码并恢复内置模式？"
+
+msgid "安全模式：请建立首账号、导入配置包或查看完整性检查。\n"
+msgstr "安全模式：请建立首账号、导入配置包或查看完整性检查。\n"
+
+msgid "导入会执行可信 Python 验证代码。相同脚本包标识会整组更新；原配置和历史源码保留。"
+msgstr "导入会执行可信 Python 验证代码。相同脚本包标识会整组更新；原配置和历史源码保留。"
+
+msgid "导入包成员不能单独删除，请使用删除脚本包。"
+msgstr "导入包成员不能单独删除，请使用删除脚本包。"
+
+msgid "导入包成员为只读；通过整组重导入更新代码和素材。"
+msgstr "导入包成员为只读；通过整组重导入更新代码和素材。"
+
+msgid "当前为源码工作目录，不能在管理窗口替换游戏包；请使用已安装且带文件清单的游戏包。"
+msgstr "当前为源码工作目录，不能在管理窗口替换游戏包；请使用已安装且带文件清单的游戏包。"
+
+msgid "操作失败，输出迁移未提交："
+msgstr "操作失败，输出迁移未提交："
+
+msgid "放弃当前未保存的修改？"
+msgstr "放弃当前未保存的修改？"
+
+msgid "放弃当前未保存的角色修改？"
+msgstr "放弃当前未保存的角色修改？"
+
+msgid "新任务：保存时生成稳定ID"
+msgstr "新任务：保存时生成稳定ID"
+
+msgid "旧包迁移任务：确认导出类、稳定 key 与设备能力"
+msgstr "旧包迁移任务：确认导出类、稳定 key 与设备能力"
+
+msgid "未选择执行进程；展示已保存记录。"
+msgstr "未选择执行进程；展示已保存记录。"
+
+msgid "正在编辑自定义草稿，保存后才启用。"
+msgstr "正在编辑自定义草稿，保存后才启用。"
+
+msgid "此动作需要执行器连接游戏设备。"
+msgstr "此动作需要执行器连接游戏设备。"
+
+msgid "此页迁移输出资料，并保留原文件。账号、配置、用户脚本和数据根不迁移。迁移前停止本窗口配置进程；其他所有者仍占用数据时会明确失败。"
+msgstr "此页迁移输出资料，并保留原文件。账号、配置、用户脚本和数据根不迁移。迁移前停止本窗口配置进程；其他所有者仍占用数据时会明确失败。"
+
+msgid "每次导出一个完整脚本包，或一组独立任务。"
+msgstr "每次导出一个完整脚本包，或一组独立任务。"
+
+msgid "源码已读取。修改类名仍保留这个稳定任务ID与配置。"
+msgstr "源码已读取。修改类名仍保留这个稳定任务ID与配置。"
+
+msgid "独立管理窗口：账号设置、序列与已有完成证据；读取特征码和设备动作由已启动的任务进程执行。"
+msgstr "独立管理窗口：账号设置、序列与已有完成证据；读取特征码和设备动作由已启动的任务进程执行。"
+
+msgid ""
+"用户任务使用 NativeBaseTask / "
+"NativeTriggerTask。保存前独立验证代码；此处编辑的是可信可执行代码。保存只更新配置进程，实际运行进程需明确重载或重新启动。"
+msgstr ""
+"用户任务使用 NativeBaseTask / "
+"NativeTriggerTask。保存前独立验证代码；此处编辑的是可信可执行代码。保存只更新配置进程，实际运行进程需明确重载或重新启动。"
+
+msgid "由已启动的任务进程连续读取特征码，再确认绑定账号"
+msgstr "由已启动的任务进程连续读取特征码，再确认绑定账号"
+
+msgid "脚本包注册与素材已更新，配置进程已应用；实际 worker 需明确重载。"
+msgstr "脚本包注册与素材已更新，配置进程已应用；实际 worker 需明确重载。"
+
+msgid "角色代码已保存，配置进程未应用；运行进程保留旧代码。"
+msgstr "角色代码已保存，配置进程未应用；运行进程保留旧代码。"
+
+msgid "角色修改已保存，配置进程已应用。实际运行进程需明确重载或重启任务。"
+msgstr "角色修改已保存，配置进程已应用。实际运行进程需明确重载或重启任务。"
+
+msgid "角色源码已读取。自定义代码须保留当前类名。"
+msgstr "角色源码已读取。自定义代码须保留当前类名。"
+
+msgid "请先选择角色并切换到自定义代码。"
+msgstr "请先选择角色并切换到自定义代码。"
+
+msgid "请选择一个脚本包，或一个以上独立任务。"
+msgstr "请选择一个脚本包，或一个以上独立任务。"
+
+msgid "账号配置包已导出。"
+msgstr "账号配置包已导出。"
+
+msgid "账号配置已验证，可在任务窗口执行。"
+msgstr "账号配置已验证，可在任务窗口执行。"
+
+msgid "输出目录已提交，原文件保留；数据根未迁移。配置进程将重新加载目录配置。"
+msgstr "输出目录已提交，原文件保留；数据根未迁移。配置进程将重新加载目录配置。"
+
+msgid "输出目录已提交，收尾失败，请重新加载管理窗口："
+msgstr "输出目录已提交，收尾失败，请重新加载管理窗口："
+
+msgid "选择内置或自定义角色代码。保存前独立验证；运行中的共享会话需要明确重载，单次任务重启后应用。"
+msgstr "选择内置或自定义角色代码。保存前独立验证；运行中的共享会话需要明确重载，单次任务重启后应用。"
+
+msgid "选择数据根所在本机磁盘上的空输出目录，先预览再迁移。"
+msgstr "选择数据根所在本机磁盘上的空输出目录，先预览再迁移。"
+
+msgid ""
+"选择角色和自定义模式，编辑或粘贴完整 Python 文件。改动行会高亮。\n"
+"保存前独立验证代码；失败会保留草稿。运行中的共享会话需在启动器明确重载，单次任务需重新启动。恢复内置会删除此角色的自定义源码。"
+msgstr ""
+"选择角色和自定义模式，编辑或粘贴完整 Python 文件。改动行会高亮。\n"
+"保存前独立验证代码；失败会保留草稿。运行中的共享会话需在启动器明确重载，单次任务需重新启动。恢复内置会删除此角色的自定义源码。"
+
+msgid "配置进程不可用，未提交代码。"
+msgstr "配置进程不可用，未提交代码。"
+
+msgid "配置进程不可用，未提交角色修改。"
+msgstr "配置进程不可用，未提交角色修改。"
+
+msgid "验证与保存完成；配置进程已应用。实际worker需明确重载或重新启动。"
+msgstr "验证与保存完成；配置进程已应用。实际worker需明确重载或重新启动。"
+
+msgid "维护失败："
+msgstr "维护失败："
+
+msgid "输出目录已提交。"
+msgstr "输出目录已提交。"
+
+msgid "配置维护已提交。"
+msgstr "配置维护已提交。"
+
+msgid "配置备份已创建。"
+msgstr "配置备份已创建。"
+
+msgid "配置进程启动失败。"
+msgstr "配置进程启动失败。"
+
+msgid " 配置进程未恢复："
+msgstr " 配置进程未恢复："
+
+msgid "已有操作正在进行，或账号运行时需要重新启动；暂不能维护配置"
+msgstr "已有操作正在进行，或账号运行时需要重新启动；暂不能维护配置"
+
+msgid "建立账号 {label} 的可信总配置？请确认手机号、昵称及所选序列。"
+msgstr "建立账号 {label} 的可信总配置？请确认手机号、昵称及所选序列。"
+
+msgid ""
+"将替换当前全部账号配置：{accounts} 个账号，{sequences} 个序列，{records} 条完成记录。\n"
+"导入前将保存事务备份。"
+msgstr ""
+"将替换当前全部账号配置：{accounts} 个账号，{sequences} 个序列，{records} 条完成记录。\n"
+"导入前将保存事务备份。"
+
+msgid ""
+"\n"
+"配置包已被外部修改；确认将明确接受这些修改。"
+msgstr ""
+"\n"
+"配置包已被外部修改；确认将明确接受这些修改。"
+
+msgid "目录尚未创建："
+msgstr "目录尚未创建："
+
+msgid "无法打开目录："
+msgstr "无法打开目录："
+
+msgid "输出迁移预览：{files}个文件，{size:.2f} MiB。保留原文件；账号、配置和用户脚本留在数据根。"
+msgstr "输出迁移预览：{files}个文件，{size:.2f} MiB。保留原文件；账号、配置和用户脚本留在数据根。"
+
+msgid ""
+"将输出复制并校验到：{destination}\n"
+"保留原文件，更新输出目录配置，随后重新加载配置进程。"
+msgstr ""
+"将输出复制并校验到：{destination}\n"
+"保留原文件，更新输出目录配置，随后重新加载配置进程。"
+
+msgid "已读取{count}个用户任务；已保存版本 {saved}，配置进程版本 {applied}；运行进程需单独重载。"
+msgstr "已读取{count}个用户任务；已保存版本 {saved}，配置进程版本 {applied}；运行进程需单独重载。"
+
+msgid "已读取{count}个角色；已保存版本 {saved}，配置进程版本 {applied}。运行进程需单独重载。"
+msgstr "已读取{count}个角色；已保存版本 {saved}，配置进程版本 {applied}。运行进程需单独重载。"
+
+msgid "删除任务 {identity} 的注册？配置和历史源码保留。"
+msgstr "删除任务 {identity} 的注册？配置和历史源码保留。"
+
+msgid "未知"
+msgstr "未知"
+
+msgid ""
+"\n"
+"\n"
+"无法迁移：\n"
+msgstr ""
+"\n"
+"\n"
+"无法迁移：\n"
+
+msgid "全局："
+msgstr "全局："
+
+msgid "Package"
+msgstr "游戏包"
+
+msgid "Execution mode"
+msgstr "执行模式"
+
+msgid "Tasks"
+msgstr "任务"
+
+msgid "Task config JSON"
+msgstr "任务配置 JSON"
+
+msgid "设备"
+msgstr "设备"
+
+msgid "高级设备 JSON"
+msgstr "高级设备 JSON"
+
+msgid "能力匹配"
+msgstr "能力匹配"
+
+msgid "暂停 / 恢复热键"
+msgstr "暂停 / 恢复热键"
+
+msgid "系统托盘通知"
+msgstr "系统托盘通知"
+
+msgid "关闭窗口时最小化到托盘"
+msgstr "关闭窗口时最小化到托盘"
+
+msgid "保存截图"
+msgstr "保存截图"
+
+msgid "截图并识别文字"
+msgstr "截图并识别文字"
+
+msgid "打开资料目录"
+msgstr "打开资料目录"
+
+msgid "选择本地资料根"
+msgstr "选择本地资料根"
+
+msgid "打开应用时恢复已保存辅助服务"
+msgstr "打开应用时恢复已保存辅助服务"
+
+msgid "仅启动会话"
+msgstr "仅启动会话"
+
+msgid "任务分类"
+msgstr "任务分类"
+
+msgid "当前序列"
+msgstr "当前序列"
+
+msgid "当前账号"
+msgstr "当前账号"
+
+msgid "刷新账号上下文"
+msgstr "刷新账号上下文"
+
+msgid "全部任务"
+msgstr "全部任务"
+
+msgid "Start"
+msgstr "启动"
+
+msgid "Stop"
+msgstr "停止"
+
+msgid "Pause"
+msgstr "暂停"
+
+msgid "Resume"
+msgstr "恢复"
+
+msgid "Install gamepack"
+msgstr "安装游戏包"
+
+msgid "Update gamepack"
+msgstr "更新游戏包"
+
+msgid "Disable selected service"
+msgstr "停用所选服务"
+
+msgid "Manage gamepack"
+msgstr "管理游戏包"
+
+msgid "Read-only overview"
+msgstr "只读概览"
+
+msgid "Refresh tasks"
+msgstr "刷新任务"
+
+msgid "Apply user task reload"
+msgstr "应用用户任务重载"
+
+msgid "Apply character code reload"
+msgstr "应用角色代码重载"
+
+msgid "Worker output"
+msgstr "执行进程输出"
+
+msgid "显示窗口"
+msgstr "显示窗口"
+
+msgid "暂停 / 恢复"
+msgstr "暂停 / 恢复"
+
+msgid "退出"
+msgstr "退出"
+
+msgid "Run / enable task"
+msgstr "运行 / 启用任务"
+
+msgid "本次运行覆盖配置（长期设置在管理窗口保存）"
+msgstr "本次运行覆盖配置（长期设置在管理窗口保存）"
+
+msgid "Program Preferences"
+msgstr "程序偏好"
+
+msgid "Window, audio and inference preferences"
+msgstr "窗口、音频与推理偏好"
+
+msgid "Milliseconds between service scheduling passes."
+msgstr "辅助服务调度间隔，单位为毫秒。"
+
+msgid "OCR provider changes apply after restarting the task session."
+msgstr "OCR 推理后端修改在重启任务会话后生效。"
+
+msgid "Auto Resize Game Window"
+msgstr "自动调整游戏窗口大小"
+
+msgid "Mute Game while in Background"
+msgstr "游戏后台时静音"
+
+msgid "Exit App when Game Exits"
+msgstr "游戏退出时关闭应用"
+
+msgid "Trigger Interval"
+msgstr "服务调度间隔"
+
+msgid "Use DirectML"
+msgstr "使用 DirectML"
+
+msgid "Auto"
+msgstr "自动"
+
+msgid "不常用任务"
+msgstr "不常用任务"
+
+msgid "剧情与移动"
+msgstr "剧情与移动"
+
+msgid "战斗与拾取"
+msgstr "战斗与拾取"
+
+msgid "扩展任务"
+msgstr "扩展任务"
+
+msgid "每周任务"
+msgstr "每周任务"
+
+msgid "每日执行"
+msgstr "每日执行"
+
+msgid "活动"
+msgstr "活动"
+
+msgid "登录与输入"
+msgstr "登录与输入"
+
+msgid "已核验运行账号：{account}"
+msgstr "已核验运行账号：{account}"
+
+msgid ""
+"Windows 用户：{user}\n"
+"资料根：{root}\n"
+"游戏包资料：{package_root}"
+msgstr ""
+"Windows 用户：{user}\n"
+"资料根：{root}\n"
+"游戏包资料：{package_root}"

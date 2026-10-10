@@ -61,7 +61,7 @@ def listen_stop(stop, pause, requests=None):
         if requests is not None and command in {'run-task', 'set-service', 'get-schema',
                                                 'set-config', 'invoke-action', 'reload-user-tasks',
                                                 'reload-character-code', 'inspect-frame',
-                                                'inspect-account-feature'}:
+                                                'inspect-account-feature', 'get-context', 'set-context'}:
             requests.put(message)
             continue
         if command != 'stop':
@@ -74,12 +74,15 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--package', type=Path, required=True)
     parser.add_argument('--expected-version')
-    parser.add_argument('--task', required=True)
+    initial = parser.add_mutually_exclusive_group(required=True)
+    initial.add_argument('--task')
+    initial.add_argument('--session-only', action='store_true')
     parser.add_argument('--data-dir', type=Path, required=True)
     parser.add_argument('--device', type=json_object, required=True)
     parser.add_argument('--config', type=json_object, default={})
     parser.add_argument('--session', action='store_true')
     options = parser.parse_args(argv)
+    options.session = options.session or options.session_only
     stop = threading.Event()
     pause = threading.Event()
     requests = Queue() if options.session else None
@@ -93,20 +96,22 @@ def main(argv=None):
         manifest = PackageManifest.read(options.package)
         if options.expected_version is not None and manifest.version != options.expected_version:
             raise ValueError('Gamepack version changed before the worker started')
-        task = manifest.task(options.task, options.data_dir)
+        task = manifest.task(options.task, options.data_dir) if options.task is not None else None
         if manifest.execution != 'native':
             raise ValueError('Legacy packages use their explicit production bootstrap')
         if options.session and not manifest.supports_session:
             raise ValueError('This package does not provide a shared task session')
+        if options.session_only and options.config:
+            raise ValueError('A session-only start has no task configuration')
         package = manifest.load()
         prepare_data = getattr(package, 'prepare_data', None)
         if prepare_data is not None:
             prepare_data(options.data_dir)
         leases.enter_context(data_lease(options.data_dir))
-        task = manifest.task(options.task, options.data_dir)
+        task = manifest.task(options.task, options.data_dir) if options.task is not None else None
         prepare = getattr(package, 'prepare', None)
         if prepare is not None:
-            prepare(task.id, options.data_dir)
+            prepare(options.task, options.data_dir)
         if stop.is_set():
             raise Cancelled('Task stopped before device creation')
         leases.enter_context(device_input_lease(options.device))
@@ -117,7 +122,7 @@ def main(argv=None):
         store = RunStore(options.data_dir / 'runs.sqlite')
         runtime = Runtime(store, emit)
         if options.session:
-            runtime.run(manifest, package, task.id, device, options.data_dir,
+            runtime.run(manifest, package, options.task, device, options.data_dir,
                         options.config, stop, pause, session=True, requests=requests)
         elif task.kind == 'service':
             # Launching a service is an explicit enable action; errors never clear it.

@@ -1,0 +1,829 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Native UI translations authored on 2026-10-11. See i18n/README.native.md.
+msgid ""
+msgstr ""
+"Project-Id-Version: OK-WW native UI\n"
+"Language: en_US\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Language"
+msgstr "Language"
+
+msgid "Set your preferred language"
+msgstr "Set your preferred language"
+
+msgid ""
+"Language changes apply after restarting the application and task session."
+msgstr ""
+"Language changes apply after restarting the application and task session."
+
+msgid "鸣潮账号与完成证据管理"
+msgstr "Wuthering Waves accounts and completion evidence"
+
+msgid "建立首个账号"
+msgstr "Create first account"
+
+msgid "导入账号配置包"
+msgstr "Import account bundle"
+
+msgid "导出账号配置包"
+msgstr "Export account bundle"
+
+msgid "完整性检查 / 锚定旧配置"
+msgstr "Integrity check / anchor old configuration"
+
+msgid "打开本地资料目录"
+msgstr "Open local data folder"
+
+msgid "日志与诊断"
+msgstr "Logs and diagnostics"
+
+msgid "任务与配置"
+msgstr "Tasks and configuration"
+
+msgid "用户任务代码"
+msgstr "User task code"
+
+msgid "角色代码"
+msgstr "Character code"
+
+msgid "配置备份与恢复"
+msgstr "Configuration backup and restore"
+
+msgid "输出目录"
+msgstr "Output folders"
+
+msgid "系统定时任务"
+msgstr "Scheduled tasks"
+
+msgid "账号与序列"
+msgstr "Accounts and sequences"
+
+msgid "游戏包更新"
+msgstr "Gamepack updates"
+
+msgid "完成检查"
+msgstr "Completion checks"
+
+msgid "执行状态与每日耗时（只读）"
+msgstr "Execution status and daily timings (read only)"
+
+msgid "每日耗时记录"
+msgstr "Daily timing records"
+
+msgid "账号"
+msgstr "Account"
+
+msgid "执行进程"
+msgstr "Execution process"
+
+msgid "刷新"
+msgstr "Refresh"
+
+msgid "添加"
+msgstr "Add"
+
+msgid "删除"
+msgstr "Delete"
+
+msgid "上移"
+msgstr "Move up"
+
+msgid "下移"
+msgstr "Move down"
+
+msgid "保存"
+msgstr "Save"
+
+msgid "保存列表"
+msgstr "Save list"
+
+msgid "保存选择"
+msgstr "Save selection"
+
+msgid "选择文件"
+msgstr "Select file"
+
+msgid "编辑全局配置"
+msgstr "Edit global configuration"
+
+msgid "刷新配置"
+msgstr "Refresh configuration"
+
+msgid "刷新任务"
+msgstr "Refresh tasks"
+
+msgid "刷新角色"
+msgstr "Refresh characters"
+
+msgid "刷新目录"
+msgstr "Refresh folders"
+
+msgid "新任务"
+msgstr "New task"
+
+msgid "新建任务"
+msgstr "Create task"
+
+msgid "稳定ID"
+msgstr "Stable ID"
+
+msgid "导出类名"
+msgstr "Exported class name"
+
+msgid "所需能力 JSON"
+msgstr "Required capabilities JSON"
+
+msgid "验证并保存"
+msgstr "Validate and save"
+
+msgid "删除任务"
+msgstr "Delete task"
+
+msgid "导入脚本包"
+msgstr "Import script bundle"
+
+msgid "导出所选任务"
+msgstr "Export selected tasks"
+
+msgid "删除脚本包"
+msgstr "Delete script bundle"
+
+msgid "脚本包导入预览"
+msgstr "Script bundle import preview"
+
+msgid "导出独立任务"
+msgstr "Export standalone tasks"
+
+msgid "脚本包标识"
+msgstr "Script bundle ID"
+
+msgid "显示名称"
+msgstr "Display name"
+
+msgid "版本"
+msgstr "Version"
+
+msgid "导出原生脚本包"
+msgstr "Export native script bundle"
+
+msgid "导出完整脚本包"
+msgstr "Export complete script bundle"
+
+msgid "删除用户任务"
+msgstr "Delete user task"
+
+msgid "未保存的代码"
+msgstr "Unsaved code"
+
+msgid "选择用户脚本包"
+msgstr "Select user script bundle"
+
+msgid "原生包任务定义"
+msgstr "Native bundle task definitions"
+
+msgid "确认导入"
+msgstr "Confirm import"
+
+msgid "迁移并导入"
+msgstr "Migrate and import"
+
+msgid "验证并导入"
+msgstr "Validate and import"
+
+msgid "恢复内置代码"
+msgstr "Restore built-in code"
+
+msgid "恢复内置角色"
+msgstr "Restore built-in character"
+
+msgid "复制修改提示"
+msgstr "Copy modification prompt"
+
+msgid "修改说明"
+msgstr "Modification instructions"
+
+msgid "贡献代码"
+msgstr "Contribute code"
+
+msgid "修改角色代码"
+msgstr "Modify character code"
+
+msgid "请选择角色"
+msgstr "Select a character"
+
+msgid "输出资料目标目录"
+msgstr "Output data destination"
+
+msgid "选择输出目录"
+msgstr "Select output folder"
+
+msgid "预览输出迁移"
+msgstr "Preview output migration"
+
+msgid "确认迁移输出"
+msgstr "Confirm output migration"
+
+msgid "确认迁移输出资料"
+msgstr "Confirm output data migration"
+
+msgid "选择空输出目录"
+msgstr "Select empty output folder"
+
+msgid "打开目录"
+msgstr "Open folder"
+
+msgid "选择账号配置包"
+msgstr "Select account bundle"
+
+msgid "确认建立首账号"
+msgstr "Confirm first account creation"
+
+msgid "配置操作失败："
+msgstr "Configuration operation failed: "
+
+msgid "操作失败："
+msgstr "Operation failed: "
+
+msgid "配置进程不可用："
+msgstr "Configuration process unavailable: "
+
+msgid "配置进程不可用，草稿保留："
+msgstr "Configuration process unavailable; draft retained: "
+
+msgid "操作失败，草稿保留："
+msgstr "Operation failed; draft retained: "
+
+msgid "能力JSON无效："
+msgstr "Invalid capabilities JSON: "
+
+msgid "迁移任务 JSON 无效："
+msgstr "Invalid migration task JSON: "
+
+msgid "脚本包已导出："
+msgstr "Script bundle exported: "
+
+msgid "正在加载任务配置…"
+msgstr "Loading task configuration…"
+
+msgid "正在加载…"
+msgstr "Loading…"
+
+msgid "正在保存…"
+msgstr "Saving…"
+
+msgid "正在执行设备动作…"
+msgstr "Executing device action…"
+
+msgid "设备动作已执行。"
+msgstr "Device action completed."
+
+msgid "配置已保存。"
+msgstr "Configuration saved."
+
+msgid "配置已加载。"
+msgstr "Configuration loaded."
+
+msgid "等待配置进程加载。"
+msgstr "Waiting for configuration process."
+
+msgid "正在读取任务…"
+msgstr "Reading task…"
+
+msgid "正在验证代码并处理任务…"
+msgstr "Validating code and processing task…"
+
+msgid "正在处理角色…"
+msgstr "Processing character…"
+
+msgid "正在验证并保存角色…"
+msgstr "Validating and saving character…"
+
+msgid "正在停止配置所有者并迁移输出…"
+msgstr "Stopping configuration owner and migrating outputs…"
+
+msgid "请先选择输出目录。"
+msgstr "Select an output folder first."
+
+msgid "请先选择已保存任务。"
+msgstr "Select a saved task first."
+
+msgid "请整组重导入更新脚本包。"
+msgstr "Reimport the entire bundle to update it."
+
+msgid "内置代码"
+msgstr "Built-in code"
+
+msgid "自定义代码"
+msgstr "Custom code"
+
+msgid "无执行进程"
+msgstr "No execution process"
+
+msgid "请选择执行进程"
+msgstr "Select an execution process"
+
+msgid "已暂停"
+msgstr "Paused"
+
+msgid "执行中"
+msgstr "Running"
+
+msgid "空闲 / 后台服务"
+msgstr "Idle / background services"
+
+msgid "执行状态读取失败："
+msgstr "Failed to read execution status: "
+
+msgid "数据根（配置权威）"
+msgstr "Data root (configuration authority)"
+
+msgid "日志"
+msgstr "Logs"
+
+msgid "截图"
+msgstr "Screenshots"
+
+msgid "诊断"
+msgstr "Diagnostics"
+
+msgid "配置备份"
+msgstr "Configuration backups"
+
+msgid "完成证据"
+msgstr "Completion evidence"
+
+msgid "运行控制状态（不迁移）"
+msgstr "Runtime control state (not migrated)"
+
+msgid "Close"
+msgstr "Close"
+
+msgid "Cancel"
+msgstr "Cancel"
+
+msgid "OK"
+msgstr "OK"
+
+msgid "Yes"
+msgstr "Yes"
+
+msgid "No"
+msgstr "No"
+
+msgid " 正在重新加载配置进程…"
+msgstr " Reloading configuration process…"
+
+msgid " 磁盘已提交，请重启管理窗口以重新加载账号；旧账号编辑已停用。"
+msgstr ""
+" Changes are committed to disk. Restart management to reload accounts; old "
+"account editing is disabled."
+
+msgid " 配置进程已重新加载。"
+msgstr " Configuration process reloaded."
+
+msgid "任务注册已更新到磁盘，配置进程未应用；运行中保留旧注册表。"
+msgstr ""
+" Task registration saved to disk but not applied by configuration; running "
+"workers retain the old registry."
+
+msgid "修改提示已复制，可粘贴到聊天工具并补充需求。"
+msgstr ""
+" Modification prompt copied. Paste it into your chat tool and add your "
+"requirements."
+
+msgid "删除整个脚本包的任务注册？配置和历史源码保留。"
+msgstr ""
+" Delete all task registrations in this bundle? Configuration and historical "
+"source are retained."
+
+msgid "删除此角色自定义代码并恢复内置模式？"
+msgstr " Delete this character's custom code and restore built-in mode?"
+
+msgid "安全模式：请建立首账号、导入配置包或查看完整性检查。\n"
+msgstr ""
+"Safe mode: create your first account, import a bundle, or review the "
+"integrity check.\n"
+
+msgid "导入会执行可信 Python 验证代码。相同脚本包标识会整组更新；原配置和历史源码保留。"
+msgstr ""
+"Import executes trusted Python validation code. Matching bundle IDs update "
+"the entire bundle; existing configuration and source history are retained."
+
+msgid "导入包成员不能单独删除，请使用删除脚本包。"
+msgstr ""
+"Imported bundle members cannot be deleted individually. Use Delete script "
+"bundle."
+
+msgid "导入包成员为只读；通过整组重导入更新代码和素材。"
+msgstr ""
+"Imported bundle members are read only. Reimport the entire bundle to update "
+"code and assets."
+
+msgid "当前为源码工作目录，不能在管理窗口替换游戏包；请使用已安装且带文件清单的游戏包。"
+msgstr ""
+"This is a source checkout. Management cannot replace its gamepack; use an "
+"installed package with a file manifest."
+
+msgid "操作失败，输出迁移未提交："
+msgstr "Operation failed; output migration was not committed: "
+
+msgid "放弃当前未保存的修改？"
+msgstr "Discard the current unsaved changes?"
+
+msgid "放弃当前未保存的角色修改？"
+msgstr "Discard the current unsaved character changes?"
+
+msgid "新任务：保存时生成稳定ID"
+msgstr "New task: a stable ID is generated on save"
+
+msgid "旧包迁移任务：确认导出类、稳定 key 与设备能力"
+msgstr ""
+"Legacy bundle migration: confirm exported classes, stable keys and device "
+"capabilities"
+
+msgid "未选择执行进程；展示已保存记录。"
+msgstr "No execution process selected; showing saved records."
+
+msgid "正在编辑自定义草稿，保存后才启用。"
+msgstr "Editing a custom draft; it becomes active only after saving."
+
+msgid "此动作需要执行器连接游戏设备。"
+msgstr "This action requires an execution owner connected to a game device."
+
+msgid "此页迁移输出资料，并保留原文件。账号、配置、用户脚本和数据根不迁移。迁移前停止本窗口配置进程；其他所有者仍占用数据时会明确失败。"
+msgstr ""
+"This page migrates output data and retains originals. Accounts, "
+"configuration, user scripts and the data root stay in place. The "
+"configuration process stops first; other active data owners block migration."
+
+msgid "每次导出一个完整脚本包，或一组独立任务。"
+msgstr "Export one complete bundle or a set of standalone tasks at a time."
+
+msgid "源码已读取。修改类名仍保留这个稳定任务ID与配置。"
+msgstr ""
+"Source loaded. Changing the class name keeps this stable task ID and "
+"configuration."
+
+msgid "独立管理窗口：账号设置、序列与已有完成证据；读取特征码和设备动作由已启动的任务进程执行。"
+msgstr ""
+"Independent management: account settings, sequences and saved completion "
+"evidence. Feature-code reads and device actions run in the existing task "
+"process."
+
+msgid ""
+"用户任务使用 NativeBaseTask / "
+"NativeTriggerTask。保存前独立验证代码；此处编辑的是可信可执行代码。保存只更新配置进程，实际运行进程需明确重载或重新启动。"
+msgstr ""
+"User tasks use NativeBaseTask / NativeTriggerTask. Trusted executable code "
+"is validated before saving. Saving updates the configuration process; "
+"running workers require explicit reload or restart."
+
+msgid "由已启动的任务进程连续读取特征码，再确认绑定账号"
+msgstr ""
+"The running task process reads the feature code repeatedly; confirm before "
+"binding the account."
+
+msgid "脚本包注册与素材已更新，配置进程已应用；实际 worker 需明确重载。"
+msgstr ""
+"Bundle registration and assets updated in configuration; running workers "
+"require explicit reload."
+
+msgid "角色代码已保存，配置进程未应用；运行进程保留旧代码。"
+msgstr ""
+"Character code saved but not applied by configuration; running workers "
+"retain the old code."
+
+msgid "角色修改已保存，配置进程已应用。实际运行进程需明确重载或重启任务。"
+msgstr ""
+"Character changes saved and applied in configuration. Running workers "
+"require explicit reload or task restart."
+
+msgid "角色源码已读取。自定义代码须保留当前类名。"
+msgstr ""
+"Character source loaded. Custom code must keep the current class name."
+
+msgid "请先选择角色并切换到自定义代码。"
+msgstr "Select a character and switch to custom code first."
+
+msgid "请选择一个脚本包，或一个以上独立任务。"
+msgstr "Select one script bundle or one or more standalone tasks."
+
+msgid "账号配置包已导出。"
+msgstr "Account bundle exported."
+
+msgid "账号配置已验证，可在任务窗口执行。"
+msgstr "Account configuration verified; tasks can run from the task window."
+
+msgid "输出目录已提交，原文件保留；数据根未迁移。配置进程将重新加载目录配置。"
+msgstr ""
+"Output folders committed; originals retained and data root unchanged. "
+"Configuration will reload the folder settings."
+
+msgid "输出目录已提交，收尾失败，请重新加载管理窗口："
+msgstr ""
+"Output folders committed, but finalization failed. Reload management: "
+
+msgid "选择内置或自定义角色代码。保存前独立验证；运行中的共享会话需要明确重载，单次任务重启后应用。"
+msgstr ""
+"Choose built-in or custom character code. Code is validated before saving. "
+"Shared sessions require explicit reload; one-shot tasks apply changes on "
+"restart."
+
+msgid "选择数据根所在本机磁盘上的空输出目录，先预览再迁移。"
+msgstr ""
+"Choose an empty output folder on the data root's local disk. Preview before "
+"migration."
+
+msgid ""
+"选择角色和自定义模式，编辑或粘贴完整 Python 文件。改动行会高亮。\n"
+"保存前独立验证代码；失败会保留草稿。运行中的共享会话需在启动器明确重载，单次任务需重新启动。恢复内置会删除此角色的自定义源码。"
+msgstr ""
+"Select a character and custom mode, then edit or paste the complete Python file. Changed lines are highlighted.\n"
+"Code is validated before saving; failures retain the draft. Reload active shared sessions explicitly or restart one-shot tasks. Restoring built-in mode deletes this character's custom source."
+
+msgid "配置进程不可用，未提交代码。"
+msgstr "Configuration process unavailable; code was not committed."
+
+msgid "配置进程不可用，未提交角色修改。"
+msgstr ""
+"Configuration process unavailable; character changes were not committed."
+
+msgid "验证与保存完成；配置进程已应用。实际worker需明确重载或重新启动。"
+msgstr ""
+"Validation and save completed; applied in configuration. Running workers "
+"require explicit reload or restart."
+
+msgid "维护失败："
+msgstr "Maintenance failed: "
+
+msgid "输出目录已提交。"
+msgstr "Output folder changes committed."
+
+msgid "配置维护已提交。"
+msgstr "Configuration maintenance committed."
+
+msgid "配置备份已创建。"
+msgstr "Configuration backup created."
+
+msgid "配置进程启动失败。"
+msgstr "Configuration process startup failed."
+
+msgid " 配置进程未恢复："
+msgstr " Configuration process did not recover: "
+
+msgid "已有操作正在进行，或账号运行时需要重新启动；暂不能维护配置"
+msgstr ""
+"An operation is active or the account runtime needs restarting; "
+"configuration maintenance is unavailable."
+
+msgid "建立账号 {label} 的可信总配置？请确认手机号、昵称及所选序列。"
+msgstr ""
+"Create the trusted master configuration for account {label}? Confirm the "
+"phone number, nickname and selected sequences."
+
+msgid ""
+"将替换当前全部账号配置：{accounts} 个账号，{sequences} 个序列，{records} 条完成记录。\n"
+"导入前将保存事务备份。"
+msgstr ""
+"Replace all current account configurations: {accounts} accounts, {sequences} sequences and {records} completion records.\n"
+"A transaction backup will be saved before import."
+
+msgid ""
+"\n"
+"配置包已被外部修改；确认将明确接受这些修改。"
+msgstr ""
+"\n"
+"The configuration bundle was modified externally; confirming explicitly accepts those changes."
+
+msgid "目录尚未创建："
+msgstr "Folder has not been created: "
+
+msgid "无法打开目录："
+msgstr "Cannot open folder: "
+
+msgid "输出迁移预览：{files}个文件，{size:.2f} MiB。保留原文件；账号、配置和用户脚本留在数据根。"
+msgstr ""
+"Output migration preview: {files} files, {size:.2f} MiB. Original files are "
+"preserved; accounts, configuration and user scripts stay in the data root."
+
+msgid ""
+"将输出复制并校验到：{destination}\n"
+"保留原文件，更新输出目录配置，随后重新加载配置进程。"
+msgstr ""
+"Copy and verify output at: {destination}\n"
+"Preserve original files, update output folder configuration, then reload the configuration process."
+
+msgid "已读取{count}个用户任务；已保存版本 {saved}，配置进程版本 {applied}；运行进程需单独重载。"
+msgstr ""
+"Loaded {count} user tasks; saved revision {saved}, configuration process "
+"revision {applied}. Reload the execution process separately."
+
+msgid "已读取{count}个角色；已保存版本 {saved}，配置进程版本 {applied}。运行进程需单独重载。"
+msgstr ""
+"Loaded {count} characters; saved revision {saved}, configuration process "
+"revision {applied}. Reload the execution process separately."
+
+msgid "删除任务 {identity} 的注册？配置和历史源码保留。"
+msgstr ""
+"Remove the registration for task {identity}? Configuration and source "
+"history will be preserved."
+
+msgid "未知"
+msgstr "Unknown"
+
+msgid ""
+"\n"
+"\n"
+"无法迁移：\n"
+msgstr ""
+"\n"
+"\n"
+"Cannot migrate:\n"
+
+msgid "全局："
+msgstr "Global: "
+
+msgid "Package"
+msgstr "Package"
+
+msgid "Execution mode"
+msgstr "Execution mode"
+
+msgid "Tasks"
+msgstr "Tasks"
+
+msgid "Task config JSON"
+msgstr "Task config JSON"
+
+msgid "设备"
+msgstr "Device"
+
+msgid "高级设备 JSON"
+msgstr "Advanced device JSON"
+
+msgid "能力匹配"
+msgstr "Capability matching"
+
+msgid "暂停 / 恢复热键"
+msgstr "Pause / resume hotkey"
+
+msgid "系统托盘通知"
+msgstr "System tray notifications"
+
+msgid "关闭窗口时最小化到托盘"
+msgstr "Minimize to tray when closing"
+
+msgid "保存截图"
+msgstr "Save screenshot"
+
+msgid "截图并识别文字"
+msgstr "Screenshot and recognize text"
+
+msgid "打开资料目录"
+msgstr "Open data folder"
+
+msgid "选择本地资料根"
+msgstr "Select local data root"
+
+msgid "打开应用时恢复已保存辅助服务"
+msgstr "Restore saved helper services on startup"
+
+msgid "仅启动会话"
+msgstr "Start session only"
+
+msgid "任务分类"
+msgstr "Task category"
+
+msgid "当前序列"
+msgstr "Current sequence"
+
+msgid "当前账号"
+msgstr "Current account"
+
+msgid "刷新账号上下文"
+msgstr "Refresh account context"
+
+msgid "全部任务"
+msgstr "All tasks"
+
+msgid "Start"
+msgstr "Start"
+
+msgid "Stop"
+msgstr "Stop"
+
+msgid "Pause"
+msgstr "Pause"
+
+msgid "Resume"
+msgstr "Resume"
+
+msgid "Install gamepack"
+msgstr "Install gamepack"
+
+msgid "Update gamepack"
+msgstr "Update gamepack"
+
+msgid "Disable selected service"
+msgstr "Disable selected service"
+
+msgid "Manage gamepack"
+msgstr "Manage gamepack"
+
+msgid "Read-only overview"
+msgstr "Read-only overview"
+
+msgid "Refresh tasks"
+msgstr "Refresh tasks"
+
+msgid "Apply user task reload"
+msgstr "Apply user task reload"
+
+msgid "Apply character code reload"
+msgstr "Apply character code reload"
+
+msgid "Worker output"
+msgstr "Worker output"
+
+msgid "显示窗口"
+msgstr "Show window"
+
+msgid "暂停 / 恢复"
+msgstr "Pause / resume"
+
+msgid "退出"
+msgstr "Quit"
+
+msgid "Run / enable task"
+msgstr "Run / enable task"
+
+msgid "本次运行覆盖配置（长期设置在管理窗口保存）"
+msgstr "Overrides for this run (save persistent settings in management)"
+
+msgid "Program Preferences"
+msgstr "Program Preferences"
+
+msgid "Window, audio and inference preferences"
+msgstr "Window, audio and inference preferences"
+
+msgid "Milliseconds between service scheduling passes."
+msgstr "Milliseconds between service scheduling passes."
+
+msgid "OCR provider changes apply after restarting the task session."
+msgstr "OCR provider changes apply after restarting the task session."
+
+msgid "Auto Resize Game Window"
+msgstr "Auto Resize Game Window"
+
+msgid "Mute Game while in Background"
+msgstr "Mute Game while in Background"
+
+msgid "Exit App when Game Exits"
+msgstr "Exit App when Game Exits"
+
+msgid "Trigger Interval"
+msgstr "Trigger Interval"
+
+msgid "Use DirectML"
+msgstr "Use DirectML"
+
+msgid "Auto"
+msgstr "Auto"
+
+msgid "不常用任务"
+msgstr "Less-used tasks"
+
+msgid "剧情与移动"
+msgstr "Story and movement"
+
+msgid "战斗与拾取"
+msgstr "Combat and collection"
+
+msgid "扩展任务"
+msgstr "Extension tasks"
+
+msgid "每周任务"
+msgstr "Weekly tasks"
+
+msgid "每日执行"
+msgstr "Daily execution"
+
+msgid "活动"
+msgstr "Events"
+
+msgid "登录与输入"
+msgstr "Login and input"
+
+msgid "已核验运行账号：{account}"
+msgstr "Verified running account: {account}"
+
+msgid ""
+"Windows 用户：{user}\n"
+"资料根：{root}\n"
+"游戏包资料：{package_root}"
+msgstr ""
+"Windows user: {user}\n"
+"Data root: {root}\n"
+"Gamepack data: {package_root}"

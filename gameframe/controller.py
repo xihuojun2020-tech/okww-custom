@@ -29,7 +29,13 @@ class Controller:
 
     def start(self, manifest, task_id, *, data_dir, config=None, device=None, session=False):
         data_dir = Path(data_dir).resolve()
-        manifest.task(task_id, data_dir)
+        if task_id is None:
+            if not session:
+                raise ValueError('A task is required outside a shared session')
+            if config:
+                raise ValueError('A session-only start has no task configuration')
+        else:
+            manifest.task(task_id, data_dir)
         if config is not None and not isinstance(config, dict):
             raise ValueError('Task config must be a JSON object')
         if device is not None and not isinstance(device, dict):
@@ -51,8 +57,9 @@ class Controller:
                 raise ValueError('A native task requires an explicit device configuration')
             command = [sys.executable, '-m', 'gameframe.worker', '--package', str(manifest.root),
                        '--expected-version', manifest.version,
-                       '--task', task_id, '--data-dir', str(data_dir),
+                       '--data-dir', str(data_dir),
                        '--device', json.dumps(device), '--config', json.dumps(config or {})]
+            command.extend(['--session-only'] if task_id is None else ['--task', task_id])
             if session:
                 command.append('--session')
             cwd = str(Path.cwd())
@@ -85,6 +92,16 @@ class Controller:
             launch = manifest.load().overview_command(Path(data_dir).resolve())
         return self._launch(launch['command'], launch['cwd'], launch['env'], 'overview', False)
 
+    def start_configuration(self, manifest, *, data_dir):
+        if not manifest.configuration:
+            raise ValueError('This package does not provide a configuration process')
+        self.assert_idle()
+        with package_lease(manifest.root):
+            if PackageManifest.read(manifest.root).version != manifest.version:
+                raise ValueError('Gamepack version changed before configuration launch')
+            launch = manifest.load().configuration_command(Path(data_dir).resolve())
+        return self._launch(launch['command'], launch['cwd'], launch['env'], 'configuration', False)
+
     def _launch(self, command, cwd, environment, execution, session):
         if self._protected_path is not None:
             self._protected_path.unlink(missing_ok=True)
@@ -116,7 +133,8 @@ class Controller:
         return self.process
 
     def _send_control(self, command, **values):
-        if self.process is not None and self.process.poll() is None:
+        if (self.process is not None and self.process.poll() is None
+                and not self.process.stdin.closed):
             try:
                 self.process.stdin.write(json.dumps({'command': command, **values}) + '\n')
                 self.process.stdin.flush()
@@ -128,7 +146,7 @@ class Controller:
 
     def request_live(self, command, request_id, **values):
         if command not in {'get-schema', 'set-config', 'invoke-action',
-                           'inspect-frame', 'inspect-account-feature'}:
+                           'inspect-frame', 'inspect-account-feature', 'get-context', 'set-context'}:
             raise ValueError(f'Unsupported live request: {command}')
         if not self.session or not self._send_control(command, request_id=request_id, **values):
             raise RuntimeError('A shared execution session is not running')

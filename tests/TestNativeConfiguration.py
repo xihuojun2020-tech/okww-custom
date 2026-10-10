@@ -40,7 +40,8 @@ class TestNativeConfiguration(unittest.TestCase):
         self.assertTrue(response['ok'], response)
         schema = json.loads(json.dumps(response['schema']))
         self.assertEqual(len(schema['tasks']), 29)
-        self.assertEqual(len(schema['globals']), 3)
+        self.assertEqual({entry['id'] for entry in schema['globals']},
+                         {'Game Hotkey', 'Character Config', 'Monthly Card Config', 'Language', 'Program Preferences'})
         self.assertTrue(all(entry['readonly_values'] == {} for entry in schema['globals']))
         tasks = {task['id']: task for task in schema['tasks']}
         self.assertFalse(tasks['MaterialPlannerTask']['visible'])

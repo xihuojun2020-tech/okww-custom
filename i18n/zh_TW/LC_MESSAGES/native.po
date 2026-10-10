@@ -1,0 +1,767 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Native UI translations authored on 2026-10-11. See i18n/README.native.md.
+msgid ""
+msgstr ""
+"Project-Id-Version: OK-WW native UI\n"
+"Language: zh_TW\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Language"
+msgstr "語言"
+
+msgid "Set your preferred language"
+msgstr "設定偏好語言"
+
+msgid ""
+"Language changes apply after restarting the application and task session."
+msgstr "語言變更在重新啟動程式和任務工作階段後生效。"
+
+msgid "鸣潮账号与完成证据管理"
+msgstr "鳴潮帳號與完成證據管理"
+
+msgid "建立首个账号"
+msgstr "建立第一個帳號"
+
+msgid "导入账号配置包"
+msgstr "匯入帳號設定包"
+
+msgid "导出账号配置包"
+msgstr "匯出帳號設定包"
+
+msgid "完整性检查 / 锚定旧配置"
+msgstr "完整性檢查 / 錨定舊設定"
+
+msgid "打开本地资料目录"
+msgstr "開啟本機資料目錄"
+
+msgid "日志与诊断"
+msgstr "記錄與診斷"
+
+msgid "任务与配置"
+msgstr "任務與設定"
+
+msgid "用户任务代码"
+msgstr "使用者任務程式碼"
+
+msgid "角色代码"
+msgstr "角色程式碼"
+
+msgid "配置备份与恢复"
+msgstr "設定備份與還原"
+
+msgid "输出目录"
+msgstr "輸出目錄"
+
+msgid "系统定时任务"
+msgstr "系統排程任務"
+
+msgid "账号与序列"
+msgstr "帳號與序列"
+
+msgid "游戏包更新"
+msgstr "遊戲包更新"
+
+msgid "完成检查"
+msgstr "完成檢查"
+
+msgid "执行状态与每日耗时（只读）"
+msgstr "執行狀態與每日耗時（唯讀）"
+
+msgid "每日耗时记录"
+msgstr "每日耗時記錄"
+
+msgid "账号"
+msgstr "帳號"
+
+msgid "执行进程"
+msgstr "執行程序"
+
+msgid "刷新"
+msgstr "重新整理"
+
+msgid "添加"
+msgstr "新增"
+
+msgid "删除"
+msgstr "刪除"
+
+msgid "上移"
+msgstr "上移"
+
+msgid "下移"
+msgstr "下移"
+
+msgid "保存"
+msgstr "儲存"
+
+msgid "保存列表"
+msgstr "儲存清單"
+
+msgid "保存选择"
+msgstr "儲存選擇"
+
+msgid "选择文件"
+msgstr "選擇檔案"
+
+msgid "编辑全局配置"
+msgstr "編輯全域設定"
+
+msgid "刷新配置"
+msgstr "重新整理設定"
+
+msgid "刷新任务"
+msgstr "重新整理任務"
+
+msgid "刷新角色"
+msgstr "重新整理角色"
+
+msgid "刷新目录"
+msgstr "重新整理目錄"
+
+msgid "新任务"
+msgstr "新任務"
+
+msgid "新建任务"
+msgstr "建立任務"
+
+msgid "稳定ID"
+msgstr "穩定 ID"
+
+msgid "导出类名"
+msgstr "匯出類別名稱"
+
+msgid "所需能力 JSON"
+msgstr "所需能力 JSON"
+
+msgid "验证并保存"
+msgstr "驗證並儲存"
+
+msgid "删除任务"
+msgstr "刪除任務"
+
+msgid "导入脚本包"
+msgstr "匯入腳本包"
+
+msgid "导出所选任务"
+msgstr "匯出所選任務"
+
+msgid "删除脚本包"
+msgstr "刪除腳本包"
+
+msgid "脚本包导入预览"
+msgstr "腳本包匯入預覽"
+
+msgid "导出独立任务"
+msgstr "匯出獨立任務"
+
+msgid "脚本包标识"
+msgstr "腳本包識別碼"
+
+msgid "显示名称"
+msgstr "顯示名稱"
+
+msgid "版本"
+msgstr "版本"
+
+msgid "导出原生脚本包"
+msgstr "匯出原生腳本包"
+
+msgid "导出完整脚本包"
+msgstr "匯出完整腳本包"
+
+msgid "删除用户任务"
+msgstr "刪除使用者任務"
+
+msgid "未保存的代码"
+msgstr "未儲存的程式碼"
+
+msgid "选择用户脚本包"
+msgstr "選擇使用者腳本包"
+
+msgid "原生包任务定义"
+msgstr "原生包任務定義"
+
+msgid "确认导入"
+msgstr "確認匯入"
+
+msgid "迁移并导入"
+msgstr "遷移並匯入"
+
+msgid "验证并导入"
+msgstr "驗證並匯入"
+
+msgid "恢复内置代码"
+msgstr "還原內建程式碼"
+
+msgid "恢复内置角色"
+msgstr "還原內建角色"
+
+msgid "复制修改提示"
+msgstr "複製修改提示"
+
+msgid "修改说明"
+msgstr "修改說明"
+
+msgid "贡献代码"
+msgstr "貢獻程式碼"
+
+msgid "修改角色代码"
+msgstr "修改角色程式碼"
+
+msgid "请选择角色"
+msgstr "請選擇角色"
+
+msgid "输出资料目标目录"
+msgstr "輸出資料目標目錄"
+
+msgid "选择输出目录"
+msgstr "選擇輸出目錄"
+
+msgid "预览输出迁移"
+msgstr "預覽輸出遷移"
+
+msgid "确认迁移输出"
+msgstr "確認遷移輸出"
+
+msgid "确认迁移输出资料"
+msgstr "確認遷移輸出資料"
+
+msgid "选择空输出目录"
+msgstr "選擇空輸出目錄"
+
+msgid "打开目录"
+msgstr "開啟目錄"
+
+msgid "选择账号配置包"
+msgstr "選擇帳號設定包"
+
+msgid "确认建立首账号"
+msgstr "確認建立第一個帳號"
+
+msgid "配置操作失败："
+msgstr "設定操作失敗："
+
+msgid "操作失败："
+msgstr "操作失敗："
+
+msgid "配置进程不可用："
+msgstr "設定程序無法使用："
+
+msgid "配置进程不可用，草稿保留："
+msgstr "設定程序無法使用，保留草稿："
+
+msgid "操作失败，草稿保留："
+msgstr "操作失敗，保留草稿："
+
+msgid "能力JSON无效："
+msgstr "能力 JSON 無效："
+
+msgid "迁移任务 JSON 无效："
+msgstr "遷移任務 JSON 無效："
+
+msgid "脚本包已导出："
+msgstr "腳本包已匯出："
+
+msgid "正在加载任务配置…"
+msgstr "正在載入任務設定…"
+
+msgid "正在加载…"
+msgstr "正在載入…"
+
+msgid "正在保存…"
+msgstr "正在儲存…"
+
+msgid "正在执行设备动作…"
+msgstr "正在執行裝置動作…"
+
+msgid "设备动作已执行。"
+msgstr "裝置動作已執行。"
+
+msgid "配置已保存。"
+msgstr "設定已儲存。"
+
+msgid "配置已加载。"
+msgstr "設定已載入。"
+
+msgid "等待配置进程加载。"
+msgstr "等待設定程序載入。"
+
+msgid "正在读取任务…"
+msgstr "正在讀取任務…"
+
+msgid "正在验证代码并处理任务…"
+msgstr "正在驗證程式碼並處理任務…"
+
+msgid "正在处理角色…"
+msgstr "正在處理角色…"
+
+msgid "正在验证并保存角色…"
+msgstr "正在驗證並儲存角色…"
+
+msgid "正在停止配置所有者并迁移输出…"
+msgstr "正在停止設定擁有者並遷移輸出…"
+
+msgid "请先选择输出目录。"
+msgstr "請先選擇輸出目錄。"
+
+msgid "请先选择已保存任务。"
+msgstr "請先選擇已儲存任務。"
+
+msgid "请整组重导入更新脚本包。"
+msgstr "請整組重新匯入以更新腳本包。"
+
+msgid "内置代码"
+msgstr "內建程式碼"
+
+msgid "自定义代码"
+msgstr "自訂程式碼"
+
+msgid "无执行进程"
+msgstr "無執行程序"
+
+msgid "请选择执行进程"
+msgstr "請選擇執行程序"
+
+msgid "已暂停"
+msgstr "已暫停"
+
+msgid "执行中"
+msgstr "執行中"
+
+msgid "空闲 / 后台服务"
+msgstr "閒置 / 背景服務"
+
+msgid "执行状态读取失败："
+msgstr "執行狀態讀取失敗："
+
+msgid "数据根（配置权威）"
+msgstr "資料根目錄（設定權威）"
+
+msgid "日志"
+msgstr "記錄"
+
+msgid "截图"
+msgstr "截圖"
+
+msgid "诊断"
+msgstr "診斷"
+
+msgid "配置备份"
+msgstr "設定備份"
+
+msgid "完成证据"
+msgstr "完成證據"
+
+msgid "运行控制状态（不迁移）"
+msgstr "執行控制狀態（不遷移）"
+
+msgid "Close"
+msgstr "關閉"
+
+msgid "Cancel"
+msgstr "取消"
+
+msgid "OK"
+msgstr "確定"
+
+msgid "Yes"
+msgstr "是"
+
+msgid "No"
+msgstr "否"
+
+msgid " 正在重新加载配置进程…"
+msgstr " 正在重新載入設定程序…"
+
+msgid " 磁盘已提交，请重启管理窗口以重新加载账号；旧账号编辑已停用。"
+msgstr " 磁碟已提交，請重新啟動管理視窗以載入帳號；舊帳號編輯已停用。"
+
+msgid " 配置进程已重新加载。"
+msgstr " 設定程序已重新載入。"
+
+msgid "任务注册已更新到磁盘，配置进程未应用；运行中保留旧注册表。"
+msgstr " 任務註冊已寫入磁碟，但設定程序尚未套用；執行中保留舊註冊表。"
+
+msgid "修改提示已复制，可粘贴到聊天工具并补充需求。"
+msgstr " 修改提示已複製，可貼到聊天工具並補充需求。"
+
+msgid "删除整个脚本包的任务注册？配置和历史源码保留。"
+msgstr " 刪除整個腳本包的任務註冊？設定與歷史原始碼會保留。"
+
+msgid "删除此角色自定义代码并恢复内置模式？"
+msgstr " 刪除此角色的自訂程式碼並還原內建模式？"
+
+msgid "安全模式：请建立首账号、导入配置包或查看完整性检查。\n"
+msgstr "安全模式：請建立第一個帳號、匯入設定包或查看完整性檢查。\n"
+
+msgid "导入会执行可信 Python 验证代码。相同脚本包标识会整组更新；原配置和历史源码保留。"
+msgstr "匯入會執行可信的 Python 驗證程式碼。相同腳本包識別碼會整組更新；原設定與歷史原始碼保留。"
+
+msgid "导入包成员不能单独删除，请使用删除脚本包。"
+msgstr "匯入包成員不能單獨刪除，請使用「刪除腳本包」。"
+
+msgid "导入包成员为只读；通过整组重导入更新代码和素材。"
+msgstr "匯入包成員為唯讀；請整組重新匯入以更新程式碼與素材。"
+
+msgid "当前为源码工作目录，不能在管理窗口替换游戏包；请使用已安装且带文件清单的游戏包。"
+msgstr "目前為原始碼工作目錄，不能在管理視窗替換遊戲包；請使用已安裝且附檔案清單的遊戲包。"
+
+msgid "操作失败，输出迁移未提交："
+msgstr "操作失敗，輸出遷移未提交："
+
+msgid "放弃当前未保存的修改？"
+msgstr "放棄目前未儲存的修改？"
+
+msgid "放弃当前未保存的角色修改？"
+msgstr "放棄目前未儲存的角色修改？"
+
+msgid "新任务：保存时生成稳定ID"
+msgstr "新任務：儲存時產生穩定 ID"
+
+msgid "旧包迁移任务：确认导出类、稳定 key 与设备能力"
+msgstr "舊包遷移任務：確認匯出類別、穩定 key 與裝置能力"
+
+msgid "未选择执行进程；展示已保存记录。"
+msgstr "未選擇執行程序；顯示已儲存記錄。"
+
+msgid "正在编辑自定义草稿，保存后才启用。"
+msgstr "正在編輯自訂草稿，儲存後才啟用。"
+
+msgid "此动作需要执行器连接游戏设备。"
+msgstr "此動作需要執行器連接遊戲裝置。"
+
+msgid "此页迁移输出资料，并保留原文件。账号、配置、用户脚本和数据根不迁移。迁移前停止本窗口配置进程；其他所有者仍占用数据时会明确失败。"
+msgstr "此頁遷移輸出資料並保留原檔。帳號、設定、使用者腳本與資料根不遷移。遷移前停止本視窗的設定程序；其他擁有者仍占用資料時會明確失敗。"
+
+msgid "每次导出一个完整脚本包，或一组独立任务。"
+msgstr "每次匯出一個完整腳本包或一組獨立任務。"
+
+msgid "源码已读取。修改类名仍保留这个稳定任务ID与配置。"
+msgstr "原始碼已讀取。修改類別名稱仍保留此穩定任務 ID 與設定。"
+
+msgid "独立管理窗口：账号设置、序列与已有完成证据；读取特征码和设备动作由已启动的任务进程执行。"
+msgstr "獨立管理視窗：帳號設定、序列與既有完成證據；特徵碼讀取和裝置動作由已啟動的任務程序執行。"
+
+msgid ""
+"用户任务使用 NativeBaseTask / "
+"NativeTriggerTask。保存前独立验证代码；此处编辑的是可信可执行代码。保存只更新配置进程，实际运行进程需明确重载或重新启动。"
+msgstr ""
+"使用者任務使用 NativeBaseTask / "
+"NativeTriggerTask。儲存前獨立驗證可信可執行程式碼。儲存只更新設定程序；實際執行程序需明確重新載入或啟動。"
+
+msgid "由已启动的任务进程连续读取特征码，再确认绑定账号"
+msgstr "由已啟動的任務程序連續讀取特徵碼，再確認綁定帳號"
+
+msgid "脚本包注册与素材已更新，配置进程已应用；实际 worker 需明确重载。"
+msgstr "腳本包註冊與素材已更新，設定程序已套用；實際 worker 需明確重新載入。"
+
+msgid "角色代码已保存，配置进程未应用；运行进程保留旧代码。"
+msgstr "角色程式碼已儲存，但設定程序尚未套用；執行程序保留舊程式碼。"
+
+msgid "角色修改已保存，配置进程已应用。实际运行进程需明确重载或重启任务。"
+msgstr "角色修改已儲存，設定程序已套用。實際執行程序需明確重新載入或重啟任務。"
+
+msgid "角色源码已读取。自定义代码须保留当前类名。"
+msgstr "角色原始碼已讀取。自訂程式碼須保留目前類別名稱。"
+
+msgid "请先选择角色并切换到自定义代码。"
+msgstr "請先選擇角色並切換至自訂程式碼。"
+
+msgid "请选择一个脚本包，或一个以上独立任务。"
+msgstr "請選擇一個腳本包或一個以上獨立任務。"
+
+msgid "账号配置包已导出。"
+msgstr "帳號設定包已匯出。"
+
+msgid "账号配置已验证，可在任务窗口执行。"
+msgstr "帳號設定已驗證，可在任務視窗執行。"
+
+msgid "输出目录已提交，原文件保留；数据根未迁移。配置进程将重新加载目录配置。"
+msgstr "輸出目錄已提交，原檔保留，資料根未遷移。設定程序將重新載入目錄設定。"
+
+msgid "输出目录已提交，收尾失败，请重新加载管理窗口："
+msgstr "輸出目錄已提交，但收尾失敗，請重新載入管理視窗："
+
+msgid "选择内置或自定义角色代码。保存前独立验证；运行中的共享会话需要明确重载，单次任务重启后应用。"
+msgstr "選擇內建或自訂角色程式碼。儲存前獨立驗證；執行中的共用工作階段需明確重新載入，單次任務重啟後套用。"
+
+msgid "选择数据根所在本机磁盘上的空输出目录，先预览再迁移。"
+msgstr "選擇資料根所在本機磁碟上的空輸出目錄，先預覽再遷移。"
+
+msgid ""
+"选择角色和自定义模式，编辑或粘贴完整 Python 文件。改动行会高亮。\n"
+"保存前独立验证代码；失败会保留草稿。运行中的共享会话需在启动器明确重载，单次任务需重新启动。恢复内置会删除此角色的自定义源码。"
+msgstr ""
+"選擇角色與自訂模式，編輯或貼上完整 Python 檔案。修改行會反白。\n"
+"儲存前獨立驗證程式碼；失敗時保留草稿。共用工作階段需明確重新載入，單次任務需重新啟動。還原內建模式會刪除此角色的自訂原始碼。"
+
+msgid "配置进程不可用，未提交代码。"
+msgstr "設定程序無法使用，程式碼未提交。"
+
+msgid "配置进程不可用，未提交角色修改。"
+msgstr "設定程序無法使用，角色修改未提交。"
+
+msgid "验证与保存完成；配置进程已应用。实际worker需明确重载或重新启动。"
+msgstr "驗證與儲存完成，設定程序已套用。實際 worker 需明確重新載入或啟動。"
+
+msgid "维护失败："
+msgstr "維護失敗："
+
+msgid "输出目录已提交。"
+msgstr "輸出目錄已提交。"
+
+msgid "配置维护已提交。"
+msgstr "設定維護已提交。"
+
+msgid "配置备份已创建。"
+msgstr "設定備份已建立。"
+
+msgid "配置进程启动失败。"
+msgstr "設定程序啟動失敗。"
+
+msgid " 配置进程未恢复："
+msgstr " 設定程序未恢復："
+
+msgid "已有操作正在进行，或账号运行时需要重新启动；暂不能维护配置"
+msgstr "已有操作正在進行，或帳號執行環境需要重新啟動；暫不能維護設定"
+
+msgid "建立账号 {label} 的可信总配置？请确认手机号、昵称及所选序列。"
+msgstr "建立帳號 {label} 的可信總設定？請確認手機號碼、暱稱及所選序列。"
+
+msgid ""
+"将替换当前全部账号配置：{accounts} 个账号，{sequences} 个序列，{records} 条完成记录。\n"
+"导入前将保存事务备份。"
+msgstr ""
+"將取代目前全部帳號設定：{accounts} 個帳號，{sequences} 個序列，{records} 筆完成記錄。\n"
+"匯入前將儲存交易備份。"
+
+msgid ""
+"\n"
+"配置包已被外部修改；确认将明确接受这些修改。"
+msgstr ""
+"\n"
+"設定包已被外部修改；確認將明確接受這些修改。"
+
+msgid "目录尚未创建："
+msgstr "目錄尚未建立："
+
+msgid "无法打开目录："
+msgstr "無法開啟目錄："
+
+msgid "输出迁移预览：{files}个文件，{size:.2f} MiB。保留原文件；账号、配置和用户脚本留在数据根。"
+msgstr "輸出遷移預覽：{files} 個檔案，{size:.2f} MiB。保留原檔案；帳號、設定和使用者腳本留在資料根目錄。"
+
+msgid ""
+"将输出复制并校验到：{destination}\n"
+"保留原文件，更新输出目录配置，随后重新加载配置进程。"
+msgstr ""
+"將輸出複製並驗證至：{destination}\n"
+"保留原檔案，更新輸出目錄設定，隨後重新載入設定程序。"
+
+msgid "已读取{count}个用户任务；已保存版本 {saved}，配置进程版本 {applied}；运行进程需单独重载。"
+msgstr "已讀取 {count} 個使用者任務；已儲存版本 {saved}，設定程序版本 {applied}；執行程序需另外重新載入。"
+
+msgid "已读取{count}个角色；已保存版本 {saved}，配置进程版本 {applied}。运行进程需单独重载。"
+msgstr "已讀取 {count} 個角色；已儲存版本 {saved}，設定程序版本 {applied}。執行程序需另外重新載入。"
+
+msgid "删除任务 {identity} 的注册？配置和历史源码保留。"
+msgstr "刪除任務 {identity} 的註冊？保留設定和歷史原始碼。"
+
+msgid "未知"
+msgstr "未知"
+
+msgid ""
+"\n"
+"\n"
+"无法迁移：\n"
+msgstr ""
+"\n"
+"\n"
+"無法遷移：\n"
+
+msgid "全局："
+msgstr "全域："
+
+msgid "Package"
+msgstr "遊戲包"
+
+msgid "Execution mode"
+msgstr "執行模式"
+
+msgid "Tasks"
+msgstr "任務"
+
+msgid "Task config JSON"
+msgstr "任務設定 JSON"
+
+msgid "设备"
+msgstr "裝置"
+
+msgid "高级设备 JSON"
+msgstr "進階裝置 JSON"
+
+msgid "能力匹配"
+msgstr "能力匹配"
+
+msgid "暂停 / 恢复热键"
+msgstr "暫停 / 繼續快捷鍵"
+
+msgid "系统托盘通知"
+msgstr "系統匣通知"
+
+msgid "关闭窗口时最小化到托盘"
+msgstr "關閉視窗時最小化至系統匣"
+
+msgid "保存截图"
+msgstr "儲存擷取畫面"
+
+msgid "截图并识别文字"
+msgstr "擷取畫面並辨識文字"
+
+msgid "打开资料目录"
+msgstr "開啟資料目錄"
+
+msgid "选择本地资料根"
+msgstr "選擇本機資料根目錄"
+
+msgid "打开应用时恢复已保存辅助服务"
+msgstr "開啟應用程式時恢復已儲存輔助服務"
+
+msgid "仅启动会话"
+msgstr "僅啟動工作階段"
+
+msgid "任务分类"
+msgstr "任務分類"
+
+msgid "当前序列"
+msgstr "目前序列"
+
+msgid "当前账号"
+msgstr "目前帳號"
+
+msgid "刷新账号上下文"
+msgstr "重新整理帳號狀態"
+
+msgid "全部任务"
+msgstr "全部任務"
+
+msgid "Start"
+msgstr "啟動"
+
+msgid "Stop"
+msgstr "停止"
+
+msgid "Pause"
+msgstr "暫停"
+
+msgid "Resume"
+msgstr "繼續"
+
+msgid "Install gamepack"
+msgstr "安裝遊戲包"
+
+msgid "Update gamepack"
+msgstr "更新遊戲包"
+
+msgid "Disable selected service"
+msgstr "停用所選服務"
+
+msgid "Manage gamepack"
+msgstr "管理遊戲包"
+
+msgid "Read-only overview"
+msgstr "唯讀概覽"
+
+msgid "Refresh tasks"
+msgstr "重新整理任務"
+
+msgid "Apply user task reload"
+msgstr "套用使用者任務重載"
+
+msgid "Apply character code reload"
+msgstr "套用角色程式碼重載"
+
+msgid "Worker output"
+msgstr "執行程序輸出"
+
+msgid "显示窗口"
+msgstr "顯示視窗"
+
+msgid "暂停 / 恢复"
+msgstr "暫停 / 繼續"
+
+msgid "退出"
+msgstr "結束"
+
+msgid "Run / enable task"
+msgstr "執行 / 啟用任務"
+
+msgid "本次运行覆盖配置（长期设置在管理窗口保存）"
+msgstr "本次執行覆寫設定（長期設定於管理視窗儲存）"
+
+msgid "Program Preferences"
+msgstr "程式偏好"
+
+msgid "Window, audio and inference preferences"
+msgstr "視窗、音訊與推論偏好"
+
+msgid "Milliseconds between service scheduling passes."
+msgstr "輔助服務排程間隔，單位為毫秒。"
+
+msgid "OCR provider changes apply after restarting the task session."
+msgstr "OCR 推論後端修改於重新啟動工作階段後生效。"
+
+msgid "Auto Resize Game Window"
+msgstr "自動調整遊戲視窗大小"
+
+msgid "Mute Game while in Background"
+msgstr "遊戲在背景時靜音"
+
+msgid "Exit App when Game Exits"
+msgstr "遊戲結束時關閉應用程式"
+
+msgid "Trigger Interval"
+msgstr "服務排程間隔"
+
+msgid "Use DirectML"
+msgstr "使用 DirectML"
+
+msgid "Auto"
+msgstr "自動"
+
+msgid "不常用任务"
+msgstr "不常用任務"
+
+msgid "剧情与移动"
+msgstr "劇情與移動"
+
+msgid "战斗与拾取"
+msgstr "戰鬥與拾取"
+
+msgid "扩展任务"
+msgstr "擴充任務"
+
+msgid "每周任务"
+msgstr "每週任務"
+
+msgid "每日执行"
+msgstr "每日執行"
+
+msgid "活动"
+msgstr "活動"
+
+msgid "登录与输入"
+msgstr "登入與輸入"
+
+msgid "已核验运行账号：{account}"
+msgstr "已核驗執行帳號：{account}"
+
+msgid ""
+"Windows 用户：{user}\n"
+"资料根：{root}\n"
+"游戏包资料：{package_root}"
+msgstr ""
+"Windows 使用者：{user}\n"
+"資料根目錄：{root}\n"
+"遊戲包資料：{package_root}"

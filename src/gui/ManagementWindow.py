@@ -21,6 +21,7 @@ from src.gui.CompletionCheckTab import CompletionCheckTab
 from src.gui.ConfigIntegrityDialog import ConfigIntegrityDialog, ConfigIntegrityDialogController
 from src.gui.DiagnosticStatusCard import DiagnosticStatusCard
 from src.runtime.native_diagnostics import diagnostic_root
+from src.runtime.native_language import translate
 
 
 class ManagementWindow(QMainWindow):
@@ -32,19 +33,19 @@ class ManagementWindow(QMainWindow):
         from src.native_management import NativeLiveBridge
         self.live_bridge = NativeLiveBridge(self)
         self.stop_requested.connect(self.close, Qt.QueuedConnection)
-        self.setWindowTitle('鸣潮账号与完成证据管理')
+        self.setWindowTitle(translate('鸣潮账号与完成证据管理'))
         self.resize(1180, 780)
         body = QWidget(self)
         layout = QVBoxLayout(body)
-        self.notice = QLabel('独立管理窗口：账号设置、序列与已有完成证据；读取特征码和设备动作由已启动的任务进程执行。', body)
+        self.notice = QLabel(translate('独立管理窗口：账号设置、序列与已有完成证据；读取特征码和设备动作由已启动的任务进程执行。'), body)
         self.notice.setWordWrap(True)
         layout.addWidget(self.notice)
         row = QHBoxLayout()
-        self.first_button = QPushButton('建立首个账号', body)
-        self.import_button = QPushButton('导入账号配置包', body)
-        self.export_button = QPushButton('导出账号配置包', body)
-        self.review_button = QPushButton('完整性检查 / 锚定旧配置', body)
-        self.folder_button = QPushButton('打开本地资料目录', body)
+        self.first_button = QPushButton(translate('建立首个账号'), body)
+        self.import_button = QPushButton(translate('导入账号配置包'), body)
+        self.export_button = QPushButton(translate('导出账号配置包'), body)
+        self.review_button = QPushButton(translate('完整性检查 / 锚定旧配置'), body)
+        self.folder_button = QPushButton(translate('打开本地资料目录'), body)
         for button in (self.first_button, self.import_button, self.export_button,
                        self.review_button, self.folder_button):
             row.addWidget(button)
@@ -60,7 +61,7 @@ class ManagementWindow(QMainWindow):
         self.diagnostics_tab = DiagnosticStatusCard(
             root=diagnostic_root(service.root), source_root=service.root,
             program_version=service.runtime.program_version, local_only=True, capture_enabled=False)
-        self.tabs.addTab(self.diagnostics_tab, '日志与诊断')
+        self.tabs.addTab(self.diagnostics_tab, translate('日志与诊断'))
         self.configuration_tab = None
         self.update_tab = None
         self.maintenance_tab = None
@@ -79,27 +80,27 @@ class ManagementWindow(QMainWindow):
             self.configuration_tab = NativeConfigurationTab(
                 service.root, service.runtime.program_version, service.package_root / 'manifest.json',
                 live_bridge=self.live_bridge)
-            self.tabs.addTab(self.configuration_tab, '任务与配置')
+            self.tabs.addTab(self.configuration_tab, translate('任务与配置'))
             self.configuration_tab.management_requested.connect(self._show_account_management)
             from src.gui.NativeUserTaskTab import NativeUserTaskTab
             self.user_task_tab = NativeUserTaskTab(self.configuration_tab)
-            self.tabs.addTab(self.user_task_tab, '用户任务代码')
+            self.tabs.addTab(self.user_task_tab, translate('用户任务代码'))
             self.user_task_tab.busy_changed.connect(self._operation_changed)
             from src.gui.NativeCharacterCodeTab import NativeCharacterCodeTab
             self.character_code_tab = NativeCharacterCodeTab(self.configuration_tab)
-            self.tabs.addTab(self.character_code_tab, '角色代码')
+            self.tabs.addTab(self.character_code_tab, translate('角色代码'))
             self.character_code_tab.busy_changed.connect(self._operation_changed)
             self.configuration_tab.busy_changed.connect(self._operation_changed)
             self.maintenance_tab = NativeMaintenanceTab(
                 NativeMaintenanceService(service.root, service.runtime.program_version), self._maintain)
-            self.tabs.addTab(self.maintenance_tab, '配置备份与恢复')
+            self.tabs.addTab(self.maintenance_tab, translate('配置备份与恢复'))
             from src.gui.NativeStorageTab import NativeStorageTab
             from src.runtime.native_storage import NativeStorageService
             self.storage_tab = NativeStorageTab(NativeStorageService(service.root), self._maintain_storage)
-            self.tabs.addTab(self.storage_tab, '输出目录')
+            self.tabs.addTab(self.storage_tab, translate('输出目录'))
             self.storage_tab.operation.busy_changed.connect(self._operation_changed)
             self.schedule_tab = NativeScheduleTab(service.package_root, service.root)
-            self.tabs.addTab(self.schedule_tab, '系统定时任务')
+            self.tabs.addTab(self.schedule_tab, translate('系统定时任务'))
             self.configuration_tab.schema_changed.connect(self.schedule_tab.set_schema)
             self.configuration_tab.schema_changed.connect(self._configuration_ready)
             self.configuration_tab.lifecycle_failed.connect(self._configuration_failed)
@@ -107,11 +108,11 @@ class ManagementWindow(QMainWindow):
                 from src.gui.NativeGamePackUpdateCard import NativeGamePackUpdateCard
                 self.update_tab = NativeGamePackUpdateCard(
                     package_root=service.package_root, data_dir=service.root)
-                self.tabs.addTab(self.update_tab, '游戏包更新')
+                self.tabs.addTab(self.update_tab, translate('游戏包更新'))
             else:
-                description = QLabel('当前为源码工作目录，不能在管理窗口替换游戏包；请使用已安装且带文件清单的游戏包。')
+                description = QLabel(translate('当前为源码工作目录，不能在管理窗口替换游戏包；请使用已安装且带文件清单的游戏包。'))
                 description.setWordWrap(True)
-                self.tabs.addTab(description, '游戏包更新')
+                self.tabs.addTab(description, translate('游戏包更新'))
         from src.runtime.diagnostic_storage import storage_path
         self.evidence_service = get_evidence_service(
             root=storage_path('CompletionEvidence', service.root / 'okww监控室' / 'CompletionEvidence',
@@ -137,17 +138,17 @@ class ManagementWindow(QMainWindow):
         result = self.service.runtime.integrity_service.check(record_incident=False)
         self.first_button.setVisible(self.service.first_account_available())
         self.export_button.setEnabled(result.ok)
-        self.status.setText('账号配置已验证，可在任务窗口执行。' if result.ok else
-                            '安全模式：请建立首账号、导入配置包或查看完整性检查。\n' +
+        self.status.setText(translate('账号配置已验证，可在任务窗口执行。') if result.ok else
+                            translate('安全模式：请建立首账号、导入配置包或查看完整性检查。\n') +
                             self.service.runtime.integrity_service.describe(result))
         if result.ok and self.account_tab is None:
             self.account_tab = AccountSettingsTab()
             self.account_tab.account_tab.native_live_bridge = self.live_bridge
-            self.account_tab.account_tab.read_feature_button.setToolTip('由已启动的任务进程连续读取特征码，再确认绑定账号')
-            self.tabs.addTab(self.account_tab, '账号与序列')
+            self.account_tab.account_tab.read_feature_button.setToolTip(translate('由已启动的任务进程连续读取特征码，再确认绑定账号'))
+            self.tabs.addTab(self.account_tab, translate('账号与序列'))
             if self.evidence_tab is None:
                 self.evidence_tab = CompletionCheckTab(None)
-                self.tabs.addTab(self.evidence_tab, '完成检查')
+                self.tabs.addTab(self.evidence_tab, translate('完成检查'))
                 self.evidence_tab.load_operation.busy_changed.connect(self._operation_changed)
             else:
                 self.evidence_tab.reload_accounts()
@@ -164,7 +165,7 @@ class ManagementWindow(QMainWindow):
         return result
 
     def _failed(self, error):
-        self.status.setText('操作失败：' + sanitize_error(error))
+        self.status.setText(translate('操作失败：') + sanitize_error(error))
         print(json.dumps({'type': 'management-error', 'error': sanitize_error(error)}, ensure_ascii=False), flush=True)
 
     def _show_account_management(self):
@@ -191,13 +192,13 @@ class ManagementWindow(QMainWindow):
 
     def _configuration_ready(self, _schema):
         if self._configuration_restart_message is not None:
-            self.status.setText(self._configuration_restart_message + ' 配置进程已重新加载。')
+            self.status.setText(self._configuration_restart_message + translate(' 配置进程已重新加载。'))
             self._configuration_restart_message = None
 
     def _configuration_failed(self, message):
-        prefix = self._configuration_restart_message or '配置进程启动失败。'
+        prefix = self._configuration_restart_message or translate('配置进程启动失败。')
         self._configuration_restart_message = None
-        self._failed(RuntimeError(prefix + ' 配置进程未恢复：' + message))
+        self._failed(RuntimeError(prefix + translate(' 配置进程未恢复：') + message))
 
     def _rebuild_accounts(self):
         if self.account_tab is not None:
@@ -210,7 +211,7 @@ class ManagementWindow(QMainWindow):
 
     def _maintain(self, work, success, failure, rebind):
         if self._operations_busy() or self._closing or self._maintenance_committed_failure:
-            failure(RuntimeError('已有操作正在进行，或账号运行时需要重新启动；暂不能维护配置'))
+            failure(RuntimeError(translate('已有操作正在进行，或账号运行时需要重新启动；暂不能维护配置')))
             return
         self._pending_maintenance = True
         controls = (self.tabs, self.first_button, self.import_button,
@@ -244,13 +245,13 @@ class ManagementWindow(QMainWindow):
                         error = callback_error
                         committed_failure = self._maintenance_committed_failure = True
                         failure(error)
-                        message = '维护失败：' + sanitize_error(error)
+                        message = translate('维护失败：') + sanitize_error(error)
                     else:
-                        message = ('输出目录已提交。' if isinstance(value, dict) and value.get('scope') == 'outputs'
-                                   else '配置维护已提交。' if rebind else '配置备份已创建。')
+                        message = (translate('输出目录已提交。') if isinstance(value, dict) and value.get('scope') == 'outputs'
+                                   else translate('配置维护已提交。') if rebind else translate('配置备份已创建。'))
                 else:
                     failure(error)
-                    message = '维护失败：' + sanitize_error(error)
+                    message = translate('维护失败：') + sanitize_error(error)
                 self.status.setText(message)
                 if committed_failure:
                     for control in controls[1:]:
@@ -265,10 +266,10 @@ class ManagementWindow(QMainWindow):
                     if self.evidence_tab is not None:
                         self.evidence_tab.setEnabled(False)
                     self.diagnostics_tab.setEnabled(False)
-                    self.status.setText(message + ' 磁盘已提交，请重启管理窗口以重新加载账号；旧账号编辑已停用。')
+                    self.status.setText(message + translate(' 磁盘已提交，请重启管理窗口以重新加载账号；旧账号编辑已停用。'))
                 elif not self._closing:
                     self._configuration_restart_message = message
-                    self.status.setText(message + ' 正在重新加载配置进程…')
+                    self.status.setText(message + translate(' 正在重新加载配置进程…'))
                     self._reload_configuration()
             finally:
                 self._pending_maintenance = False
@@ -292,7 +293,7 @@ class ManagementWindow(QMainWindow):
                     old._export_cancel.set()
                     old.deleteLater()
                     self.evidence_tab = CompletionCheckTab(None)
-                    self.tabs.insertTab(index, self.evidence_tab, '完成检查')
+                    self.tabs.insertTab(index, self.evidence_tab, translate('完成检查'))
                     self.evidence_tab.load_operation.busy_changed.connect(self._operation_changed)
                 old = self.diagnostics_tab
                 index = self.tabs.indexOf(old)
@@ -300,7 +301,7 @@ class ManagementWindow(QMainWindow):
                 old.deleteLater()
                 self.diagnostics_tab = DiagnosticStatusCard(root=paths['diagnostics'], source_root=self.service.root,
                     program_version=self.service.runtime.program_version, local_only=True, capture_enabled=False)
-                self.tabs.insertTab(index, self.diagnostics_tab, '日志与诊断')
+                self.tabs.insertTab(index, self.diagnostics_tab, translate('日志与诊断'))
                 self.diagnostics_tab.operation.busy_changed.connect(self._operation_changed)
                 from src.native_maintenance import NativeMaintenanceService
                 from src.gui.NativeMaintenanceTab import NativeMaintenanceTab
@@ -310,7 +311,7 @@ class ManagementWindow(QMainWindow):
                 old.deleteLater()
                 self.maintenance_tab = NativeMaintenanceTab(
                     NativeMaintenanceService(self.service.root, self.service.runtime.program_version), self._maintain)
-                self.tabs.insertTab(index, self.maintenance_tab, '配置备份与恢复')
+                self.tabs.insertTab(index, self.maintenance_tab, translate('配置备份与恢复'))
                 self.maintenance_tab.operation.busy_changed.connect(self._operation_changed)
                 success(result)
             except Exception as error:
@@ -328,36 +329,38 @@ class ManagementWindow(QMainWindow):
             self._failed(error)
             return
         label = next(iter(source['profiles']))
-        if QMessageBox.question(self, '确认建立首账号',
-                f'建立账号 {label} 的可信总配置？请确认手机号、昵称及所选序列。') != QMessageBox.Yes:
+        if QMessageBox.question(self, translate('确认建立首账号'),
+                translate('建立账号 {label} 的可信总配置？请确认手机号、昵称及所选序列。').format(label=label)) != QMessageBox.Yes:
             return
         self.operation.start(lambda: self.service.create_first_account(source, preview, confirm=True),
                              self._done, self._failed)
 
     def _import(self):
-        filename, _ = QFileDialog.getOpenFileName(self, '选择账号配置包', str(self.service.root), 'JSON 配置包 (*.json)')
+        filename, _ = QFileDialog.getOpenFileName(self, translate('选择账号配置包'), str(self.service.root), 'JSON 配置包 (*.json)')
         if not filename:
             return
         preview = self.service.bundles.preflight_import(filename)
         if preview.errors:
             self._failed(RuntimeError('; '.join(preview.errors)))
             return
-        text = (f'将替换当前全部账号配置：{preview.account_count} 个账号，{preview.sequence_count} 个序列，'
-                f'{preview.runtime_record_count} 条完成记录。\n导入前将保存事务备份。')
+        text = translate('将替换当前全部账号配置：{accounts} 个账号，{sequences} 个序列，'
+                         '{records} 条完成记录。\n导入前将保存事务备份。').format(
+                             accounts=preview.account_count, sequences=preview.sequence_count,
+                             records=preview.runtime_record_count)
         if preview.trust_required:
-            text += '\n配置包已被外部修改；确认将明确接受这些修改。'
-        if QMessageBox.question(self, '确认导入', text) != QMessageBox.Yes:
+            text += translate('\n配置包已被外部修改；确认将明确接受这些修改。')
+        if QMessageBox.question(self, translate('确认导入'), text) != QMessageBox.Yes:
             return
         self.operation.start(lambda: self.service.bundles.import_bundle(
             filename, confirm=True, trust_external=preview.trust_required, preflight=preview),
             self._done, self._failed)
 
     def _export(self):
-        filename, _ = QFileDialog.getSaveFileName(self, '导出账号配置包',
+        filename, _ = QFileDialog.getSaveFileName(self, translate('导出账号配置包'),
             str(self.service.root / '账号配置.json'), 'JSON 配置包 (*.json)')
         if filename:
             self.operation.start(lambda: self.service.bundles.export_bundle(filename),
-                                 lambda _: self.status.setText('账号配置包已导出。'), self._failed)
+                                 lambda _: self.status.setText(translate('账号配置包已导出。')), self._failed)
 
     def _review(self):
         controller = ConfigIntegrityDialogController(self.service.runtime.integrity_service)
@@ -413,6 +416,8 @@ class ManagementWindow(QMainWindow):
 
 def run_management_window(service):
     app = QApplication.instance() or QApplication([])
+    from src.runtime.native_language import install_qt_language, load_language
+    install_qt_language(app, load_language(service.root, pack_root=service.package_root))
     from src.gui.CodexTheme import apply_codex_light_theme
     apply_codex_light_theme(app)
     window = ManagementWindow(service)

@@ -19,18 +19,23 @@ METADATA = {
 def native_metadata(source_root=ROOT):
     """Keep native entries tied to the application's real task registry."""
     original = source_metadata(source_root)
+    navigation = {item['id']: item for item in json.loads(
+        (Path(source_root) / PACKAGE / 'manifest.json').read_text(encoding='utf-8'))['tasks']}
     tasks = []
     for task in original['tasks'][1:]:
         name = task['class']
+        identifier = 'auto-combat' if name == 'AutoCombatTask' else name
+        view = navigation[identifier]
         capabilities = ['frames', 'keyboard', 'mouse']
         if name in {'SecondSolTask', 'ResonanceSimulationTask'}:
             capabilities.append('foreground-query')
         if name == 'ResonanceSimulationTask':
             capabilities.append('hotkey-query')
         tasks.append({
-            'id': 'auto-combat' if name == 'AutoCombatTask' else name,
+            'id': identifier,
             'title': task['title'], 'kind': task['kind'],
-            'visible': task['visible'],
+            'visible': view.get('visible', task['visible']),
+            'category': view.get('category', ''), 'order': view.get('order', 0),
             'default_config': {'_enabled': True} if task['kind'] == 'service' else {},
             'required_capabilities': capabilities,
             'module': task['module'], 'class': name,
@@ -50,8 +55,9 @@ def build_native_gamepack(output, *, source_root=ROOT):
                for name in ('plugin.py', 'README.md', 'requirements.txt', 'requirements-management.txt')}
     for path in payload_files(root):
         relative = path.relative_to(root).as_posix()
-        if relative in METADATA or relative.startswith(('src/', 'assets/')):
+        if relative in METADATA or relative.startswith(('src/', 'assets/', 'i18n/')):
             content['payload/' + relative] = path.read_bytes()
+    content['payload/i18n/README.native.md'] = (root / 'i18n/README.native.md').read_bytes()
     content['manifest.json'] = (json.dumps(manifest, ensure_ascii=False, indent=2) + '\n').encode('utf-8')
     return write_gamepack_archive(content, output, 'wuthering_waves_native')
 

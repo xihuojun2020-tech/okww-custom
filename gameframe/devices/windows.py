@@ -94,6 +94,32 @@ class _WindowBackend:
         import psutil
         return psutil.Process(pid).create_time()
 
+    def process_exited(self, pid, created):
+        import psutil
+        try:
+            return psutil.Process(pid).create_time() != created
+        except psutil.NoSuchProcess:
+            return True
+
+    def resize_client(self, hwnd, resolutions, minimum, ratio):
+        with _physical_coordinates(self.user32):
+            left, top, right, bottom = self.gui.GetWindowRect(hwnd)
+            cx, cy, cr, cb = self.gui.GetClientRect(hwnd)
+            border, title = right - left - (cr - cx), bottom - top - (cb - cy)
+            monitor = self.api.GetMonitorInfo(self.api.MonitorFromWindow(hwnd, 2))['Work']
+            width, height = monitor[2] - monitor[0], monitor[3] - monitor[1]
+            candidates = [(w, h) for w, h in resolutions if w >= minimum[0] and h >= minimum[1]
+                          and abs(w / h - ratio) < .01 and w + border <= width and h + title <= height]
+            if not candidates:
+                raise OSError('No supported game client resolution fits this monitor')
+            w, h = candidates[0]
+            if (cr - cx, cb - cy) != (w, h):
+                self.gui.SetWindowPos(hwnd, 0, monitor[0], monitor[1], w + border, h + title, 0x0004 | 0x0010)
+            client = self.gui.GetClientRect(hwnd)
+            if (client[2] - client[0], client[3] - client[1]) != (w, h):
+                raise OSError('Game client did not reach the requested resolution')
+            return w, h
+
     def foreground(self):
         return self.gui.GetForegroundWindow()
 
@@ -366,6 +392,33 @@ class WindowsDevice:
         self._keys = set()
         self._unicode_keys = set()
         self._buttons = set()
+        self._preferences = None
+
+    def configure_preferences(self, values, *, supported_ratio, min_size, resolutions, audio=None):
+        from gameframe.devices.windows_preferences import WindowsPreferences
+        if self._preferences is not None:
+            self._preferences.close()
+        self._preferences = WindowsPreferences(self, values, supported_ratio=supported_ratio,
+                                               min_size=min_size, resolutions=resolutions, audio=audio)
+
+    def poll_preferences(self):
+        return self._preferences.poll() if self._preferences is not None else False
+
+    def target_exited(self, identity=None):
+        window = self.window
+        pid, created = identity if identity is not None else (window._pid, window._process_created)
+        return self._platform().process_exited(pid, created)
+
+    def resize_client(self, resolutions, minimum, ratio):
+        window = self.window
+        platform = self._platform()
+        if (not window.exists or platform.pid(self.hwnd) != window._pid
+                or platform.process_created(window._pid) != window._process_created):
+            raise RuntimeError('Resize requires the selected trusted process identity')
+        self._discard_capture()
+        result = platform.resize_client(self.hwnd, resolutions, minimum, ratio)
+        window.do_update_window_size()
+        return result
 
     def _platform(self):
         if self._window_backend is None:
@@ -672,6 +725,11 @@ class WindowsDevice:
         if self._closed:
             return
         errors = []
+        if self._preferences is not None:
+            try:
+                self._preferences.close()
+            except Exception as error:
+                errors.append(error)
         try:
             self.release_all()
         except Exception as error:

@@ -44,6 +44,7 @@ class Host:
         self.writer = options['live_status']
         assert self.writer.context is context
         self.executor = SimpleNamespace()
+        self.global_configs = options['global_options']
         created.append(self)
     def run_service(self):
         self.context.emit('combat-state', enabled=True, recovery_status='fixture-ready')

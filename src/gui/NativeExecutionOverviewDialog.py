@@ -10,6 +10,8 @@ from src.gui.AccountTaskOverview import AccountTaskOverview
 from src.gui.DailyTimingDialog import DailyTimingDialog
 from src.runtime.diagnostic_export import sanitize_text
 
+from src.runtime.native_language import translate
+
 
 class NativeExecutionOverviewDialog(QDialog):
     changed = Signal()
@@ -18,22 +20,22 @@ class NativeExecutionOverviewDialog(QDialog):
         super().__init__(parent)
         self.repository, self.live_reader = repository, live_reader
         self.timing_repository = timing_repository
-        self.setWindowTitle('执行状态与每日耗时（只读）')
+        self.setWindowTitle(translate('执行状态与每日耗时（只读）'))
         self.resize(1060, 760)
         layout = QVBoxLayout(self)
         controls = QHBoxLayout()
-        controls.addWidget(QLabel('账号', self))
+        controls.addWidget(QLabel(translate('账号'), self))
         self.accounts = QComboBox(self)
         profiles = sorted(repository.list_profiles(), key=lambda p: account_sort_key(p.account, p.profile_id))
         for profile in profiles:
             self.accounts.addItem(account_display_label(profile.account), profile.profile_id)
         controls.addWidget(self.accounts, 1)
-        controls.addWidget(QLabel('执行进程', self))
+        controls.addWidget(QLabel(translate('执行进程'), self))
         self.workers = QComboBox(self)
         controls.addWidget(self.workers, 1)
-        self.timings_button = QPushButton('每日耗时记录', self)
+        self.timings_button = QPushButton(translate('每日耗时记录'), self)
         controls.addWidget(self.timings_button)
-        self.refresh_button = QPushButton('刷新', self)
+        self.refresh_button = QPushButton(translate('刷新'), self)
         controls.addWidget(self.refresh_button)
         layout.addLayout(controls)
         self.status = QLabel(self)
@@ -82,7 +84,7 @@ class NativeExecutionOverviewDialog(QDialog):
             for dialog in self._timing_dialogs:
                 dialog.refresh()
         except Exception as error:
-            self._read_error = '执行状态读取失败：' + sanitize_text(error)
+            self._read_error = translate('执行状态读取失败：') + sanitize_text(error)
             self.status.setText(self._read_error)
 
     def _refresh_owners(self):
@@ -94,7 +96,7 @@ class NativeExecutionOverviewDialog(QDialog):
         selected = self.workers.currentData()
         self.workers.blockSignals(True)
         self.workers.clear()
-        self.workers.addItem('无执行进程' if not owners else '请选择执行进程', None)
+        self.workers.addItem(translate('无执行进程') if not owners else translate('请选择执行进程'), None)
         for owner in owners:
             self.workers.addItem(f"PID {owner['worker_pid']} · {owner['process_session'][:8]}",
                                  owner['process_session'])
@@ -110,7 +112,7 @@ class NativeExecutionOverviewDialog(QDialog):
             self._refresh_owners()
             self._status()
         except Exception as error:
-            self._read_error = '执行状态读取失败：' + sanitize_text(error)
+            self._read_error = translate('执行状态读取失败：') + sanitize_text(error)
             self.status.setText(self._read_error)
 
     def _status(self):
@@ -120,10 +122,10 @@ class NativeExecutionOverviewDialog(QDialog):
         session = self.workers.currentData()
         owner = next((o for o in self.live_reader.owners() if o['process_session'] == session), None)
         if owner is None:
-            self.status.setText('未选择执行进程；展示已保存记录。')
+            self.status.setText(translate('未选择执行进程；展示已保存记录。'))
             return
         live = self.live_reader.live(session)
-        label = '已暂停' if owner['paused'] else '执行中' if owner['running'] else '空闲 / 后台服务'
+        label = translate('已暂停') if owner['paused'] else translate('执行中') if owner['running'] else translate('空闲 / 后台服务')
         detail = live.get('stage') or owner['foreground_task_id']
         self.status.setText(f"PID {owner['worker_pid']} · {label} · {detail}".rstrip(' ·'))
 

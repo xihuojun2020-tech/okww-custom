@@ -27,12 +27,13 @@ class Runtime:
 
     def run(self, manifest, package, task_id, device, data_dir: Path,
             config=None, stop=None, pause=None, *, session=False, requests=None):
-        task = manifest.task(task_id, data_dir)
-        missing = task.required_capabilities - device.capabilities
+        task = None if session and task_id is None else manifest.task(task_id, data_dir)
+        required = task.required_capabilities if task is not None else manifest.session_required_capabilities
+        missing = required - device.capabilities
         if missing:
             raise ValueError(f'Device missing capabilities: {sorted(missing)}')
         run_id = uuid.uuid4().hex
-        merged = copy.deepcopy(task.default_config)
+        merged = copy.deepcopy(task.default_config) if task is not None else {}
         if config is not None:
             merged.update(config)
         context = TaskContext(device, merged, Path(data_dir), stop or threading.Event(),
@@ -45,7 +46,7 @@ class Runtime:
         begun = False
         try:
             try:
-                self.store.begin(run_id, manifest.id, task_id)
+                self.store.begin(run_id, manifest.id, task_id if task_id is not None else '__session__')
                 begun = True
                 context.emit('started', package_id=manifest.id, task_id=task_id)
                 outcome = (package.run_session(task_id, context) if session

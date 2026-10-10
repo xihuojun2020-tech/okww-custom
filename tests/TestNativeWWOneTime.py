@@ -110,6 +110,7 @@ class TestNativeWWOneTime(unittest.TestCase):
         from src.task.AutoPickTask import AutoPickTask
         service = host.tasks[AutoPickTask]
         service.disable()
+
         host.context.requests.put({'command': 'run-task', 'task_id': 'missing'})
         host.context.requests.put({'command': 'set-service', 'task_id': 'AutoPickTask', 'enabled': True})
         original = service.run
@@ -132,6 +133,27 @@ class TestNativeWWOneTime(unittest.TestCase):
         self.assertIs(host.executor.current_task, host.tasks[FrameProbeTask])
         self.assertFalse(device.held)
         service.disable()
+
+    def test_session_only_restores_saved_services_without_enabling_combat_or_foreground(self):
+        host, device = self.make_host('tests.TestNativeWWOneTime:FrameProbeTask',
+            registered_tasks=('src.task.AutoCombatTask:AutoCombatTask', 'src.task.AutoPickTask:AutoPickTask'))
+        from src.task.AutoCombatTask import AutoCombatTask
+        from src.task.AutoPickTask import AutoPickTask
+        combat = host.tasks[AutoCombatTask]
+        pickup = host.tasks[AutoPickTask]
+        host._set_service(combat, False)
+        host._set_service(pickup, True, preference_only=True)
+        def pickup_run():
+            host.context.stop.set()
+        with patch.object(host.task, 'run', side_effect=AssertionError('foreground task ran')), \
+                patch.object(combat, 'run', side_effect=AssertionError('disabled combat ran')), \
+                patch.object(pickup, 'run', side_effect=pickup_run) as run:
+            with self.assertRaises(Cancelled):
+                host.run_session(None)
+        run.assert_called_once()
+        self.assertFalse(combat.config['_enabled'])
+        self.assertTrue(pickup.config['_enabled'])
+        self.assertFalse(device.held)
 
     def test_session_explicit_combat_toggle_preserves_owner_thread(self):
         host, device = self.make_host('src.task.AutoCombatTask:AutoCombatTask')

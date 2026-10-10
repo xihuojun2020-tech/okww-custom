@@ -10,6 +10,7 @@ from src.runtime.native_metadata import GLOBAL_METADATA, TaskMetadata, task_id
 
 
 COMMANDS = frozenset({'get-schema', 'set-config', 'invoke-action',
+    'get-context', 'set-context',
     'user-task-list', 'user-task-read', 'user-task-save', 'user-task-delete',
     'user-bundle-inspect', 'user-bundle-list', 'user-bundle-read', 'user-bundle-import',
     'user-bundle-export', 'user-task-export', 'user-bundle-delete',
@@ -62,6 +63,12 @@ class ConfigurationService:
             result = None
             if command == 'get-schema':
                 pass
+            elif command in ('get-context', 'set-context'):
+                from src.runtime.native_account_context import NativeAccountContext
+                context = NativeAccountContext(self.host)
+                result = (context.snapshot() if command == 'get-context' else
+                          context.set(**{key: value for key, value in request.items()
+                                         if key not in ('command', 'request_id')}))
             elif command == 'set-config':
                 values = request['values']
                 if request['scope'] == 'task':
@@ -72,7 +79,12 @@ class ConfigurationService:
                     if toggled and (not isinstance(task, NativeTriggerTask) or type(values['_enabled']) is not bool):
                         raise ValueError('Service enabled preference must be a boolean')
                     _validate_values(ordinary, task.default_config, task.config_type)
-                    task.config.update(ordinary)
+                    from src.task.MultiAccountDailyTask import CURRENT_SEQUENCE, CURRENT_ACCOUNT
+                    if task_id(task) == 'MultiAccountDailyTask' and {CURRENT_SEQUENCE, CURRENT_ACCOUNT}.intersection(ordinary):
+                        from src.runtime.native_account_context import NativeAccountContext
+                        NativeAccountContext(self.host).set_config(ordinary)
+                    else:
+                        task.config.update(ordinary)
                     if toggled:
                         self.host._set_service(task, values['_enabled'], preference_only=True)
                         if values['_enabled']:
@@ -204,14 +216,24 @@ def create_configuration_host(data_dir, program_version, manifest_path, events):
     store = NativeUserTaskStore(root)
     user_tasks = store.load_tasks()
     source = Path(__file__).resolve().parents[2]
+    from src.runtime.native_language import LANGUAGE_DEFAULTS, create_language_config, load_language
+    from src.runtime.native_program_preferences import DEFAULTS, NAME, NativeProgramPreferences
+    preferences = NativeProgramPreferences(root)
+    create_language_config(root)
+    language = load_language(root, pack_root=Path(manifest_path).parent)
     context = TaskContext(None, {}, root, threading.Event(), 'configuration', events)
     host = NativeCombatHost(
         context, coco_path=source / 'assets/coco_annotations.json',
-        global_options=COMBAT_GLOBAL_DEFAULTS, ocr_engine=None,
+        global_options={**COMBAT_GLOBAL_DEFAULTS, NAME: DEFAULTS, 'Language': LANGUAGE_DEFAULTS},
+        ocr_engine=None,
+        translate=language.translate,
         template_matching=TEMPLATE_MATCHING_DEFAULTS,
         task_entry=definitions[0]['module'] + ':' + definitions[0]['class'],
         registered_tasks=tuple(task['module'] + ':' + task['class'] for task in definitions),
-        device_identity='configuration', user_tasks=user_tasks)
+        device_identity='configuration', user_tasks=user_tasks,
+        program_preferences=preferences.config)
+    host.task_metadata = {task['id']: task for task in definitions}
+    host.program_preferences = host.global_configs[NAME]
     host.applied_revision = store.revision
     return host
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import getpass
 import hashlib
 import queue
 import threading
@@ -21,6 +22,8 @@ from gameframe.launcher_options import load_options, save_options
 from gameframe.package_updates import apply_update, prepare_update, recover_updates
 from gameframe.desktop_controls import HOTKEYS, HotkeyTransition, desktop_preferences
 from gameframe.device_editor import DeviceEditor
+from gameframe.launcher_context import load_context, local_root, save_context
+from gameframe.ui_strings import apply_labels
 
 
 class GameFrameWindow(QWidget):
@@ -30,10 +33,18 @@ class GameFrameWindow(QWidget):
         self.setWindowTitle("GameFrame")
         self.resize(980, 800)
         self.packages_dir = Path(packages_dir)
-        self.data_dir = Path(data_dir)
+        self._context_path = Path(data_dir) / 'launcher-context.json'
+        self._launcher_context = load_context(self._context_path)
+        self.data_dir = local_root(self._launcher_context.get('data_root', Path(data_dir).resolve()))
         self.controller = controller if controller is not None else Controller()
         self.management_controller = Controller()
         self.overview_controller = Controller()
+        self.configuration_controller = Controller()
+        self._configuration_querying = False
+        self._configuration_thread = None
+        self._restore_pending = False
+        self._account_context = None
+        self._foreground_requested = False
         self._overview_thread = None
         self._overview_starting = False
         recover_updates(self.packages_dir, ensure_idle=self._assert_owners_idle)
@@ -65,8 +76,20 @@ class GameFrameWindow(QWidget):
         self.package_select = QComboBox()
         for manifest in self.packages:
             self.package_select.addItem(f"{manifest.title}  {manifest.version}")
+        selected = self._launcher_context['selected_package']
+        self.package_select.setCurrentIndex(next((i for i, item in enumerate(self.packages)
+                                                 if item.id == selected), 0))
         self.task_list = QListWidget()
         self.task_list.setMaximumHeight(130)
+        self.category_select = QComboBox()
+        self._all_tasks = ()
+        self._task_titles = {}
+        self._launcher_labels = {}
+        self.sequence_select = QComboBox()
+        self.account_select = QComboBox()
+        self.account_context_label = QLabel('请刷新账号上下文或打开游戏包管理')
+        self.account_context_label.setWordWrap(True)
+        self.context_refresh_button = QPushButton('刷新账号上下文')
         self._visible_tasks = ()
         self.mode_label = QLabel()
         self.config_edit = QPlainTextEdit()
@@ -87,6 +110,11 @@ class GameFrameWindow(QWidget):
         self.screenshot_button = QPushButton('保存截图')
         self.ocr_button = QPushButton('截图并识别文字')
         self.paths_button = QPushButton('打开资料目录')
+        self.change_root_button = QPushButton('选择本地资料根')
+        self.user_context_label = QLabel()
+        self.user_context_label.setWordWrap(True)
+        self.restore_services = QCheckBox('打开应用时恢复已保存辅助服务')
+        self.restore_services.setChecked(self._launcher_context['restore_services'])
         self._preferences_loading = False
         self.tray = QSystemTrayIcon(self.style().standardIcon(QStyle.SP_ComputerIcon), self)
         menu = QMenu(self)
@@ -101,6 +129,7 @@ class GameFrameWindow(QWidget):
         self.output.setMaximumHeight(140)
         self.status_label = QLabel("Ready")
         self.start_button = QPushButton("Start")
+        self.session_button = QPushButton('仅启动会话')
         self.stop_button = QPushButton("Stop")
         self.pause_button = QPushButton("Pause")
         self.install_button = QPushButton("Install gamepack")
@@ -119,7 +148,13 @@ class GameFrameWindow(QWidget):
 
         form = QFormLayout()
         form.addRow("Package", self.package_select)
+        form.addRow(self.user_context_label, self.change_root_button)
+        form.addRow(self.restore_services)
         form.addRow("Execution mode", self.mode_label)
+        form.addRow('任务分类', self.category_select)
+        form.addRow('当前序列', self.sequence_select)
+        form.addRow('当前账号', self.account_select)
+        form.addRow(self.account_context_label, self.context_refresh_button)
         form.addRow("Tasks", self.task_list)
         form.addRow(self.config_label, self.config_edit)
         form.addRow('设备', self.device_editor)
@@ -128,7 +163,7 @@ class GameFrameWindow(QWidget):
         form.addRow('暂停 / 恢复热键', self.pause_hotkey)
         form.addRow(self.tray_notifications, self.close_to_tray)
         buttons = QGridLayout()
-        for index, button in enumerate((self.start_button, self.stop_button, self.pause_button,
+        for index, button in enumerate((self.start_button, self.session_button, self.stop_button, self.pause_button,
                 self.disable_button, self.manage_button, self.overview_button, self.install_button,
                 self.update_button, self.refresh_tasks_button, self.reload_tasks_button,
                 self.reload_characters_button)):
@@ -152,7 +187,14 @@ class GameFrameWindow(QWidget):
 
         self.package_select.currentIndexChanged.connect(self._select_package)
         self.task_list.currentRowChanged.connect(self._select_task)
+        self.category_select.currentIndexChanged.connect(self._fill_tasks)
+        self.sequence_select.currentIndexChanged.connect(lambda: self._change_account_context('sequence'))
+        self.account_select.currentIndexChanged.connect(lambda: self._change_account_context('account'))
+        self.context_refresh_button.clicked.connect(self.refresh_account_context)
         self.start_button.clicked.connect(self.start_selected)
+        self.session_button.clicked.connect(self.start_session)
+        self.restore_services.toggled.connect(self._save_launcher_context)
+        self.change_root_button.clicked.connect(self.choose_data_root)
         self.stop_button.clicked.connect(self.stop_selected)
         self.pause_button.clicked.connect(self.toggle_pause)
         self.install_button.clicked.connect(self.install_selected)
@@ -174,7 +216,153 @@ class GameFrameWindow(QWidget):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._drain_events)
         self.timer.start(50)
-        self._select_package(0)
+        self._select_package(self.package_select.currentIndex())
+        QTimer.singleShot(0, self._restore_saved_session)
+
+    def _save_launcher_context(self, *_):
+        manifest = self._manifest()
+        self._launcher_context.update(selected_package=manifest.id if manifest else None,
+            restore_services=self.restore_services.isChecked(), data_root=str(self.data_dir))
+        save_context(self._context_path, self._launcher_context)
+
+    def choose_data_root(self):
+        try:
+            self._assert_update_idle()
+            chosen = QFileDialog.getExistingDirectory(self, '选择当前 Windows 用户的本地资料根', str(self.data_dir))
+            if not chosen:
+                return
+            self.data_dir = local_root(chosen)
+            self._select_package(self.package_select.currentIndex())
+        except (OSError, ValueError, RuntimeError) as error:
+            self._error(error)
+
+    def _restore_saved_session(self):
+        manifest = self._manifest()
+        if not self.restore_services.isChecked() or manifest is None or not manifest.supports_session:
+            return
+        path = self.data_dir / manifest.id / 'launcher.json'
+        if not path.is_file():
+            self.status_label.setText('请配置设备并启动会话；辅助服务开关保留在游戏包资料中。')
+            return
+        if manifest.configuration:
+            self._restore_pending = True
+            self.refresh_account_context()
+            return
+        self.start_session()
+
+    def refresh_account_context(self):
+        self._query_account_context('get-context')
+
+    def _change_account_context(self, field):
+        control = self.sequence_select if field == 'sequence' else self.account_select
+        if self._account_context is not None and control.currentIndex() >= 0:
+            self._query_account_context('set-context', **{field: control.currentData()})
+
+    def _query_account_context(self, command, **values):
+        manifest = self._manifest()
+        if (manifest is None or not manifest.configuration or self._configuration_querying
+                or self._foreground_requested or self._closing or self._updating or self._starting):
+            return
+        if self.process is not None:
+            request_id = str(uuid.uuid4())
+            try:
+                self.controller.request_live(command, request_id, **values)
+            except Exception as error:
+                self._error(error)
+            else:
+                self._live_routes[request_id] = 'account-context'
+            return
+        self._configuration_querying = True
+        self.package_select.setEnabled(False)
+        self._configuration_thread = threading.Thread(target=self._query_context_worker,
+            args=(manifest, self.data_dir / manifest.id, command, values), daemon=True)
+        self._configuration_thread.start()
+
+    def _query_context_worker(self, manifest, data_dir, command, values):
+        try:
+            process = self.configuration_controller.start_configuration(manifest, data_dir=data_dir)
+            output, _ = process.communicate(json.dumps({'command': command, **values}) + '\n', timeout=30)
+            responses = [json.loads(line) for line in output.splitlines() if line.startswith('{')]
+            response = next((item for item in reversed(responses) if item.get('event') == 'configuration-response'), None)
+            if response is None:
+                failure = next((item for item in responses if item.get('event') == 'configuration-failed'), None)
+                raise RuntimeError(failure['error']['message'] if failure else
+                                   f'Configuration process exited without a response ({process.returncode})')
+            if process.returncode != 0:
+                raise RuntimeError(f'Configuration process exited with code {process.returncode}')
+            outcome = ('account-context', response)
+        except Exception as error:
+            outcome = ('context-error', error)
+        finally:
+            try:
+                self.configuration_controller.close()
+            except Exception as error:
+                outcome = ('context-error', error)
+        self._events.put(outcome)
+
+    def _apply_account_context(self, event):
+        if not event['ok']:
+            self._restore_pending = False
+            self.account_context_label.setText(event['error']['message'])
+            return
+        schema = event.get('schema', {})
+        self._launcher_labels = schema.get('launcher_labels', {})
+        apply_labels(self, self._launcher_labels)
+        self._task_titles = {task['id']: task['name'] for task in schema.get('tasks', ())}
+        by_id = {task['id']: task for task in schema.get('tasks', ())}
+        category_labels = {task.category: by_id[task.id]['category'] for task in self._all_tasks
+                           if task.id in by_id and 'category' in by_id[task.id]}
+        for index in range(self.category_select.count()):
+            category = self.category_select.itemData(index)
+            self.category_select.setItemText(index, category_labels.get(category, category) if category else
+                self._launcher_labels.get('全部任务', '全部任务'))
+        template = 'Windows 用户：{user}\n资料根：{root}\n游戏包资料：{package_root}'
+        self.user_context_label.setText(self._launcher_labels.get(template, template).format(
+            user=getpass.getuser(), root=self.data_dir, package_root=self.data_dir / self._manifest().id))
+        context = event.get('result', schema.get('account_context'))
+        self._account_context = context
+        for control, options, current in ((self.sequence_select, context['sequences'], context['sequence']),
+                                          (self.account_select, context['accounts'], context['account'])):
+            control.blockSignals(True)
+            try:
+                control.clear()
+                for option in options:
+                    control.addItem(option['label'], option['value'])
+                control.setCurrentIndex(control.findData(current))
+            finally:
+                control.blockSignals(False)
+        verified = context['verified_account']
+        verified_template = '已核验运行账号：{account}'
+        self.account_context_label.setText(context['summary'] + ('\n' + self._launcher_labels.get(
+            verified_template, verified_template).format(account=verified['label']) if verified else '')
+                                          + (f"\n{context['reason']}" if context['reason'] else ''))
+        self._fill_tasks()
+        if self._restore_pending:
+            self._restore_pending = False
+            self.start_session()
+
+    def _set_label(self, control, text):
+        control.setProperty('launcher_label', text)
+        control.setText(self._launcher_labels.get(text, text))
+
+    def start_session(self):
+        manifest = self._manifest()
+        if (manifest is None or not manifest.supports_session or self.process is not None
+                or self._starting or self._configuration_querying or self._installing or self._closing or self._updating):
+            return
+        try:
+            _, device = self._native_options(task_config=False)
+            missing = manifest.session_required_capabilities - self.device_editor.capabilities()
+            if missing:
+                raise ValueError('设备缺少会话所需能力：' + ', '.join(sorted(missing)))
+            options = load_options(self.data_dir / manifest.id / 'launcher.json')
+            options['device'] = device
+            save_options(self.data_dir / manifest.id / 'launcher.json', options)
+            self._save_launcher_context()
+        except (OSError, ValueError) as error:
+            self._error(error)
+            return
+        self._begin_start(manifest, None, {}, device)
 
     def _exit_from_tray(self):
         self._force_close = True
@@ -305,6 +493,8 @@ class GameFrameWindow(QWidget):
             if event['ok']:
                 self._reserved_hotkeys = event['schema'].get('reserved_hotkeys', [])
                 self._hotkey_conflict()
+                if 'account_context' in event['schema']:
+                    self._apply_account_context(event)
             else:
                 self._error(RuntimeError(event['error']['message']))
         elif destination == 'inspection':
@@ -315,6 +505,8 @@ class GameFrameWindow(QWidget):
                     self.output.appendPlainText(result['text'])
             else:
                 self._error(RuntimeError(event['error']['message']))
+        elif destination == 'account-context':
+            self._apply_account_context(event)
         return True
 
     def _manifest(self):
@@ -323,12 +515,21 @@ class GameFrameWindow(QWidget):
 
     def _select_package(self, index):
         manifest = self._manifest()
+        self.user_context_label.setText(f'Windows 用户：{getpass.getuser()}\n资料根：{self.data_dir}'
+                                       + (f'\n游戏包资料：{self.data_dir / manifest.id}' if manifest else ''))
         self.overview_button.setEnabled(manifest is not None and manifest.overview
                                         and not self._closing and not self._updating
                                         and not self._installing and not self._overview_starting
                                         and (self.overview_controller.process is None
                                              or self.overview_controller.process.poll() is not None))
         self._visible_tasks = ()
+        self._all_tasks = ()
+        self._account_context = None
+        self._task_titles = {}
+        self._launcher_labels = {}
+        apply_labels(self, {})
+        self.sequence_select.clear()
+        self.account_select.clear()
         self.task_list.clear()
         if manifest is None:
             self.mode_label.setText("No installed packages")
@@ -337,8 +538,8 @@ class GameFrameWindow(QWidget):
             self.update_button.setEnabled(False)
             return
         try:
-            self._visible_tasks = tuple(task for task in manifest.available_tasks(self.data_dir / manifest.id)
-                                        if task.visible)
+            self._all_tasks = tuple(sorted((task for task in manifest.available_tasks(self.data_dir / manifest.id)
+                                            if task.visible), key=lambda task: task.order))
         except (OSError, ValueError) as error:
             self.start_button.setEnabled(False)
             self.disable_button.setEnabled(False)
@@ -378,8 +579,15 @@ class GameFrameWindow(QWidget):
                 self._preferences_loading = False
             self._reserved_hotkeys = []
             self._hotkey.set_key(preferences['pause_hotkey'])
-        for task in self._visible_tasks:
-            self.task_list.addItem(f"{task.title}  [{task.kind}]  ({task.id})")
+        self.category_select.blockSignals(True)
+        try:
+            self.category_select.clear()
+            self.category_select.addItem('全部任务', '')
+            for category in dict.fromkeys(task.category for task in self._all_tasks if task.category):
+                self.category_select.addItem(category, category)
+        finally:
+            self.category_select.blockSignals(False)
+        self._fill_tasks()
         if self._visible_tasks:
             row = next((i for i, task in enumerate(self._visible_tasks)
                         if not legacy and task.id == options.get('selected_task')), 0)
@@ -387,6 +595,18 @@ class GameFrameWindow(QWidget):
         self.start_button.setEnabled(bool(self._visible_tasks) and self.process is None
                                      and not self._starting and not self._installing and not self._closing
                                      and (not self._managing or manifest.supports_session) and not self._updating)
+        self._save_launcher_context()
+
+    def _fill_tasks(self, *_):
+        selected = (self._visible_tasks[self.task_list.currentRow()].id
+                    if 0 <= self.task_list.currentRow() < len(self._visible_tasks) else None)
+        category = self.category_select.currentData() or ''
+        self._visible_tasks = tuple(task for task in self._all_tasks if not category or task.category == category)
+        self.task_list.clear()
+        for task in self._visible_tasks:
+            self.task_list.addItem(f'{self._task_titles.get(task.id, task.title)}  [{task.kind}]  ({task.id})')
+        if self._visible_tasks:
+            self.task_list.setCurrentRow(next((i for i, task in enumerate(self._visible_tasks) if task.id == selected), 0))
 
     def refresh_tasks(self):
         manifest = self._manifest()
@@ -399,12 +619,10 @@ class GameFrameWindow(QWidget):
         except Exception as error:
             self._error(error)
             return
-        self._visible_tasks = tasks
-        self.task_list.clear()
-        for task in tasks:
-            self.task_list.addItem(f'{task.title}  [{task.kind}]  ({task.id})')
-        if tasks:
-            self.task_list.setCurrentRow(next((index for index, task in enumerate(tasks) if task.id == selected), 0))
+        self._all_tasks = tuple(sorted(tasks, key=lambda task: task.order))
+        self._fill_tasks()
+        if self._visible_tasks:
+            self.task_list.setCurrentRow(next((index for index, task in enumerate(self._visible_tasks) if task.id == selected), 0))
 
     def reload_user_tasks(self):
         if self.process is None or self._stopping or self._closing or self._updating:
@@ -441,8 +659,8 @@ class GameFrameWindow(QWidget):
     def _managed_config(self, manifest):
         return manifest.execution == 'native' and manifest.supports_session and manifest.management
 
-    def _native_options(self):
-        config = json.loads(self.config_edit.toPlainText())
+    def _native_options(self, *, task_config=True):
+        config = json.loads(self.config_edit.toPlainText()) if task_config else {}
         device = json.loads(self.device_edit.toPlainText())
         if not isinstance(config, dict) or not isinstance(device, dict) or "type" not in device:
             raise ValueError("Native config and device must be JSON objects; device needs a type")
@@ -459,7 +677,7 @@ class GameFrameWindow(QWidget):
         manifest = self._manifest()
         row = self.task_list.currentRow()
         if (manifest is None or row < 0
-                or self._starting or self._installing or self._closing or (self._managing and not manifest.supports_session) or self._updating
+                or self._starting or self._configuration_querying or self._installing or self._closing or (self._managing and not manifest.supports_session) or self._updating
                 or (self.process is not None and not manifest.supports_session)):
             return
         task = self._visible_tasks[row]
@@ -485,24 +703,29 @@ class GameFrameWindow(QWidget):
                     self.controller.set_service(task.id, True, config)
                 else:
                     self.controller.request_task(task.id, config)
+                    self._foreground_requested = True
                 self.status_label.setText(f'Requested {task.title}')
                 return
         except Exception as error:
             self._error(error)
             return
+        self._begin_start(manifest, task.id, config, device)
+
+    def _begin_start(self, manifest, task_id, config, device):
         self.output.clear()
+        self._foreground_requested = task_id is not None and manifest.task(task_id, self.data_dir / manifest.id).kind != 'service'
         self._exit_requested = False
         self._starting = True
         self.device_edit.setEnabled(False)
         self.device_editor.setEnabled(False)
         self.package_select.setEnabled(False)
-        self.status_label.setText(f"Starting {manifest.id}/{task.id} ({manifest.execution})")
+        self.status_label.setText(f"Starting {manifest.id}/{task_id or 'session'} ({manifest.execution})")
         self.start_button.setEnabled(False)
         self.install_button.setEnabled(False)
         self.manage_button.setEnabled(False)
         self.update_button.setEnabled(False)
         self._start_thread = threading.Thread(target=self._start_worker,
-                                              args=(manifest, task.id, config, device), daemon=True)
+                                              args=(manifest, task_id, config, device), daemon=True)
         self._start_thread.start()
 
     def _start_worker(self, manifest, task_id, config, device):
@@ -553,9 +776,10 @@ class GameFrameWindow(QWidget):
         self.controller.assert_idle()
         self.management_controller.assert_idle()
         self.overview_controller.assert_idle()
+        self.configuration_controller.assert_idle()
 
     def _assert_update_idle(self):
-        if self._starting or self._stopping or self._managing or self._installing:
+        if self._starting or self._configuration_querying or self._stopping or self._managing or self._installing:
             raise RuntimeError('A package owner or installation is still active')
         self._assert_owners_idle()
 
@@ -802,7 +1026,7 @@ class GameFrameWindow(QWidget):
         self._notify(event)
         if isinstance(event, dict) and event.get('event') == 'task-paused':
             self._paused = event['paused']
-            self.pause_button.setText('Resume' if self._paused else 'Pause')
+            self._set_label(self.pause_button, 'Resume' if self._paused else 'Pause')
             self.pause_button.setEnabled(self.process is not None and not self._stopping and not self._closing)
             self.status_label.setText('Paused' if self._paused else 'Running')
         elif isinstance(event, dict) and event.get('event') == 'finished':
@@ -810,8 +1034,13 @@ class GameFrameWindow(QWidget):
             self._exit_requested = bool(result.get('exit_requested')
                                         or result.get('business_result', {}).get('exit_requested'))
         elif isinstance(event, dict) and event.get('event') == 'session-task-finished':
+            self._foreground_requested = False
+            self.refresh_account_context()
             self.status_label.setText(f'Finished {event["task_id"]}')
         elif isinstance(event, dict) and event.get('event') == 'session-task-failed':
+            if self._foreground_requested:
+                self._foreground_requested = False
+                self.refresh_account_context()
             self.status_label.setText(f'{event.get("task_id")}: {event["error"]}')
         elif isinstance(event, dict) and event.get('event') == 'user-tasks-reloaded':
             self.refresh_tasks()
@@ -838,6 +1067,16 @@ class GameFrameWindow(QWidget):
                 break
             if kind == 'overview-started':
                 self._overview_starting = False
+            elif kind == 'account-context':
+                self._configuration_querying = False
+                self.package_select.setEnabled(self.process is None and not self._closing and not self._managing)
+                self._apply_account_context(value)
+            elif kind == 'context-error':
+                self._configuration_querying = False
+                self._restore_pending = False
+                self.package_select.setEnabled(self.process is None and not self._closing and not self._managing)
+                self.account_context_label.setText(str(value))
+                self._error(value)
             elif kind == 'overview-line':
                 self.output.appendPlainText(value)
             elif kind in ('overview-exit', 'overview-error'):
@@ -897,17 +1136,17 @@ class GameFrameWindow(QWidget):
                 self.device_editor.setEnabled(False)
                 self.manage_button.setEnabled(manifest.management and manifest.supports_session
                                               and not self._managing and not self._closing)
-                self.status_label.setText(f"Running {manifest.id}/{task_id} ({manifest.execution})")
+                self.status_label.setText(f"Running {manifest.id}/{task_id or 'session'} ({manifest.execution})")
                 self.stop_button.setEnabled(not self._closing)
                 self._paused = False
-                self.pause_button.setText('Pause')
+                self._set_label(self.pause_button, 'Pause')
                 self.pause_button.setEnabled(manifest.execution == 'native' and not self._closing)
                 self.install_button.setEnabled(False)
                 self.update_button.setEnabled(False)
                 self.start_button.setEnabled(manifest.supports_session and not self._closing)
-                self.start_button.setText('Run / enable task' if manifest.supports_session else 'Start')
+                self._set_label(self.start_button, 'Run / enable task' if manifest.supports_session else 'Start')
                 self.disable_button.setEnabled(manifest.supports_session
-                                               and manifest.task(task_id).kind == 'service'
+                                               and task_id is not None and manifest.task(task_id, self.data_dir / manifest.id).kind == 'service'
                                                and not self._closing)
                 self._reader = threading.Thread(target=self._read_output, args=(process,), daemon=True)
                 self._reader.start()
@@ -921,6 +1160,7 @@ class GameFrameWindow(QWidget):
                         self._live_routes[request_id] = 'hotkeys'
             elif kind == "start-error":
                 self._starting = False
+                self._foreground_requested = False
                 self.package_select.setEnabled(not self._closing and not self._managing)
                 self.device_edit.setEnabled(not self._closing)
                 self.device_editor.setEnabled(not self._closing)
@@ -935,10 +1175,11 @@ class GameFrameWindow(QWidget):
                         'ok': False, 'error': {'type': 'RuntimeError', 'message': '执行会话已退出，请启动会话后再试。'}})
                 self.status_label.setText(f"Worker exited with code {value}")
                 self.process = None
+                self._foreground_requested = False
                 self.package_select.setEnabled(not self._managing and not self._closing and not self._updating)
                 self.device_edit.setEnabled(self._manifest().execution == 'native' and not self._closing)
                 self.device_editor.setEnabled(self._manifest().execution == 'native' and not self._closing)
-                self.start_button.setText('Start')
+                self._set_label(self.start_button, 'Start')
                 self.disable_button.setEnabled(False)
                 self.start_button.setEnabled(not self._closing and not self._starting and not self._updating
                                              and self.task_list.currentRow() >= 0)
@@ -998,12 +1239,26 @@ class GameFrameWindow(QWidget):
         editable = editable and not self._starting and not self._closing and not self._updating
         self.device_editor.setEnabled(editable)
         self.device_edit.setEnabled(editable)
+        self.change_root_button.setEnabled(not self._starting and not self._closing and not self._managing
+            and not self._configuration_querying
+            and not self._overview_starting and not self._installing and not self._updating and self.process is None
+            and (self.overview_controller.process is None or self.overview_controller.process.poll() is not None))
+        self.session_button.setEnabled(editable and manifest.supports_session and not self._installing
+                                      and not self._configuration_querying)
+        context_busy = self._configuration_querying or any(value == 'account-context' for value in self._live_routes.values())
+        context_editable = (self._account_context is not None and self._account_context['available']
+                            and not self._account_context['readonly'] and not self._foreground_requested
+                            and not self._starting and not self._stopping and not self._closing and not context_busy)
+        self.sequence_select.setEnabled(context_editable)
+        self.account_select.setEnabled(context_editable)
+        self.context_refresh_button.setEnabled(manifest is not None and manifest.configuration
+            and not self._starting and not self._stopping and not self._closing and not self._foreground_requested
+            and not self._updating and not context_busy)
         self.screenshot_button.setEnabled(live)
         self.ocr_button.setEnabled(live)
         if self.process is not None and not self._stopping and not self._closing and self.pause_button.isEnabled():
             if self._hotkey.poll():
                 self.toggle_pause()
-
     def closeEvent(self, event):
         if not self._force_close and not self._closing and self.close_to_tray.isChecked():
             if QSystemTrayIcon.isSystemTrayAvailable():
@@ -1045,6 +1300,9 @@ class GameFrameWindow(QWidget):
                 self._overview_thread.join()
             self.overview_controller.close()
             self.overview_controller.assert_idle()
+            if self._configuration_thread is not None:
+                self._configuration_thread.join()
+            self.configuration_controller.close()
             self.controller.close()
         except Exception as error:
             self._events.put(("cleanup-error", error))

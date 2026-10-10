@@ -9,7 +9,7 @@
   ],
   "execution": "native",
   "source_root": "../..",
-  "version": "1.97.72",
+  "version": "1.97.73",
   "tasks": [
     {
       "id": "DailyTask",
@@ -25,7 +25,9 @@
       "module": "src.task.DailyTask",
       "class": "DailyTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "每日执行",
+      "order": 0
     },
     {
       "id": "FarmEchoTask",
@@ -41,7 +43,9 @@
       "module": "src.task.FarmEchoTask",
       "class": "FarmEchoTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "不常用任务",
+      "order": 21
     },
     {
       "id": "WorldBossMaterialTask",
@@ -57,7 +61,9 @@
       "module": "src.task.WorldBossMaterialTask",
       "class": "WorldBossMaterialTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "不常用任务",
+      "order": 18
     },
     {
       "id": "NightmareNestTask",
@@ -73,7 +79,9 @@
       "module": "src.task.NightmareNestTask",
       "class": "NightmareNestTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "扩展任务",
+      "order": 12
     },
     {
       "id": "TacetTask",
@@ -89,7 +97,9 @@
       "module": "src.task.TacetTask",
       "class": "TacetTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "扩展任务",
+      "order": 13
     },
     {
       "id": "ForgeryTask",
@@ -105,7 +115,9 @@
       "module": "src.task.ForgeryTask",
       "class": "ForgeryTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "扩展任务",
+      "order": 14
     },
     {
       "id": "MaterialPlannerTask",
@@ -121,7 +133,9 @@
       "module": "src.task.MaterialPlannerTask",
       "class": "MaterialPlannerTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "扩展任务",
+      "order": 15
     },
     {
       "id": "SimulationTask",
@@ -137,7 +151,9 @@
       "module": "src.task.SimulationTask",
       "class": "SimulationTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "扩展任务",
+      "order": 16
     },
     {
       "id": "MultiAccountDailyTask",
@@ -153,7 +169,9 @@
       "module": "src.task.MultiAccountDailyTask",
       "class": "MultiAccountDailyTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "每日执行",
+      "order": 1
     },
     {
       "id": "MultiAccountWeeklyGardenTask",
@@ -169,7 +187,9 @@
       "module": "src.task.MultiAccountWeeklyGardenTask",
       "class": "MultiAccountWeeklyGardenTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "每周任务",
+      "order": 2
     },
     {
       "id": "GardenTask",
@@ -185,7 +205,9 @@
       "module": "src.task.GardenTask",
       "class": "GardenTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "不常用任务",
+      "order": 19
     },
     {
       "id": "EventTask",
@@ -201,7 +223,9 @@
       "module": "src.task.EventTask",
       "class": "EventTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "活动",
+      "order": 10
     },
     {
       "id": "TestAccountSwitchTask",
@@ -217,7 +241,9 @@
       "module": "src.task.TestAccountSwitchTask",
       "class": "TestAccountSwitchTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "扩展任务",
+      "order": 17
     },
     {
       "id": "AutoAbyssTask",
@@ -233,7 +259,9 @@
       "module": "src.task.AutoAbyssTask",
       "class": "AutoAbyssTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "每周任务",
+      "order": 3
     },
     {
       "id": "AutoSeaRuinsTask",
@@ -249,7 +277,9 @@
       "module": "src.task.AutoSeaRuinsTask",
       "class": "AutoSeaRuinsTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "每周任务",
+      "order": 4
     },
     {
       "id": "WeeklyBossTask",
@@ -265,13 +295,15 @@
       "module": "src.task.WeeklyBossTask",
       "class": "WeeklyBossTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "不常用任务",
+      "order": 20
     },
     {
       "id": "PianoTeachingTask",
       "title": "Piano Teaching",
       "kind": "one-shot",
-      "visible": true,
+      "visible": false,
       "default_config": {},
       "required_capabilities": [
         "frames",
@@ -281,13 +313,15 @@
       "module": "src.task.PianoTeachingTask",
       "class": "PianoTeachingTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "活动",
+      "order": 8
     },
     {
       "id": "SecondSolTask",
       "title": "SecondSolTask",
       "kind": "one-shot",
-      "visible": true,
+      "visible": false,
       "default_config": {},
       "required_capabilities": [
         "frames",
@@ -298,13 +332,15 @@
       "module": "src.task.SecondSolTask",
       "class": "SecondSolTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "活动",
+      "order": 9
     },
     {
       "id": "EchoesRemainTask",
       "title": "EchoesRemainTask",
       "kind": "one-shot",
-      "visible": true,
+      "visible": false,
       "default_config": {},
       "required_capabilities": [
         "frames",
@@ -314,7 +350,9 @@
       "module": "src.task.EchoesRemainTask",
       "class": "EchoesRemainTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "活动",
+      "order": 7
     },
     {
       "id": "ResonanceSimulationTask",
@@ -332,7 +370,9 @@
       "module": "src.task.ResonanceSimulationTask",
       "class": "ResonanceSimulationTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "活动",
+      "order": 11
     },
     {
       "id": "CharacterTrialTask",
@@ -348,7 +388,9 @@
       "module": "src.task.CharacterTrialTask",
       "class": "CharacterTrialTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "活动",
+      "order": 5
     },
     {
       "id": "TiangongTreasureTask",
@@ -364,7 +406,9 @@
       "module": "src.task.TiangongTreasureTask",
       "class": "TiangongTreasureTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "活动",
+      "order": 6
     },
     {
       "id": "auto-combat",
@@ -382,7 +426,9 @@
       "module": "src.task.AutoCombatTask",
       "class": "AutoCombatTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "战斗与拾取",
+      "order": 22
     },
     {
       "id": "SoloCombatTask",
@@ -400,7 +446,9 @@
       "module": "src.task.SoloCombatTask",
       "class": "SoloCombatTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "战斗与拾取",
+      "order": 23
     },
     {
       "id": "AutoPickTask",
@@ -418,7 +466,9 @@
       "module": "src.task.AutoPickTask",
       "class": "AutoPickTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "战斗与拾取",
+      "order": 24
     },
     {
       "id": "AutoLoginTask",
@@ -436,7 +486,9 @@
       "module": "src.task.AutoLoginTask",
       "class": "AutoLoginTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "登录与输入",
+      "order": 27
     },
     {
       "id": "AutoDialogTask",
@@ -454,7 +506,9 @@
       "module": "src.task.SkipDialogTask",
       "class": "AutoDialogTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "剧情与移动",
+      "order": 25
     },
     {
       "id": "FastTravelTask",
@@ -472,7 +526,9 @@
       "module": "src.task.FastTravelTask",
       "class": "FastTravelTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "剧情与移动",
+      "order": 26
     },
     {
       "id": "MouseResetTask",
@@ -490,11 +546,44 @@
       "module": "src.task.MouseResetTask",
       "class": "MouseResetTask",
       "integration": "native-production-rules",
-      "config_scope": "native-data-directory"
+      "config_scope": "native-data-directory",
+      "category": "登录与输入",
+      "order": 28
     }
   ],
   "supports_session": true,
   "management": true,
   "overview": true,
-  "task_catalog": "user_tasks/catalog.json"
+  "task_catalog": "user_tasks/catalog.json",
+  "configuration": true,
+  "session_required_capabilities": [
+    "frames",
+    "keyboard",
+    "mouse"
+  ],
+  "window_preferences": {
+    "supported_ratio": 1.7777777777777777,
+    "min_size": [
+      1280,
+      720
+    ],
+    "resolutions": [
+      [
+        2560,
+        1440
+      ],
+      [
+        1920,
+        1080
+      ],
+      [
+        1600,
+        900
+      ],
+      [
+        1280,
+        720
+      ]
+    ]
+  }
 }

@@ -34,6 +34,8 @@ def overview(data_dir, program_version, *, package_root=None):
         from PySide6.QtWidgets import QApplication
         from PySide6.QtCore import Qt, QMetaObject, QThreadPool
         app = QApplication.instance() or QApplication([])
+        from src.runtime.native_language import install_qt_language, load_language
+        install_qt_language(app, load_language(root, pack_root=package_root))
         apply_codex_light_theme(app)
         dialog = NativeExecutionOverviewDialog(repository, NativeLiveReader(root),
             timing_repository=EvidenceRepository(root / 'okww监控室/CompletionEvidence'))

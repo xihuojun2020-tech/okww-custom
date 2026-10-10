@@ -22,7 +22,9 @@ def main(argv=None):
     installing.add_argument('--packages', type=Path, default=Path.home() / '.gameframe' / 'gamepacks')
     running = commands.add_parser('run', help='Execute a selected package task')
     running.add_argument('package', type=Path)
-    running.add_argument('--task', required=True)
+    initial = running.add_mutually_exclusive_group(required=True)
+    initial.add_argument('--task')
+    initial.add_argument('--session-only', action='store_true', help='Restore saved services without running or enabling a task')
     running.add_argument('--data-dir', type=Path, default=Path.home() / '.gameframe')
     running.add_argument('--device', type=json.loads)
     running.add_argument('--config', type=json.loads)
@@ -37,6 +39,8 @@ def main(argv=None):
     gui.add_argument('--packages', type=Path, default=Path.home() / '.gameframe' / 'gamepacks')
     gui.add_argument('--data-dir', type=Path, default=Path.home() / '.gameframe')
     args = parser.parse_args(argv)
+    if args.command == 'run':
+        args.session = args.session or args.session_only
     if args.command == 'install':
         package = install_archive(args.archive, args.packages)
         print(json.dumps({'id': package.id, 'installed': str(package.root)}, ensure_ascii=False))

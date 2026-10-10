@@ -28,6 +28,8 @@ class TaskDefinition:
     required_capabilities: frozenset[str]
     visible: bool = True
     revision: str | None = None
+    category: str = ''
+    order: int = 0
 
 
 @dataclass(frozen=True)
@@ -45,6 +47,8 @@ class PackageManifest:
     management: bool = False
     overview: bool = False
     task_catalog: str | None = None
+    session_required_capabilities: frozenset[str] = frozenset()
+    configuration: bool = False
 
     @classmethod
     def read(cls, directory: Path | str) -> PackageManifest:
@@ -61,7 +65,7 @@ class PackageManifest:
         tasks = tuple(TaskDefinition(
             item['id'], item['title'], item['kind'], item.get('default_config', {}),
             frozenset(item.get('required_capabilities', [])), item.get('visible', True),
-            item.get('revision')) for item in value['tasks'])
+            item.get('revision'), item.get('category', ''), item.get('order', 0)) for item in value['tasks'])
         if any('revision' in item and (not isinstance(item['revision'], str) or not item['revision'])
                for item in value['tasks']):
             raise ValueError('Task revision must be a nonempty string')
@@ -73,20 +77,27 @@ class PackageManifest:
             raise ValueError('Task default_config must be an object')
         if any(not isinstance(task.visible, bool) for task in tasks):
             raise ValueError('Task visible must be a boolean')
+        if any(not isinstance(task.category, str) or type(task.order) is not int for task in tasks):
+            raise ValueError('Task category must be text and order an integer')
         execution = value.get('execution', 'native')
         if execution not in {'native', 'legacy-application'}:
             raise ValueError('Unknown package execution mode')
-        for name in ('supports_session', 'management', 'overview'):
+        for name in ('supports_session', 'management', 'overview', 'configuration'):
             if not isinstance(value.get(name, False), bool):
                 raise ValueError(f'Package {name} must be a boolean')
         catalog = value.get('task_catalog')
+        session_capabilities = value.get('session_required_capabilities', [])
+        if (not isinstance(session_capabilities, list)
+                or any(not isinstance(item, str) for item in session_capabilities)):
+            raise ValueError('Session required capabilities must be a list of strings')
         if catalog is not None and (not isinstance(catalog, str) or not catalog
                 or Path(catalog).anchor or Path(catalog) == Path('.') or '..' in Path(catalog).parts):
             raise ValueError('Task catalog must be a relative path inside the data directory')
         return cls(root, value['id'], value.get('title', value['id']), value['version'],
                    value['entrypoint'], value['license'], tuple(value['platforms']),
                    execution, tasks, value.get('supports_session', False),
-                   value.get('management', False), value.get('overview', False), catalog)
+                   value.get('management', False), value.get('overview', False), catalog,
+                   frozenset(session_capabilities), value.get('configuration', False))
 
     def available_tasks(self, data_dir=None) -> tuple[TaskDefinition, ...]:
         if self.task_catalog is None or data_dir is None:
@@ -112,6 +123,7 @@ class PackageManifest:
                     or not isinstance(item.get('required_capabilities', []), list)
                     or any(not isinstance(capability, str) for capability in item.get('required_capabilities', []))
                     or type(item.get('visible', True)) is not bool
+                    or not isinstance(item.get('category', ''), str) or type(item.get('order', 0)) is not int
                     or ('revision' in item and (not isinstance(item['revision'], str) or not item['revision']))):
                 raise ValueError('Invalid task catalog task definition')
             if item['id'] in ids:
@@ -119,7 +131,7 @@ class PackageManifest:
             ids.add(item['id'])
             tasks.append(TaskDefinition(item['id'], item['title'], item['kind'], item.get('default_config', {}),
                                         frozenset(item.get('required_capabilities', [])), item.get('visible', True),
-                                        item.get('revision')))
+                                        item.get('revision'), item.get('category', ''), item.get('order', 0)))
         return tuple(tasks)
 
     def task(self, task_id: str, data_dir=None) -> TaskDefinition:

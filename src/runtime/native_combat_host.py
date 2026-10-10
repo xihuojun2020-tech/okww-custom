@@ -27,12 +27,13 @@ class NativeCombatHost:
                  supported_ratio=16 / 9, translate=gettext.gettext, pause=None,
                  native=True, task_entry='src.task.AutoCombatTask:AutoCombatTask',
                  registered_tasks=(), ocr_config=None, task_requirements=None, live_status=None,
-                 user_tasks=(), load_characters=True):
+                 user_tasks=(), load_characters=True, program_preferences=None):
         from src.runtime import combat_api
         combat_api.configure(native=native, data_dir=context.data_dir)
         from src.runtime.combat_api import Box, Config, TaskDisabledException, WaitFailedException
 
         self.context = context
+        self.program_preferences = program_preferences
         self.live_status = live_status
         config_root = (Path(context.data_dir) / 'configs').resolve()
         config_root.mkdir(parents=True, exist_ok=True)
@@ -410,9 +411,11 @@ class NativeCombatHost:
                 raise SessionPreempted('Background service yielded to a user request')
         from src.runtime.native_metadata import task_id
         background_id = task_id(self.task)
-        initial = self._tasks_by_id()[initial_task_id]
-        initial_request = {'command': 'set-service' if isinstance(initial, NativeTriggerTask)
-                           else 'run-task', 'task_id': initial_task_id, 'enabled': True}
+        initial_request = None
+        if initial_task_id is not None:
+            initial = self._tasks_by_id()[initial_task_id]
+            initial_request = {'command': 'set-service' if isinstance(initial, NativeTriggerTask)
+                               else 'run-task', 'task_id': initial_task_id, 'enabled': True}
         deferred_tasks = deque()
         deferred_enables = self._configuration_service_enables
         while True:
@@ -534,6 +537,26 @@ class NativeCombatHost:
                 continue
             if stopped:
                 raise Cancelled('Task stopped')
+            poll_preferences = getattr(self.context.device, 'poll_preferences', None)
+            if poll_preferences is not None:
+                try:
+                    if poll_preferences():
+                        self.context.device.release_all()
+                        self.context.emit('target-exited')
+                        return {'exit_requested': True, 'target_exited': True}
+                except Exception as error:
+                    try:
+                        if self._combat_recovery is not None:
+                            try:
+                                self._combat_recovery(error)
+                            except Exception:
+                                logger.exception('Program preference recovery failed')
+                        else:
+                            logger.exception('Program preference operation failed')
+                    finally:
+                        self.context.device.release_all()
+                    self.context.stop.wait(max(.1, getattr(self.task, 'retry_delay', .1)))
+                    continue
             if paused:
                 self.context.stop.wait(.1)
                 continue
@@ -565,7 +588,8 @@ class NativeCombatHost:
                     self.executor.session_checkpoint = None
                     self.context.device.release_all()
                     self._select_task(self._tasks_by_id()[background_id])
-            self.context.stop.wait(.1)
+            self.context.stop.wait(self.program_preferences['Trigger Interval'] / 1000
+                                   if self.program_preferences is not None else .1)
 
     def run_once(self):
         """Execute original foreground lifecycle within the caller's input scope."""
