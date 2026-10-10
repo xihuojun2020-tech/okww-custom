@@ -15,6 +15,14 @@ ACCOUNT = '00000000-0000-4000-8000-000000000001'
 
 
 class TestCompletionEvidence(unittest.TestCase):
+    def test_stale_pending_image_does_not_block_retry(self):
+        with tempfile.TemporaryDirectory() as root:
+            image = Path(root) / 'original.png'
+            image.with_suffix('.png.pending').write_bytes(b'interrupted write')
+            EvidenceRepository._write_new(image, b'complete image')
+            self.assertEqual(image.read_bytes(), b'complete image')
+            self.assertEqual(image.with_suffix('.png.pending').read_bytes(), b'interrupted write')
+
     def test_daily_projects_and_weekly_boundaries(self):
         for project in ('daily_activity', 'nightmare_nest', 'battle_pass'):
             self.assertEqual(period_for(project, '2026-09-15T03:59:59+08:00'), 'day:2026-09-14')

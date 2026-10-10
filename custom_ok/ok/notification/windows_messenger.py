@@ -87,10 +87,9 @@ class MessengerAutomation:
                 input_point = (
                     max(20, send_box[0] - 80), max(20, send_box[1] - 45))
                 input_target = self._click(hwnd, input_point)
-                self._send_content(
+                return self._send_content(
                     hwnd, send_box, input_point, title, message, images,
                     focus_input=False, input_target=input_target)
-                return True
 
             search = self._wait_text(
                 hwnd, {'Search', '搜索'}, region=search_region, timeout=1.5)
@@ -132,8 +131,7 @@ class MessengerAutomation:
         if send_box is None:
             raise RuntimeError('Could not find Send/发送 in the messenger window')
         input_point = (max(20, send_box[0] - 80), max(20, send_box[1] - 45))
-        self._send_content(hwnd, send_box, input_point, title, message, images)
-        return True
+        return self._send_content(hwnd, send_box, input_point, title, message, images)
 
     def _send_content(self, hwnd, send_box, input_point, title, message, images,
                       focus_input=True, input_target=None):
@@ -170,6 +168,7 @@ class MessengerAutomation:
         finally:
             if uses_clipboard:
                 self._restore_clipboard_text(clipboard_text)
+        return True
 
     def _search_query(self, nickname):
         if self.search_first_word:

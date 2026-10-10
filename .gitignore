@@ -25,6 +25,8 @@ okww监控室/
 debug.log
 probe_out.txt
 /test_out/
+/gameframe/build/
+/gameframe/*.egg-info/
 /dist/
 /pyappify_dist/
 /probe_login_out/

@@ -5,7 +5,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ok import Logger, TaskDisabledException, color_range_to_bound
+from ok import Logger, TaskDisabledException
+from src.vision.color import color_range_to_bound
 from src.task.BaseCombatTask import BaseCombatTask, white_color
 from src.task.WWOneTimeTask import WWOneTimeTask
 from ok import find_boxes_by_name

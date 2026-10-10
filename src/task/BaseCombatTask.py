@@ -12,7 +12,7 @@ from ok.task.exceptions import FinishedException, CaptureException
 from src.combat.CombatCheck import CombatFlowInterrupt
 from src.runtime.game_runtime_errors import FrameUnavailable, GameProcessLost
 from src.config_integrity import ConfigIntegrityBlocked, ConfigWriteBlocked
-from ok import color_range_to_bound
+from src.vision.color import color_range_to_bound
 from ok import safe_get
 from src import text_white_color
 from src.char import BaseChar

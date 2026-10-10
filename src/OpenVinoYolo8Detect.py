@@ -133,16 +133,12 @@ class OpenVinoYolo8Detect:
         return results
 
     def detect(self, image, threshold=0.5, label=-1):
-        try:
-            h, w = image.shape[:2]
-            img_data, pad = self._preprocess(image)
+        h, w = image.shape[:2]
+        img_data, pad = self._preprocess(image)
 
-            results = self.compiled_model({self.input_layer: img_data})
-            outputs = results[self.output_layer]
+        results = self.compiled_model({self.input_layer: img_data})
+        outputs = results[self.output_layer]
 
-            boxes = self._postprocess(outputs, pad, (h, w), threshold, label)
+        boxes = self._postprocess(outputs, pad, (h, w), threshold, label)
 
-            return sort_boxes(boxes)
-        except Exception as e:
-            logger.error(f'OpenVINO yolo detect error: {e}')
-            return []
+        return sort_boxes(boxes)

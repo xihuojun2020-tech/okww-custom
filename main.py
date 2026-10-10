@@ -1,12 +1,11 @@
 # -*- coding: utf-8 -*-
 """okww 修改版启动入口。
 
-- 启动前自动同步「定制 ok 框架」（ConfigItemFactory 等，防止 pip 标准版缺类型崩溃）
+- 启动前安装当前进程的定制框架导入覆盖（不修改共享虚拟环境）
 - 单实例保护：已有实例运行时，本实例直接退出
 - 正常退出时联动结束 pyappify 启动器（关窗口 = 所有相关进程全关）
 """
 import os
-import shutil
 import sys
 import atexit
 import time
@@ -76,38 +75,9 @@ def _create_ok(config):
 
 
 def _sync_custom_ok():
-    """把 custom_ok 里的定制框架文件同步到 site-packages 的 ok 包（缺才补，每次启动检查）。"""
-    try:
-        import ok
-
-        base = os.path.dirname(os.path.abspath(__file__))
-        custom_dir = os.path.join(base, 'custom_ok', 'ok')
-        if not os.path.isdir(custom_dir):
-            return
-        ok_pkg_dir = os.path.dirname(ok.__file__)
-        for dirpath, _dirnames, filenames in os.walk(custom_dir):
-            rel = os.path.relpath(dirpath, custom_dir)
-            for f in filenames:
-                if not f.endswith('.py'):
-                    continue
-                src = os.path.join(dirpath, f)
-                dst = os.path.join(ok_pkg_dir, rel, f)
-                try:
-                    with open(dst, encoding='utf-8') as fh:
-                        existing = fh.read()
-                    with open(src, encoding='utf-8') as fh:
-                        custom = fh.read()
-                    if existing != custom:
-                        shutil.copy2(src, dst)
-                        print(f'[okww] 已同步定制框架: {rel}\\{f}')
-                except FileNotFoundError:
-                    os.makedirs(os.path.dirname(dst), exist_ok=True)
-                    shutil.copy2(src, dst)
-                    print(f'[okww] 已安装定制框架: {rel}\\{f}')
-                except Exception:
-                    pass
-    except Exception:
-        pass
+    """保留启动钩子名称，只安装当前进程的导入覆盖。"""
+    from src.runtime.framework_overlay import install_framework_overlay
+    return install_framework_overlay(Path(__file__).resolve().parent)
 
 
 def _ensure_single_instance():
@@ -308,12 +278,24 @@ def _report_startup_error(error, traceback_text=None):
         pass
 
 
-if __name__ == '__main__':
+def _watch_application_stop(ok, stop_event, finished):
+    """Forward the controller's stop to the existing application exit path."""
+    while not finished.is_set():
+        if stop_event.wait(.1):
+            ok.quit()
+            return
+
+
+def run_application(task=None, stop_event=None):
+    """共享生产初始化；指定任务时返回旧运行时结果，不推断业务完成。"""
+    if stop_event is not None and stop_event.is_set():
+        return
     if not _ensure_single_instance():
         print('[okww] 检测到已有实例在运行，本实例退出（单实例保护）')
         sys.exit(0)
     try:
         os.chdir(Path(__file__).resolve().parent)
+        _sync_custom_ok()
         from src.runtime.storage_startup_ui import prepare_storage
         prepare_storage(Path(__file__).resolve().parent)
     except InterruptedError:
@@ -321,7 +303,6 @@ if __name__ == '__main__':
     except Exception as error:
         _report_startup_error(error)
         sys.exit(1)
-    _sync_custom_ok()
     # 联网代理自愈：探测代理并写入 repo git 配置（下次 fetch 走代理）
     _setup_proxy()
     atexit.register(_exit_cleanup, _find_owned_launcher())
@@ -347,12 +328,26 @@ if __name__ == '__main__':
 
     from config import config
 
-    config = config
     ok = None
+    stop_bridge = None
+    bridge_finished = None
     try:
+        if stop_event is not None and stop_event.is_set():
+            return
         ok = _create_ok(config)
         attach_framework_hooks()
-        ok.start()
+        if stop_event is not None:
+            if stop_event.is_set():
+                ok.quit()
+                return
+            bridge_finished = threading.Event()
+            bridge = threading.Thread(target=_watch_application_stop,
+                args=(ok, stop_event, bridge_finished), name='ApplicationStop', daemon=True)
+            bridge.start()
+            stop_bridge = bridge
+        if task is not None:
+            return ok.run_task(task)
+        return ok.start()
     except Exception as e:
         # 启动异常（含 OK 构造）：写日志 + 弹窗（pythonw 无控制台时不再静默崩溃）
         import traceback
@@ -360,3 +355,14 @@ if __name__ == '__main__':
         record_crash(type(e), e, e.__traceback__)
         _report_startup_error(e, tb)
         sys.exit(1)
+    finally:
+        if stop_bridge is not None:
+            bridge_finished.set()
+            stop_bridge.join()
+            executor = ok.task_executor
+            if ok.exit_event.is_set() and executor is not None and executor.thread is not None:
+                executor.thread.join()
+
+
+if __name__ == '__main__':
+    run_application()

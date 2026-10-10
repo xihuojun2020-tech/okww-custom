@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 from enum import Enum
 from src.char.BaseChar import BaseChar, CharType, SwitchPriority, forte_white_color
-from ok import color_range_to_bound
+from src.vision.color import color_range_to_bound
 
 class State(Enum):
     SUCCESS = 1

@@ -43,7 +43,7 @@ class ShoreKeeper(BaseChar):
                 self.task.skip_combat_check = False
         self.click_echo(time_out=0)
         self.click_liberation()
-        if not self.click_resonance():
+        if not self.click_resonance()[0]:
             self.heavy_click_forte(self.is_mouse_forte_full)
         self.switch_next_char()
 

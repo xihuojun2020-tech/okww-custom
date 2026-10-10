@@ -181,19 +181,15 @@ class OnnxYolo8Detect:  # Renamed class
         '''
         预测
         '''
-        try:
-            h, w = image.shape[:2]
-            img_data, pad = self._preprocess(image)
+        h, w = image.shape[:2]
+        img_data, pad = self._preprocess(image)
 
-            # --- ONNX Runtime Inference ---
-            # Input is a dictionary {input_name: data}
-            # Output is a list of numpy arrays
-            outputs = self.session.run([self.output_name], {self.input_name: img_data})
-            # --- End ONNX Runtime Inference ---
+        # --- ONNX Runtime Inference ---
+        # Input is a dictionary {input_name: data}
+        # Output is a list of numpy arrays
+        outputs = self.session.run([self.output_name], {self.input_name: img_data})
+        # --- End ONNX Runtime Inference ---
 
-            boxes = self._postprocess(outputs, pad, (h, w), threshold, label)
+        boxes = self._postprocess(outputs, pad, (h, w), threshold, label)
 
-            return sort_boxes(boxes)  # Assuming sort_boxes is available
-        except Exception as e:
-            logger.error(f'ONNX Runtime yolo detect error: {e}')
-            return []
+        return sort_boxes(boxes)  # Assuming sort_boxes is available

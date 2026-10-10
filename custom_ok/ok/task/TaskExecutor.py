@@ -1,4 +1,3 @@
-import sys
 import threading
 import time
 
@@ -346,7 +345,7 @@ class TaskExecutor:
             self.sleep(1)
         if self.exit_event.is_set():
             logger.info("frame Exit event set. Exiting early.")
-            sys.exit(0)
+            raise FinishedException()
         if self._frame is None:
             self.next_frame()
         return self._frame
@@ -405,7 +404,7 @@ class TaskExecutor:
                         next_sleep_check = max(0, task.sleep_check_interval - elapsed)
             if self.exit_event.is_set():
                 logger.info("sleep Exit event set. Exiting early.")
-                sys.exit(0)
+                raise FinishedException()
             if not (self.paused or (
                     self.current_task is not None and self.current_task.paused) or self.interaction is None or not self.interaction.should_capture()):
                 to_sleep = self.pause_end_time - time.time()
@@ -770,7 +769,17 @@ class TaskExecutor:
                 if not is_trigger_task:
                     after_run = getattr(task, 'after_run', None)
                     if callable(after_run):
-                        after_run()
+                        try:
+                            after_run()
+                        except FinishedException:
+                            self.exit_event.set()
+                        except TaskDisabledException:
+                            pass  # The stopped task still needs cleanup; background tasks remain scheduled.
+                        except Exception as error:
+                            try:
+                                logger.error(f'{task.name} after_run failed', error)
+                            except Exception:
+                                pass  # A failed diagnostic hook must not interrupt cleanup or background tasks.
                     self._account_feature_run = None
                     prevent_sleeping(False)
                 release = getattr(task, '_release_combat_inputs', None)

@@ -3,9 +3,10 @@ import time
 
 import win32api
 
-from ok import find_boxes_by_name, Logger, calculate_color_percentage, TaskDisabledException
+from ok import find_boxes_by_name, Logger, TaskDisabledException
 from src.config_integrity import ConfigIntegrityBlocked, ConfigWriteBlocked
-from ok import find_color_rectangles, get_mask_in_color_range, is_pure_black
+from ok import find_color_rectangles
+from src.vision.color import calculate_color_percentage, get_mask_in_color_range, is_pure_black
 from src import text_white_color
 from src.Labels import Labels
 from src.char.Roccia import Roccia

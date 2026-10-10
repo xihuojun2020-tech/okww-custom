@@ -8,7 +8,7 @@ import subprocess
 
 @contextmanager
 def quiesce_uploaders(repo, destination):
-    from src.runtime.storage_bootstrap import read_json
+    from src.runtime.storage_bootstrap import read_json, SCHEMA
     script = Path(__file__).with_name('storage_handoff.ps1')
     command = ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(script),
                '-SourceRepo', str(repo), '-Journal', str(destination / 'migration/tasks.json')]
@@ -43,7 +43,7 @@ def quiesce_uploaders(repo, destination):
         yield
     finally:
         current = read_json(repo / 'configs/runtime_storage.json', {})
-        if current.get('root') != str(destination) or current.get('schema') != 2:
+        if current.get('root') != str(destination) or current.get('schema') != SCHEMA:
             run('Restore')
         # After commit leave old actions disabled. start_diagnostics installs
         # the new isolated action; failure stays pending and never reopens old DBs.

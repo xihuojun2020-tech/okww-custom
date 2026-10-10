@@ -1,0 +1,16 @@
+{
+  "id": "vision-probe",
+  "title": "离线视觉闭环验证",
+  "version": "1.0.0",
+  "api_version": 1,
+  "entrypoint": "plugin.py:create_package",
+  "license": "MIT",
+  "platforms": ["offline"],
+  "tasks": [{
+    "id": "find-template",
+    "title": "匹配模板并记录点击",
+    "kind": "one-shot",
+    "default_config": {"template": "", "threshold": 0.99},
+    "required_capabilities": ["frames", "mouse"]
+  }]
+}

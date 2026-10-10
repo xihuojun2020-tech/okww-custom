@@ -1,6 +1,6 @@
 import time
 from decimal import Decimal, ROUND_HALF_UP, ROUND_DOWN, ROUND_UP
-from ok import color_range_to_bound
+from src.vision.color import color_range_to_bound
 from src.char.BaseChar import BaseChar, SwitchPriority
 import cv2
 import numpy as np

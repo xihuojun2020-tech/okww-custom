@@ -154,14 +154,17 @@ class EvidenceRepository:
     @staticmethod
     def _write_new(path, data):
         path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_suffix(path.suffix + '.pending')
-        with temporary.open('xb') as stream:
-            stream.write(data)
-            stream.flush()
-            os.fsync(stream.fileno())
-        if path.exists():
-            raise FileExistsError('不能覆盖已保存证据')
-        temporary.rename(path)
+        temporary = path.with_name(f'.{path.name}.{uuid4().hex}.pending')
+        try:
+            with temporary.open('xb') as stream:
+                stream.write(data)
+                stream.flush()
+                os.fsync(stream.fileno())
+            if path.exists():
+                raise FileExistsError('不能覆盖已保存证据')
+            temporary.rename(path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     def save(self, metadata, frame):
         if not metadata.get('require_image'):

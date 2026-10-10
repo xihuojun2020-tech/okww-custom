@@ -2,7 +2,7 @@ import time
 import cv2
 import numpy as np
 
-from ok import color_range_to_bound
+from src.vision.color import color_range_to_bound
 from src.char.BaseChar import BaseChar, SwitchPriority, forte_white_color
 
 

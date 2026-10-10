@@ -1,0 +1,327 @@
+# Framework asset provenance and offline fixtures
+
+Compared `295` local files under `assets/` and `tests/images/` with the public [ok-oldking/ok-wuthering-waves commit `b210632a2513`](https://github.com/ok-oldking/ok-wuthering-waves/tree/b210632a251371cc0bbb1d0e28ce16ff35657824). The upstream Git tree was complete. This script downloaded tree metadata only, no remote media.
+
+## Meaning of status
+
+`upstream-identical` means the local Git blob hash exists in that commit (possibly at another path). `upstream-modified` means the same path exists but the bytes differ. `custom-or-unverified` means no matching upstream blob was found; it does **not** establish ownership or permission to reuse. File size and local SHA-256 are in the JSON inventory. Asset replacement still needs source and license review.
+
+## Counts and migration fixtures
+
+| Status | Files |
+| --- | ---: |
+| custom-or-unverified | 218 |
+| upstream-identical | 67 |
+| upstream-modified | 10 |
+
+There are 126 PNG screenshots under `tests/images/` available for offline replay. They cover: `abyss_season_20261004` (6), `daily_claim_stability` (3), `daily_followup` (5), `daily_nas_20261005` (5), `daily_nas_20261008` (2), `daily_recovery` (7), `daily_regression` (6), `garden_page` (2), `material_boss_entry` (6), `materials` (15), `new_book_entries` (3), `post12_nas` (5), `residual_nests` (1), `root` (41), `roster_confirmation` (5), `tacet_reward` (1), `weekly_boss` (13). Availability means static image tests can read them; this inventory did not execute those tests or prove live-game behavior.
+
+The `tests/images/daily_followup/README.md` and `tests/images/daily_recovery/README.md` identify reviewed diagnostic ZIP sources and masking of account identifiers. Other groups include metadata or preparation scripts in the repository, but a missing explicit source record remains unverified.
+
+## COCO annotations, derived crops, and model
+
+`assets/coco_annotations.json` contains 292 annotation records, 292 categories, and 166 image records (60 unique references; 60 currently resolve under `assets/`). COCO coordinates and category labels are annotations, while template PNGs cut from source frames are derivatives of those frames. Neither a new crop nor a changed COCO JSON automatically makes the source pixels original work. `assets/echo_model/echo.onnx` is a separate model artifact whose weights require their own provenance assessment. The COCO `licenses` field and exporter metadata do not settle rights in source images or model weights.
+
+## Per-file comparison
+
+The JSON inventory carries full SHA-256, Git blob SHA-1, byte sizes and upstream match information for every row.
+
+| Local path | Role | Status | Bytes | Upstream path |
+| --- | --- | --- | ---: | --- |
+| `assets/coco_annotations.json` | coco-annotations | upstream-modified | 163507 | `assets/coco_annotations.json` |
+| `assets/echo_model/echo.onnx` | model | upstream-identical | 37907104 | `assets/echo_model/echo.onnx` |
+| `assets/images/0.png` | runtime-image | upstream-identical | 588845 | `assets/images/0.png` |
+| `assets/images/1.png` | runtime-image | upstream-modified | 267085 | `assets/images/1.png` |
+| `assets/images/10.png` | runtime-image | upstream-identical | 55338 | `assets/images/10.png` |
+| `assets/images/11.png` | runtime-image | upstream-identical | 42334 | `assets/images/11.png` |
+| `assets/images/12.png` | runtime-image | upstream-identical | 65254 | `assets/images/12.png` |
+| `assets/images/13.png` | runtime-image | upstream-identical | 53666 | `assets/images/13.png` |
+| `assets/images/14.png` | runtime-image | upstream-identical | 62145 | `assets/images/14.png` |
+| `assets/images/15.png` | runtime-image | upstream-identical | 40814 | `assets/images/15.png` |
+| `assets/images/16.png` | runtime-image | upstream-identical | 58602 | `assets/images/16.png` |
+| `assets/images/17.png` | runtime-image | upstream-identical | 41656 | `assets/images/17.png` |
+| `assets/images/18.png` | runtime-image | upstream-identical | 39618 | `assets/images/18.png` |
+| `assets/images/19.png` | runtime-image | upstream-identical | 53899 | `assets/images/19.png` |
+| `assets/images/2.png` | runtime-image | upstream-modified | 192777 | `assets/images/2.png` |
+| `assets/images/20.png` | runtime-image | upstream-identical | 55651 | `assets/images/20.png` |
+| `assets/images/21.png` | runtime-image | upstream-identical | 47927 | `assets/images/21.png` |
+| `assets/images/22.png` | runtime-image | upstream-identical | 82253 | `assets/images/22.png` |
+| `assets/images/23.png` | runtime-image | upstream-identical | 47284 | `assets/images/23.png` |
+| `assets/images/24.png` | runtime-image | upstream-identical | 73380 | `assets/images/24.png` |
+| `assets/images/25.png` | runtime-image | upstream-identical | 36158 | `assets/images/25.png` |
+| `assets/images/26.png` | runtime-image | upstream-identical | 45521 | `assets/images/26.png` |
+| `assets/images/27.png` | runtime-image | upstream-identical | 41062 | `assets/images/27.png` |
+| `assets/images/28.png` | runtime-image | upstream-identical | 48848 | `assets/images/28.png` |
+| `assets/images/29.png` | runtime-image | upstream-identical | 48729 | `assets/images/29.png` |
+| `assets/images/3.png` | runtime-image | upstream-identical | 110190 | `assets/images/3.png` |
+| `assets/images/30.png` | runtime-image | upstream-identical | 60859 | `assets/images/30.png` |
+| `assets/images/31.png` | runtime-image | upstream-identical | 51913 | `assets/images/31.png` |
+| `assets/images/32.png` | runtime-image | upstream-identical | 54990 | `assets/images/32.png` |
+| `assets/images/33.png` | runtime-image | upstream-identical | 339148 | `assets/images/36.png` |
+| `assets/images/34.png` | runtime-image | upstream-identical | 75212 | `assets/images/37.png` |
+| `assets/images/35.png` | runtime-image | upstream-identical | 32494 | `assets/images/38.png` |
+| `assets/images/36.png` | runtime-image | upstream-modified | 24550 | `assets/images/36.png` |
+| `assets/images/37.png` | runtime-image | upstream-modified | 21722 | `assets/images/37.png` |
+| `assets/images/38.png` | runtime-image | upstream-identical | 13067 | `assets/images/42.png` |
+| `assets/images/39.png` | runtime-image | upstream-modified | 14567 | `assets/images/39.png` |
+| `assets/images/4.png` | runtime-image | upstream-modified | 110980 | `assets/images/4.png` |
+| `assets/images/40.png` | runtime-image | upstream-identical | 7228 | `assets/images/44.png` |
+| `assets/images/41.png` | runtime-image | upstream-identical | 7620 | `assets/images/45.png` |
+| `assets/images/42.png` | runtime-image | upstream-identical | 7595 | `assets/images/46.png` |
+| `assets/images/43.png` | runtime-image | upstream-identical | 7181 | `assets/images/47.png` |
+| `assets/images/44.png` | runtime-image | upstream-identical | 14219 | `assets/images/48.png` |
+| `assets/images/5.png` | runtime-image | upstream-modified | 94638 | `assets/images/5.png` |
+| `assets/images/6.png` | runtime-image | upstream-modified | 43170 | `assets/images/6.png` |
+| `assets/images/7.png` | runtime-image | upstream-modified | 44811 | `assets/images/7.png` |
+| `assets/images/8.png` | runtime-image | upstream-identical | 46460 | `assets/images/8.png` |
+| `assets/images/9.png` | runtime-image | upstream-identical | 42834 | `assets/images/9.png` |
+| `assets/images/abyss_completed_icon.png` | runtime-image | custom-or-unverified | 2732 | — |
+| `assets/images/abyss_hiyuki_preset.png` | runtime-image | custom-or-unverified | 36903 | — |
+| `assets/images/abyss_locked_icon.png` | runtime-image | custom-or-unverified | 10421 | — |
+| `assets/images/abyss_period_challenge_icon.png` | runtime-image | custom-or-unverified | 17595 | — |
+| `assets/images/abyss_period_challenge_selected.png` | runtime-image | custom-or-unverified | 4533 | — |
+| `assets/images/abyss_period_challenge_unselected.png` | runtime-image | custom-or-unverified | 4721 | — |
+| `assets/images/activities/echoes_remain/1.png` | runtime-image | custom-or-unverified | 379 | — |
+| `assets/images/activities/echoes_remain/2.png` | runtime-image | custom-or-unverified | 525 | — |
+| `assets/images/activities/echoes_remain/3.png` | runtime-image | custom-or-unverified | 587 | — |
+| `assets/images/activities/echoes_remain/clock.png` | runtime-image | custom-or-unverified | 1801 | — |
+| `assets/images/activities/echoes_remain/support/0.png` | runtime-image | custom-or-unverified | 40114 | — |
+| `assets/images/activities/echoes_remain/support/1.png` | runtime-image | custom-or-unverified | 46336 | — |
+| `assets/images/activities/echoes_remain/support/2.png` | runtime-image | custom-or-unverified | 30372 | — |
+| `assets/images/activities/echoes_remain/support/3.png` | runtime-image | custom-or-unverified | 48270 | — |
+| `assets/images/activities/echoes_remain/support/4.png` | runtime-image | custom-or-unverified | 40498 | — |
+| `assets/images/activities/echoes_remain/support/5.png` | runtime-image | custom-or-unverified | 24780 | — |
+| `assets/images/activities/echoes_remain/support/6.png` | runtime-image | custom-or-unverified | 36276 | — |
+| `assets/images/activities/echoes_remain/support/7.png` | runtime-image | custom-or-unverified | 34235 | — |
+| `assets/images/activities/echoes_remain/support/8.png` | runtime-image | custom-or-unverified | 30061 | — |
+| `assets/images/activities/echoes_remain/support/f_key.png` | runtime-image | custom-or-unverified | 1661 | — |
+| `assets/images/activities/echoes_remain/support/lock.png` | runtime-image | custom-or-unverified | 1330 | — |
+| `assets/images/activities/echoes_remain/support/slot_plus.png` | runtime-image | custom-or-unverified | 500 | — |
+| `assets/images/activities/resonance_simulation/hud.png` | runtime-image | custom-or-unverified | 4017 | — |
+| `assets/images/activities/resonance_simulation/key_e.png` | runtime-image | custom-or-unverified | 378 | — |
+| `assets/images/activities/resonance_simulation/key_q.png` | runtime-image | custom-or-unverified | 422 | — |
+| `assets/images/activities/resonance_simulation/marker.png` | runtime-image | custom-or-unverified | 1943 | — |
+| `assets/images/activities/tiangong_treasure/0.png` | runtime-image | custom-or-unverified | 617 | — |
+| `assets/images/activities/tiangong_treasure/1.png` | runtime-image | custom-or-unverified | 174 | — |
+| `assets/images/activities/tiangong_treasure/2.png` | runtime-image | custom-or-unverified | 191 | — |
+| `assets/images/activities/tiangong_treasure/3.png` | runtime-image | custom-or-unverified | 195 | — |
+| `assets/images/character_trial_intro.png` | runtime-image | custom-or-unverified | 1012464 | — |
+| `assets/images/characters/genericportraits_source_42.png` | runtime-image | custom-or-unverified | 30548 | — |
+| `assets/images/characters/genericportraits_source_47.png` | runtime-image | custom-or-unverified | 23242 | — |
+| `assets/images/characters/jingran_source_34.png` | runtime-image | custom-or-unverified | 43002 | — |
+| `assets/images/characters/qingxiao_source_34.png` | runtime-image | custom-or-unverified | 65412 | — |
+| `assets/images/characters/qingxiao_source_6.png` | runtime-image | custom-or-unverified | 46392 | — |
+| `assets/images/characters/qingxiao_source_7.png` | runtime-image | custom-or-unverified | 41321 | — |
+| `assets/images/hsin_291.png` | runtime-image | custom-or-unverified | 45973 | — |
+| `assets/images/hsin_292.png` | runtime-image | custom-or-unverified | 41892 | — |
+| `assets/images/hsin_293.png` | runtime-image | custom-or-unverified | 40481 | — |
+| `assets/images/hsin_294.png` | runtime-image | custom-or-unverified | 42047 | — |
+| `assets/images/hsin_295.png` | runtime-image | custom-or-unverified | 43709 | — |
+| `assets/images/logout_power_icon.png` | runtime-image | custom-or-unverified | 17661 | — |
+| `assets/images/sea_ruins/detail_eleven.png` | runtime-image | custom-or-unverified | 2378 | — |
+| `assets/images/sea_ruins/detail_seven.png` | runtime-image | custom-or-unverified | 1583 | — |
+| `assets/images/sea_ruins/exit.png` | runtime-image | custom-or-unverified | 3071 | — |
+| `assets/images/sea_ruins/exit_close.png` | runtime-image | custom-or-unverified | 3831 | — |
+| `assets/images/sea_ruins/exit_core.png` | runtime-image | custom-or-unverified | 3844 | — |
+| `assets/images/sea_ruins/exit_side.png` | runtime-image | custom-or-unverified | 3347 | — |
+| `assets/images/sea_ruins/f.png` | runtime-image | custom-or-unverified | 2888 | — |
+| `assets/images/sea_ruins/infinity.png` | runtime-image | custom-or-unverified | 1324 | — |
+| `assets/images/sea_ruins/lock.png` | runtime-image | custom-or-unverified | 2120 | — |
+| `assets/images/sea_ruins/sea_world.png` | runtime-image | custom-or-unverified | 19189 | — |
+| `assets/images/sea_ruins/seven.png` | runtime-image | custom-or-unverified | 1336 | — |
+| `assets/images/solo_hud.png` | runtime-image | custom-or-unverified | 21025 | — |
+| `assets/images/solo_party_health_alt.png` | runtime-image | custom-or-unverified | 15481 | — |
+| `assets/images/story_skip/hex_background_1.png` | runtime-image | custom-or-unverified | 10495 | — |
+| `assets/images/story_skip/hex_background_2.png` | runtime-image | custom-or-unverified | 7107 | — |
+| `assets/images/story_skip/hex_background_3.png` | runtime-image | custom-or-unverified | 6198 | — |
+| `assets/images/story_skip/hex_background_4.png` | runtime-image | custom-or-unverified | 11066 | — |
+| `assets/images/story_skip/hex_background_5.png` | runtime-image | custom-or-unverified | 9966 | — |
+| `assets/images/story_skip/hex_background_6.png` | runtime-image | custom-or-unverified | 11208 | — |
+| `assets/images/story_skip/hex_green.png` | runtime-image | custom-or-unverified | 2071 | — |
+| `assets/images/story_skip/hex_icon.png` | runtime-image | custom-or-unverified | 9267 | — |
+| `assets/images/story_skip/hex_letterbox.png` | runtime-image | custom-or-unverified | 2081 | — |
+| `assets/images/story_skip/session_label.png` | runtime-image | custom-or-unverified | 3980 | — |
+| `assets/images/story_skip/skip_story.png` | runtime-image | custom-or-unverified | 3887 | — |
+| `assets/images/story_skip/summary_title.png` | runtime-image | custom-or-unverified | 6214 | — |
+| `assets/images/story_skip/warning_confirm.png` | runtime-image | custom-or-unverified | 1996 | — |
+| `assets/images/story_skip/warning_text.png` | runtime-image | custom-or-unverified | 17298 | — |
+| `assets/materials/catalog.json` | asset-metadata | custom-or-unverified | 13192 | — |
+| `assets/materials/templates/broadblade_a_blue.png` | material-template | custom-or-unverified | 13377 | — |
+| `assets/materials/templates/broadblade_a_gold.png` | material-template | custom-or-unverified | 16726 | — |
+| `assets/materials/templates/broadblade_a_green.png` | material-template | custom-or-unverified | 12478 | — |
+| `assets/materials/templates/broadblade_a_purple.png` | material-template | custom-or-unverified | 14708 | — |
+| `assets/materials/templates/broadblade_b_blue.png` | material-template | custom-or-unverified | 14684 | — |
+| `assets/materials/templates/broadblade_b_gold.png` | material-template | custom-or-unverified | 15217 | — |
+| `assets/materials/templates/broadblade_b_green.png` | material-template | custom-or-unverified | 14564 | — |
+| `assets/materials/templates/broadblade_b_purple.png` | material-template | custom-or-unverified | 15131 | — |
+| `assets/materials/templates/gauntlet_a_blue.png` | material-template | custom-or-unverified | 13523 | — |
+| `assets/materials/templates/gauntlet_a_gold.png` | material-template | custom-or-unverified | 16439 | — |
+| `assets/materials/templates/gauntlet_a_green.png` | material-template | custom-or-unverified | 11217 | — |
+| `assets/materials/templates/gauntlet_a_purple.png` | material-template | custom-or-unverified | 16157 | — |
+| `assets/materials/templates/gauntlet_b_blue.png` | material-template | custom-or-unverified | 13065 | — |
+| `assets/materials/templates/gauntlet_b_gold.png` | material-template | custom-or-unverified | 14654 | — |
+| `assets/materials/templates/gauntlet_b_green.png` | material-template | custom-or-unverified | 12739 | — |
+| `assets/materials/templates/gauntlet_b_purple.png` | material-template | custom-or-unverified | 14156 | — |
+| `assets/materials/templates/monster_necklace_blue.png` | material-template | custom-or-unverified | 13317 | — |
+| `assets/materials/templates/monster_necklace_gold.png` | material-template | custom-or-unverified | 16321 | — |
+| `assets/materials/templates/monster_necklace_purple.png` | material-template | custom-or-unverified | 14545 | — |
+| `assets/materials/templates/monster_star_blue.png` | material-template | custom-or-unverified | 16355 | — |
+| `assets/materials/templates/monster_star_gold.png` | material-template | custom-or-unverified | 16856 | — |
+| `assets/materials/templates/monster_star_green.png` | material-template | custom-or-unverified | 16509 | — |
+| `assets/materials/templates/monster_star_purple.png` | material-template | custom-or-unverified | 16185 | — |
+| `assets/materials/templates/pistol_a_blue.png` | material-template | custom-or-unverified | 13064 | — |
+| `assets/materials/templates/pistol_a_gold.png` | material-template | custom-or-unverified | 15965 | — |
+| `assets/materials/templates/pistol_a_green.png` | material-template | custom-or-unverified | 11963 | — |
+| `assets/materials/templates/pistol_a_purple.png` | material-template | custom-or-unverified | 14231 | — |
+| `assets/materials/templates/pistol_b_blue.png` | material-template | custom-or-unverified | 12369 | — |
+| `assets/materials/templates/pistol_b_gold.png` | material-template | custom-or-unverified | 14137 | — |
+| `assets/materials/templates/pistol_b_green.png` | material-template | custom-or-unverified | 11560 | — |
+| `assets/materials/templates/pistol_b_purple.png` | material-template | custom-or-unverified | 13469 | — |
+| `assets/materials/templates/rectifier_a_blue.png` | material-template | custom-or-unverified | 12223 | — |
+| `assets/materials/templates/rectifier_a_gold.png` | material-template | custom-or-unverified | 14016 | — |
+| `assets/materials/templates/rectifier_a_green.png` | material-template | custom-or-unverified | 10888 | — |
+| `assets/materials/templates/rectifier_a_purple.png` | material-template | custom-or-unverified | 13405 | — |
+| `assets/materials/templates/rectifier_b_blue.png` | material-template | custom-or-unverified | 12980 | — |
+| `assets/materials/templates/rectifier_b_gold.png` | material-template | custom-or-unverified | 14893 | — |
+| `assets/materials/templates/rectifier_b_green.png` | material-template | custom-or-unverified | 12264 | — |
+| `assets/materials/templates/rectifier_b_purple.png` | material-template | custom-or-unverified | 14229 | — |
+| `assets/materials/templates/sword_a_blue.png` | material-template | custom-or-unverified | 12044 | — |
+| `assets/materials/templates/sword_a_gold.png` | material-template | custom-or-unverified | 16373 | — |
+| `assets/materials/templates/sword_a_green.png` | material-template | custom-or-unverified | 11350 | — |
+| `assets/materials/templates/sword_a_purple.png` | material-template | custom-or-unverified | 13719 | — |
+| `assets/materials/templates/sword_b_blue.png` | material-template | custom-or-unverified | 13802 | — |
+| `assets/materials/templates/sword_b_gold.png` | material-template | custom-or-unverified | 14978 | — |
+| `assets/materials/templates/sword_b_green.png` | material-template | custom-or-unverified | 12896 | — |
+| `assets/materials/templates/sword_b_purple.png` | material-template | custom-or-unverified | 13429 | — |
+| `tests/images/33_forte_2.png` | offline-fixture | upstream-identical | 2569442 | `tests/images/33_forte_2.png` |
+| `tests/images/33_forte_3.png` | offline-fixture | upstream-identical | 1757286 | `tests/images/33_forte_3.png` |
+| `tests/images/33forte.png` | offline-fixture | upstream-identical | 3849490 | `tests/images/33forte.png` |
+| `tests/images/5_to_1.png` | offline-fixture | upstream-identical | 708334 | `tests/images/5_to_1.png` |
+| `tests/images/a4_domain_unfinished_1.png` | offline-fixture | custom-or-unverified | 2024401 | — |
+| `tests/images/a4_domain_unfinished_2.png` | offline-fixture | custom-or-unverified | 2592007 | — |
+| `tests/images/absorb.png` | offline-fixture | upstream-identical | 2666383 | `tests/images/absorb.png` |
+| `tests/images/abyss_energy_0.png` | offline-fixture | custom-or-unverified | 24267 | — |
+| `tests/images/abyss_energy_10.png` | offline-fixture | custom-or-unverified | 25080 | — |
+| `tests/images/abyss_season_20261004/left_floor4.png` | offline-fixture | custom-or-unverified | 1737784 | — |
+| `tests/images/abyss_season_20261004/oct6_presets.png` | offline-fixture | custom-or-unverified | 1595673 | — |
+| `tests/images/abyss_season_20261004/presets.png` | offline-fixture | custom-or-unverified | 2074576 | — |
+| `tests/images/abyss_season_20261004/right_floor3_selected.png` | offline-fixture | custom-or-unverified | 1909196 | — |
+| `tests/images/abyss_season_20261004/right_floor4.png` | offline-fixture | custom-or-unverified | 1733665 | — |
+| `tests/images/abyss_season_20261004/side_floor4_presets.png` | offline-fixture | custom-or-unverified | 1992663 | — |
+| `tests/images/abyss_selection_markers_123.png` | offline-fixture | custom-or-unverified | 113658 | — |
+| `tests/images/aemeath_lib.png` | offline-fixture | upstream-identical | 2146548 | `tests/images/aemeath_lib.png` |
+| `tests/images/all_cd_1080p.png` | offline-fixture | upstream-identical | 2065506 | `tests/images/all_cd_1080p.png` |
+| `tests/images/angle_130.png` | offline-fixture | upstream-identical | 10424253 | `tests/images/angle_130.png` |
+| `tests/images/big_map.png` | offline-fixture | upstream-identical | 1617250 | `tests/images/big_map.png` |
+| `tests/images/challenge_success_animation.png` | offline-fixture | custom-or-unverified | 1271311 | — |
+| `tests/images/cloud_game_combat.png` | offline-fixture | upstream-identical | 1101689 | `tests/images/cloud_game_combat.png` |
+| `tests/images/combat_has_cd.png` | offline-fixture | upstream-identical | 2225275 | `tests/images/combat_has_cd.png` |
+| `tests/images/con_full.png` | offline-fixture | upstream-identical | 4923347 | `tests/images/con_full.png` |
+| `tests/images/con_full2.png` | offline-fixture | upstream-identical | 5318746 | `tests/images/con_full2.png` |
+| `tests/images/confirm_highlight.png` | offline-fixture | upstream-identical | 895773 | `tests/images/confirm_highlight.png` |
+| `tests/images/daily_claim_stability/after_error.png` | offline-fixture | custom-or-unverified | 698257 | — |
+| `tests/images/daily_claim_stability/before_scroll.png` | offline-fixture | custom-or-unverified | 705376 | — |
+| `tests/images/daily_claim_stability/world.png` | offline-fixture | custom-or-unverified | 1019868 | — |
+| `tests/images/daily_followup/claim_80.png` | offline-fixture | custom-or-unverified | 1147558 | — |
+| `tests/images/daily_followup/daily_90.png` | offline-fixture | custom-or-unverified | 1477174 | — |
+| `tests/images/daily_followup/echo_missing.png` | offline-fixture | custom-or-unverified | 1462275 | — |
+| `tests/images/daily_followup/README.md` | fixture-metadata | custom-or-unverified | 941 | — |
+| `tests/images/daily_followup/weekly_story.png` | offline-fixture | custom-or-unverified | 849404 | — |
+| `tests/images/daily_followup/wrong_tab_80.png` | offline-fixture | custom-or-unverified | 1427005 | — |
+| `tests/images/daily_nas_20261005/activity_240.png` | offline-fixture | custom-or-unverified | 1313009 | — |
+| `tests/images/daily_nas_20261005/activity_300.png` | offline-fixture | custom-or-unverified | 1325835 | — |
+| `tests/images/daily_nas_20261005/nightmare_filter_open.png` | offline-fixture | custom-or-unverified | 1435481 | — |
+| `tests/images/daily_nas_20261005/provenance.json` | fixture-metadata | custom-or-unverified | 5128 | — |
+| `tests/images/daily_nas_20261005/resource_234.png` | offline-fixture | custom-or-unverified | 1608095 | — |
+| `tests/images/daily_nas_20261005/weekly_claim_171.png` | offline-fixture | custom-or-unverified | 1136389 | — |
+| `tests/images/daily_nas_20261008/activity_140_claimed.png` | offline-fixture | custom-or-unverified | 1334559 | — |
+| `tests/images/daily_nas_20261008/nightmare_suiboshi.png` | offline-fixture | custom-or-unverified | 1499462 | — |
+| `tests/images/daily_recovery/guide_a2.png` | offline-fixture | custom-or-unverified | 3196250 | — |
+| `tests/images/daily_recovery/guide_a3.png` | offline-fixture | custom-or-unverified | 3067904 | — |
+| `tests/images/daily_recovery/guide_daily.png` | offline-fixture | custom-or-unverified | 1357608 | — |
+| `tests/images/daily_recovery/guide_world.png` | offline-fixture | custom-or-unverified | 3454065 | — |
+| `tests/images/daily_recovery/nest_map.png` | offline-fixture | custom-or-unverified | 835428 | — |
+| `tests/images/daily_recovery/README.md` | fixture-metadata | custom-or-unverified | 1256 | — |
+| `tests/images/daily_recovery/tacet_unreachable.png` | offline-fixture | custom-or-unverified | 711214 | — |
+| `tests/images/daily_recovery/world_overlay.png` | offline-fixture | custom-or-unverified | 2793392 | — |
+| `tests/images/daily_regression/enemy_page.png` | offline-fixture | custom-or-unverified | 1470468 | — |
+| `tests/images/daily_regression/revive.png` | offline-fixture | custom-or-unverified | 1016564 | — |
+| `tests/images/daily_regression/reward_daily.png` | offline-fixture | custom-or-unverified | 1341664 | — |
+| `tests/images/daily_regression/reward_opening.png` | offline-fixture | custom-or-unverified | 332892 | — |
+| `tests/images/daily_regression/reward_ready.png` | offline-fixture | custom-or-unverified | 472369 | — |
+| `tests/images/daily_regression/unclaimed_zero.png` | offline-fixture | custom-or-unverified | 1504614 | — |
+| `tests/images/echo.png` | offline-fixture | upstream-identical | 2356038 | `tests/images/echo.png` |
+| `tests/images/echo2.png` | offline-fixture | upstream-identical | 9823404 | `tests/images/echo2.png` |
+| `tests/images/echo_enhance.png` | offline-fixture | upstream-identical | 1691621 | `tests/images/echo_enhance.png` |
+| `tests/images/find_add_mat.png` | offline-fixture | upstream-identical | 3173957 | `tests/images/find_add_mat.png` |
+| `tests/images/find_confirm.png` | offline-fixture | upstream-identical | 863537 | `tests/images/find_confirm.png` |
+| `tests/images/garden_page/completed.png` | offline-fixture | custom-or-unverified | 2151492 | — |
+| `tests/images/garden_page/zero.png` | offline-fixture | custom-or-unverified | 2079435 | — |
+| `tests/images/img.png` | offline-fixture | upstream-identical | 6550592 | `tests/images/img.png` |
+| `tests/images/in_combat.png` | offline-fixture | upstream-identical | 1805296 | `tests/images/in_combat.png` |
+| `tests/images/in_combat3.png` | offline-fixture | upstream-identical | 2385862 | `tests/images/in_combat3.png` |
+| `tests/images/luhesi_lib_in_cd.png` | offline-fixture | upstream-identical | 8930806 | `tests/images/luhesi_lib_in_cd.png` |
+| `tests/images/material_boss_entry/activity_mixed_script.png` | offline-fixture | custom-or-unverified | 408586 | — |
+| `tests/images/material_boss_entry/combat_alive.png` | offline-fixture | custom-or-unverified | 676755 | — |
+| `tests/images/material_boss_entry/combat_healer_dead.png` | offline-fixture | custom-or-unverified | 737782 | — |
+| `tests/images/material_boss_entry/combat_two_dead.png` | offline-fixture | custom-or-unverified | 730132 | — |
+| `tests/images/material_boss_entry/direct_formation.png` | offline-fixture | custom-or-unverified | 253148 | — |
+| `tests/images/material_boss_entry/reward_settlement.png` | offline-fixture | custom-or-unverified | 922047 | — |
+| `tests/images/materials/13_28_49.png` | offline-fixture | custom-or-unverified | 742945 | — |
+| `tests/images/materials/13_33_40.png` | offline-fixture | custom-or-unverified | 731103 | — |
+| `tests/images/materials/13_33_47.png` | offline-fixture | custom-or-unverified | 738750 | — |
+| `tests/images/materials/13_33_50.png` | offline-fixture | custom-or-unverified | 769968 | — |
+| `tests/images/materials/17_02_22.png` | offline-fixture | custom-or-unverified | 851027 | — |
+| `tests/images/materials/17_02_46.png` | offline-fixture | custom-or-unverified | 835029 | — |
+| `tests/images/materials/17_03_02.png` | offline-fixture | custom-or-unverified | 855647 | — |
+| `tests/images/materials/17_03_16.png` | offline-fixture | custom-or-unverified | 843229 | — |
+| `tests/images/materials/17_29_37.png` | offline-fixture | custom-or-unverified | 1084276 | — |
+| `tests/images/materials/17_29_48.png` | offline-fixture | custom-or-unverified | 1009698 | — |
+| `tests/images/materials/17_29_52.png` | offline-fixture | custom-or-unverified | 985424 | — |
+| `tests/images/materials/17_29_58.png` | offline-fixture | custom-or-unverified | 954419 | — |
+| `tests/images/materials/17_30_02.png` | offline-fixture | custom-or-unverified | 917846 | — |
+| `tests/images/materials/17_40_00.png` | offline-fixture | custom-or-unverified | 612954 | — |
+| `tests/images/materials/17_40_05.png` | offline-fixture | custom-or-unverified | 555527 | — |
+| `tests/images/materials/manifest.json` | fixture-metadata | custom-or-unverified | 4630 | — |
+| `tests/images/mini_map.png` | offline-fixture | upstream-identical | 3139706 | `tests/images/mini_map.png` |
+| `tests/images/new_book_entries/story.png` | offline-fixture | custom-or-unverified | 1401149 | — |
+| `tests/images/new_book_entries/tacet.png` | offline-fixture | custom-or-unverified | 2656399 | — |
+| `tests/images/new_book_entries/weekly.png` | offline-fixture | custom-or-unverified | 2725335 | — |
+| `tests/images/path.png` | offline-fixture | upstream-identical | 1731860 | `tests/images/path.png` |
+| `tests/images/post12_nas/changed_roster.png` | offline-fixture | custom-or-unverified | 2567269 | — |
+| `tests/images/post12_nas/liberation_active_pre7.png` | offline-fixture | custom-or-unverified | 2102599 | — |
+| `tests/images/post12_nas/liberation_active_pre8.png` | offline-fixture | custom-or-unverified | 2050669 | — |
+| `tests/images/post12_nas/liberation_victory.png` | offline-fixture | custom-or-unverified | 2553958 | — |
+| `tests/images/post12_nas/nightmare_top.png` | offline-fixture | custom-or-unverified | 1431058 | — |
+| `tests/images/residual_nests/five_locations_top.png` | offline-fixture | custom-or-unverified | 2795448 | — |
+| `tests/images/revive_cooldown.png` | offline-fixture | custom-or-unverified | 175612 | — |
+| `tests/images/roster_confirmation/25b63ab2-1.png` | offline-fixture | custom-or-unverified | 64297 | — |
+| `tests/images/roster_confirmation/abyss_alive.png` | offline-fixture | custom-or-unverified | 173066 | — |
+| `tests/images/roster_confirmation/abyss_cooldown.png` | offline-fixture | custom-or-unverified | 174071 | — |
+| `tests/images/roster_confirmation/abyss_dead.png` | offline-fixture | custom-or-unverified | 136072 | — |
+| `tests/images/roster_confirmation/e69a866b-1.png` | offline-fixture | custom-or-unverified | 65861 | — |
+| `tests/images/solo_hud_1440.png` | offline-fixture | custom-or-unverified | 21025 | — |
+| `tests/images/solo_new_hud_1440.png` | offline-fixture | custom-or-unverified | 277002 | — |
+| `tests/images/solo_qingxiao_combat_1440.png` | offline-fixture | custom-or-unverified | 4859594 | — |
+| `tests/images/stamina_full_240.png` | offline-fixture | custom-or-unverified | 100022 | — |
+| `tests/images/stars.png` | offline-fixture | upstream-identical | 10518020 | `tests/images/stars.png` |
+| `tests/images/tacet_reward/nas_low_marker.png` | offline-fixture | custom-or-unverified | 30074 | — |
+| `tests/images/teleport_boss.png` | offline-fixture | upstream-identical | 2289598 | `tests/images/teleport_boss.png` |
+| `tests/images/test_forte.png` | offline-fixture | upstream-identical | 3154518 | `tests/images/test_forte.png` |
+| `tests/images/treasure.png` | offline-fixture | upstream-identical | 1383522 | `tests/images/treasure.png` |
+| `tests/images/treasure2.png` | offline-fixture | upstream-identical | 1241126 | `tests/images/treasure2.png` |
+| `tests/images/weekly_boss/claim.png` | offline-fixture | custom-or-unverified | 124459 | — |
+| `tests/images/weekly_boss/confirmation.png` | offline-fixture | custom-or-unverified | 293713 | — |
+| `tests/images/weekly_boss/detail.png` | offline-fixture | custom-or-unverified | 258136 | — |
+| `tests/images/weekly_boss/list1.png` | offline-fixture | custom-or-unverified | 1341563 | — |
+| `tests/images/weekly_boss/list2.png` | offline-fixture | custom-or-unverified | 1380441 | — |
+| `tests/images/weekly_boss/list3.png` | offline-fixture | custom-or-unverified | 1385064 | — |
+| `tests/images/weekly_boss/nas_b10_no_interaction.png` | offline-fixture | custom-or-unverified | 116237 | — |
+| `tests/images/weekly_boss/nas_b7_absorb.png` | offline-fixture | custom-or-unverified | 83968 | — |
+| `tests/images/weekly_boss/nas_b8_absorb.png` | offline-fixture | custom-or-unverified | 112861 | — |
+| `tests/images/weekly_boss/nas_double_reward_header.png` | offline-fixture | custom-or-unverified | 122547 | — |
+| `tests/images/weekly_boss/settlement.png` | offline-fixture | custom-or-unverified | 475596 | — |
+| `tests/images/weekly_boss/team.png` | offline-fixture | custom-or-unverified | 51119 | — |
+| `tests/images/weekly_boss/victory.png` | offline-fixture | custom-or-unverified | 101414 | — |
+
+Regenerate with `.\.venv\Scripts\python.exe scripts/research/build_asset_provenance.py` from the repository root. The script only reads local asset and fixture files and the fixed public GitHub tree API; it writes these two research files.

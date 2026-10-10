@@ -7,8 +7,8 @@ from typing import List
 
 import numpy as np
 
-from ok import BaseTask, Logger, find_boxes_by_name, og, find_color_rectangles, mask_white, Box
-from ok import calculate_color_percentage as calculate_frame_color_percentage
+from ok import BaseTask, Logger, find_boxes_by_name, og, find_color_rectangles, Box
+from src.vision.color import mask_white, calculate_color_percentage as calculate_frame_color_percentage
 from ok import CannotFindException
 import cv2
 

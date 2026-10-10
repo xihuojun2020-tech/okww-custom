@@ -1,7 +1,7 @@
 import time
 import cv2
 import numpy as np
-from ok import color_range_to_bound
+from src.vision.color import color_range_to_bound
 from src.char.BaseChar import BaseChar, SwitchPriority
 
 
@@ -168,9 +168,8 @@ class Ciaccona(BaseChar):
         
     def need_fast_perform(self):
         from src.char.Cartethyia import Cartethyia
-        if self.task.has_char(Cartethyia) and hasattr(Cartethyia, 'is_cartethyia'):
-            return Cartethyia.is_cartethyia
-        return False
+        cartethyia = self.task.has_char(Cartethyia)
+        return cartethyia.is_cartethyia if cartethyia is not None else False
 
 
 ciaccona_forte_color = {
