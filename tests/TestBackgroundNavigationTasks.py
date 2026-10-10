@@ -1,5 +1,6 @@
 import unittest
 from unittest.mock import Mock
+from ok import Box
 from tests import TestNavigationAdapter as nav_tests
 from src.task.SkipDialogTask import AutoDialogTask
 from src.task.FastTravelTask import FastTravelTask
@@ -9,6 +10,8 @@ class TestBackgroundNavigationTasks(unittest.TestCase):
         harness=nav_tests.TestNavigationAdapter();self.addCleanup(harness.doCleanups)
         base=harness.task();task=kind.__new__(kind);task.__dict__.update(base.__dict__)
         task.executor.current_task=task;self.clock=harness.clock;self.button=harness.button
+        if kind is AutoDialogTask:
+            self.button = Box(80, 50, 40, 30, name='skip_dialog_hex', confidence=.9)
         task.sleep=Mock(side_effect=AssertionError('no waits'))
         task.in_team_and_world=Mock(return_value=False);task.click_box=Mock()
         task.find_one=Mock(return_value=None)

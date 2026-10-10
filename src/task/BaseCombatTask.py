@@ -521,6 +521,8 @@ class BaseCombatTask(CombatCheck):
         exception_type = None
         revive_confirm = self.find_one('revive_confirm_hcenter_vcenter', threshold=0.8) if expected else \
             self.wait_feature('revive_confirm_hcenter_vcenter', threshold=0.8, time_out=2)
+        if not revive_confirm:
+            revive_confirm = self._local_revive_button()
         if expected and not revive_confirm:
             logger.debug(f'expected combat end: {self.out_of_combat_reason or message}')
             raise NotInCombatException(message)
@@ -615,9 +617,20 @@ class BaseCombatTask(CombatCheck):
                     if self.switch_healer_enabled():
                         self.load_chars()
                         self.switch_healer()
-                    while BaseCombatTask.combat_is_active(self):
-                        logger.debug(f'combat_once loop {self.chars}')
-                        self.perform_combat_rotation()
+                    while True:
+                        try:
+                            while BaseCombatTask.combat_is_active(self):
+                                logger.debug(f'combat_once loop {self.chars}')
+                                self.perform_combat_rotation()
+                        except (CharDeadException, CharRevivedInPlace):
+                            raise
+                        except NotInCombatException as e:
+                            if not self.is_expected_combat_end():
+                                raise CombatStateUnknown(str(e)) from e
+                            logger.info(f'combat_once out of combat break {e}')
+                        self._release_combat_inputs()
+                        if not result or self._wait_combat_end():
+                            break
                     break
                 except CharRevivedInPlace:
                     if recovery == 3:
@@ -642,6 +655,13 @@ class BaseCombatTask(CombatCheck):
             self.switch_healer()
         self.wait_in_team_and_world(time_out=10, raise_if_not_found=False)
         return result
+
+    def _wait_combat_end(self):
+        self.next_frame()
+        if (self.find_one('revive_confirm_hcenter_vcenter', threshold=.8)
+                or self._local_revive_button() is not None):
+            self.raise_not_in_combat('战斗结束时出现复苏弹窗', expected=True)
+        return True
 
     def run_in_circle_to_find_echo(self, circle_count=3):
         """通过绕圈移动来尝试拾取声骸。

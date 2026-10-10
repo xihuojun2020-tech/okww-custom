@@ -1,5 +1,8 @@
 import unittest
 import re
+import json
+
+import numpy as np
 
 from src.task.BaseCombatTask import CombatStateUnknown, CharDeadException
 from src.task.NightmareNestTask import NestTarget, NightmareNestTask
@@ -282,7 +285,7 @@ class TestNightmareNestTask(unittest.TestCase):
         task.log_info = lambda *args, **kwargs: None
         task.height_of_screen = lambda value: 1000 * value
         task.width_of_screen = lambda value: 2000 * value
-        task.require_game_frame = lambda: object()
+        task.require_game_frame = lambda: np.zeros((2, 2, 3), dtype=np.uint8)
         task._reset_progress_tracking()
         boxes = [FakeBox('0/36', y=200), FakeBox('千殁沉岛梦魇聚落', y=260),
                  FakeBox('0/36', y=280), FakeBox('前往', x=1800, y=290),
@@ -314,10 +317,11 @@ class TestNightmareNestTask(unittest.TestCase):
         for current in (0, 36):
             task = NightmareNestTask.__new__(NightmareNestTask)
             task.config = {FARM_NIGHTMARE_SETTLEMENTS: [NIGHTMARE_NAMES[1]]}
+            task.queues = [task.go_nightmare]
             task.count_re = re.compile(r'(\d{1,2})/(\d{1,2})')
             task.height_of_screen = lambda value: 1080 * value
             task.width_of_screen = lambda value: 1920 * value
-            task.require_game_frame = lambda: object()
+            task.require_game_frame = lambda: np.zeros((2, 2, 3), dtype=np.uint8)
             task._close_nightmare_filter = lambda frame: None
             task._nightmare_filter_open = lambda frame: False
             task._reset_progress_tracking()
@@ -336,6 +340,92 @@ class TestNightmareNestTask(unittest.TestCase):
         for name in NIGHTMARE_NAMES:
             self.assertEqual(name, normalize_nest_text(name.replace('梦魇', '梦魔')))
         self.assertEqual('梦魔亚当·重锤', normalize_nest_text('梦魔亚当·重锤'))
+
+    def nightmare_scan_task(self, boxes, frame=None):
+        from unittest.mock import Mock
+        task = NightmareNestTask.__new__(NightmareNestTask)
+        task.config = {'Which to Farm': ['Nightmare Purification'],
+                       'Nightmare Settlements to Farm': ['穗波市梦魇聚落']}
+        task.count_re = re.compile(r'(\d{1,2})/(\d{1,2})')
+        task.queues = [task.go_nightmare]
+        task._unreachable_nests = set()
+        task._reset_progress_tracking()
+        task.height_of_screen = lambda value: 1080 * value
+        task.width_of_screen = lambda value: 1920 * value
+        task.require_game_frame = Mock(return_value=frame if frame is not None else
+                                       np.zeros((2, 2, 3), dtype=np.uint8))
+        task._close_nightmare_filter = Mock()
+        task._nightmare_filter_open = Mock(return_value=False)
+        task.ocr = Mock(return_value=boxes)
+        task.screenshot = Mock()
+        task.log_warning = Mock()
+        return task
+
+    def test_a3_stable_first_row_keeps_selection_and_writes_no_evidence_on_success(self):
+        # OCR text/coordinates from the reviewed 10:44:19 stable frame.
+        boxes = [FakeBox('穂波市梦魔聚落', 889, 304, 186, 29),
+                 FakeBox('直接挑战', 1669, 335, 102, 39),
+                 FakeBox('已击败残象：0/36', 890, 375, 196, 29)]
+        task = self.nightmare_scan_task(boxes)
+        target = task._find_nightmare_nest()
+        self.assertEqual(('穗波市梦魇聚落', 0, 36),
+                         (target.display_name, target.current, target.total))
+        self.assertIs(boxes[1], target.box)
+        boxes[-1].name = '已击败残象：36/36'
+        self.assertIsNone(task._find_nightmare_nest())
+        task._assert_selected_targets_complete()
+        task.screenshot.assert_not_called()
+        task.log_warning.assert_not_called()
+        self.assertEqual(2, task.ocr.call_count)
+
+    def test_missing_target_saves_only_latest_top_and_bottom_actual_scans(self):
+        frames = [np.full((2, 2, 3), value, dtype=np.uint8) for value in (1, 2, 3)]
+        boxes = [FakeBox('穂波市梦魔聚落', 889, 304, 186, 29),
+                 FakeBox('直接挑战', 1669, 335, 102, 39),
+                 FakeBox('已击败残象：0/41', 890, 375, 196, 29)]
+        task = self.nightmare_scan_task(boxes)
+        for action, frame in zip((task.go_nightmare, task.go_nightmare, task.go_nightmare_scroll), frames):
+            task.queues = [action]
+            task.require_game_frame.return_value = frame
+            self.assertIsNone(task._find_nightmare_nest())
+        frames[1][:] = 99
+        task.queues = []
+        task.screenshot.assert_not_called()
+        task.log_warning.assert_not_called()
+        with self.assertRaisesRegex(RuntimeError, '穗波市'):
+            task._assert_selected_targets_complete()
+        self.assertEqual(3, task.ocr.call_count)
+        self.assertEqual(2, task.screenshot.call_count)
+        saved = [call.kwargs['frame'] for call in task.screenshot.call_args_list]
+        self.assertTrue(np.all(saved[0] == 2))
+        self.assertTrue(np.all(saved[1] == 3))
+        metadata = json.loads(task.log_warning.call_args_list[0].args[0].split('unconfirmed ', 1)[1])
+        self.assertEqual(['穗波市梦魇聚落'], metadata['missing'])
+        self.assertTrue(metadata['task_source'].endswith('NightmareNestTask.py'))
+        self.assertTrue(metadata['normalizer_source'].endswith('nightmare_nests.py'))
+        detail = json.loads(task.log_warning.call_args_list[1].args[0].split('go_nightmare ', 1)[1])
+        self.assertEqual('progress_total_not_36', detail['rows'][0]['result'])
+        self.assertEqual('穗波市梦魇聚落', detail['rows'][0]['normalized'])
+        self.assertEqual([890, 375, 196, 29], detail['ocr'][-1]['box'])
+        self.assertEqual('已击败残象：0/41', detail['ocr'][-1]['text'])
+        task._reset_progress_tracking()
+        self.assertEqual({}, task._nightmare_scans)
+
+    def test_rejected_nightmare_button_records_actual_text_and_position_reason(self):
+        for button, reason in ((FakeBox('直接挑站', 1669, 335), 'button_text_not_matched'),
+                               (FakeBox('直接挑战', 1500, 335), 'left_of_button_region')):
+            with self.subTest(reason=reason):
+                task = self.nightmare_scan_task([
+                    FakeBox('穂波市梦魔聚落', 889, 304), button,
+                    FakeBox('已击败残象：0/36', 890, 375)])
+                with self.assertRaisesRegex(RuntimeError, '完整入口按钮未确认'):
+                    task._find_nightmare_nest()
+                task.screenshot.assert_called_once()
+                self.assertEqual(1, task.ocr.call_count)
+                detail = json.loads(task.log_warning.call_args_list[-1].args[0].split('go_nightmare ', 1)[1])
+                self.assertEqual('button_not_unique', detail['rows'][0]['result'])
+                self.assertEqual(reason, detail['rows'][0]['buttons'][0]['result'])
+                self.assertEqual(button.name, detail['rows'][0]['buttons'][0]['text'])
 
     def test_find_nest_keeps_partially_completed_row(self):
         task = NightmareNestTask.__new__(NightmareNestTask)

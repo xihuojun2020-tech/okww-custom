@@ -1,3 +1,4 @@
+import json
 import re
 import time
 import cv2
@@ -456,15 +457,28 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
             if self._nightmare_filter_open(self.require_game_frame()):
                 raise RuntimeError('梦魇合鸣筛选菜单未关闭，未点击目标入口')
 
-    def _nightmare_rows(self, frame):
+    def _nightmare_rows(self, frame, diagnostic=None):
         if self._nightmare_filter_open(frame):
             raise ValueError('梦魇列表被合鸣筛选菜单遮挡')
         boxes = self.ocr(.35, .19, .97, .94, frame=frame) or []
+        def describe(box):
+            return {'text': str(box.name), 'box': [box.x, box.y, box.width, box.height]}
+        if diagnostic is not None:
+            diagnostic.update(ocr=[{**describe(b), 'normalized': normalize_nest_text(b.name),
+                                    'title_result': ('matched' if normalize_nest_text(b.name).endswith('梦魇聚落')
+                                                     else 'not_nightmare_title')}
+                                   for b in boxes], rows=[])
         titles = [(b, normalize_nest_text(b.name)) for b in boxes
                   if normalize_nest_text(b.name).endswith('梦魇聚落')]
         rows = {}
         for title, name in titles:
+            detail = None
+            if diagnostic is not None:
+                detail = {'title': describe(title), 'normalized': name}
+                diagnostic['rows'].append(detail)
             if title.y < self.height_of_screen(.19):
+                if detail is not None:
+                    detail['result'] = 'title_above_scan_top'
                 continue
             bottom = min((b.y for b, _ in titles if b.y > title.y), default=self.height_of_screen(.94))
             counts = [(b, m) for b in boxes if title.y <= b.y < bottom
@@ -473,12 +487,37 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
             buttons = [b for b in boxes if title.y <= b.y < bottom
                        and str(b.name).strip() in ('前往', '前往挑战', '直接挑战', '单人挑战')
                        and b.x >= self.width_of_screen(.80)]
+            if detail is not None:
+                detail.update(
+                    row_bounds=[title.y, bottom],
+                    progress_matches=len(counts),
+                    title_occurrences=sum(n == name for _, n in titles),
+                    button_matches=len(buttons),
+                    progress=[{**describe(b), 'result': (
+                        'outside_title_row' if not title.y <= b.y < bottom else
+                        'too_far_below_title' if b.y - title.y >= self.height_of_screen(.12) else
+                        'matched')} for b in boxes if self.count_re.search(b.name)],
+                    buttons=[{**describe(b), 'result': (
+                        'outside_title_row' if not title.y <= b.y < bottom else
+                        'button_text_not_matched' if str(b.name).strip() not in
+                        ('前往', '前往挑战', '直接挑战', '单人挑战') else
+                        'left_of_button_region' if b.x < self.width_of_screen(.80) else
+                        'matched')} for b in boxes if b.x >= self.width_of_screen(.80)
+                             or str(b.name).strip() in ('前往', '前往挑战', '直接挑战', '单人挑战')])
             if len(counts) != 1 or sum(n == name for _, n in titles) != 1:
+                if detail is not None:
+                    detail['result'] = ('progress_not_unique' if len(counts) != 1 else
+                                        'title_not_unique')
                 continue
             current, total = map(int, counts[0][1].groups())
             if total != 36 or not 0 <= current <= total:
+                if detail is not None:
+                    detail['result'] = 'progress_total_not_36' if total != 36 else 'progress_out_of_range'
                 continue
             rows[name] = (current, total, buttons[0] if len(buttons) == 1 else None)
+            if detail is not None:
+                detail.update(current=current, total=total,
+                              result='accepted' if len(buttons) == 1 else 'button_not_unique')
         return rows
 
     def _find_nightmare_nest(self):
@@ -488,7 +527,10 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
         frame = self.require_game_frame()
         self._close_nightmare_filter(frame)
         frame = self.require_game_frame()
-        rows = self._nightmare_rows(frame)
+        diagnostic = {}
+        rows = self._nightmare_rows(frame, diagnostic)
+        action = self.queues[0].__name__
+        self._nightmare_scans[action] = (frame.copy(), diagnostic)
         for name in NIGHTMARE_NAMES:
             if name not in selected or name not in rows:
                 continue
@@ -502,9 +544,24 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
             if key in self._unreachable_nests:
                 continue
             if button is None:
-                self.screenshot('nightmare_entry_incomplete', frame=frame)
+                self._save_nightmare_scan_evidence({name})
                 raise RuntimeError(f'{name}完整入口按钮未确认，未使用估算坐标')
             return NestTarget(button, key, name, NIGHTMARE_NAMES.index(name)+1, current, total)
+
+    def _save_nightmare_scan_evidence(self, missing):
+        self.log_warning('nightmare scan unconfirmed ' + json.dumps({
+            'missing': sorted(missing),
+            'selected': self.config.get(FARM_NIGHTMARE_SETTLEMENTS) or [],
+            'completed': sorted(self._nest_completed),
+            'unreachable': sorted(self._unreachable_nests),
+            'task_source': __file__,
+            'normalizer_source': normalize_nest_text.__code__.co_filename,
+            'count_pattern': self.count_re.pattern,
+        }, ensure_ascii=False))
+        for action, (frame, diagnostic) in self._nightmare_scans.items():
+            self.log_warning(f'nightmare scan action={action} ' +
+                             json.dumps(diagnostic, ensure_ascii=False))
+            self.screenshot(f'nightmare_scan_missing_{action}', frame=frame)
 
     def find_nest(self):
         if self.queues and self.queues[0].__name__ in ('go_nightmare', 'go_nightmare_scroll'):
@@ -569,6 +626,8 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
         self._incomplete_targets = {}
         self._nest_completed = set()
         self._nest_attempted = set()
+        # Retain only the latest top/bottom scan; write evidence at failure.
+        self._nightmare_scans = {}
 
     def _record_target_progress(self, cache_key, display_name, current, total):
         progress = getattr(self, '_nest_progress', None)
@@ -603,6 +662,7 @@ class NightmareNestTask(WWOneTimeTask, BaseCombatTask):
         if 'Nightmare Purification' in quests:
             missing = set(self.config.get(FARM_NIGHTMARE_SETTLEMENTS) or []) - getattr(self, '_nest_completed', set())
             if missing:
+                self._save_nightmare_scan_evidence(missing)
                 raise RuntimeError('所选梦魇聚落未确认完成：' + '、'.join(sorted(missing)))
         incomplete = list(getattr(self, '_incomplete_targets', {}).values())
         if not incomplete:

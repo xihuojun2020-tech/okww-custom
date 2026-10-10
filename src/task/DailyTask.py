@@ -745,12 +745,14 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             raise DailyActivityDetectionError(message)
         if not daily_reward_ready:
             message = '已领取当前可领取奖励，但活跃度仍未刷满；账号不会标记为完成'
-            self._publish_daily_stage('每日任务', message)
-            self._notify_incomplete_daily_activity(message)
             policy = getattr(getattr(self, 'executor', None), '_daily_reserve_policy', None)
             shortfall = getattr(policy, 'resource_shortfall', None)
             if shortfall is not None:
-                raise DailyResourceInsufficient(f'{message}；待补充体力：{shortfall}；本轮不整账号重复补跑')
+                message += f'；待补充体力：{policy.resource_shortfall_detail}；本轮不整账号重复补跑'
+            self._publish_daily_stage('每日任务', message)
+            self._notify_incomplete_daily_activity(message)
+            if shortfall is not None:
+                raise DailyResourceInsufficient(message)
             error = DailyActivityIncomplete(message)
             error.retryable = False
             raise error

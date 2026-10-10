@@ -134,13 +134,17 @@ class TestSeasonDailyRecovery(unittest.TestCase):
         policy = DailyReservePolicy('A4')
         task = Mock(spec=BaseWWTask)
         task.executor = Box(_daily_reserve_policy=policy)
-        BaseWWTask._note_daily_resource_shortfall(task, 41, 60)
-        self.assertEqual((41, 60), policy.resource_shortfall)
+        task.info = {'current_stamina': 29, 'back_up_stamina': 21}
+        BaseWWTask._note_daily_resource_shortfall(task, 50, 60)
+        self.assertEqual((50, 60), policy.resource_shortfall)
         task = Mock(spec=DailyTask)
         task.executor = Box(_daily_reserve_policy=policy)
         task.claim_daily.return_value = False
         with self.assertRaises(DailyResourceInsufficient) as caught:
             DailyTask._finish_daily_rewards(task, False)
+        for detail in ('当前体力 29', '备用体力 21', '合计 50', '需 60', '仍缺 10', '备用转换额度 0'):
+            self.assertIn(detail, str(caught.exception))
+        self.assertEqual(0, policy.consumed)
         multi = Mock(spec=MultiAccountDailyTask)
         multi.failed_accounts = {}
         multi._failure_key.return_value = 'A4'

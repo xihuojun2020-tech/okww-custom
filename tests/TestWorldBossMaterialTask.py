@@ -61,6 +61,7 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         task._resources_for_claim = Mock(return_value=True)
         task._material_combat_finished = Mock(return_value=True)
         task.has_target = task.check_health_bar = Mock(return_value=False)
+        task.find_one = task._local_revive_button = Mock(return_value=None)
         task.in_team_and_world = Mock(return_value=True)
         task.pickup_dropped_echo = Mock(return_value=False)
         def wait(probe, **kwargs):
@@ -214,7 +215,7 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         task.out_of_combat_reason = 'not in_team while switching'
         task._task_hint_phase = Mock(return_value='post')
         # The cinematic hides the whole HUD; reward and living roster return later.
-        task.in_team_and_world.side_effect = [False, False, True, True]
+        task.in_team_and_world.side_effect = [False, False, True, True, True, True]
         task.wait_combat = Mock(return_value=True)
         task.switch_healer_enabled = Mock(return_value=False)
         task.in_combat = Mock(side_effect=[True, False, False])
@@ -226,9 +227,99 @@ class TestWorldBossMaterialTask(unittest.TestCase):
         with patch.object(task.executor, 'check_enabled', Mock(), create=True):
             self.assertTrue(task.combat_once())
         self.assertEqual('post', task._material_phase)
-        self.assertEqual(4, task.in_team_and_world.call_count)
+        self.assertEqual(6, task.in_team_and_world.call_count)
         task.pickup_dropped_echo.assert_not_called()
         task.send_key.assert_not_called()
+        self.assertEqual({}, self.progress.counts())
+
+    def test_normal_material_exit_keeps_revive_context_until_fresh_post_frames(self):
+        task = self.runner()
+        task.skip_combat_check = False
+        task._combat_held_keys = task._combat_held_mouse = {}
+        task.out_of_combat_reason = task.TARGET_GONE_END_REASON
+        task._task_hint_phase = Mock(return_value='post')
+        task.wait_combat = Mock(return_value=True)
+        task.in_combat = Mock(side_effect=[False, True, False])
+        task.switch_healer_enabled = Mock(return_value=False)
+        task.perform_combat_rotation = Mock()
+        task.chars = []
+        task.load_chars = Mock(return_value=True)
+        task.log_info = task.info_set = Mock()
+        task.combat_end = Mock()
+        task.wait_in_team_and_world = task.finish_rotation_tracking = Mock()
+        popup = {'visible': True}
+        task._local_revive_button = Mock(side_effect=lambda: box('确认') if popup['visible'] else None)
+        task.in_team_and_world.side_effect = lambda: not popup['visible']
+        def revive():
+            self.assertTrue(task._local_revive_active)
+            self.assertTrue(task.skip_combat_check)
+            popup['visible'] = False
+            return True
+        task._try_revive_in_place = Mock(side_effect=revive)
+        task.revive_action = Mock()
+        self.assertTrue(task.combat_once())
+        task._try_revive_in_place.assert_called_once()
+        task.load_chars.assert_called_once()
+        task.perform_combat_rotation.assert_called_once()
+        task.revive_action.assert_not_called()
+        task.teleport_to_configured_boss_and_prepare.assert_not_called()
+        task.pickup_dropped_echo.assert_not_called()
+        self.assertEqual('post', task._material_phase)
+        self.assertEqual(1, task.info['Combat Count'])
+        self.assertEqual({}, self.progress.counts())
+        self.assertFalse(task._local_revive_active)
+        self.assertFalse(task.skip_combat_check)
+
+    def test_material_gate_failed_revival_keeps_claimed_progress_and_never_claims(self):
+        self.tasks = plan((2, 0, 0))
+        self.progress.correct(A, 1)
+        task = self.runner()
+        task._combat_held_keys = task._combat_held_mouse = {}
+        task.chars = []
+        task.wait_combat = Mock(return_value=True)
+        task.in_combat = Mock(return_value=False)
+        task.switch_healer_enabled = Mock(return_value=False)
+        task._local_revive_button = Mock(return_value=box('确认'))
+        task._try_revive_in_place = Mock(return_value=False)
+        task.log_info = task.info_set = task.finish_rotation_tracking = Mock()
+        task.combat_end = Mock()
+        task.teleport_to_configured_boss_and_prepare.side_effect = lambda: setattr(task, '_in_realm', True)
+        task.farm_cycle.side_effect = lambda **kw: FarmCycleResult(bool(task.combat_once()), False, False)
+        task._claim_material_reward = Mock()
+        with self.assertRaises(CharDeadException):
+            self.run_task(task)
+        task._try_revive_in_place.assert_called_once()
+        task.combat_end.assert_not_called()
+        task.pickup_dropped_echo.assert_not_called()
+        task._claim_material_reward.assert_not_called()
+        self.assertEqual({A: 1}, self.progress.counts())
+        self.assertEqual({}, self.progress.pending())
+
+    def test_revive_in_material_rotation_gate_returns_to_shared_combat_loop(self):
+        task = self.runner()
+        task.skip_combat_check = False
+        task._combat_held_keys = task._combat_held_mouse = {}
+        task.out_of_combat_reason = 'not in_team while switching'
+        task._task_hint_phase = Mock(return_value='post')
+        task.wait_combat = Mock(return_value=True)
+        task.in_combat = Mock(side_effect=[True, True, False])
+        task.switch_healer_enabled = Mock(return_value=False)
+        task.chars = []
+        task.load_chars = Mock(return_value=True)
+        task.log_info = task.info_set = Mock()
+        task.combat_end = task.wait_in_team_and_world = task.finish_rotation_tracking = Mock()
+        popup = {'visible': True}
+        task._local_revive_button = Mock(side_effect=lambda: box('确认') if popup['visible'] else None)
+        task.in_team_and_world.side_effect = lambda: not popup['visible']
+        task._try_revive_in_place = Mock(side_effect=lambda: popup.update(visible=False) or True)
+        task.revive_action = Mock()
+        with patch.object(BaseCombatTask, 'perform_combat_rotation',
+                          side_effect=[NotInCombatException('switch lost team'), None]) as rotation:
+            self.assertTrue(task.combat_once())
+        self.assertEqual(2, rotation.call_count)
+        task._try_revive_in_place.assert_called_once()
+        task.revive_action.assert_not_called()
+        self.assertEqual(1, task.info['Combat Count'])
         self.assertEqual({}, self.progress.counts())
 
     def test_rotation_loss_with_live_enemy_resumes_without_reward_handoff(self):

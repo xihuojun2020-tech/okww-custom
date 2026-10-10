@@ -18,6 +18,7 @@ class DailyReservePolicy:
     pending_conversion: bool = False
     budget_initialized: bool = False
     resource_shortfall: object = None
+    resource_shortfall_detail: str = ''
 
     def observe(self, ready, now=None):
         self.full_seen |= ready is True

@@ -1,6 +1,6 @@
 import time
 
-from ok import TriggerTask, Logger
+from ok import TriggerTask, Logger, TaskDisabledException
 from src.task.SkipBaseTask import SkipBaseTask
 from src.task.trigger_navigation import advance
 from src.task.ui_transition import TransitionContextChanged, TransitionTimeout
@@ -19,20 +19,76 @@ class AutoDialogTask(TriggerTask, SkipBaseTask):
 
     def disable(self):
         self._ui_tick_navigation = None
+        self._skip_timeout_evidence = None
         self._skip_requested = False
         self._skip_blocked_step = None
         self._skip_retry_at = 0
         self.trigger_interval = 0.5
         return super().disable()
 
-    def _advance_dialog(self, step, source, target, **options):
+    def _record_skip_timeout(self, pending, frame, signals):
+        source = pending.get('story_source')
+        signature = (pending['context'], pending['step'])
+        previous = getattr(self, '_skip_timeout_evidence', None)
+        merged = previous[1] if previous and previous[0] == signature else None
+        operation = pending['operation']
+        self.log_warning(f'story_skip timeout_evidence id={operation} step={pending["step"]} '
+                         f'attempts={pending["machine"].attempts} '
+                         f'button={source["button"] if source else None} '
+                         f'signals={signals} merged_into={merged}')
+        if merged:
+            return
+        # A cooldown retry is the same unresolved fault, even with a new operation id.
+        self._skip_timeout_evidence = (signature, operation)
+        for role, picture in (('source', source['frame'] if source else None), ('timeout', frame)):
+            if picture is None:  # No stable source was submitted before this timeout.
+                continue
+            try:
+                safe = picture.copy()
+                safe[:round(len(safe)*.025)] = 0
+                safe[round(len(safe)*.975):] = 0
+                name = f'story_skip_{operation}_{role}'
+                self.screenshot(name, frame=safe)
+                self.log_info(f'story_skip evidence_requested id={operation} role={role} name={name}')
+            except TaskDisabledException:
+                raise
+            except Exception as error:
+                logger.warning(f'story_skip evidence_failed id={operation} role={role}: '
+                               f'{type(error).__name__}: {error}')
+
+    def _advance_dialog(self, step, source, target, *, action, signals, **options):
+        observed_frame = None
+
+        def observe(frame):
+            nonlocal observed_frame
+            observed_frame = frame
+            return source(frame)
+
+        def act(button):
+            # Keep the frame that passed the normal three-frame input gate.
+            pending = self._ui_tick_navigation
+            try:
+                pending['story_source'] = dict(frame=observed_frame.copy(), button=dict(
+                    name=button.name, box=(button.x, button.y, button.width, button.height),
+                    center=button.center(), confidence=button.confidence))
+            except TaskDisabledException:
+                raise
+            except Exception as error:
+                logger.warning(f'story_skip source_evidence_failed id={pending["operation"]}: '
+                               f'{type(error).__name__}: {error}')
+            action(button)
+
         try:
-            return advance(self, step, source, target,
-                           initial_delay=0 if step == '剧情跳过' else .25, **options)
+            handled = advance(self, step, observe, target, action=act,
+                              initial_delay=0 if step == '剧情跳过' else .25, **options)
+            if self._ui_tick_navigation is None:
+                self._skip_timeout_evidence = None
+            return handled
         except TransitionTimeout as error:
             # A background watcher must survive an inconclusive page transition.
             # Only the positively identified entry may retry after a cooldown.
             # Checkbox/confirmation stages still require a different visible stage.
+            pending = self._ui_tick_navigation
             self._ui_tick_navigation = None
             self._skip_blocked_step = step
             self._skip_retry_at = time.monotonic() + 15
@@ -40,11 +96,19 @@ class AutoDialogTask(TriggerTask, SkipBaseTask):
             self.info_set('剧情跳过状态', f'{step}未确认，' + (
                 '入口冷却15秒后重新核验' if step == '剧情跳过' else '等待页面变化；不重复点击'))
             self.log_warning(f'story_skip waiting_after_timeout step={step}: {error}')
+            try:
+                self._record_skip_timeout(pending, observed_frame, signals)
+            except TaskDisabledException:
+                raise
+            except Exception as diagnostic_error:
+                logger.warning(f'story_skip timeout_evidence_failed id={pending["operation"]}: '
+                               f'{type(diagnostic_error).__name__}: {diagnostic_error}')
             return False
         except TransitionContextChanged as error:
             # Discard every coordinate and click budget from the old context.
             # A later run must rebuild three-frame evidence before any input.
             self._ui_tick_navigation = None
+            self._skip_timeout_evidence = None
             self._skip_blocked_step = None
             self._skip_requested = False
             self.trigger_interval = .5
@@ -77,10 +141,12 @@ class AutoDialogTask(TriggerTask, SkipBaseTask):
                         'skip_story_warning_confirm': '剧情跳过弹窗确认'}.get(
                             getattr(confirm, 'name', None), '剧情跳过确认')
         skip = None if world or confirm or warning_unknown else self.find_skip()
+        signals = dict(world=bool(world), confirm=bool(confirm), skip=bool(skip), warning_unknown=warning_unknown)
         blocked = getattr(self, '_skip_blocked_step', None)
         if blocked:
             current_step = confirm_step if confirm else '剧情跳过' if skip else None
             if world:
+                self._skip_timeout_evidence = None
                 self._skip_blocked_step = None
                 self._skip_requested = False
                 self.trigger_interval = .5
@@ -110,13 +176,14 @@ class AutoDialogTask(TriggerTask, SkipBaseTask):
                 if step == '剧情跳过':
                     self._skip_requested = True
             handled = self._advance_dialog(step, lambda frame:None if reached else button,
-                              lambda frame:reached, identity=step,
+                              lambda frame:reached, identity=step, signals=signals,
                               action=click_pending, attempts=1 if step == '剧情跳过勾选' else 3,
                               timeout=60, retry_after=60 if step == '剧情跳过勾选' else 3)
             if reached and (world or step in ('剧情跳过确认', '剧情跳过弹窗确认')):
                 self._skip_requested=False
             return handled
         if world:
+            self._skip_timeout_evidence = None
             self._skip_requested=False
             return False
         if confirm or skip:
@@ -126,7 +193,7 @@ class AutoDialogTask(TriggerTask, SkipBaseTask):
                 if step == '剧情跳过':
                     self._skip_requested = True
             return self._advance_dialog(step, lambda frame:confirm or skip, lambda frame:False,
-                           identity=step, action=click, attempts=1 if step == '剧情跳过勾选' else 3,
+                           identity=step, signals=signals, action=click, attempts=1 if step == '剧情跳过勾选' else 3,
                            timeout=60, retry_after=60 if step == '剧情跳过勾选' else 3)
         if warning_unknown:
             return False  # Do not bypass an ambiguous checkbox through legacy confirmation.

@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from src.task.BaseCombatTask import BaseCombatTask, NotInCombatException
+from src.task.BaseCombatTask import BaseCombatTask, NotInCombatException, CharDeadException
 
 
 class TestBaseCombatTask(unittest.TestCase):
@@ -276,6 +276,53 @@ class TestBaseCombatTask(unittest.TestCase):
         task.wait_combat.assert_called_once_with(target=False, time_out=2, raise_if_not_found=True)
         task.combat_end.assert_called_once()
         self.assertEqual(task.info['Combat Count'], 1)
+
+    def test_normal_loop_exit_recovers_ocr_revive_dialog_before_completing(self):
+        task = self.recovery_task()
+        popup = {'visible': True}
+        task.wait_combat = Mock(return_value=True)
+        task.in_combat.side_effect = [False, True, False]
+        task.switch_healer_enabled = Mock(return_value=False)
+        task.perform_combat_rotation = Mock()
+        task.find_one = Mock(return_value=None)
+        task._local_revive_button = Mock(side_effect=lambda: object() if popup['visible'] else None)
+        def revive():
+            self.assertTrue(task._local_revive_active)
+            popup['visible'] = False
+            return True
+        task._try_revive_in_place = Mock(side_effect=revive)
+        task.reset_to_false = Mock(return_value=False)
+        task.revive_action = Mock()
+        task.log_info = Mock()
+        task.combat_end = task.wait_in_team_and_world = task.finish_rotation_tracking = Mock()
+        self.assertTrue(task.combat_once())
+        self.assertEqual(2, task.wait_combat.call_count)
+        task.perform_combat_rotation.assert_called_once()
+        task.load_chars.assert_called_once()
+        task.revive_action.assert_not_called()
+        self.assertEqual(1, task.info['Combat Count'])
+        self.assertEqual(1, task._local_revive_count)
+        self.assertFalse(task._local_revive_active)
+
+    def test_normal_loop_exit_failed_revive_is_typed_death(self):
+        task = self.recovery_task()
+        task.wait_combat = Mock(return_value=True)
+        task.in_combat.return_value = False
+        task.switch_healer_enabled = Mock(return_value=False)
+        task.find_one = Mock(return_value=None)
+        task._local_revive_button = Mock(return_value=object())
+        task._try_revive_in_place = Mock(return_value=False)
+        task.reset_to_false = Mock(return_value=False)
+        task.revive_action = Mock(return_value=False)
+        task.log_info = Mock()
+        task.combat_end = Mock()
+        task.finish_rotation_tracking = Mock()
+        with self.assertRaises(CharDeadException):
+            task.combat_once()
+        task._try_revive_in_place.assert_called_once()
+        task.revive_action.assert_called_once()
+        task.combat_end.assert_not_called()
+        self.assertFalse(task._local_revive_active)
 
     def setUp(self):
         module = ast.parse(Path("src/task/BaseCombatTask.py").read_text(encoding="utf-8"))

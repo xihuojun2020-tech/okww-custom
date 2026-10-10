@@ -155,6 +155,9 @@ class WorldBossMaterialTask(FarmEchoTask):
             self._stage('战斗界面消失，核验敌人或战后奖励')
             self._wait_material_post_combat(FarmCycleResult(True, False, False))
 
+    def _wait_combat_end(self):
+        return self._wait_material_post_combat(FarmCycleResult(True, False, False))
+
     def _wait_material_post_combat(self, result):
         if not result.combat_entered:
             raise CombatStateUnknown('材料战斗未确认进入，不执行吸收或领取')
@@ -164,6 +167,9 @@ class WorldBossMaterialTask(FarmEchoTask):
         def read():
             nonlocal confirmed
             self.next_frame()
+            if (self.find_one('revive_confirm_hcenter_vcenter', threshold=.8)
+                    or self._local_revive_button() is not None):
+                self.raise_not_in_combat('材料战后出现复苏弹窗', expected=True)
             if not self.in_team_and_world():
                 confirmed = 0
                 return None

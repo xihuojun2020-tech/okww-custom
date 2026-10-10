@@ -831,8 +831,15 @@ class BaseWWTask(BaseTask):
         policy = getattr(getattr(self, 'executor', None), '_daily_reserve_policy', None)
         if isinstance(policy, DailyReservePolicy) and policy.profile_id and total >= 0:
             policy.resource_shortfall = (total, budget) if total < budget else None
+            policy.resource_shortfall_detail = ''
             if policy.resource_shortfall:
-                self.info_set('体力待补充', f'可用总量 {total}，完成当前缺项需 {budget}')
+                current = self.info['current_stamina']
+                reserve = self.info['back_up_stamina']
+                policy.resource_shortfall_detail = (
+                    f'当前体力 {current}，备用体力 {reserve}，合计 {total}；'
+                    f'完成当前缺项需 {budget}，计入备用仍缺 {budget - total}；'
+                    f'当前备用转换额度 {policy.allowance(current, budget)}')
+                self.info_set('体力待补充', policy.resource_shortfall_detail)
 
     def use_stamina(self, once=60, must_use=0, allow_backup=False, max_claims=2, exhaust_current=False):
         if max_claims not in (1, 2):
