@@ -75,6 +75,14 @@ class FakeInput:
     def move_client(self, hwnd, x, y):
         self.calls.append(("client", hwnd, x, y))
 
+    def unicode_key(self, scan, down):
+        self.calls.append(('unicode', scan, down))
+        if not down and self.fail_up:
+            raise OSError('unicode release failed')
+
+    def scroll(self, clicks):
+        self.calls.append(('scroll', clicks))
+
 
 class FakeGeometry:
     def __init__(self, inset=None):
@@ -141,6 +149,34 @@ class FakeAdbRunner:
 
 
 class TestGameFrameDevices(unittest.TestCase):
+    def test_windows_scroll_and_unicode_text_use_device_input(self):
+        backend = FakeInput()
+        device = WindowsDevice(42, input_backend=backend)
+        device.submit(Action('scroll', {'clicks': -4}))
+        device.submit(Action('text', {'text': '角\U0001f600'}))
+        self.assertEqual(backend.calls, [('scroll', -4),
+                                        ('unicode', ord('角'), True), ('unicode', ord('角'), False),
+                                        ('unicode', 0xd83d, True), ('unicode', 0xd83d, False),
+                                        ('unicode', 0xde00, True), ('unicode', 0xde00, False)])
+        self.assertFalse(device._unicode_keys)
+        backend.foreground = False
+        with self.assertRaisesRegex(RuntimeError, 'not foreground'):
+            device.submit(Action('text', {'text': 'Z'}))
+        self.assertEqual(len(backend.calls), 7)
+        device.close()
+
+    def test_windows_failed_unicode_up_stays_owned_for_cleanup(self):
+        backend = FakeInput()
+        device = WindowsDevice(42, input_backend=backend)
+        backend.fail_up = True
+        with self.assertRaisesRegex(OSError, 'unicode release failed'):
+            device.submit(Action('text', {'text': '角'}))
+        self.assertEqual(device._unicode_keys, {ord('角')})
+        backend.fail_up = False
+        device.release_all()
+        self.assertFalse(device._unicode_keys)
+        device.close()
+
     def test_windows_named_combat_keys_share_held_input_release(self):
         inputs = FakeInput()
         device = WindowsDevice(42, input_backend=inputs)
@@ -223,6 +259,14 @@ class TestGameFrameDevices(unittest.TestCase):
         self.assertEqual(device._buttons, {"left"})
         backend.fail_button_up = False
         device.release_all()
+        self.assertEqual(device._buttons, set())
+        device.close()
+
+    def test_windows_client_move_does_not_press_mouse_button(self):
+        backend = FakeInput()
+        device = WindowsDevice(42, input_backend=backend)
+        device.submit(Action("move_client", {"x": 120, "y": 340}))
+        self.assertEqual(backend.calls, [("client", 42, 120, 340)])
         self.assertEqual(device._buttons, set())
         device.close()
 

@@ -1,4 +1,4 @@
-from ok import Logger, BaseScene
+from src.runtime.combat_api import Logger, BaseScene
 
 logger = Logger.get_logger(__name__)
 

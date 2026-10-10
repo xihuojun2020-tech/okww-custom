@@ -3,8 +3,8 @@ import inspect
 import json
 from pathlib import Path
 
-from ok import Logger
-from ok.util.config import Config
+from src.runtime.combat_api import Logger
+from src.runtime.combat_api import Config
 
 logger = Logger.get_logger(__name__)
 

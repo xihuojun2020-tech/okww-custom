@@ -10962,5 +10962,74 @@
       ]
     },
     "source_change": "Five color tools moved to src/vision/color.py; 12 business/character modules changed imports only; v1.97.63 unknown-team generic recovery retained"
+  },
+  "native_visual_implementation": {
+    "after_release": "1.97.64",
+    "scope": [
+      "src/vision/boxes.py",
+      "src/vision/features.py",
+      "tests/TestPackFeatureVision.py"
+    ],
+    "status": "implemented and offline verified; full native host integration belongs to the release owner",
+    "framework_imports": [],
+    "license": "AGPL-3.0-or-later, game pack only",
+    "reference": {
+      "package": "ok-script 1.0.190",
+      "license_evidence": "installed dist-info/licenses/LICENSE.txt is AGPL-3.0; MIT metadata classifier is inconsistent",
+      "sha256": {
+        "Box.py": "ff8076da66403d6fbac23d262d9cdd33aeaa161b18ae49befd210f4468b71e7d",
+        "Feature.py": "8d656c4d68c3a36bdde667ae93ffac10e5b9b3bca3351f29f32d00587a854902",
+        "FeatureSet.py": "baddc35efd3c2fe008c1ac610decd43b079d721d3417cdb4c982d0935629cd2d"
+      },
+      "production_processor_baseline": "git show v1.97.64:src/task/BaseWWTask.py and src/task/process_feature.py"
+    },
+    "contracts": [
+      "Box geometry/crop/center/scale/copy/distance/sort/name/boundary helpers",
+      "lazy COCO whole annotated image loading and resolution cache invalidation",
+      "anchors, gray/Canny, mask, callback processing, threshold, ROI, external template",
+      "CCOEFF_NORMED best match, overlap filtering, multi-label sorting, target_height coordinates",
+      "explicit add_coco namespace and overwrite registration; no implicit cwd asset scanning",
+      "injected box_factory for genuine old Box type checks",
+      "observer diagnostics logged without terminating combat; business failures propagate"
+    ],
+    "tests": {
+      "suite": "tests.TestPackFeatureVision",
+      "passed": 10,
+      "combined_before_concurrent_source_growth": "Feature 10 + Color 4 + Migration 6 passed",
+      "latest_combined_during_parallel_edits": "Feature 10 + Color 4 passed; Migration snapshot saw source files added after build; release owner must rerun when stable"
+    },
+    "limits": [
+      "Reference FindFeature methods use pure AST extraction; no old application/config initialization",
+      "Existing old imports are not removed by creating the new implementation",
+      "Full native AutoCombat/OCR/stop/input/role integration is separately owned",
+      "No live game, device, account, or NAS validation"
+    ]
+  },
+  "native_combat_implementation": {
+    "release": "1.97.65",
+    "status": "production AutoCombat and original character rotations execute without ok-script/Qt imports; noncombat tasks remain in compatibility package",
+    "scope": [
+      "src/runtime/combat_api.py",
+      "src/runtime/native_combat_host.py",
+      "src/runtime/native_combat_executor.py",
+      "src/runtime/native_task.py",
+      "src/vision",
+      "gamepacks/wuthering_waves_native"
+    ],
+    "tests": {
+      "native_host_and_executor": 23,
+      "installed_zip_and_metadata": 2,
+      "legacy_production_regression": 76,
+      "native_task_and_executor_foreground": 20,
+      "mock_device_contracts": 15
+    },
+    "verified_chain": "real screenshot -> production AutoCombat -> rotation -> BaseChar.perform -> character.do_perform -> Replay down -> explicit stop -> single owner release -> cancelled run with enabled intent retained",
+    "ocr": "local installed ONNXPaddleOcr/OpenVINO CPU; production same-frame result reuse preserved",
+    "license": "AGPL game package; independent MIT core unchanged in ownership",
+    "limits": [
+      "No game/emulator/account/NAS/Child Session execution",
+      "No measured hardware capture or input latency",
+      "28 noncombat import probes: 2 import, 26 blocked by actual old dependencies; none counted as independent completed business"
+    ]
   }
 }

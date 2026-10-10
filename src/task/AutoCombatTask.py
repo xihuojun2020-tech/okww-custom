@@ -1,8 +1,8 @@
 import time
 import threading
 
-from ok import TriggerTask, Logger
-from ok.task.exceptions import CaptureException
+from src.runtime.combat_api import TriggerTask, Logger
+from src.runtime.combat_api import CaptureException
 from src.runtime.game_runtime_errors import FrameUnavailable, GameProcessLost
 from src.char.CharFactory import char_names
 from src.scene.WWScene import WWScene
@@ -120,8 +120,8 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
 
     def _emit_state(self):
         try:
-            from ok.gui.Communicate import communicate
-            communicate.task.emit(self)
+            from src.runtime.combat_api import emit_task_state
+            emit_task_state(self)
         except Exception:
             pass  # UI diagnostics cannot change the user's enabled preference.
 
@@ -269,8 +269,8 @@ class AutoCombatTask(BaseCombatTask, TriggerTask):
         self.sleep(0.02)
 
 
-from ok import run_task
-from config import config
-
 if __name__ == "__main__":
+    from ok import run_task
+    from config import config
+
     run_task(config, task=AutoCombatTask, debug=True)

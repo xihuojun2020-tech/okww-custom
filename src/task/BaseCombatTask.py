@@ -7,13 +7,13 @@ from decimal import Decimal, ROUND_UP, ROUND_DOWN
 import cv2
 import numpy as np
 
-from ok import Logger, Config, TaskDisabledException
-from ok.task.exceptions import FinishedException, CaptureException
+from src.runtime.combat_api import Logger, Config, TaskDisabledException
+from src.runtime.combat_api import FinishedException, CaptureException
 from src.combat.CombatCheck import CombatFlowInterrupt
 from src.runtime.game_runtime_errors import FrameUnavailable, GameProcessLost
 from src.config_integrity import ConfigIntegrityBlocked, ConfigWriteBlocked
 from src.vision.color import color_range_to_bound
-from ok import safe_get
+from src.runtime.combat_api import safe_get
 from src import text_white_color
 from src.char import BaseChar
 from src.char.BaseChar import SwitchPriority, dot_color  # noqa
@@ -22,7 +22,7 @@ from src.char.TrialGenericChar import TrialGenericChar
 from src.combat.CombatCheck import CombatCheck
 from src.combat.roster_context import roster_context
 from src.combat.rotation_state import RotationState
-from src.task.BaseWWTask import isolate_white_text_to_black, binarize_for_matching
+from src.vision.preprocess import isolate_white_text_to_black, binarize_for_matching
 
 logger = Logger.get_logger(__name__)
 cd_regex = re.compile(r'\d{1,2}\.\d')

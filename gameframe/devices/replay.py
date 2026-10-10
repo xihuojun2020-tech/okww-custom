@@ -9,7 +9,7 @@ from gameframe.vision import load_image
 
 
 class ReplayDevice:
-    capabilities = frozenset({'frames', 'keyboard', 'mouse', 'relative-mouse', 'multitouch'})
+    capabilities = frozenset({'frames', 'keyboard', 'mouse', 'relative-mouse', 'multitouch', 'scroll', 'text'})
 
     def __init__(self, paths):
         self.paths = iter(Path(path) for path in paths)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+import struct
 import threading
 import time
 from contextlib import contextmanager
@@ -16,9 +17,11 @@ from gameframe.api import Action, Frame
 INPUT_MOUSE = 0
 INPUT_KEYBOARD = 1
 KEYEVENTF_KEYUP = 0x0002
+KEYEVENTF_UNICODE = 0x0004
 MOUSEEVENTF_MOVE = 0x0001
 MOUSEEVENTF_VIRTUALDESK = 0x4000
 MOUSEEVENTF_ABSOLUTE = 0x8000
+MOUSEEVENTF_WHEEL = 0x0800
 SM_XVIRTUALSCREEN = 76
 SM_YVIRTUALSCREEN = 77
 SM_CXVIRTUALSCREEN = 78
@@ -146,6 +149,13 @@ class _SendInput:
     def key(self, vk: int, down: bool) -> None:
         self._send(_Input(type=INPUT_KEYBOARD, ki=_KeyboardInput(vk, 0, 0 if down else KEYEVENTF_KEYUP, 0, 0)))
 
+    def unicode_key(self, scan: int, down: bool) -> None:
+        flags = KEYEVENTF_UNICODE | (0 if down else KEYEVENTF_KEYUP)
+        self._send(_Input(type=INPUT_KEYBOARD, ki=_KeyboardInput(0, scan, flags, 0, 0)))
+
+    def scroll(self, clicks: int) -> None:
+        self._send(_Input(type=INPUT_MOUSE, mi=_MouseInput(0, 0, clicks * 120, MOUSEEVENTF_WHEEL, 0, 0)))
+
     def button(self, button: str, down: bool) -> None:
         flag = BUTTON_FLAGS[button][0 if down else 1]
         self._send(_Input(type=INPUT_MOUSE, mi=_MouseInput(0, 0, 0, flag, 0, 0)))
@@ -177,11 +187,13 @@ class WindowsDevice:
 
     Action values: key_down/up {key: virtual-key int, ASCII letter/digit or named key},
     button_down/up {button: left|right|middle}, move_relative {dx, dy},
+    move_client {x, y} in HWND client coordinates,
+    scroll {clicks} in signed wheel detents, text {text} as UTF-16 Unicode input,
     click {x, y, button?: left|right|middle} in HWND client coordinates.
     SendInput requires the target to be foreground.
     """
 
-    capabilities = frozenset({"frames", "keyboard", "mouse", "relative-mouse"})
+    capabilities = frozenset({"frames", "keyboard", "mouse", "relative-mouse", "scroll", "text"})
 
     def __init__(self, hwnd: int, *, capture_factory=None, input_backend=None, geometry=None):
         if hwnd <= 0:
@@ -199,6 +211,7 @@ class WindowsDevice:
         self._sequence = 0
         self._delivered = 0
         self._keys = set()
+        self._unicode_keys = set()
         self._buttons = set()
 
     def _start(self) -> None:
@@ -285,6 +298,16 @@ class WindowsDevice:
             (self._buttons.add if kind == "button_down" else self._buttons.discard)(button)
         elif kind == "move_relative":
             self._input_backend.move_relative(int(values["dx"]), int(values["dy"]))
+        elif kind == "move_client":
+            self._input_backend.move_client(self.hwnd, int(values["x"]), int(values["y"]))
+        elif kind == "scroll":
+            self._input_backend.scroll(int(values["clicks"]))
+        elif kind == "text":
+            for (scan,) in struct.iter_unpack('<H', values['text'].encode('utf-16-le')):
+                self._input_backend.unicode_key(scan, True)
+                self._unicode_keys.add(scan)
+                self._input_backend.unicode_key(scan, False)
+                self._unicode_keys.remove(scan)
         elif kind == "click":
             button = values.get("button", "left")
             if button not in BUTTON_FLAGS:
@@ -320,6 +343,13 @@ class WindowsDevice:
                 errors.append(error)
             else:
                 self._buttons.remove(button)
+        for scan in tuple(self._unicode_keys):
+            try:
+                self._input_backend.unicode_key(scan, False)
+            except Exception as error:
+                errors.append(error)
+            else:
+                self._unicode_keys.remove(scan)
         if errors:
             raise ExceptionGroup("Failed to release Windows input", errors)
 

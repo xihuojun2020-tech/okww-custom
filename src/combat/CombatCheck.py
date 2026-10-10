@@ -1,11 +1,10 @@
 import re
 import time
 
-import win32api
 
-from ok import find_boxes_by_name, Logger, TaskDisabledException
+from src.runtime.combat_api import find_boxes_by_name, Logger, TaskDisabledException
 from src.config_integrity import ConfigIntegrityBlocked, ConfigWriteBlocked
-from ok import find_color_rectangles
+from src.runtime.combat_api import find_color_rectangles
 from src.vision.color import calculate_color_percentage, get_mask_in_color_range, is_pure_black
 from src import text_white_color
 from src.Labels import Labels
@@ -261,6 +260,7 @@ class CombatCheck(BaseWWTask):
         if not levitator:
             self.send_key_up(self.key_config.get('Wheel Key'))
             raise Exception('no levitator tool in the tab wheel!')
+        import win32api
         old = win32api.GetCursorPos()
         self.move(levitator.x, levitator.y)
         abs_pos = self.executor.interaction.capture.get_abs_cords(levitator.x, levitator.y)

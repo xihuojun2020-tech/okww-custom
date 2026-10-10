@@ -7,15 +7,16 @@ from typing import List
 
 import numpy as np
 
-from ok import BaseTask, Logger, find_boxes_by_name, og, find_color_rectangles, Box
+from src.runtime.combat_api import BaseTask, Logger, find_boxes_by_name, app_services, find_color_rectangles, Box
 from src.vision.color import mask_white, calculate_color_percentage as calculate_frame_color_percentage
-from ok import CannotFindException
+from src.vision.preprocess import (isolate_white_text_to_black, convert_bw,
+                                   convert_dialog_icon, binarize_for_matching)
+from src.runtime.combat_api import CannotFindException
 import cv2
 
 from src.Labels import Labels
 from src.scene.WWScene import WWScene
 from src.runtime.game_runtime_errors import FrameUnavailable, GameProcessLost
-from src.win32_login_input import send_input_click
 
 logger = Logger.get_logger(__name__)
 number_re = re.compile(r'(\d+)')
@@ -72,7 +73,7 @@ class BaseWWTask(BaseTask):
         from src.task.ui_transition import (Observation, PageState, Policy, present,
                                             run_transition, TransitionContextChanged)
         from src.runtime.navigation_status import publish
-        from ok import TaskDisabledException
+        from src.runtime.combat_api import TaskDisabledException
         executor = self.executor
         old_deadline = getattr(executor, '_ui_transition_deadline', None)
         deadline = min(time.monotonic()+timeout, old_deadline) if old_deadline is not None else time.monotonic()+timeout
@@ -236,22 +237,19 @@ class BaseWWTask(BaseTask):
 
     @property
     def logged_in(self):
-        return og.my_app.logged_in
+        return app_services(self).logged_in
 
     @logged_in.setter
     def logged_in(self, value):
-        og.my_app.logged_in = value
+        app_services(self).logged_in = value
 
     def is_open_world_auto_combat(self):
         from src.task.AutoCombatTask import AutoCombatTask
+        if isinstance(self, AutoCombatTask):
+            return not self.in_realm()
         from src.task.TacetTask import TacetTask
         from src.task.DailyTask import DailyTask
-        if isinstance(self, AutoCombatTask):
-            if not self.in_realm():
-                return True
-        elif isinstance(self, (TacetTask, DailyTask)):
-            return True
-        return False
+        return isinstance(self, (TacetTask, DailyTask))
 
     def zoom_map(self, esc=True):
         if not self.map_zoomed:
@@ -1098,7 +1096,7 @@ class BaseWWTask(BaseTask):
             list: List of dictionaries containing detection information such as class_id, class_name, confidence, etc.
         """
         # Load the ONNX model
-        ret = og.my_app.yolo_detect(self.frame, threshold=threshold, label=0)
+        ret = app_services(self).yolo_detect(self.frame, threshold=threshold, label=0)
 
         for box in ret:
             box.y += box.height * 1 / 3
@@ -1118,7 +1116,7 @@ class BaseWWTask(BaseTask):
             list: List of dictionaries containing detection information such as class_id, class_name, confidence, etc.
         """
         # Load the ONNX model
-        boxes = og.my_app.yolo_detect(self.frame, threshold=threshold, label=-1)
+        boxes = app_services(self).yolo_detect(self.frame, threshold=threshold, label=-1)
         ret = sorted(boxes, key=lambda detection: detection.confidence, reverse=True)
         return ret
 
@@ -1416,6 +1414,7 @@ class BaseWWTask(BaseTask):
         if not hwnd or not pid or point is None:
             self.log_warning('登录点击未投递：无法确认主窗口、PID 或当前 WGC 坐标')
             return False
+        from src.win32_login_input import send_input_click
         delivery = send_input_click(hwnd, pid, point)
         self._last_login_click_delivery = delivery
         if not delivery.delivered:
@@ -2254,66 +2253,3 @@ def calculate_angle_clockwise(box1, box2):
     if degree < 0:
         degree += 360
     return degree
-
-
-lower_white = np.array([244, 244, 244], dtype=np.uint8)
-lower_white_none_inclusive = np.array([240, 240, 240], dtype=np.uint8)
-upper_white = np.array([255, 255, 255], dtype=np.uint8)
-black = np.array([0, 0, 0], dtype=np.uint8)
-
-
-def isolate_white_text_to_black(cv_image):
-    """
-    Converts pixels in the near-white range (244-255) to black,
-    and all others to white.
-    Args:
-        cv_image: Input image (NumPy array, BGR).
-    Returns:
-        Black and white image (NumPy array), where matches are black.
-    """
-    match_mask = cv2.inRange(cv_image, black, lower_white_none_inclusive)
-    output_image = cv2.cvtColor(match_mask, cv2.COLOR_GRAY2BGR)
-
-    return output_image
-
-
-def convert_bw(cv_image):
-    match_mask = cv2.inRange(cv_image, lower_white, upper_white)
-    output_image = cv2.cvtColor(match_mask, cv2.COLOR_GRAY2BGR)
-    return output_image
-
-
-lower_icon_white = np.array([210, 210, 210], dtype=np.uint8)
-upper_icon_white = np.array([244, 244, 244], dtype=np.uint8)
-
-
-def convert_dialog_icon(cv_image):
-    match_mask = cv2.inRange(cv_image, lower_icon_white, upper_icon_white)
-    output_image = cv2.cvtColor(match_mask, cv2.COLOR_GRAY2BGR)
-    return output_image
-
-
-def binarize_for_matching(image, threshold=244):
-    """
-    Converts a colored image to a binary image based on a brightness threshold.
-
-    The rule is: pixels with a value of 240-255 become pure white (255),
-    and all other pixels become pure black (0).
-
-    Args:
-        image (np.array): The input BGR image from OpenCV.
-
-    Returns:
-        np.array: The resulting binary image (single channel, 8-bit).
-    """
-    # Convert the image to grayscale for a single brightness value per pixel.
-    # This is more robust than checking individual R, G, B channels.
-
-    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-    # Apply the binary threshold.
-    # Pixels > 239 will be set to 255 (white).
-    # Pixels <= 239 will be set to 0 (black).
-    # cv2.THRESH_BINARY is the type of thresholding we want.
-    _, binary_image = cv2.threshold(gray_image, threshold, 255, cv2.THRESH_BINARY)
-    return binary_image

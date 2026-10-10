@@ -1,6 +1,6 @@
 import time
 
-from ok import Logger
+from src.runtime.combat_api import Logger
 from src.char.BaseChar import BaseChar
 
 

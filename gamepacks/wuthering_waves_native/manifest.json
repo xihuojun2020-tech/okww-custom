@@ -1,0 +1,26 @@
+{
+  "id": "wuthering_waves_native",
+  "title": "鸣潮（独立战斗运行时）",
+  "api_version": 1,
+  "entrypoint": "plugin.py:create_package",
+  "license": "AGPL-3.0-or-later; asset and model licenses retained",
+  "platforms": ["windows"],
+  "execution": "native",
+  "source_root": "../..",
+  "version": "1.97.65",
+  "tasks": [
+    {
+      "id": "auto-combat",
+      "title": "自动战斗（独立运行时，离线验收）",
+      "kind": "service",
+      "default_config": {
+        "Auto Target": true,
+        "Use Liberation": true,
+        "Check Levitator": true,
+        "Switch to Healer before and after Combat": true
+      },
+      "required_capabilities": ["frames", "keyboard", "mouse"],
+      "integration": "native-production-combat"
+    }
+  ]
+}

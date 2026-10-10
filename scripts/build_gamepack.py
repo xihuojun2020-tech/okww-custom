@@ -80,8 +80,13 @@ def build_gamepack(output, *, source_root=ROOT):
     content = {name: (pack / name).read_bytes() for name in ('plugin.py', 'bootstrap.py', 'README.md')}
     for path in payload_files(root):
         content['payload/' + path.relative_to(root).as_posix()] = path.read_bytes()
-    # The index covers everything except itself, including the manifest.
     content['manifest.json'] = (json.dumps(manifest, ensure_ascii=False, indent=2) + '\n').encode('utf-8')
+    return write_gamepack_archive(content, output, 'wuthering_waves')
+
+
+def write_gamepack_archive(content, output, package_directory):
+    """Write either production package with the same reproducible ZIP/index contract."""
+    # The index covers everything except itself, including the manifest.
     content['files.json'] = (json.dumps({name: hashlib.sha256(data).hexdigest()
                                        for name, data in sorted(content.items())},
                                       indent=2) + '\n').encode('utf-8')
@@ -91,7 +96,7 @@ def build_gamepack(output, *, source_root=ROOT):
     output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(output, 'x', compression=zipfile.ZIP_DEFLATED) as archive:
         for name, data in sorted(content.items()):
-            info = zipfile.ZipInfo('wuthering_waves/' + name, date_time=(1980, 1, 1, 0, 0, 0))
+            info = zipfile.ZipInfo(package_directory + '/' + name, date_time=(1980, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o100644 << 16
             archive.writestr(info, data)

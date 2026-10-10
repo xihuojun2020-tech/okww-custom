@@ -1,5 +1,7 @@
 # 鸣潮原生战斗入口的最小实施边界
 
+本文前面的设计与桥接记录属于 v1.97.64 及随后阶段的历史边界。现已接通独立生产战斗闭包，并通过安装后 ZIP 的禁止旧框架导入验收；当前结果见本文末尾和 `2026-10-11-gameframe-native-review.md`。非战斗业务继续迁移。
+
 现有 `TaskContext` 还不足以直接执行生产 `AutoCombatTask`。可以保留角色算法，把旧任务 API 的实际实现接到新设备上；需要先完成帧/视觉、任务调度、配置与异常契约。现在增加 `native-combat` manifest 会把未实现的链路登记成可用功能，本轮没有创建该入口。
 
 报告的边界分析只读源码和已安装框架 API，生成静态矩阵。随后按已确认的纯颜色边界实施迁移并做离线回归：生产类测试在导入前将 Config.config_folder 指向临时目录，类定义的校准写入也在临时目录中。没有读取真实账号配置、启动游戏/模拟器或发送真实输入。第二轮独立审查和兼容包/停止桥离线验证另见 `2026-10-11-gameframe-review-round2.md`。
@@ -88,3 +90,27 @@ BaseWWTask、BaseCombatTask、CombatCheck、FarmEchoTask 和 Camellya/Carlotta/C
 最终以 v1.97.63 为基线集成至 1.97.64：上述颜色/包 10 项再次通过，生产回归加入 CharacterIdentityRecovery 后共 76 项通过；既有 unknown 角色的 TrialGenericChar 恢复保留。manifest/包 README 同步为 1.97.64，source 中仍为 57 个角色相关文件、22 个一次任务和 7 个触发任务。JSON 的 verified_release 记录该最终基线、剩余导入引用及源码变化，153 项和 57 个候选方法的旧行号只属于此前静态快照。
 
 这一步移除了五种 ok 导入符号，迁移后的实际集合为 148 种；来源、行号及 153 项迁移前快照保留在矩阵 JSON。它证明一条真实业务视觉边界已独立，并未完成 COCO FeatureSet、OCR、Task API、UI 或整个原生 battle loop。
+
+## v64 提交之后：包内 COCO 与几何实现
+
+以上验收记录保留在 v1.97.64 的范围。该版本提交之后，新增 `src/vision/boxes.py` 与 `src/vision/features.py`，为后续原生装配提供真实视觉实现。这两个模块只依赖标准库、NumPy/OpenCV 和包内几何，不导入 ok、GameFrame、Qt、配置或设备；没有复制应用、GUI、COCO 编辑器、压缩发布工具，也没有登记新的战斗 service。
+
+Box 保留原坐标 round、零尺寸改为 1、负尺寸报错、中心缩放、offset copy、crop、中心/边界距离和排序/名字查找语义。FeatureSet 保留按标签懒加载同图全部 COCO annotation、图像分辨率变化清缓存、居中/右下锚点、feature_processor、默认阈值及 variance、显式/相对 ROI、外部模板、灰度/Canny、mask 缓存、frame_processor、CCOEFF_NORMED 最高分、矩形去重、target_height 的面积缩小与原坐标还原。模板大于 ROI 的 OpenCV 失败继续传播，其他 match_method 仍使用旧高分 threshold 契约。文件/图像和业务回调失败不会变成空匹配或默认成功。
+
+扩展资产通过 `add_coco(path, namespace=..., overwrite=...)` 显式注册，保持注册顺序；不再根据调用方 cwd 扫描 ok_tasks/ok_import。PNG 作者/压缩 metadata 不参与匹配，此层不读取或重写它。现有 Label Studio 绝对路径中的 images 后缀归一化仍保留。业务 processor 失败前不提交本图缓存，避免随后的真实请求读取半成品。
+
+当前旧任务 API 的 `isinstance(Box)` 仍检查旧类，故 FeatureSet 提供 `box_factory` 接点；兼容生产装配注入真实 `ok.Box`，新的纯包调用默认使用自主 Box。该接点没有创建假的 ok 模块。`observer(event, **payload)` 接收原截图信号的 mat/search_area/template 内容及 debug 框；无消费者时不承诺文件保存，与旧无接收器信号一致。只有诊断消费者失败会记入异常日志并继续匹配，其依据是自动战斗诊断不得终止执行的现有要求；业务图像处理失败照常传播。
+
+10 项 `TestPackFeatureVision` 离线检查通过：禁用 ok/GameFrame/PySide6 的隔离进程仍从显式 COCO 路径获得真实 logout 图标；几何与已安装旧源码逐项对照；con_full/combat_has_cd/all_cd_1080p/angle_130/mini_map/path 六张现有截图的默认、灰度、Canny 输出对照；所有六种生产 processor 标签的模板像素与宽屏锚点对照；两张原始模板图的 ROI、mask、外部模板、缩小与列表匹配；多目标去重/排序；图像/预处理/mask 缓存；文件/OpenCV/业务回调失败与诊断继续；显式 namespace/覆盖；未经改写的旧 FindFeature 方法使用新 FeatureSet 与注入旧 Box 的接口检查。生产 processor 已由主代理迁至纯 `src/vision/preprocess.py`，测试直接调用它，并以 `git show v1.97.64` 中的原函数作为独立基线。需要任务层旋转的 path 箭头保持直接匹配为空，不将它写成成功。
+
+与颜色四项和包迁移六项联合检查曾共 20 项通过；并发创建其他代理源码期间重跑，包测发现构建前后文件集合增长，需等各源码稳定后由主代理统一复跑。此记录不把该并发构建失败改写成通过，也不宣称这十项已验收生产 AutoCombatTask 链路：它验证了真实视觉算法及旧 FindFeature 接点，完整原生 host、OCR、调度/停止和角色轮转仍由各负责人集成。没有实际捕获设备、发送输入、启动游戏、读取账号配置或访问 NAS。
+
+实现留在 AGPL 游戏包。已安装 ok-script 1.0.190 的 metadata classifier 写 MIT，但其 `dist-info/licenses/LICENSE.txt` 实际内容是 AGPL-3.0，不能据前者把派生实现标为 MIT。参考源码 SHA256：Box.py `ff8076da66403d6fbac23d262d9cdd33aeaa161b18ae49befd210f4468b71e7d`，Feature.py `8d656c4d68c3a36bdde667ae93ffac10e5b9b3bca3351f29f32d00587a854902`，FeatureSet.py `baddc35efd3c2fe008c1ac610decd43b079d721d3417cdb4c982d0935629cd2d`。v64 的导入快照和验收范围仍保留；新增实现本身不表示所有旧 Box/FeatureSet 引用已删除。
+
+## 独立生产战斗闭包与可安装包
+
+`combat_api` 在独立 worker 导入生产类前显式选择 NativeBaseTask／NativeTriggerTask、包内 Box／Config／Logger／异常和场景基类；普通应用默认使用真实旧运行时。已构造的 MRO 禁止跨模式混用，没有插入假的 ok 模块。原角色算法与 AutoCombat 恢复循环保留，平台登录／未使用的原鼠标方法只在实际路径延迟导入。
+
+`gamepacks/wuthering_waves_native` 提供真实自动战斗 service，构建后的 ZIP 只包含入口、依赖列表、包内源码／素材和许可证／来源表。主代理已执行 `TestNativeGamePack` 两项通过：元数据发现不导入业务；安装 ZIP 在禁止 ok、Qt、旧应用入口的隔离进程中使用真实 `in_combat.png`，经过 `_run_combat → perform_combat_rotation → perform → do_perform` 到 Replay down 动作，再触发停止。所有运行中 `src` 模块来自自身 payload，Runtime 单次释放、持键清空、账本 cancelled，enabled 保持。
+
+该结果验收了真实轮转接线和包移植性，不代表整场游戏战斗完成。完整每日／多账号／挑战及原 UI 仍属于兼容包。所有派生模块继续在 AGPL 游戏包内；MIT 核心未引入游戏源码、素材或模型。

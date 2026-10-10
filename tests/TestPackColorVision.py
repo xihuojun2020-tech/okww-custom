@@ -12,11 +12,12 @@ import cv2
 import numpy as np
 
 from src.vision import color
+from src.vision.boxes import Box
 
 
 ROOT = Path(__file__).resolve().parents[1]
 FUNCTIONS = ('color_range_to_bound', 'get_mask_in_color_range', 'mask_white',
-             'is_pure_black', 'calculate_color_percentage')
+             'is_pure_black', 'calculate_color_percentage', 'find_color_rectangles')
 WHITE = {'r': (244, 255), 'g': (244, 255), 'b': (244, 255)}
 FIRE = {'r': (200, 230), 'g': (100, 130), 'b': (75, 105)}
 
@@ -31,7 +32,7 @@ class TestPackColorVision(unittest.TestCase):
         tree = ast.parse(source.read_text(encoding='utf-8-sig'))
         functions = [node for node in tree.body
                      if isinstance(node, ast.FunctionDef) and node.name in FUNCTIONS]
-        namespace = {'cv2': cv2, 'np': np}
+        namespace = {'cv2': cv2, 'np': np, 'Box': Box}
         exec(compile(ast.Module(functions, type_ignores=[]), str(source), 'exec'), namespace)
         cls.reference = SimpleNamespace(**{name: namespace[name] for name in FUNCTIONS})
 
@@ -93,6 +94,39 @@ class TestPackColorVision(unittest.TestCase):
                                          self.reference.calculate_color_percentage(image, bounds, box))
             np.testing.assert_array_equal(color.mask_white(image, 244), self.reference.mask_white(image, 244))
             self.assertEqual(color.is_pure_black(image), self.reference.is_pure_black(image))
+
+    def test_color_rectangles_roi_threshold_and_size_match_reference(self):
+        image = np.zeros((40, 70, 3), np.uint8)
+        image[5:10, 7:22] = (65, 70, 200)
+        image[20:28, 30:48] = (65, 70, 200)
+        image[22:26, 38:42] = 0
+        bounds = {'r': (174, 225), 'g': (55, 85), 'b': (55, 76)}
+        zone = Box(25, 15, 30, 20)
+        for options in ({}, {'box': zone}, {'threshold': .95},
+                        {'max_height': 6}, {'max_width': 16},
+                        {'box': zone, 'threshold': .8}):
+            with self.subTest(options=options):
+                actual = color.find_color_rectangles(image, bounds, 4, 4, **options)
+                expected = self.reference.find_color_rectangles(image, bounds, 4, 4, **options)
+                self.assertEqual([(b.x, b.y, b.width, b.height, b.confidence)
+                                  for b in actual],
+                                 [(b.x, b.y, b.width, b.height, b.confidence)
+                                  for b in expected])
+
+    def test_color_rectangles_on_combat_fixture_match_reference(self):
+        image = cv2.imdecode(np.fromfile(ROOT / 'tests/images/in_combat.png', np.uint8),
+                             cv2.IMREAD_COLOR)
+        bounds = {'r': (174, 225), 'g': (55, 85), 'b': (55, 76)}
+        for options in ({}, {'box': Box(image.shape[1] // 3, 0,
+                                      image.shape[1] // 3, image.shape[0] // 3)}):
+            actual = color.find_color_rectangles(image, bounds, 3, 3, **options)
+            expected = self.reference.find_color_rectangles(image, bounds, 3, 3, **options)
+            if not options:
+                self.assertEqual(len(actual), 2)
+            self.assertEqual([(b.x, b.y, b.width, b.height, b.confidence)
+                              for b in actual],
+                             [(b.x, b.y, b.width, b.height, b.confidence)
+                              for b in expected])
 
 
 if __name__ == '__main__':

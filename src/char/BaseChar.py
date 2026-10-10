@@ -5,7 +5,7 @@ from typing import Any  # noqa
 import cv2  # noqa
 import numpy as np  # noqa
 
-from ok import Config, Logger  # noqa
+from src.runtime.combat_api import Config, Logger  # noqa
 from src import text_white_color  # noqa
 
 SKILL_TIME_OUT = 15
