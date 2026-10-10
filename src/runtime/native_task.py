@@ -174,7 +174,7 @@ class NativeBaseTask:
         return not bool(message), message
 
     def load_config(self):
-        self.config = Config(type(self).__name__, self.default_config,
+        self.config = Config(getattr(self, "native_config_name", type(self).__name__), self.default_config,
                              validator=self.validate)
 
     def on_create(self):

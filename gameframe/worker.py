@@ -59,7 +59,7 @@ def listen_stop(stop, pause, requests=None):
             pause.clear()
             continue
         if requests is not None and command in {'run-task', 'set-service', 'get-schema',
-                                                'set-config', 'invoke-action'}:
+                                                'set-config', 'invoke-action', 'reload-user-tasks'}:
             requests.put(message)
             continue
         if command != 'stop':
@@ -91,7 +91,7 @@ def main(argv=None):
         manifest = PackageManifest.read(options.package)
         if options.expected_version is not None and manifest.version != options.expected_version:
             raise ValueError('Gamepack version changed before the worker started')
-        task = manifest.task(options.task)
+        task = manifest.task(options.task, options.data_dir)
         if manifest.execution != 'native':
             raise ValueError('Legacy packages use their explicit production bootstrap')
         if options.session and not manifest.supports_session:
@@ -101,6 +101,7 @@ def main(argv=None):
         if prepare_data is not None:
             prepare_data(options.data_dir)
         leases.enter_context(data_lease(options.data_dir))
+        task = manifest.task(options.task, options.data_dir)
         prepare = getattr(package, 'prepare', None)
         if prepare is not None:
             prepare(task.id, options.data_dir)

@@ -74,12 +74,15 @@ class NativeConfigurationTab(QWidget):
     management_requested = Signal()
     schema_changed = Signal(dict)
     lifecycle_failed = Signal(str)
+    response_received = Signal(dict)
+    busy_changed = Signal(bool)
 
     def __init__(self, data_dir, version, manifest_path, parent=None):
         super().__init__(parent)
         from gameframe.packages import PackageManifest
         manifest = PackageManifest.read(Path(manifest_path).parent)
         self.schema = None
+        self.applied_revision = None
         self._entries = []
         self._request_id = 0
         self._pending = set()
@@ -152,9 +155,11 @@ class NativeConfigurationTab(QWidget):
 
     def _fail_lifecycle(self, message):
         self._fail(message)
+        self._pending.clear()
         if not self._closing and self._startup_failure is None:
             self._startup_failure = str(message)
             self.lifecycle_failed.emit(self._startup_failure)
+        self.busy_changed.emit(False)
 
     def _process_error(self, error):
         message = self.process.errorString()
@@ -178,7 +183,7 @@ class NativeConfigurationTab(QWidget):
     def request(self, command, **values):
         self._request_id += 1
         message = {'command': command, 'request_id': self._request_id, **values}
-        if self.process.state() != QProcess.Running:
+        if self._closing or self.process.state() != QProcess.Running:
             self._fail('配置进程未运行')
             return
         self._pending.add(self._request_id)
@@ -186,6 +191,8 @@ class NativeConfigurationTab(QWidget):
         self.refresh_button.setEnabled(False)
         self.status.setText('正在保存…' if command != 'get-schema' else '正在加载…')
         self.process.write((json.dumps(message, ensure_ascii=False) + '\n').encode('utf-8'))
+        self.busy_changed.emit(True)
+        return self._request_id
 
     def _read(self):
         self._buffer += bytes(self.process.readAllStandardOutput())
@@ -200,6 +207,7 @@ class NativeConfigurationTab(QWidget):
                 continue
             if value.get('event') != 'configuration-response':
                 continue
+            self.applied_revision = value.get('applied_revision', self.applied_revision)
             self._pending.discard(value.get('request_id'))
             self.scroll.setEnabled(not self._pending)
             self.refresh_button.setEnabled(not self._pending)
@@ -210,11 +218,15 @@ class NativeConfigurationTab(QWidget):
                     self._fail_lifecycle(value['error']['message'])
                 else:
                     self._fail(value['error']['message'])
+                self.response_received.emit(value)
+                self.busy_changed.emit(bool(self._pending))
                 continue
             self.set_schema(value['schema'])
-            if value.get('command') == 'get-schema':
+            if value.get('command') in ('get-schema', 'user-task-save', 'user-task-delete'):
                 self.schema_changed.emit(self.schema)
             self.status.setText('配置已保存。' if value.get('command') != 'get-schema' else '配置已加载。')
+            self.response_received.emit(value)
+            self.busy_changed.emit(bool(self._pending))
 
     def set_schema(self, schema):
         selected = self._entries[self.selection.currentRow()][:2] if self.selection.currentRow() >= 0 else None

@@ -26,6 +26,8 @@ GLOBAL_METADATA = {
 
 
 def task_id(task):
+    if getattr(task, "native_task_id", None) is not None:
+        return task.native_task_id
     name = type(task).__name__
     return 'auto-combat' if name == 'AutoCombatTask' else name
 

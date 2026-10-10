@@ -26,7 +26,7 @@ class WutheringWavesNativePackage:
         return prepare_native_data(data_dir, self.manifest['version'])
 
     def prepare(self, task_id, data_dir):
-        definition = self._definition(task_id)
+        definition = self._definition(task_id, data_dir)
         self._bind_source()
         from src.runtime.native_logging import configure_logging
         from src.runtime.native_diagnostics import start_native_diagnostics, record_native_event
@@ -40,8 +40,16 @@ class WutheringWavesNativePackage:
                                 stage='account_preflight', error=error)
             raise
 
-    def _definition(self, task_id):
-        return next(task for task in self.manifest['tasks'] if task['id'] == task_id)
+    def _definition(self, task_id, data_dir=None):
+        for task in self.manifest['tasks']:
+            if task['id'] == task_id:
+                return task
+        self._bind_source()
+        from src.runtime.native_user_tasks import NativeUserTaskStore
+        for task in NativeUserTaskStore(data_dir).list():
+            if task['id'] == task_id:
+                return {**task, 'class': task['class_name']}
+        raise ValueError(f'Unknown native task: {task_id}')
 
     def management_command(self, data_dir):
         import gameframe
@@ -81,7 +89,7 @@ class WutheringWavesNativePackage:
         return self._run(task_id, context, session=True)
 
     def _run(self, task_id, context, *, session):
-        definition = self._definition(task_id)
+        definition = self._definition(task_id, context.data_dir)
         self._bind_source()
         from src.runtime import combat_api
         combat_api.configure(native=True, data_dir=context.data_dir)
@@ -91,11 +99,21 @@ class WutheringWavesNativePackage:
         from gameframe.api import Cancelled
         from src.runtime.native_combat_host import NativeCombatHost
         from src.runtime.native_live_status import NativeLiveWriter
+        from src.runtime.native_user_tasks import NativeUserTaskStore
         from src.combat.settings import COMBAT_GLOBAL_DEFAULTS, TEMPLATE_MATCHING_DEFAULTS
 
         data_dir = Path(context.data_dir).resolve()
         data_dir.mkdir(parents=True, exist_ok=True)
         configure_logging(data_dir)
+        user_store = NativeUserTaskStore(data_dir)
+        user_tasks = user_store.load_tasks()
+        user = next((item for item in user_tasks if item['id'] == task_id), None)
+        if user is not None:
+            if user['revision'] != context.task_definition.revision:
+                raise ValueError('User task definition changed before execution; start it again')
+            definition = {**user, 'class': user['class_name']}
+        task_entry = (user['task_class'] if user is not None else
+                      definition['module'] + ':' + definition['class'])
         writer = NativeLiveWriter(context, self.manifest['id'], self.manifest['version'])
         self._live_writer = writer
         previous_events = context.events
@@ -121,12 +139,14 @@ class WutheringWavesNativePackage:
                 ocr_config={'default': {'lib': 'onnxocr'}},
                 template_matching=TEMPLATE_MATCHING_DEFAULTS, native=True,
                 window=getattr(context.device, 'window', None),
-                task_entry=definition['module'] + ':' + definition['class'],
+                task_entry=task_entry,
                 registered_tasks=tuple(task['module'] + ':' + task['class']
                                        for task in self.manifest['tasks']),
                 task_requirements={task['id']: frozenset(task['required_capabilities'])
                                    for task in self.manifest['tasks']},
-                device_identity=type(context.device).__name__, live_status=writer)
+                device_identity=type(context.device).__name__, live_status=writer,
+                user_tasks=user_tasks)
+            host.applied_revision = user_store.revision
             attach_native_executor(host.executor)
             if session:
                 return host.run_session(task_id)

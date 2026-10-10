@@ -38,7 +38,7 @@ def native_metadata(source_root=ROOT):
             'config_scope': 'native-data-directory',
         })
     return {'version': original['version'], 'tasks': tasks, 'supports_session': True,
-            'management': True, 'overview': True}
+            'management': True, 'overview': True, 'task_catalog': 'user_tasks/catalog.json'}
 
 
 def build_native_gamepack(output, *, source_root=ROOT):

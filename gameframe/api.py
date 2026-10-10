@@ -7,7 +7,10 @@ import time
 from queue import Queue
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Protocol
+from typing import Any, Mapping, Protocol, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from gameframe.packages import TaskDefinition
 
 import numpy as np
 
@@ -49,6 +52,7 @@ class TaskContext:
     events: Any
     pause: threading.Event = field(default_factory=threading.Event)
     requests: Queue = field(default_factory=Queue)
+    task_definition: TaskDefinition | None = None
     _pause_released: bool = field(default=False, init=False)
 
     def observe_pause(self) -> bool:

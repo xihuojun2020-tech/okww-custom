@@ -27,7 +27,7 @@ class Runtime:
 
     def run(self, manifest, package, task_id, device, data_dir: Path,
             config=None, stop=None, pause=None, *, session=False, requests=None):
-        task = manifest.task(task_id)
+        task = manifest.task(task_id, data_dir)
         missing = task.required_capabilities - device.capabilities
         if missing:
             raise ValueError(f'Device missing capabilities: {sorted(missing)}')
@@ -37,6 +37,7 @@ class Runtime:
             merged.update(config)
         context = TaskContext(device, merged, Path(data_dir), stop or threading.Event(),
                               run_id, self.emit, pause if pause is not None else threading.Event())
+        context.task_definition = task
         if requests is not None:
             context.requests = requests
         if not self._input_owner.acquire(blocking=False):

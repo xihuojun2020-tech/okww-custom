@@ -53,8 +53,9 @@ class NativeLiveWriter:
                 logger.exception('无法移除过期的原生执行状态')
 
     def begin_foreground(self, task):
+        from src.runtime.native_metadata import task_id
         self.foreground = task
-        self.value.update(foreground_task_id=type(task).__name__,
+        self.value.update(foreground_task_id=task_id(task),
                           foreground_started_ns=time.monotonic_ns(), running=True,
                           paused=self.context.pause.is_set(), live={}, timing=None)
         self._save()

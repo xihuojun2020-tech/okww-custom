@@ -43,7 +43,7 @@ class TestNativeMaintenanceUI(unittest.TestCase):
                 window.show()
                 until(lambda: window.configuration_tab.schema is not None)
                 settle()
-                assert window.tabs.count() == 7
+                assert window.tabs.count() == 8
                 ready = []
                 window.configuration_tab.schema_changed.connect(lambda schema: ready.append(schema))
                 completed, errors = [], []
@@ -93,7 +93,7 @@ class TestNativeMaintenanceUI(unittest.TestCase):
                 assert window.account_tab.sequence_tab.service.repository is service.runtime.repository
                 assert window.evidence_tab is evidence
                 assert evidence.account_provider() is service.runtime.repository
-                assert window.tabs.count() == 7
+                assert window.tabs.count() == 8
                 gate, entered = threading.Event(), threading.Event()
                 def gated_snapshot():
                     entered.set()

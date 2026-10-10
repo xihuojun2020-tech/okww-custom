@@ -335,7 +335,7 @@ class TestAccountManagementEntry(unittest.TestCase):
                     stack.enter_context(patch.object(TaskExecutor, '__init__', side_effect=AssertionError('created executor')))
                     window = ManagementWindow(service)
                     window.show()
-                    assert window.tabs.count() == 7
+                    assert window.tabs.count() == 8
                     assert window.update_tab.package_root == package_root
                     assert window.configuration_tab is not None
                     deadline = time.monotonic() + 10

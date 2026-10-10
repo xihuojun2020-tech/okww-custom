@@ -26,9 +26,11 @@ class FixtureController:
         self.starts = []
         self.closed = False
         self.controls = []
+        self.session = False
 
     def start(self, manifest, task_id, *, data_dir, config=None, device=None, session=False):
         self.starts.append((manifest.id, task_id, config, device))
+        self.session = session
         code = ("import sys; print('fixture ready', flush=True); "
                 "line=sys.stdin.readline(); "
                 "print('fixture stopped', flush=True) if line.strip() == 'stop' else None")
@@ -128,6 +130,42 @@ class TestGameFrameLauncher(unittest.TestCase):
         self.assertEqual(overview.process.returncode, 0)
         self.assertTrue(overview.closed)
         overview.assert_idle()
+
+    def test_dynamic_catalog_refresh_preserves_id_and_launches_selection(self):
+        from dataclasses import replace
+        self.window.packages = tuple(replace(manifest, task_catalog='user_tasks/catalog.json')
+                                     for manifest in self.window.packages)
+        path = Path(self.temp.name) / 'data/native/user_tasks/catalog.json'
+        path.parent.mkdir(parents=True)
+        value = dict(api_version=1, revision='first', tasks=[dict(id='user:stable', title='User first',
+                     kind='one-shot', default_config={'dynamic': True})])
+        path.write_text(json.dumps(value))
+        self.window.package_select.setCurrentIndex(1)
+        self.window.task_list.setCurrentRow(1)
+        value['revision'] = 'second'
+        value['tasks'].insert(0, dict(id='user:new', title='New', kind='one-shot'))
+        value['tasks'][1]['title'] = 'Renamed'
+        path.write_text(json.dumps(value))
+        self.window.refresh_tasks()
+        self.assertEqual(self.window._visible_tasks[self.window.task_list.currentRow()].id, 'user:stable')
+        self.window.start_selected()
+        self._until(lambda: self.window.process is not None)
+        self.assertEqual(self.controller.starts[0][1], 'user:stable')
+
+    def test_corrupt_catalog_selection_clears_old_task_and_reports_failure(self):
+        from dataclasses import replace
+        self.window.packages = tuple(replace(manifest, task_catalog='user_tasks/catalog.json')
+                                     for manifest in self.window.packages)
+        path = Path(self.temp.name) / 'data/native/user_tasks/catalog.json'
+        path.parent.mkdir(parents=True)
+        path.write_text('{broken')
+        self.window.package_select.setCurrentIndex(1)
+        self.assertEqual(self.window.task_list.count(), 0)
+        self.assertEqual(self.window._visible_tasks, ())
+        self.assertFalse(self.window.start_button.isEnabled())
+        self.assertIn('JSONDecodeError', self.window.status_label.text())
+        self.window.start_selected()
+        self.assertEqual(self.controller.starts, [])
 
     def test_manifest_selection_stays_metadata_only_and_legacy_fields_do_not_apply(self):
         self.assertEqual(self.window.package_select.count(), 2)

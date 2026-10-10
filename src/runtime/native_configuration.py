@@ -9,7 +9,8 @@ import threading
 from src.runtime.native_metadata import GLOBAL_METADATA, TaskMetadata, task_id
 
 
-COMMANDS = frozenset({'get-schema', 'set-config', 'invoke-action'})
+COMMANDS = frozenset({'get-schema', 'set-config', 'invoke-action',
+    'user-task-list', 'user-task-read', 'user-task-save', 'user-task-delete'})
 
 
 def _validate_values(values, defaults, config_type):
@@ -72,9 +73,9 @@ class ConfigurationService:
                     if toggled:
                         self.host._set_service(task, values['_enabled'], preference_only=True)
                         if values['_enabled']:
-                            self.host._configuration_service_enables.add(task)
+                            self.host._configuration_service_enables.add(task_id(task))
                         else:
-                            self.host._configuration_service_enables.discard(task)
+                            self.host._configuration_service_enables.discard(task_id(task))
                 elif request['scope'] == 'global':
                     identifier = request['id']
                     config = self.host.global_configs[identifier]
@@ -98,6 +99,28 @@ class ConfigurationService:
                     if callback is None:
                         raise ValueError('Configuration button has no action')
                     result = callback()
+            elif command.startswith('user-task-') and command in COMMANDS:
+                from src.runtime.native_user_tasks import NativeUserTaskStore
+                store = NativeUserTaskStore(self.host.context.data_dir)
+                if command == 'user-task-list':
+                    result = {'tasks': store.list(), 'catalog_revision': store.revision}
+                elif command == 'user-task-read':
+                    result = store.read(request['source_id'])
+                else:
+                    if command == 'user-task-save':
+                        result = store.save(request['code'], request['class_name'],
+                            source_id=request.get('source_id'),
+                            expected_revision=request.get('expected_revision'),
+                            required_capabilities=request['required_capabilities'])
+                    else:
+                        result = {'catalog_revision': store.delete(request['source_id'],
+                            expected_revision=request['expected_revision'])}
+                    # Disk publication and this owner's applied registry are
+                    # separate facts; another running worker is not implied.
+                    response['result'] = {**result, 'applied': False,
+                                          'applied_revision': self.host.applied_revision}
+                    applied = self.host.reload_user_tasks()
+                    result = {**result, 'applied': True, **applied}
             else:
                 raise ValueError(f'Unknown configuration command: {command}')
             response.update(ok=True, schema=self.metadata.snapshot())
@@ -106,6 +129,7 @@ class ConfigurationService:
                 response['result'] = json_value(result)
         except Exception as error:
             response.update(ok=False, error={'type': type(error).__name__, 'message': str(error)})
+        response['applied_revision'] = self.host.applied_revision
         return response
 
 
@@ -123,15 +147,20 @@ def create_configuration_host(data_dir, program_version, manifest_path, events):
                                backup_dir=resolve_config_backup_dir(root), restore_prepared=True)
     manifest = json.loads(Path(manifest_path).read_text(encoding='utf-8'))
     definitions = manifest['tasks']
+    from src.runtime.native_user_tasks import NativeUserTaskStore
+    store = NativeUserTaskStore(root)
+    user_tasks = store.load_tasks()
     source = Path(__file__).resolve().parents[2]
     context = TaskContext(None, {}, root, threading.Event(), 'configuration', events)
-    return NativeCombatHost(
+    host = NativeCombatHost(
         context, coco_path=source / 'assets/coco_annotations.json',
         global_options=COMBAT_GLOBAL_DEFAULTS, ocr_engine=None,
         template_matching=TEMPLATE_MATCHING_DEFAULTS,
         task_entry=definitions[0]['module'] + ':' + definitions[0]['class'],
         registered_tasks=tuple(task['module'] + ':' + task['class'] for task in definitions),
-        device_identity='configuration')
+        device_identity='configuration', user_tasks=user_tasks)
+    host.applied_revision = store.revision
+    return host
 
 
 def main(argv=None):

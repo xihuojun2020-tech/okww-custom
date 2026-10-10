@@ -75,6 +75,9 @@ class GameFrameWindow(QWidget):
         self.disable_button.setEnabled(False)
         self.manage_button = QPushButton('Manage gamepack')
         self.overview_button = QPushButton('Read-only overview')
+        self.refresh_tasks_button = QPushButton('Refresh tasks')
+        self.reload_tasks_button = QPushButton('Apply user task reload')
+        self.reload_tasks_button.setEnabled(False)
         self.stop_button.setEnabled(False)
         self.pause_button.setEnabled(False)
 
@@ -93,6 +96,8 @@ class GameFrameWindow(QWidget):
         buttons.addWidget(self.disable_button)
         buttons.addWidget(self.manage_button)
         buttons.addWidget(self.overview_button)
+        buttons.addWidget(self.refresh_tasks_button)
+        buttons.addWidget(self.reload_tasks_button)
         layout = QVBoxLayout(self)
         layout.addLayout(form)
         layout.addLayout(buttons)
@@ -110,6 +115,8 @@ class GameFrameWindow(QWidget):
         self.disable_button.clicked.connect(self.disable_selected)
         self.manage_button.clicked.connect(self.manage_selected)
         self.overview_button.clicked.connect(self.overview_selected)
+        self.refresh_tasks_button.clicked.connect(self.refresh_tasks)
+        self.reload_tasks_button.clicked.connect(self.reload_user_tasks)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._drain_events)
         self.timer.start(50)
@@ -126,13 +133,22 @@ class GameFrameWindow(QWidget):
                                         and not self._installing and not self._overview_starting
                                         and (self.overview_controller.process is None
                                              or self.overview_controller.process.poll() is not None))
-        self._visible_tasks = tuple(task for task in manifest.tasks if task.visible) if manifest is not None else ()
+        self._visible_tasks = ()
         self.task_list.clear()
         if manifest is None:
             self.mode_label.setText("No installed packages")
             self.start_button.setEnabled(False)
             self.manage_button.setEnabled(False)
             self.update_button.setEnabled(False)
+            return
+        try:
+            self._visible_tasks = tuple(task for task in manifest.available_tasks(self.data_dir / manifest.id)
+                                        if task.visible)
+        except (OSError, ValueError) as error:
+            self.start_button.setEnabled(False)
+            self.disable_button.setEnabled(False)
+            self.config_edit.clear()
+            self._error(error)
             return
         legacy = manifest.execution == "legacy-application"
         self.manage_button.setEnabled(manifest.management and self.process is None and not self._managing
@@ -163,6 +179,34 @@ class GameFrameWindow(QWidget):
         self.start_button.setEnabled(bool(self._visible_tasks) and self.process is None
                                      and not self._starting and not self._installing and not self._closing
                                      and not self._managing and not self._updating)
+
+    def refresh_tasks(self):
+        manifest = self._manifest()
+        if manifest is None:
+            return
+        row = self.task_list.currentRow()
+        selected = self._visible_tasks[row].id if 0 <= row < len(self._visible_tasks) else None
+        try:
+            tasks = tuple(task for task in manifest.available_tasks(self.data_dir / manifest.id) if task.visible)
+        except Exception as error:
+            self._error(error)
+            return
+        self._visible_tasks = tasks
+        self.task_list.clear()
+        for task in tasks:
+            self.task_list.addItem(f'{task.title}  [{task.kind}]  ({task.id})')
+        if tasks:
+            self.task_list.setCurrentRow(next((index for index, task in enumerate(tasks) if task.id == selected), 0))
+
+    def reload_user_tasks(self):
+        if self.process is None or self._stopping or self._closing or self._updating:
+            return
+        try:
+            self.controller.request_user_task_reload()
+        except Exception as error:
+            self._error(error)
+        else:
+            self.status_label.setText('User task reload requested; waiting for the execution owner')
 
     def _select_task(self, row):
         manifest = self._manifest()
@@ -538,6 +582,9 @@ class GameFrameWindow(QWidget):
             self.status_label.setText(f'Finished {event["task_id"]}')
         elif isinstance(event, dict) and event.get('event') == 'session-task-failed':
             self.status_label.setText(f'{event.get("task_id")}: {event["error"]}')
+        elif isinstance(event, dict) and event.get('event') == 'user-tasks-reloaded':
+            self.refresh_tasks()
+            self.status_label.setText('User tasks applied: ' + str(event['applied_revision']))
 
     def _stop_worker(self):
         try:
@@ -676,6 +723,10 @@ class GameFrameWindow(QWidget):
                 self._error(value)
             elif kind == "error":
                 self._error(value)
+        manifest = self._manifest()
+        self.reload_tasks_button.setEnabled(manifest is not None and manifest.task_catalog is not None
+                                            and self.process is not None and self.controller.session
+                                            and not self._stopping and not self._closing and not self._updating)
 
     def closeEvent(self, event):
         if self._cleanup_done:

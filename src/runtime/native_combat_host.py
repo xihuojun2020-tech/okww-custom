@@ -26,7 +26,8 @@ class NativeCombatHost:
                  template_matching, window=None, device_identity='replay',
                  supported_ratio=16 / 9, translate=gettext.gettext, pause=None,
                  native=True, task_entry='src.task.AutoCombatTask:AutoCombatTask',
-                 registered_tasks=(), ocr_config=None, task_requirements=None, live_status=None):
+                 registered_tasks=(), ocr_config=None, task_requirements=None, live_status=None,
+                 user_tasks=()):
         from src.runtime import combat_api
         combat_api.configure(native=native, data_dir=context.data_dir)
         from src.runtime.combat_api import Box, Config, TaskDisabledException, WaitFailedException
@@ -37,11 +38,15 @@ class NativeCombatHost:
         config_root.mkdir(parents=True, exist_ok=True)
         Config.config_folder = str(config_root)
         def load_task(entry):
+            if isinstance(entry, type):
+                return entry
             module, name = entry.split(':')
             return getattr(importlib.import_module(module), name)
 
         task_class = load_task(task_entry)
-        task_classes = dict.fromkeys((task_class, *(load_task(entry) for entry in registered_tasks)))
+        user_tasks = tuple(user_tasks)
+        task_classes = dict.fromkeys((task_class, *(load_task(entry) for entry in registered_tasks),
+                                      *(item["task_class"] for item in user_tasks)))
         from src.scene.WWScene import WWScene
         from src.task.process_feature import process_feature
         from src.vision.features import FeatureSet
@@ -133,14 +138,16 @@ class NativeCombatHost:
                                   supported_ratio=supported_ratio,
                                   text_fix=executor.text_fix, window=window,
                                   box_factory=Box)
+        self._task_services = HostTaskServices
+        self._task_arguments = task_arguments
+        self._app = app
+        self.executor = executor
+        descriptors = {item["task_class"]: item for item in user_tasks}
         self.tasks = {}
         for production_class in task_classes:
             # Account/timing policies intentionally inspect the production name.
-            adapted_class = type(production_class.__name__, (HostTaskServices, production_class),
-                                 {'__module__': production_class.__module__,
-                                  '__qualname__': production_class.__qualname__})
-            instance = adapted_class(**task_arguments)
-            instance._combat_app_services = app
+            instance = self.create_task(production_class, descriptor=descriptors.get(production_class),
+                                        initialize=False)
             self.tasks[production_class] = instance
         task = self.tasks[task_class]
         if native:
@@ -164,7 +171,71 @@ class NativeCombatHost:
                        screenshot_writer=task.screenshot, draw_boxes=task.draw_boxes)
         self.last_result = None
         self._combat_recovery = getattr(task, 'handle_execution_error', None)
-        self.task_requirements = task_requirements or {}
+        self.task_requirements = dict(task_requirements or {})
+        self._user_classes = set(descriptors)
+        for item in user_tasks:
+            self.task_requirements[item['id']] = item['required_capabilities']
+        self.applied_revision = None
+
+    def create_task(self, task_class, *, descriptor=None, config=None, initialize=True):
+        """Construct through the same native services used by installed tasks."""
+        adapted = type(task_class.__name__, (self._task_services, task_class),
+                       {'__module__': task_class.__module__, '__qualname__': task_class.__qualname__})
+        instance = adapted(**self._task_arguments)
+        instance._combat_app_services = self._app
+        if descriptor is not None:
+            instance.native_task_id = descriptor['id']
+            instance.native_config_name = descriptor['config_name']
+            instance.source_revision = descriptor['source_revision']
+        if initialize:
+            previous = self.executor.current_task
+            try:
+                self.executor.current_task = instance
+                instance.after_init(config=config)
+            finally:
+                self.executor.current_task = previous
+        return instance
+
+    def _tasks_by_id(self):
+        from src.runtime.native_metadata import task_id
+        result = {task_id(task): task for task in self.tasks.values()}
+        if 'auto-combat' in result:
+            result['AutoCombatTask'] = result['auto-combat']
+        return result
+
+    def reload_user_tasks(self, store=None):
+        """Apply a validated catalog on the execution owner's request boundary."""
+        from src.runtime.native_metadata import TaskMetadata, task_id
+        if store is None:
+            from src.runtime.native_user_tasks import NativeUserTaskStore
+            store = NativeUserTaskStore(self.context.data_dir)
+        descriptors = store.load_tasks()
+        candidates = {item['task_class']: self.create_task(item['task_class'], descriptor=item)
+                      for item in descriptors}
+        retained = {cls: task for cls, task in self.tasks.items() if cls not in self._user_classes}
+        proposed = {**retained, **candidates}
+        TaskMetadata(SimpleNamespace(tasks=proposed, global_configs=self.global_configs)).snapshot()
+        previous_id = task_id(self.task)
+        by_id = {task_id(task): task for task in proposed.values()}
+        selected = by_id.get(previous_id)
+        if selected is None:
+            selected = next(iter(retained.values()), next(iter(candidates.values()), None))
+        if selected is None:
+            raise RuntimeError('A native host must retain at least one task')
+        old_user_ids = {task_id(self.tasks[cls]) for cls in self._user_classes}
+        self.tasks = proposed
+        self._user_classes = set(candidates)
+        self.executor.set_task_registry(self.tasks)
+        for identifier in old_user_ids:
+            self.task_requirements.pop(identifier, None)
+        for item in descriptors:
+            self.task_requirements[item['id']] = item['required_capabilities']
+        self._configuration_service_enables.intersection_update(by_id)
+        self._select_task(selected)
+        if self._configuration_service is not None:
+            self._configuration_service.metadata.actions.clear()
+        self.applied_revision = store.revision
+        return {'applied_revision': self.applied_revision}
 
     def _select_task(self, task):
         self.task = task
@@ -214,12 +285,9 @@ class NativeCombatHost:
         def checkpoint():
             if not self.context.requests.empty():
                 raise SessionPreempted('Background service yielded to a user request')
-        by_id = {('auto-combat' if cls.__name__ == 'AutoCombatTask' else cls.__name__): task
-                 for cls, task in self.tasks.items()}
-        if 'auto-combat' in by_id:
-            by_id['AutoCombatTask'] = by_id['auto-combat']
-        background = self.task
-        initial = by_id[initial_task_id]
+        from src.runtime.native_metadata import task_id
+        background_id = task_id(self.task)
+        initial = self._tasks_by_id()[initial_task_id]
         initial_request = {'command': 'set-service' if isinstance(initial, NativeTriggerTask)
                            else 'run-task', 'task_id': initial_task_id, 'enabled': True}
         deferred_tasks = deque()
@@ -238,6 +306,25 @@ class NativeCombatHost:
                 except Empty:
                     request = None
             if request is not None:
+                if request.get('command') == 'reload-user-tasks':
+                    try:
+                        result = self.reload_user_tasks()
+                        self.context.emit('user-tasks-reloaded', **result)
+                        if background_id not in self._tasks_by_id():
+                            background_id = task_id(self.task)
+                        self.context.emit('configuration-response', request_id=request.get('request_id'),
+                                          command=request['command'], ok=True,
+                                          schema=self.configuration_request({'command': 'get-schema'})['schema'],
+                                          **result)
+                    except Exception as error:
+                        logger.exception('User task reload failed')
+                        self.context.emit('user-tasks-reload-failed', applied_revision=self.applied_revision,
+                                          error=f'{type(error).__name__}: {error}')
+                        self.context.emit('configuration-response', request_id=request.get('request_id'),
+                                          command=request['command'], ok=False,
+                                          applied_revision=self.applied_revision,
+                                          error={'type': type(error).__name__, 'message': str(error)})
+                    continue
                 from src.runtime.native_configuration import COMMANDS
                 if request.get('command') in COMMANDS:
                     if request['command'] == 'invoke-action' and preference_only:
@@ -252,23 +339,23 @@ class NativeCombatHost:
                         response = self.configuration_request(request)
                     self.context.emit(response.pop('event'), **response)
                     continue
-                task_id = request.get('task_id')
+                requested_id = request.get('task_id')
                 try:
                     command = request.get('command')
                     if command not in ('run-task', 'set-service'):
                         raise ValueError('Unknown session command: ' + str(command))
-                    task = by_id[task_id]
+                    task = self._tasks_by_id()[requested_id]
                     service = isinstance(task, NativeTriggerTask)
                     if command == 'set-service' and not service:
-                        raise ValueError(f'{task_id} is not a background service')
+                        raise ValueError(f'{requested_id} is not a background service')
                     if command == 'run-task' and service:
-                        raise ValueError(f'{task_id} is a background service')
+                        raise ValueError(f'{requested_id} is a background service')
                     config = request.get('config', {})
                     if not isinstance(config, dict):
                         raise ValueError('Session task config must be a JSON object')
                     if command == 'set-service' and type(request.get('enabled')) is not bool:
                         raise ValueError('Session service enabled must be a boolean')
-                    requirement_id = 'auto-combat' if task_id == 'AutoCombatTask' else task_id
+                    requirement_id = 'auto-combat' if requested_id == 'AutoCombatTask' else requested_id
                     missing = set(self.task_requirements.get(requirement_id, ())) - self.context.device.capabilities
                     if missing:
                         raise RuntimeError('Missing device capabilities: ' + ', '.join(sorted(missing)))
@@ -281,12 +368,12 @@ class NativeCombatHost:
                     if command == 'set-service':
                         self._set_service(task, request['enabled'], preference_only=preference_only)
                         if preference_only and request['enabled']:
-                            deferred_enables.add(task)
+                            deferred_enables.add(task_id(task))
                         else:
-                            deferred_enables.discard(task)
+                            deferred_enables.discard(task_id(task))
                     else:
                         result = self.run_once()
-                        self.context.emit('session-task-finished', task_id=task_id, result=result,
+                        self.context.emit('session-task-finished', task_id=requested_id, result=result,
                                           info=dict(task.info))
                         if isinstance(result, dict) and result.get('exit_requested'):
                             return result
@@ -295,13 +382,13 @@ class NativeCombatHost:
                         continue  # Save already-received toggles before leaving the session.
                     raise
                 except Exception as error:
-                    logger.exception('Session task failed: %s', task_id)
-                    self.context.emit('session-task-failed', task_id=task_id,
+                    logger.exception('Session task failed: %s', requested_id)
+                    self.context.emit('session-task-failed', task_id=requested_id,
                                       error=f'{type(error).__name__}: {error}')
                 finally:
                     if not preference_only:
                         self.context.device.release_all()
-                    self._select_task(background)
+                    self._select_task(self._tasks_by_id()[background_id])
                 continue
             if stopped:
                 raise Cancelled('Task stopped')
@@ -314,9 +401,9 @@ class NativeCombatHost:
                 self._select_task(task)
                 try:
                     self.executor.session_checkpoint = checkpoint
-                    if task in deferred_enables:
+                    if task_id(task) in deferred_enables:
                         self._set_service(task, True)
-                        deferred_enables.discard(task)
+                        deferred_enables.discard(task_id(task))
                     if task.should_trigger():
                         self.last_result = self.poll()
                 except SessionPreempted:
@@ -330,12 +417,12 @@ class NativeCombatHost:
                         self._combat_recovery(error)
                     else:
                         logger.exception('Background service failed: %s', type(task).__name__)
-                        self.context.emit('session-task-failed', task_id=type(task).__name__,
+                        self.context.emit('session-task-failed', task_id=task_id(task),
                                           error=f'{type(error).__name__}: {error}')
                 finally:
                     self.executor.session_checkpoint = None
                     self.context.device.release_all()
-                    self._select_task(background)
+                    self._select_task(self._tasks_by_id()[background_id])
             self.context.stop.wait(.1)
 
     def run_once(self):
@@ -392,6 +479,10 @@ class NativeCombatHost:
 
     def poll(self):
         from src.runtime.combat_api import TaskDisabledException
+        from src.runtime.native_metadata import task_id
+        missing = set(self.task_requirements.get(task_id(self.task), ())) - self.context.device.capabilities
+        if missing:
+            raise RuntimeError('Missing device capabilities: ' + ', '.join(sorted(missing)))
         self.task.start_time = time.time()
         self.task.running = True
         try:

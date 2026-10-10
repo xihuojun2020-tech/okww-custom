@@ -63,6 +63,7 @@ class ManagementWindow(QMainWindow):
         self.update_tab = None
         self.maintenance_tab = None
         self.schedule_tab = None
+        self.user_task_tab = None
         self._pending_maintenance = False
         self._configuration_restart_message = None
         self._maintenance_committed_failure = False
@@ -75,6 +76,11 @@ class ManagementWindow(QMainWindow):
                 service.root, service.runtime.program_version, service.package_root / 'manifest.json')
             self.tabs.addTab(self.configuration_tab, '任务与配置')
             self.configuration_tab.management_requested.connect(self._show_account_management)
+            from src.gui.NativeUserTaskTab import NativeUserTaskTab
+            self.user_task_tab = NativeUserTaskTab(self.configuration_tab)
+            self.tabs.addTab(self.user_task_tab, '用户任务代码')
+            self.user_task_tab.busy_changed.connect(self._operation_changed)
+            self.configuration_tab.busy_changed.connect(self._operation_changed)
             self.maintenance_tab = NativeMaintenanceTab(
                 NativeMaintenanceService(service.root, service.runtime.program_version), self._maintain)
             self.tabs.addTab(self.maintenance_tab, '配置备份与恢复')
@@ -228,6 +234,7 @@ class ManagementWindow(QMainWindow):
                     if self.account_tab is not None:
                         self.account_tab.setEnabled(False)
                     self.configuration_tab.setEnabled(False)
+                    self.user_task_tab.setEnabled(False)
                     self.maintenance_tab.setEnabled(False)
                     self.status.setText(message + ' 磁盘已提交，请重启管理窗口以重新加载账号；旧账号编辑已停用。')
                 elif not self._closing:
@@ -310,11 +317,14 @@ class ManagementWindow(QMainWindow):
         details = getattr(self.diagnostics_tab, '_details', None)
         if details is not None:
             operations.append(details.operation)
-        return self._pending_maintenance or any(operation.busy for operation in operations)
+        return (self._pending_maintenance or bool(self.user_task_tab and self.user_task_tab.busy)
+                or bool(self.configuration_tab and self.configuration_tab._pending)
+                or any(operation.busy for operation in operations))
 
     def closeEvent(self, event):
         if self._operations_busy():
             self._closing = True
+            self.tabs.setEnabled(False)
             event.ignore()
             return
         if self.configuration_tab is not None:
@@ -322,6 +332,7 @@ class ManagementWindow(QMainWindow):
                 self.configuration_tab.shutdown()
             except RuntimeError as error:
                 self._closing = False
+                self.tabs.setEnabled(True)
                 self._failed(error)
                 event.ignore()
                 return

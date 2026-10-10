@@ -28,8 +28,8 @@ class Controller:
             raise RuntimeError('An owned execution process is still running')
 
     def start(self, manifest, task_id, *, data_dir, config=None, device=None, session=False):
-        manifest.task(task_id)
         data_dir = Path(data_dir).resolve()
+        manifest.task(task_id, data_dir)
         if config is not None and not isinstance(config, dict):
             raise ValueError('Task config must be a JSON object')
         if device is not None and not isinstance(device, dict):
@@ -131,6 +131,11 @@ class Controller:
         if not self.session:
             raise ValueError('A shared task session is not running')
         self._send_control('run-task', task_id=task_id, config=config)
+
+    def request_user_task_reload(self):
+        if not self.session:
+            raise RuntimeError('User task reload requires a shared task session')
+        self._send_control('reload-user-tasks')
 
     def set_service(self, task_id, enabled, config=None):
         if not self.session:

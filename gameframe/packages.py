@@ -27,6 +27,7 @@ class TaskDefinition:
     default_config: dict[str, Any]
     required_capabilities: frozenset[str]
     visible: bool = True
+    revision: str | None = None
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,7 @@ class PackageManifest:
     supports_session: bool = False
     management: bool = False
     overview: bool = False
+    task_catalog: str | None = None
 
     @classmethod
     def read(cls, directory: Path | str) -> PackageManifest:
@@ -58,7 +60,11 @@ class PackageManifest:
             raise ValueError('Package entrypoint must be a Python file inside the package')
         tasks = tuple(TaskDefinition(
             item['id'], item['title'], item['kind'], item.get('default_config', {}),
-            frozenset(item.get('required_capabilities', [])), item.get('visible', True)) for item in value['tasks'])
+            frozenset(item.get('required_capabilities', [])), item.get('visible', True),
+            item.get('revision')) for item in value['tasks'])
+        if any('revision' in item and (not isinstance(item['revision'], str) or not item['revision'])
+               for item in value['tasks']):
+            raise ValueError('Task revision must be a nonempty string')
         if len({task.id for task in tasks}) != len(tasks):
             raise ValueError('Duplicate task ID')
         if any(task.kind not in {'one-shot', 'service', 'application'} for task in tasks):
@@ -73,13 +79,51 @@ class PackageManifest:
         for name in ('supports_session', 'management', 'overview'):
             if not isinstance(value.get(name, False), bool):
                 raise ValueError(f'Package {name} must be a boolean')
+        catalog = value.get('task_catalog')
+        if catalog is not None and (not isinstance(catalog, str) or not catalog
+                or Path(catalog).anchor or Path(catalog) == Path('.') or '..' in Path(catalog).parts):
+            raise ValueError('Task catalog must be a relative path inside the data directory')
         return cls(root, value['id'], value.get('title', value['id']), value['version'],
                    value['entrypoint'], value['license'], tuple(value['platforms']),
                    execution, tasks, value.get('supports_session', False),
-                   value.get('management', False), value.get('overview', False))
+                   value.get('management', False), value.get('overview', False), catalog)
 
-    def task(self, task_id: str) -> TaskDefinition:
-        for task in self.tasks:
+    def available_tasks(self, data_dir=None) -> tuple[TaskDefinition, ...]:
+        if self.task_catalog is None or data_dir is None:
+            return self.tasks
+        root = Path(data_dir).resolve()
+        path = (root / self.task_catalog).resolve()
+        if not path.is_relative_to(root) or path == root:
+            raise ValueError('Task catalog escapes the data directory')
+        if not path.exists():
+            return self.tasks
+        catalog = json.loads(path.read_text(encoding='utf-8'))
+        if (not isinstance(catalog, dict) or type(catalog.get('api_version')) is not int
+                or catalog['api_version'] != 1 or not isinstance(catalog.get('revision'), str) or not catalog['revision']
+                or not isinstance(catalog.get('tasks'), list)):
+            raise ValueError('Invalid task catalog metadata')
+        tasks = list(self.tasks)
+        ids = {task.id for task in tasks}
+        for item in catalog['tasks']:
+            if (not isinstance(item, dict) or not isinstance(item.get('id'), str) or not item['id']
+                    or not isinstance(item.get('title'), str) or not item['title']
+                    or not isinstance(item.get('kind'), str) or item['kind'] not in {'one-shot', 'service', 'application'}
+                    or not isinstance(item.get('default_config', {}), dict)
+                    or not isinstance(item.get('required_capabilities', []), list)
+                    or any(not isinstance(capability, str) for capability in item.get('required_capabilities', []))
+                    or type(item.get('visible', True)) is not bool
+                    or ('revision' in item and (not isinstance(item['revision'], str) or not item['revision']))):
+                raise ValueError('Invalid task catalog task definition')
+            if item['id'] in ids:
+                raise ValueError('Duplicate or shadowed task ID in catalog')
+            ids.add(item['id'])
+            tasks.append(TaskDefinition(item['id'], item['title'], item['kind'], item.get('default_config', {}),
+                                        frozenset(item.get('required_capabilities', [])), item.get('visible', True),
+                                        item.get('revision')))
+        return tuple(tasks)
+
+    def task(self, task_id: str, data_dir=None) -> TaskDefinition:
+        for task in self.available_tasks(data_dir):
             if task.id == task_id:
                 return task
         raise KeyError(f'Unknown task {task_id!r} in {self.id}')

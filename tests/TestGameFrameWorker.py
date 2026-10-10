@@ -144,6 +144,8 @@ class SessionPackage(VisionProbe):
                 context.config.update(request['config'])
                 result = self.run(request['task_id'], context)
                 context.emit('session-result', result=result)
+            elif request['command'] == 'reload-user-tasks':
+                context.emit('user-tasks-reloaded', applied_revision='fixture-revision')
             else:
                 context.emit('service-request', enabled=request['enabled'])
 def create_package(): return SessionPackage()
@@ -156,6 +158,8 @@ def create_package(): return SessionPackage()
                                         session=True)
         self.assertEqual(json.loads(process.stdout.readline())['event'], 'started')
         self.assertEqual(json.loads(process.stdout.readline())['event'], 'session-ready')
+        self.controller.request_user_task_reload()
+        self.assertEqual(json.loads(process.stdout.readline())['event'], 'user-tasks-reloaded')
         self.controller.set_service('any-service', False)
         service = json.loads(process.stdout.readline())
         self.assertEqual((service['event'], service['enabled']), ('service-request', False))
