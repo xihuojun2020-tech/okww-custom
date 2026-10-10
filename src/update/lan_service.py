@@ -30,10 +30,10 @@ class LanUpdateConfig:
     channel: str
 
     @classmethod
-    def load(cls, path: Path) -> "LanUpdateConfig":
+    def load(cls, path: Path, *, default_manifest=DEFAULT_SMB_MANIFEST) -> "LanUpdateConfig":
         path = Path(path)
         if not path.is_file():
-            return cls(True, DEFAULT_SMB_MANIFEST, "", "", "stable")
+            return cls(True, default_manifest, "", "", "stable")
         try:
             value = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -67,9 +67,9 @@ class UpdateAvailability:
 
 
 class LanUpdateService:
-    def __init__(self, config_path: Path, transport=None):
+    def __init__(self, config_path: Path, transport=None, *, default_manifest=DEFAULT_SMB_MANIFEST):
         self.config_path = Path(config_path)
-        self.config = LanUpdateConfig.load(self.config_path)
+        self.config = LanUpdateConfig.load(self.config_path, default_manifest=default_manifest)
         self.transport = transport
         self.manifest_source = self.config.manifest_url
 
@@ -94,10 +94,17 @@ class LanUpdateService:
             except (OSError, LanTransportError):
                 if source == candidates(self.config.manifest_url)[-1]:
                     raise
-        release = LanRelease.from_bytes(data, expected_channel=self.config.channel)
+        release = self._read_release(data)
         if not release.is_newer_than(current_version):
             return UpdateAvailability("up_to_date", None, "当前已是最新版本")
         return UpdateAvailability("available", release, f"发现局域网版本 {release.version}")
+
+    def _read_release(self, data):
+        return LanRelease.from_bytes(data, expected_channel=self.config.channel)
+
+    def _validate_archive(self, archive, release):
+        return validate_package(archive, expected_version=release.version,
+                                expected_sha256=release.sha256, expected_size=release.size)
 
     def download(self, release: LanRelease, install_root: Path) -> Path:
         root = Path(install_root).resolve()
@@ -107,8 +114,7 @@ class LanUpdateService:
         archive = staging / Path(release.package).name
         if archive.is_file():
             try:
-                validate_package(archive, expected_version=release.version, expected_sha256=release.sha256,
-                                 expected_size=release.size)
+                self._validate_archive(archive, release)
                 return archive
             except (OSError, ValueError):
                 archive.unlink(missing_ok=True)
@@ -117,8 +123,7 @@ class LanUpdateService:
                   else release.package_url(self.manifest_source))
         self._transport().download(source, archive,
                                    expected_size=release.size, expected_sha256=release.sha256)
-        validate_package(archive, expected_version=release.version, expected_sha256=release.sha256,
-                         expected_size=release.size)
+        self._validate_archive(archive, release)
         return archive
 
     def create_apply_request(self, release: LanRelease, archive: Path, install_root: Path,

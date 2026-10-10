@@ -10,8 +10,9 @@ from src.storage import resolve_config_backup_dir
 
 
 class AccountManagementService:
-    def __init__(self, data_dir, program_version):
+    def __init__(self, data_dir, program_version, *, package_root=None):
         self.root = Path(data_dir).resolve()
+        self.package_root = Path(package_root).resolve() if package_root is not None else None
         self.runtime = initialize_account_runtime(
             self.root, program_version, install_start_guard=False,
             backup_dir=resolve_config_backup_dir(self.root))
@@ -46,11 +47,11 @@ class AccountManagementService:
         return self.bundles.import_bundle(source, confirm=confirm, preflight=preview)
 
 
-def manage(data_dir, program_version):
+def manage(data_dir, program_version, *, package_root=None):
     """Open existing Qt business widgets without constructing an OK app or device."""
     from src.runtime import combat_api
     combat_api.configure(native=False, data_dir=data_dir)
-    service = AccountManagementService(data_dir, program_version)
+    service = AccountManagementService(data_dir, program_version, package_root=package_root)
     from src.gui.ManagementWindow import run_management_window
     return run_management_window(service)
 
@@ -60,8 +61,9 @@ def main():
     parser = argparse.ArgumentParser(description='鸣潮账号与完成证据管理')
     parser.add_argument('--data-dir', type=Path, required=True)
     parser.add_argument('--version', required=True)
+    parser.add_argument('--package-root', type=Path)
     args = parser.parse_args()
-    return manage(args.data_dir, args.version)
+    return manage(args.data_dir, args.version, package_root=args.package_root)
 
 
 if __name__ == '__main__':

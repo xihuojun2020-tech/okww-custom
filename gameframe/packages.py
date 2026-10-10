@@ -25,6 +25,7 @@ class TaskDefinition:
     kind: str
     default_config: dict[str, Any]
     required_capabilities: frozenset[str]
+    visible: bool = True
 
 
 @dataclass(frozen=True)
@@ -55,13 +56,15 @@ class PackageManifest:
             raise ValueError('Package entrypoint must be a Python file inside the package')
         tasks = tuple(TaskDefinition(
             item['id'], item['title'], item['kind'], item.get('default_config', {}),
-            frozenset(item.get('required_capabilities', []))) for item in value['tasks'])
+            frozenset(item.get('required_capabilities', [])), item.get('visible', True)) for item in value['tasks'])
         if len({task.id for task in tasks}) != len(tasks):
             raise ValueError('Duplicate task ID')
         if any(task.kind not in {'one-shot', 'service', 'application'} for task in tasks):
             raise ValueError('Unknown task kind')
         if any(not isinstance(task.default_config, dict) for task in tasks):
             raise ValueError('Task default_config must be an object')
+        if any(not isinstance(task.visible, bool) for task in tasks):
+            raise ValueError('Task visible must be a boolean')
         execution = value.get('execution', 'native')
         if execution not in {'native', 'legacy-application'}:
             raise ValueError('Unknown package execution mode')
@@ -103,42 +106,54 @@ def discover(directory: Path | str) -> tuple[PackageManifest, ...]:
                  for path in sorted(root.glob('*/manifest.json')))
 
 
+def verify_index(root: Path, *, required=False):
+    index = root / 'files.json'
+    if not index.is_file():
+        if required:
+            raise ValueError('Gamepack update requires a SHA256 files.json index')
+        return
+    expected = json.loads(index.read_text(encoding='utf-8'))
+    actual = {path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+              for path in root.rglob('*') if path.is_file() and path != index}
+    if actual != expected:
+        raise ValueError('Gamepack content does not match its SHA256 index')
+
+
+def extract_archive(archive_path: Path | str, staging: Path, *, require_index=False) -> PackageManifest:
+    """Extract and verify metadata/content without importing the package."""
+    with zipfile.ZipFile(archive_path) as archive:
+        names = set()
+        for item in archive.infolist():
+            name = item.filename
+            target = (staging / name).resolve()
+            if ('\\' in name or ':' in name or not target.is_relative_to(staging)
+                    or (item.external_attr >> 16) & 0o170000 == 0o120000):
+                raise ValueError(f'Unsafe archive path: {name}')
+            if name in names:
+                raise ValueError(f'Duplicate archive path: {name}')
+            names.add(name)
+            if item.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(item) as source, target.open('xb') as output:
+                    shutil.copyfileobj(source, output)
+    roots = list(staging.iterdir())
+    if len(roots) != 1 or not roots[0].is_dir():
+        raise ValueError('A gamepack ZIP must contain one package directory')
+    manifest = PackageManifest.read(roots[0])
+    verify_index(roots[0], required=require_index)
+    return manifest
+
+
 def install_archive(archive_path: Path | str, directory: Path | str) -> PackageManifest:
     """Install a gamepack ZIP atomically, without replacing existing package data."""
     destination = Path(directory).resolve()
     destination.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.gameframe-install-', dir=destination) as temporary:
-        staging = Path(temporary)
-        with zipfile.ZipFile(archive_path) as archive:
-            names = set()
-            for item in archive.infolist():
-                name = item.filename
-                target = (staging / name).resolve()
-                if ('\\' in name or ':' in name or not target.is_relative_to(staging)
-                        or (item.external_attr >> 16) & 0o170000 == 0o120000):
-                    raise ValueError(f'Unsafe archive path: {name}')
-                if name in names:
-                    raise ValueError(f'Duplicate archive path: {name}')
-                names.add(name)
-                if item.is_dir():
-                    target.mkdir(parents=True, exist_ok=True)
-                else:
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    with archive.open(item) as source, target.open('xb') as output:
-                        shutil.copyfileobj(source, output)
-        roots = list(staging.iterdir())
-        if len(roots) != 1 or not roots[0].is_dir():
-            raise ValueError('A gamepack ZIP must contain one package directory')
-        manifest = PackageManifest.read(roots[0])
-        index = roots[0] / 'files.json'
-        if index.is_file():
-            expected = json.loads(index.read_text(encoding='utf-8'))
-            actual = {path.relative_to(roots[0]).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
-                      for path in roots[0].rglob('*') if path.is_file() and path != index}
-            if actual != expected:
-                raise ValueError('Gamepack content does not match its SHA256 index')
+        manifest = extract_archive(archive_path, Path(temporary))
         installed = destination / manifest.id
         if installed.exists():
             raise FileExistsError(f'Package already installed: {installed}')
-        roots[0].rename(installed)
+        manifest.root.rename(installed)
     return PackageManifest.read(installed)

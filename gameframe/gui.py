@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import queue
 import threading
+import zipfile
 from pathlib import Path
 
 from PySide6.QtCore import QTimer
@@ -14,6 +16,7 @@ from PySide6.QtWidgets import (QApplication, QComboBox, QFileDialog, QFormLayout
 from gameframe.controller import Controller
 from gameframe.packages import discover, install_archive
 from gameframe.launcher_options import load_options, save_options
+from gameframe.package_updates import apply_update, prepare_update, recover_updates
 
 
 class GameFrameWindow(QWidget):
@@ -23,9 +26,10 @@ class GameFrameWindow(QWidget):
         self.resize(760, 680)
         self.packages_dir = Path(packages_dir)
         self.data_dir = Path(data_dir)
-        self.packages = discover(self.packages_dir)
         self.controller = controller if controller is not None else Controller()
         self.management_controller = Controller()
+        recover_updates(self.packages_dir, ensure_idle=self._assert_owners_idle)
+        self.packages = discover(self.packages_dir)
         self._management_thread = None
         self._management_process = None
         self._managing = False
@@ -36,6 +40,10 @@ class GameFrameWindow(QWidget):
         self._install_thread = None
         self._starting = False
         self._installing = False
+        self._updating = False
+        self._update_thread = None
+        self._pending_update = None
+        self._update_management_error = None
         self._stopping = False
         self._closing = False
         self._cleanup_done = False
@@ -46,8 +54,10 @@ class GameFrameWindow(QWidget):
         for manifest in self.packages:
             self.package_select.addItem(f"{manifest.title}  {manifest.version}")
         self.task_list = QListWidget()
+        self._visible_tasks = ()
         self.mode_label = QLabel()
         self.config_edit = QPlainTextEdit()
+        self.config_label = QLabel('Task config JSON')
         self.device_edit = QPlainTextEdit()
         self.device_edit.setPlainText('{"type": "replay", "frames": []}')
         self.output = QPlainTextEdit()
@@ -57,6 +67,7 @@ class GameFrameWindow(QWidget):
         self.stop_button = QPushButton("Stop")
         self.pause_button = QPushButton("Pause")
         self.install_button = QPushButton("Install gamepack")
+        self.update_button = QPushButton('Update gamepack')
         self.disable_button = QPushButton('Disable selected service')
         self.disable_button.setEnabled(False)
         self.manage_button = QPushButton('Manage gamepack')
@@ -67,13 +78,14 @@ class GameFrameWindow(QWidget):
         form.addRow("Package", self.package_select)
         form.addRow("Execution mode", self.mode_label)
         form.addRow("Tasks", self.task_list)
-        form.addRow("Task config JSON", self.config_edit)
+        form.addRow(self.config_label, self.config_edit)
         form.addRow("Device JSON", self.device_edit)
         buttons = QHBoxLayout()
         buttons.addWidget(self.start_button)
         buttons.addWidget(self.stop_button)
         buttons.addWidget(self.pause_button)
         buttons.addWidget(self.install_button)
+        buttons.addWidget(self.update_button)
         buttons.addWidget(self.disable_button)
         buttons.addWidget(self.manage_button)
         layout = QVBoxLayout(self)
@@ -89,6 +101,7 @@ class GameFrameWindow(QWidget):
         self.stop_button.clicked.connect(self.stop_selected)
         self.pause_button.clicked.connect(self.toggle_pause)
         self.install_button.clicked.connect(self.install_selected)
+        self.update_button.clicked.connect(self.update_selected)
         self.disable_button.clicked.connect(self.disable_selected)
         self.manage_button.clicked.connect(self.manage_selected)
         self.timer = QTimer(self)
@@ -102,19 +115,27 @@ class GameFrameWindow(QWidget):
 
     def _select_package(self, index):
         manifest = self._manifest()
+        self._visible_tasks = tuple(task for task in manifest.tasks if task.visible) if manifest is not None else ()
         self.task_list.clear()
         if manifest is None:
             self.mode_label.setText("No installed packages")
             self.start_button.setEnabled(False)
             self.manage_button.setEnabled(False)
+            self.update_button.setEnabled(False)
             return
         legacy = manifest.execution == "legacy-application"
         self.manage_button.setEnabled(manifest.management and self.process is None and not self._managing
-                                      and not self._starting and not self._installing and not self._closing)
+                                      and not self._starting and not self._installing and not self._closing
+                                      and not self._updating)
+        self.update_button.setEnabled(self.process is None and not self._managing and not self._starting
+                                      and not self._stopping and not self._installing and not self._closing
+                                      and not self._updating and self._is_installed(manifest))
         self.mode_label.setText(
             "Compatibility: original application, dependencies and production configuration"
             if legacy else "Native GameFrame worker")
         self.config_edit.setEnabled(not legacy)
+        self.config_label.setText('本次运行覆盖配置（长期设置在管理窗口保存）'
+                                  if self._managed_config(manifest) else 'Task config JSON')
         self.device_edit.setEnabled(not legacy)
         if legacy:
             self.config_edit.setPlainText("Production application configuration is used; this editor does not apply.")
@@ -122,23 +143,29 @@ class GameFrameWindow(QWidget):
         else:
             options = load_options(self.data_dir / manifest.id / 'launcher.json')
             self.device_edit.setPlainText(json.dumps(options['device'], ensure_ascii=False, indent=2))
-        for task in manifest.tasks:
+        for task in self._visible_tasks:
             self.task_list.addItem(f"{task.title}  [{task.kind}]  ({task.id})")
-        if manifest.tasks:
-            self.task_list.setCurrentRow(0)
-        self.start_button.setEnabled(bool(manifest.tasks) and self.process is None
+        if self._visible_tasks:
+            row = next((i for i, task in enumerate(self._visible_tasks)
+                        if not legacy and task.id == options.get('selected_task')), 0)
+            self.task_list.setCurrentRow(row)
+        self.start_button.setEnabled(bool(self._visible_tasks) and self.process is None
                                      and not self._starting and not self._installing and not self._closing
-                                     and not self._managing)
+                                     and not self._managing and not self._updating)
 
     def _select_task(self, row):
         manifest = self._manifest()
-        if manifest is not None and 0 <= row < len(manifest.tasks) and manifest.execution == "native":
-            task = manifest.tasks[row]
+        if manifest is not None and 0 <= row < len(self._visible_tasks) and manifest.execution == "native":
+            task = self._visible_tasks[row]
             options = load_options(self.data_dir / manifest.id / 'launcher.json')
-            self.config_edit.setPlainText(json.dumps(options['tasks'].get(task.id, task.default_config),
+            config = {} if self._managed_config(manifest) else options['tasks'].get(task.id, task.default_config)
+            self.config_edit.setPlainText(json.dumps(config,
                                                       ensure_ascii=False, indent=2))
             self.disable_button.setEnabled(self.process is not None and manifest.supports_session
                                            and task.kind == 'service' and not self._stopping)
+
+    def _managed_config(self, manifest):
+        return manifest.execution == 'native' and manifest.supports_session and manifest.management
 
     def _native_options(self):
         config = json.loads(self.config_edit.toPlainText())
@@ -156,17 +183,21 @@ class GameFrameWindow(QWidget):
         manifest = self._manifest()
         row = self.task_list.currentRow()
         if (manifest is None or row < 0
-                or self._starting or self._installing or self._closing or self._managing
+                or self._starting or self._installing or self._closing or self._managing or self._updating
                 or (self.process is not None and not manifest.supports_session)):
             return
-        task = manifest.tasks[row]
+        task = self._visible_tasks[row]
         try:
             config, device = self._native_options() if manifest.execution == "native" else (None, None)
             if manifest.execution == 'native':
                 path = self.data_dir / manifest.id / 'launcher.json'
                 options = load_options(path)
-                options['tasks'][task.id] = config
+                if self._managed_config(manifest):
+                    options['tasks'] = {}
+                else:
+                    options['tasks'][task.id] = config
                 options['device'] = device
+                options['selected_task'] = task.id
                 save_options(path, options)
             if self.process is not None:
                 if not manifest.supports_session or self._stopping:
@@ -188,6 +219,7 @@ class GameFrameWindow(QWidget):
         self.start_button.setEnabled(False)
         self.install_button.setEnabled(False)
         self.manage_button.setEnabled(False)
+        self.update_button.setEnabled(False)
         self._start_thread = threading.Thread(target=self._start_worker,
                                               args=(manifest, task.id, config, device), daemon=True)
         self._start_thread.start()
@@ -211,7 +243,8 @@ class GameFrameWindow(QWidget):
             self._events.put(("error", error))
 
     def install_selected(self):
-        if self.process is not None or self._starting or self._installing or self._closing or self._managing:
+        if (self.process is not None or self._starting or self._installing or self._closing
+                or self._managing or self._stopping or self._updating):
             return
         filename, _filter = QFileDialog.getOpenFileName(
             self, "Install gamepack", "", "Gamepack ZIP (*.zip)")
@@ -221,6 +254,7 @@ class GameFrameWindow(QWidget):
         self.start_button.setEnabled(False)
         self.install_button.setEnabled(False)
         self.manage_button.setEnabled(False)
+        self.update_button.setEnabled(False)
         self.status_label.setText("Installing gamepack…")
         self._install_thread = threading.Thread(target=self._install_worker,
                                                 args=(filename,), daemon=True)
@@ -233,6 +267,130 @@ class GameFrameWindow(QWidget):
             self._events.put(("install-error", error))
         else:
             self._events.put(("install-done", manifest.id))
+
+    def _assert_owners_idle(self):
+        self.controller.assert_idle()
+        self.management_controller.assert_idle()
+
+    def _assert_update_idle(self):
+        if self._starting or self._stopping or self._managing or self._installing:
+            raise RuntimeError('A package owner or installation is still active')
+        self._assert_owners_idle()
+
+    def _is_installed(self, manifest):
+        return (manifest.root == self.packages_dir.resolve() / manifest.id
+                and (manifest.root / 'files.json').is_file())
+
+    def update_selected(self):
+        if (self.process is not None or self._starting or self._stopping or self._managing
+                or self._installing or self._updating or self._closing):
+            return
+        manifest = self._manifest()
+        if manifest is None:
+            return
+        if not self._is_installed(manifest):
+            self._error(ValueError('Only installed indexed gamepacks can be updated; source checkouts are excluded'))
+            return
+        filename, _filter = QFileDialog.getOpenFileName(self, 'Update gamepack', '', 'Gamepack ZIP (*.zip)')
+        if filename:
+            self._start_update_prepare({'archive': str(Path(filename).resolve()), 'package_id': manifest.id,
+                                        'current_version': manifest.version})
+
+    def _start_update_prepare(self, request):
+        manifest = self._manifest()
+        if self._updating or self._closing:
+            raise RuntimeError('A package update or application close is already in progress')
+        if manifest is None or not self._is_installed(manifest):
+            raise ValueError('Only installed indexed gamepacks can be updated; source checkouts are excluded')
+        if request['package_id'] != manifest.id or request['current_version'] != manifest.version:
+            raise ValueError('Update request does not match the selected installed package')
+        self._updating = True
+        self._update_management_error = None
+        self.package_select.setEnabled(False)
+        self.start_button.setEnabled(False)
+        self.manage_button.setEnabled(False)
+        self.install_button.setEnabled(False)
+        self.update_button.setEnabled(False)
+        self.status_label.setText('Verifying gamepack update…')
+        self._update_thread = threading.Thread(target=self._prepare_update_worker, args=(request,), daemon=True)
+        self._update_thread.start()
+
+    def _prepare_update_worker(self, request):
+        try:
+            archive = Path(request['archive'])
+            if not archive.is_absolute():
+                raise ValueError('Update archive must be an absolute path')
+            if 'sha256' in request:
+                with archive.open('rb') as stream:
+                    digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+                if archive.stat().st_size != request['size'] or digest != request['sha256']:
+                    raise ValueError('Update archive does not match its published SHA256/size')
+            target = request.get('target_version')
+            if target is None:
+                with zipfile.ZipFile(archive) as bundle:
+                    names = [name for name in bundle.namelist()
+                             if len(name.split('/')) == 2 and name.endswith('/manifest.json')]
+                    if len(names) != 1:
+                        raise ValueError('A gamepack ZIP must contain one package manifest')
+                    target = json.loads(bundle.read(names[0]))['version']
+            plan = prepare_update(archive, self.packages_dir, package_id=request['package_id'],
+                                  current_version=request['current_version'], target_version=target)
+        except Exception as error:
+            self._events.put(('update-error', error))
+        else:
+            self._events.put(('update-prepared', plan))
+
+    def _management_update_status(self, line):
+        try:
+            request = json.loads(line)
+        except json.JSONDecodeError:
+            return
+        if isinstance(request, dict) and request.get('event') == 'gamepack-update-ready':
+            try:
+                # A management request always includes the verified release envelope.
+                for field in ('archive', 'package_id', 'current_version', 'target_version', 'sha256', 'size'):
+                    request[field]
+                self._start_update_prepare(request)
+            except Exception as error:
+                self._error(error)
+
+    def _apply_pending_update(self):
+        if (self._pending_update is None or self._closing or self._managing
+                or self._starting or self._stopping or self._installing):
+            return
+        if self._update_management_error is not None:
+            self._finish_update(error=self._update_management_error)
+            return
+        try:
+            self._assert_update_idle()
+        except Exception as error:
+            self._finish_update(error=error)
+            return
+        self.status_label.setText('Applying gamepack update…')
+        plan = self._pending_update
+        self._pending_update = None
+        self._update_thread = threading.Thread(target=self._apply_update_worker, args=(plan,), daemon=True)
+        self._update_thread.start()
+
+    def _apply_update_worker(self, plan):
+        try:
+            manifest = apply_update(plan, ensure_idle=self._assert_update_idle)
+        except Exception as error:
+            self._events.put(('update-error', error))
+        else:
+            self._events.put(('update-done', manifest.id))
+
+    def _finish_update(self, *, package_id=None, error=None):
+        self._updating = False
+        self._pending_update = None
+        self.package_select.setEnabled(not self._closing and not self._managing)
+        if package_id is not None:
+            self._reload_packages(package_id)
+            self.status_label.setText(f'Updated {package_id}')
+        else:
+            self._select_package(self.package_select.currentIndex())
+            self._error(error)
+        self.install_button.setEnabled(not self._closing and not self._managing and self.process is None)
 
     def _reload_packages(self, selected_id):
         self.packages = discover(self.packages_dir)
@@ -250,12 +408,13 @@ class GameFrameWindow(QWidget):
     def manage_selected(self):
         manifest = self._manifest()
         if (manifest is None or not manifest.management or self.process is not None
-                or self._starting or self._installing or self._closing or self._managing):
+                or self._starting or self._installing or self._closing or self._managing or self._updating):
             return
         self._managing = True
         self.start_button.setEnabled(False)
         self.manage_button.setEnabled(False)
         self.install_button.setEnabled(False)
+        self.update_button.setEnabled(False)
         self.package_select.setEnabled(False)
         self._management_thread = threading.Thread(target=self._manage_worker,
                                                    args=(manifest,), daemon=True)
@@ -294,7 +453,7 @@ class GameFrameWindow(QWidget):
         row = self.task_list.currentRow()
         if self.process is None or self._stopping or self._closing or row < 0:
             return
-        task = manifest.tasks[row]
+        task = self._visible_tasks[row]
         if manifest.supports_session and task.kind == 'service':
             try:
                 self.controller.set_service(task.id, False)
@@ -355,6 +514,7 @@ class GameFrameWindow(QWidget):
                 self._pause_status(value)
             elif kind == 'management-line':
                 self.output.appendPlainText(value)
+                self._management_update_status(value)
             elif kind == 'management-started':
                 self._management_process = value
                 self.status_label.setText('Management running')
@@ -363,13 +523,22 @@ class GameFrameWindow(QWidget):
             elif kind in {'management-exit', 'management-error'}:
                 self._managing = False
                 self._management_process = None
-                self.package_select.setEnabled(not self._closing)
+                self.package_select.setEnabled(not self._closing and not self._updating)
                 self._select_package(self.package_select.currentIndex())
-                self.install_button.setEnabled(not self._closing)
+                self.install_button.setEnabled(not self._closing and not self._updating)
                 if kind == 'management-error':
+                    if self._updating:
+                        self._update_management_error = value
+                        self._apply_pending_update()
                     self._error(value)
                 else:
                     self.status_label.setText(f'Management exited with code {value}')
+                    if self._updating:
+                        if value == 0:
+                            self._apply_pending_update()
+                        else:
+                            self._update_management_error = RuntimeError('Management did not exit successfully before update')
+                            self._apply_pending_update()
             elif kind == "started":
                 manifest, task_id, process = value
                 self._starting = False
@@ -382,6 +551,7 @@ class GameFrameWindow(QWidget):
                 self.pause_button.setText('Pause')
                 self.pause_button.setEnabled(manifest.execution == 'native' and not self._closing)
                 self.install_button.setEnabled(False)
+                self.update_button.setEnabled(False)
                 self.start_button.setEnabled(manifest.supports_session and not self._closing)
                 self.start_button.setText('Run / enable task' if manifest.supports_session else 'Start')
                 self.disable_button.setEnabled(manifest.supports_session
@@ -396,19 +566,22 @@ class GameFrameWindow(QWidget):
                 self.start_button.setEnabled(not self._closing and self.task_list.currentRow() >= 0)
                 self.install_button.setEnabled(not self._closing)
                 self.manage_button.setEnabled(self._manifest().management and not self._closing)
+                self.update_button.setEnabled(not self._closing and self._is_installed(self._manifest()))
             elif kind == "exit":
                 self.status_label.setText(f"Worker exited with code {value}")
                 self.process = None
-                self.package_select.setEnabled(not self._closing)
+                self.package_select.setEnabled(not self._closing and not self._updating)
                 self.device_edit.setEnabled(self._manifest().execution == 'native' and not self._closing)
                 self.start_button.setText('Start')
                 self.disable_button.setEnabled(False)
-                self.start_button.setEnabled(not self._closing and not self._starting
+                self.start_button.setEnabled(not self._closing and not self._starting and not self._updating
                                              and self.task_list.currentRow() >= 0)
                 self.stop_button.setEnabled(False)
                 self.pause_button.setEnabled(False)
-                self.install_button.setEnabled(not self._closing and not self._installing)
-                self.manage_button.setEnabled(self._manifest().management and not self._closing)
+                self.install_button.setEnabled(not self._closing and not self._installing and not self._updating)
+                self.manage_button.setEnabled(self._manifest().management and not self._closing and not self._updating)
+                self.update_button.setEnabled(not self._closing and not self._updating
+                                              and self._is_installed(self._manifest()))
                 if value == 0 and self._exit_requested:
                     self.close()
             elif kind == "install-done":
@@ -422,6 +595,16 @@ class GameFrameWindow(QWidget):
                 self.start_button.setEnabled(not self._closing and self.task_list.currentRow() >= 0)
                 self.install_button.setEnabled(not self._closing)
                 self.manage_button.setEnabled(self._manifest().management and not self._closing)
+                self.update_button.setEnabled(not self._closing and self._is_installed(self._manifest()))
+            elif kind == 'update-prepared':
+                if self._updating:
+                    self._pending_update = value
+                    self.status_label.setText('Gamepack verified; waiting for owned processes to exit')
+                    self._apply_pending_update()
+            elif kind == 'update-done':
+                self._finish_update(package_id=value)
+            elif kind == 'update-error':
+                self._finish_update(error=value)
             elif kind == "stop-done":
                 self._stopping = False
                 self.stop_button.setEnabled(self.process is not None and not self._closing)
@@ -449,6 +632,7 @@ class GameFrameWindow(QWidget):
         self.stop_button.setEnabled(False)
         self.pause_button.setEnabled(False)
         self.install_button.setEnabled(False)
+        self.update_button.setEnabled(False)
         self.disable_button.setEnabled(False)
         self.manage_button.setEnabled(False)
         self.status_label.setText("Closing worker…")
@@ -460,6 +644,8 @@ class GameFrameWindow(QWidget):
                 self._start_thread.join()
             if self._install_thread is not None:
                 self._install_thread.join()
+            if self._update_thread is not None:
+                self._update_thread.join()
             if self._management_thread is not None:
                 self._management_thread.join()
             self.management_controller.close()

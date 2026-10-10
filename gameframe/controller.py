@@ -20,6 +20,11 @@ class Controller:
         self.session = False
         self._protected_path = None
 
+    def assert_idle(self):
+        """Require this owned execution/management process to have exited."""
+        if self.process is not None and self.process.poll() is None:
+            raise RuntimeError('An owned execution process is still running')
+
     def start(self, manifest, task_id, *, data_dir, config=None, device=None, session=False):
         manifest.task(task_id)
         data_dir = Path(data_dir).resolve()

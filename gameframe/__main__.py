@@ -2,6 +2,8 @@
 
 import argparse
 import json
+import sys
+import threading
 from pathlib import Path
 
 from gameframe.controller import Controller
@@ -63,6 +65,16 @@ def main(argv=None):
         else:
             process = controller.start(manifest, args.task, data_dir=args.data_dir,
                                        config=args.config, device=args.device, session=args.session)
+        if args.command == 'manage' or args.session:
+            def forward_controls():
+                for line in sys.stdin:
+                    try:
+                        process.stdin.write(line)
+                        process.stdin.flush()
+                    except BrokenPipeError:
+                        process.wait()
+                        return
+            threading.Thread(target=forward_controls, name='GameFrameControls', daemon=True).start()
         for line in process.stdout:
             print(line, end='', flush=True)
         return process.wait()

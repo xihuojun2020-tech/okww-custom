@@ -12,13 +12,18 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestAccountManagementEntry(unittest.TestCase):
-    def run_probe(self, body, *, stdin=None, source_root=ROOT):
+    def run_probe(self, body, *, stdin=None, source_root=ROOT, core_root=None):
         with tempfile.TemporaryDirectory() as directory:
             script = Path(directory) / 'management_probe.py'
             script.write_text('import sys\nfrom pathlib import Path\nsys.path.insert(0, sys.argv[1])\n'
+                              'if len(sys.argv) > 3: sys.path.append(sys.argv[3])\n'
                               'root = Path(sys.argv[2])\n' + textwrap.dedent(body), encoding='utf-8')
             environment = dict(os.environ, QT_QPA_PLATFORM='offscreen')
-            result = subprocess.run([sys.executable, '-I', '-B', '-X', 'utf8', str(script), str(source_root), directory],
+            environment['PYTHONPATH'] = os.pathsep.join(str(path) for path in (source_root, core_root) if path is not None)
+            command = [sys.executable, '-I', '-B', '-X', 'utf8', str(script), str(source_root), directory]
+            if core_root is not None:
+                command.append(str(core_root))
+            result = subprocess.run(command,
                                     input=stdin, capture_output=True, text=True, encoding='utf-8',
                                     timeout=35, env=environment)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -129,7 +134,7 @@ class TestAccountManagementEntry(unittest.TestCase):
             from src.gui.ManagementWindow import ManagementWindow
             original_show = ManagementWindow.show
             def verified_show(window):
-                assert window.tabs.count() == 2
+                assert window.tabs.count() == 3
                 assert not window.account_tab.account_tab.read_feature_button.isEnabled()
                 assert not window.evidence_tab.capture_button.isEnabled()
                 assert window.evidence_tab.executor is None
@@ -141,6 +146,96 @@ class TestAccountManagementEntry(unittest.TestCase):
                 assert manage(root / 'data', 'test-management') == 0
         ''', stdin='{"command":"stop"}\n')
         self.assertIn('management-ready', output)
+
+    def test_diagnostics_management_reads_local_state_and_explicit_buttons_own_external_actions(self):
+        self.run_probe('''
+            from src.runtime.framework_overlay import install_framework_overlay
+            install_framework_overlay(Path(sys.argv[1]))
+            import importlib.abc
+            import time
+            import threading
+            from contextlib import ExitStack
+            from unittest.mock import patch
+            from PySide6.QtWidgets import QApplication, QPushButton, QDialog, QMessageBox
+            class BlockCheckout(importlib.abc.MetaPathFinder):
+                def find_spec(self, fullname, path=None, target=None):
+                    if fullname.split('.')[0] in {'config','main','custom_ok'}:
+                        raise ImportError('management imported ' + fullname)
+            sys.meta_path.insert(0, BlockCheckout())
+            from src.management import AccountManagementService
+            from src.gui.ManagementWindow import ManagementWindow
+            from src.runtime import diagnostic_lifecycle
+            app = QApplication([])
+            service = AccountManagementService(root / 'data', 'diagnostics-management-test')
+            def settle(operation):
+                deadline = time.monotonic() + 3
+                while operation.busy and time.monotonic() < deadline:
+                    app.processEvents()
+                    time.sleep(.005)
+                assert not operation.busy
+                app.processEvents()
+            with ExitStack() as stack:
+                names = ('subprocess.Popen', 'src.runtime.diagnostic_policy.ensure_task',
+                    'src.runtime.diagnostic_policy.save_credentials', 'src.runtime.diagnostic_policy.connect',
+                    'src.runtime.diagnostic_lifecycle.start_diagnostics',
+                    'src.runtime.diagnostic_lifecycle.wake_uploader',
+                    'src.runtime.diagnostic_lifecycle.start_automatic_archive_upload',
+                    'src.runtime.diagnostic_archive_retention.maintenance_loop',
+                    'src.runtime.diagnostic_archive.send_archive', 'src.runtime.diagnostic_archive.connect',
+                    'src.runtime.diagnostic_archive_retention.connect', 'src.runtime.diagnostic_uploader.connect')
+                spies = [stack.enter_context(patch(name, side_effect=AssertionError(name))) for name in names]
+                wake_card = stack.enter_context(patch('src.gui.DiagnosticStatusCard.wake_uploader',
+                                                     side_effect=AssertionError('implicit card upload')))
+                wake_details = stack.enter_context(patch('src.gui.DiagnosticDetails.wake_uploader',
+                                                        side_effect=AssertionError('implicit backfill upload')))
+                window = ManagementWindow(service)
+                window.show()
+                card = window.diagnostics_tab
+                settle(card.operation)
+                assert window.tabs.count() == 1
+                assert card.root == root / 'data/okww监控室/diagnostics'
+                assert card.source_root == service.root
+                assert card.program_version == 'diagnostics-management-test'
+                assert card.local_only
+                capture = next(button for button in card.findChildren(QPushButton)
+                               if button.text() == '测试错误截图')
+                assert not capture.isEnabled()
+                card.open_details()
+                details = card._details
+                settle(details.operation)
+                assert details.index.source == service.root and details.local_only
+                card.save()
+                settle(card.operation)
+                with patch('src.gui.DiagnosticDetails.QDialog.exec', return_value=QDialog.Accepted), \
+                     patch('src.gui.DiagnosticDetails.QMessageBox.question', return_value=QMessageBox.Yes), \
+                     patch('src.gui.DiagnosticDetails.backfill_preview', return_value=[]) as preview, \
+                     patch('src.gui.DiagnosticDetails.enqueue_backfill', return_value=['queued']) as enqueue:
+                    details.backfill()
+                    settle(details.operation)
+                    assert preview.call_args.args[0] == service.root
+                    assert enqueue.call_args.args == (card.root, [], 'diagnostics-management-test')
+                for spy in spies:
+                    spy.assert_not_called()
+                wake_card.assert_not_called()
+                wake_details.assert_not_called()
+                assert diagnostic_lifecycle._session is None
+                with patch('src.runtime.diagnostic_archive.manual_upload', return_value='synthetic.zip') as upload:
+                    card.retry()
+                    settle(card.operation)
+                    upload.assert_called_once_with(card.root)
+                with patch('src.gui.DiagnosticStatusCard.bounded_probe', return_value={}) as probe:
+                    card.test_connection()
+                    settle(card.operation)
+                    assert probe.call_count == 1
+                marker = threading.Event()
+                card.operation.start(lambda: marker.wait(2), lambda _: None, lambda error: None)
+                window.close()
+                assert window.isVisible() and window._closing
+                marker.set()
+                settle(card.operation)
+                assert not window.isVisible()
+                window.evidence_service.close()
+        ''')
 
     def test_installed_native_archive_management_has_no_checkout_config_or_overlay_dependency(self):
         from scripts.build_native_gamepack import build_native_gamepack
@@ -174,7 +269,7 @@ class TestAccountManagementEntry(unittest.TestCase):
                 from src.gui.ManagementWindow import ManagementWindow
                 original_show = ManagementWindow.show
                 def verified_show(window):
-                    assert window.tabs.count() == 2
+                    assert window.tabs.count() == 3
                     assert not window.evidence_tab.capture_button.isEnabled()
                     assert not window.account_tab.account_tab.read_feature_button.isEnabled()
                     original_show(window)
@@ -185,6 +280,102 @@ class TestAccountManagementEntry(unittest.TestCase):
                 assert not any(name.split('.')[0] in {'config','main','custom_ok'} for name in sys.modules)
             ''', source_root=payload, stdin='{"command":"stop"}\n')
             self.assertIn('management-ready', output)
+
+    def test_installed_plugin_management_root_configuration_shutdown_and_update_are_explicit(self):
+        import shutil
+        from scripts.build_native_gamepack import build_native_gamepack
+        from gameframe.packages import install_archive
+        with tempfile.TemporaryDirectory() as directory:
+            temporary = Path(directory)
+            installed = install_archive(build_native_gamepack(temporary / 'native.zip'), temporary / 'installed')
+            core_root = temporary / 'core'
+            shutil.copytree(ROOT / 'gameframe', core_root / 'gameframe', ignore=shutil.ignore_patterns('__pycache__'))
+            self.run_probe('''
+                import importlib.abc
+                import importlib.util
+                import time
+                import threading
+                from contextlib import ExitStack
+                from unittest.mock import patch
+                from PySide6.QtWidgets import QApplication
+                from PySide6.QtCore import QProcess
+                class ForbidCheckout(importlib.abc.MetaPathFinder):
+                    def find_spec(self, fullname, path=None, target=None):
+                        if fullname.split('.')[0] in {'config','main','custom_ok'}:
+                            raise ImportError('installed management imported ' + fullname)
+                sys.meta_path.insert(0, ForbidCheckout())
+                package_root = Path(sys.argv[1]).parent
+                spec = importlib.util.spec_from_file_location('installed_plugin', package_root / 'plugin.py')
+                plugin = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(plugin)
+                package = plugin.create_package()
+                command = package.management_command(root / 'data')
+                assert command['command'][-2:] == ['--package-root', str(package_root)]
+                assert str(Path(sys.argv[3])) in command['env']['PYTHONPATH']
+                from src.management import AccountManagementService
+                from src.gui.ManagementWindow import ManagementWindow
+                from src.runtime import combat_api, diagnostic_lifecycle
+                from ok.device.DeviceManager import DeviceManager
+                from ok.task.TaskExecutor import TaskExecutor
+                app = QApplication([])
+                service = AccountManagementService(root / 'data', 'installed-management-test', package_root=package_root)
+                source, preview = service.preview_first_account(display_name='A1', phone='19910000001',
+                    nickname='配置载荷合成账号', sequence_ids=('序列1',))
+                with patch('src.secure_backup.harden_directory_permissions', side_effect=lambda path: Path(path)):
+                    service.create_first_account(source, preview, confirm=True)
+                with ExitStack() as stack:
+                    names = ('subprocess.Popen', 'src.runtime.diagnostic_policy.ensure_task',
+                        'src.runtime.diagnostic_policy.connect', 'src.runtime.diagnostic_policy.save_credentials',
+                        'src.runtime.diagnostic_lifecycle.start_diagnostics',
+                        'src.runtime.diagnostic_archive.send_archive',
+                        'src.update.native_gamepack_service.NativeGamePackUpdateService.check',
+                        'src.update.native_gamepack_service.NativeGamePackUpdateService.download')
+                    spies = [stack.enter_context(patch(name, side_effect=AssertionError(name))) for name in names]
+                    stack.enter_context(patch.object(DeviceManager, '__init__', side_effect=AssertionError('created device')))
+                    stack.enter_context(patch.object(TaskExecutor, '__init__', side_effect=AssertionError('created executor')))
+                    window = ManagementWindow(service)
+                    window.show()
+                    assert window.tabs.count() == 5
+                    assert window.update_tab.package_root == package_root
+                    assert window.configuration_tab is not None
+                    deadline = time.monotonic() + 10
+                    while window.configuration_tab.schema is None and time.monotonic() < deadline:
+                        app.processEvents()
+                        if window.configuration_tab.process.state() == QProcess.NotRunning:
+                            break
+                        time.sleep(.01)
+                    assert window.configuration_tab.schema is not None, window.configuration_tab.status.text()
+                    assert len(window.configuration_tab.schema['tasks']) == 29
+                    assert not combat_api.is_native()
+                    assert diagnostic_lifecycle._session is None
+                    with patch.object(window.configuration_tab, 'reload', wraps=window.configuration_tab.reload) as reload:
+                        window.refresh()
+                        window.configuration_tab.management_requested.emit()
+                        reload.assert_not_called()
+                    assert window.tabs.currentWidget() is window.account_tab
+                    with patch.object(window.configuration_tab, 'reload', side_effect=RuntimeError('test reload stop timeout')):
+                        window._done(None)
+                        assert 'test reload stop timeout' in window.status.text()
+                    with patch.object(window.configuration_tab, 'shutdown', side_effect=RuntimeError('test configuration timeout')):
+                        window.close()
+                        assert window.isVisible()
+                        assert 'test configuration timeout' in window.status.text()
+                    marker = threading.Event()
+                    window.update_tab.operation.start(lambda: marker.wait(2), lambda _: None, lambda error: None)
+                    window.close()
+                    assert window.isVisible()
+                    assert window.configuration_tab.process.state() == QProcess.Running
+                    marker.set()
+                    while window._operations_busy() and time.monotonic() < deadline:
+                        app.processEvents()
+                        time.sleep(.01)
+                    app.processEvents()
+                    assert window.configuration_tab.process.state() == QProcess.NotRunning
+                    assert not window.isVisible()
+                    for spy in spies:
+                        spy.assert_not_called()
+                    window.evidence_service.close()
+            ''', source_root=installed.root / 'payload', core_root=core_root)
 
 
 if __name__ == '__main__':

@@ -2,6 +2,7 @@
 import json
 import time
 from collections import Counter
+from pathlib import Path
 
 from PySide6.QtCore import QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
@@ -66,16 +67,16 @@ def format_archive_progress(progress):
     return '\n'.join(lines)
 
 
-def diagnostic_status_text(root):
+def diagnostic_status_text(root, *, local_only=False):
     from src.runtime.diagnostic_status import read_json
-    if read_json(root/'settings.json',{}).get('upload_mode') == 'manual_archive':
+    if local_only or read_json(root/'settings.json',{}).get('upload_mode') == 'manual_archive':
         progress=read_json(root/'archives/progress.json',{})
         if progress.get('stage'):
             return format_archive_progress(progress)
         scheduler=read_json(root/'scheduler.json',{})
         labels={'packing':'正在打包','packed':'压缩包已生成','uploading':'正在上传','uploaded':'压缩包已上传'}
         return ('上传模式：手动压缩包（不自动上传）\n'+
-                f'后台任务：{scheduler.get("status","等待停用")}\n'+
+                (f'后台任务：{scheduler.get("status","等待停用")}\n' if not local_only else '后台上传：未启用（本地诊断）\n')+
                 f'最近操作：{labels.get(progress.get("status"),"尚无手动上传")}\n'+
                 str(progress.get('archive',''))+'\n上传成功满一天清理本地资料；NAS 未检查保留三十天，检查后保留三天。')
     counts, upload_error, last_success, last_error_at = Counter(), '', 0, -1
@@ -128,9 +129,14 @@ def diagnostic_status_text(root):
 
 
 class DiagnosticStatusCard(SectionPanel):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, root=None, source_root=None, program_version=None,
+                 local_only=False, capture_enabled=True):
         super().__init__('日志与诊断', parent=parent, collapsible=True)
-        self.root = default_root()
+        self.root = Path(root) if root is not None else default_root()
+        self.root.mkdir(parents=True, exist_ok=True)
+        self.source_root = source_root
+        self.program_version = program_version
+        self.local_only = local_only
         self.set_summary('正在读取本地状态…')
         layout = self.content_layout
         description = QLabel('手动打包上传日志和截图，按启动会话汇总。上传成功满一天清理本地资料；NAS 未检查保留三十天，生成检查报告并归档后三天清理原包，报告保留。活动会话和未上传成功的资料不删除。')
@@ -165,6 +171,9 @@ class DiagnosticStatusCard(SectionPanel):
         row = QHBoxLayout()
         save, retry, folder = (QPushButton(text) for text in ('保存设置', '打包上传', '打开目录'))
         probe, capture = QPushButton('测试共享连接'), QPushButton('测试错误截图')
+        capture.setEnabled(capture_enabled)
+        if not capture_enabled:
+            capture.setToolTip('管理窗口未连接任务执行器；错误画面由运行中的任务自动记录')
         row.addWidget(save)
         for button in (retry, folder):
             self.add_action(button)
@@ -201,14 +210,16 @@ class DiagnosticStatusCard(SectionPanel):
     def open_details(self):
         from src.gui.DiagnosticDetails import DiagnosticDetails
         if not getattr(self, '_details', None):
-            self._details = DiagnosticDetails(self.root, self)
+            self._details = DiagnosticDetails(self.root, self, source_root=self.source_root,
+                                              program_version=self.program_version, local_only=self.local_only)
+            self._details.operation.busy_changed.connect(self.operation.busy_changed)
         self._details.show()
         self._details.raise_()
 
     def refresh(self):
         root = self.root
         def read():
-            return diagnostic_status_text(root)
+            return diagnostic_status_text(root, local_only=self.local_only)
         self.operation.start(read, self._show_status, lambda e: self._show_status(sanitize_text(e)))
 
     def _show_status(self, text):
@@ -237,7 +248,8 @@ class DiagnosticStatusCard(SectionPanel):
                         if state.get('status') == 'retrying':
                             state['next_retry'] = 0
                             atomic_json(path, state)
-            wake_uploader(root)
+            if not self.local_only:
+                wake_uploader(root)
         self.operation.start(write, lambda _: (self.password.clear(), self.refresh()),
                              lambda e: (self.password.clear(), self._show_status(sanitize_text(e))))
 

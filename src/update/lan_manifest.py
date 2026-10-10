@@ -34,7 +34,8 @@ class LanRelease:
     published_at: datetime
 
     @classmethod
-    def from_bytes(cls, data: bytes, *, expected_channel: str = "stable") -> "LanRelease":
+    def from_bytes(cls, data: bytes, *, expected_channel: str = "stable",
+                   package_id: str | None = None) -> "LanRelease":
         try:
             record = json.loads(data.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -61,7 +62,8 @@ class LanRelease:
         if path.is_absolute() or any(part in ("", ".", "..") for part in parts):
             raise LanManifestError("更新包路径越界")
         expected_prefix = ("releases", f"v{version}")
-        if tuple(path.parts[:2]) != expected_prefix or path.name != f"okww_update_v{version}.zip":
+        filename = f'{package_id}-{version}.zip' if package_id is not None else f"okww_update_v{version}.zip"
+        if tuple(path.parts[:2]) != expected_prefix or path.name != filename:
             raise LanManifestError("更新包路径与版本不一致")
         published = record["published_at"]
         try:

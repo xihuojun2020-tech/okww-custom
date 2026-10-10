@@ -24,6 +24,9 @@ class LoginFlowService:
             task.executor.check_enabled()
         task._guard_account_transition()
         task._begin_account_switch_evidence(target)
+        if is_native():
+            from src.runtime.native_diagnostics import record_native_event
+            record_native_event('account_switch', task=type(task).__name__, status='started', stage='login')
         mouse_reset_task = None
         mouse_reset_was_enabled = False
         try:
@@ -67,18 +70,26 @@ class LoginFlowService:
                     task.ensure_main(time_out=180)
                     task.log_info(f"已登录: {target}")
                     task._finish_account_switch_evidence(True)
+                    if is_native():
+                        record_native_event('account_switch', task=type(task).__name__, status='succeeded', stage='login')
                     return target
                 finally:
                     task._active_account_switch_capture = None
         except TaskDisabledException as error:
             event_dir = task._finish_account_switch_evidence(
                 False, str(error), stage="stopped", stopped=True)
+            if is_native():
+                record_native_event('account_switch', task=type(task).__name__, status='stopped',
+                                    stage='stopped', error=error)
             if event_dir is not None:
                 task.log_warning(f"账号切换已停止；审核证据正在保存到: {event_dir}")
             raise
         except Exception as error:
             event_dir = task._finish_account_switch_evidence(
                 False, str(error), stage="failed")
+            if is_native():
+                record_native_event('account_switch', task=type(task).__name__, status='failed',
+                                    stage='failed', error=error)
             if event_dir is not None:
                 task.log_warning(f"账号切换失败；最近证据已保存到: {event_dir}")
             raise

@@ -70,6 +70,9 @@ class NativeCombatHost:
                     root=Path(context.data_dir) / 'okww监控室' / 'CompletionEvidence')
         options = {name: Config(name, defaults, folder=str(config_root))
                    for name, defaults in global_options.items()}
+        self.global_configs = options
+        self._configuration_service_enables = set()
+        self._configuration_service = None
         executor.global_config = SimpleNamespace(get_config=options.__getitem__)
         executor.device_manager = SimpleNamespace(
             hwnd_window=window, supported_ratio=supported_ratio,
@@ -194,6 +197,14 @@ class NativeCombatHost:
             return
         task.enable() if enabled else task.disable()
 
+    def configuration_request(self, request):
+        from src.runtime.native_configuration import ConfigurationService
+        if not isinstance(request, dict):
+            raise ValueError('Configuration request must be a JSON object')
+        if self._configuration_service is None:
+            self._configuration_service = ConfigurationService(self)
+        return self._configuration_service.request(request)
+
     def run_session(self, initial_task_id):
         """Dispatch foreground work and background services on one input owner."""
         from src.runtime.native_task import NativeTriggerTask
@@ -210,14 +221,14 @@ class NativeCombatHost:
         initial_request = {'command': 'set-service' if isinstance(initial, NativeTriggerTask)
                            else 'run-task', 'task_id': initial_task_id, 'enabled': True}
         deferred_tasks = deque()
-        deferred_enables = set()
+        deferred_enables = self._configuration_service_enables
         while True:
             paused = self.context.observe_pause()
             stopped = self.context.stop.is_set()
             preference_only = paused or stopped
             if initial_request is not None:
                 request, initial_request = initial_request, None
-            elif deferred_tasks and not preference_only:
+            elif deferred_tasks and (stopped or not preference_only):
                 request = deferred_tasks.popleft()
             else:
                 try:
@@ -225,6 +236,20 @@ class NativeCombatHost:
                 except Empty:
                     request = None
             if request is not None:
+                from src.runtime.native_configuration import COMMANDS
+                if request.get('command') in COMMANDS:
+                    if request['command'] == 'invoke-action' and preference_only:
+                        if not stopped:
+                            deferred_tasks.append(request)
+                            continue
+                        response = {'event': 'configuration-response',
+                                    'request_id': request.get('request_id'),
+                                    'command': request['command'], 'ok': False,
+                                    'error': {'type': 'Cancelled', 'message': 'Task stopped'}}
+                    else:
+                        response = self.configuration_request(request)
+                    self.context.emit(response.pop('event'), **response)
+                    continue
                 task_id = request.get('task_id')
                 try:
                     command = request.get('command')

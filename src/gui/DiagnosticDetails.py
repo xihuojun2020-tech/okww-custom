@@ -27,13 +27,15 @@ def stamp(value):
 
 class DiagnosticDetails(QDialog):
     PAGE_SIZE=50
-    def __init__(self,root,parent=None):
+    def __init__(self,root,parent=None, *, source_root=None, program_version=None, local_only=False):
         super().__init__(parent)
         self.setWindowTitle('日志与截图上传明细')
         self.setObjectName('diagnosticDetails')
         size_dialog(self,1120,800)
         from src.runtime.diagnostic_policy import REPO
-        self.root=Path(root);self.index=DiagnosticIndex(root, REPO);self.snapshot={};self.page=0;self.rows=[]
+        self.source_root=Path(source_root) if source_root is not None else REPO
+        self.program_version=program_version;self.local_only=local_only
+        self.root=Path(root);self.index=DiagnosticIndex(root, self.source_root);self.snapshot={};self.page=0;self.rows=[]
         layout=QVBoxLayout(self)
         layout.setContentsMargins(16,16,16,16)
         # This evidence dialog has several fixed controls around its tables;
@@ -258,12 +260,15 @@ class DiagnosticDetails(QDialog):
         if dialog.exec()!=QDialog.Accepted:return
         try:a,b=datetime.fromisoformat(start.text()),datetime.fromisoformat(end.text())
         except ValueError:return self.error('时间格式错误')
-        from src.runtime.diagnostic_policy import REPO
         def ready(rows):
             text='\n'.join(f'{Path(r["path"]).name}: {r.get("bytes",0)} 字节 {r.get("error","")}' for r in rows)
             if QMessageBox.question(self,'确认补传',text or '无匹配日志')!=QMessageBox.Yes:return
-            from config import version
+            version=self.program_version
+            if version is None:
+                from config import version
             def enqueue():
-                result=enqueue_backfill(self.root,rows,version);wake_uploader(self.root);return result
+                result=enqueue_backfill(self.root,rows,version)
+                if not self.local_only:wake_uploader(self.root)
+                return result
             self.operation.start(enqueue,lambda _:self.message.setText('补传已入队，未改变自动采集游标'),self.error)
-        self.operation.start(lambda:backfill_preview(REPO,a,b),ready,self.error)
+        self.operation.start(lambda:backfill_preview(self.source_root,a,b),ready,self.error)

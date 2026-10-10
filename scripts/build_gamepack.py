@@ -47,7 +47,13 @@ def source_metadata(source_root):
                      and isinstance(node.value.value, str)
                      and any(isinstance(t, ast.Attribute) and isinstance(t.value, ast.Name)
                              and t.value.id == 'self' and t.attr == 'name' for t in node.targets)]
+            visibility = [node.value.value for node in ast.walk(cls)
+                          if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
+                          and type(node.value.value) is bool
+                          and any(isinstance(t, ast.Attribute) and isinstance(t.value, ast.Name)
+                                  and t.value.id == 'self' and t.attr == 'visible' for t in node.targets)]
             tasks.append({'id': class_name, 'title': names[0] if names else class_name,
+                          'visible': visibility[-1] if visibility else True,
                           'kind': kind, 'default_config': {}, 'required_capabilities': [],
                           'integration': 'legacy-task', 'module': module, 'class': class_name,
                           'config_scope': 'production-installation'})

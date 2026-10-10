@@ -170,7 +170,7 @@ def seal_pending(run, kind, *, sizes=None):
 
 
 class DiagnosticSession(logging.Handler):
-    def __init__(self, root, version, *, source_root=None, current_run_started_at=None):
+    def __init__(self, root, version, *, source_root=None, local_only=False, current_run_started_at=None):
         super().__init__()
         self.root = Path(root).absolute()
         self.root.mkdir(parents=True, exist_ok=True)
@@ -183,8 +183,10 @@ class DiagnosticSession(logging.Handler):
         self.pending = queue.Queue(maxsize=32)
         self.triggers = queue.Queue(maxsize=128)
         self.closed_session = False
+        self.local_only = local_only
         self.metadata = {'schema_version': 1, 'version': version, 'policy': POLICY,
-                         'device_id': settings(self.root)['device_id'], 'installation_id': installation_id(),
+                         'device_id': settings(self.root)['device_id'],
+                         'installation_id': installation_id(source_root) if source_root is not None else installation_id(),
                          'system': platform.platform(),
                          'started_at': datetime.now().astimezone().isoformat(), 'run_id': self.run_id,
                          'process_status': 'running', 'error_events': 0, 'dropped_batches': 0}
@@ -347,7 +349,8 @@ class DiagnosticSession(logging.Handler):
             self.status_saved_at = now
 
     def add_screenshot(self, path):
-        self.record_event('screenshot_saved', {'status': 'automatic_upload', 'suffix': Path(path).suffix})
+        self.record_event('screenshot_saved', {'status': 'local_pending' if self.local_only else 'automatic_upload',
+                                              'suffix': Path(path).suffix})
         # Capture the exact file named by the framework hook. A directory scan can lag or
         # be capped by unrelated changed logs, leaving only screenshot_saved on the server.
         self.request_batch(('screenshot', str(path)))
@@ -417,7 +420,8 @@ class DiagnosticSession(logging.Handler):
                                 self.collector.acknowledge(source, self.run.name)
                     self.record_event('screenshot_copy', {'image_id': image_id,
                                       'local_file': saved.name if saved else None,
-                                      'status': 'automatic_upload' if saved else 'unavailable'}, allow_closed=True)
+                                      'status': ('local_pending' if self.local_only else 'automatic_upload')
+                                                if saved else 'unavailable'}, allow_closed=True)
                     kind = 'screenshot'
                 if time.monotonic() >= next_log or kind not in ('tick', 'incident'):
                     next_log = time.monotonic() + LOG_INTERVAL

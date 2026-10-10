@@ -30,6 +30,7 @@ def native_metadata(source_root=ROOT):
         tasks.append({
             'id': 'auto-combat' if name == 'AutoCombatTask' else name,
             'title': task['title'], 'kind': task['kind'],
+            'visible': task['visible'],
             'default_config': {'_enabled': True} if task['kind'] == 'service' else {},
             'required_capabilities': capabilities,
             'module': task['module'], 'class': name,

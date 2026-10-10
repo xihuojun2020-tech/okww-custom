@@ -19,20 +19,31 @@ class WutheringWavesNativePackage:
             sys.path.insert(0, source)
 
     def prepare(self, task_id, data_dir):
-        self._definition(task_id)
+        definition = self._definition(task_id)
         self._bind_source()
+        from src.runtime.native_logging import configure_logging
+        from src.runtime.native_diagnostics import start_native_diagnostics, record_native_event
         from src.runtime.account_runtime_bootstrap import prepare_native_account_runtime
-        prepare_native_account_runtime(data_dir, self.manifest['version'])
+        configure_logging(data_dir)
+        start_native_diagnostics(data_dir, self.manifest['version'])
+        try:
+            prepare_native_account_runtime(data_dir, self.manifest['version'])
+        except Exception as error:
+            record_native_event('native_prepare', task=definition['class'], status='failed',
+                                stage='account_preflight', error=error)
+            raise
 
     def _definition(self, task_id):
         return next(task for task in self.manifest['tasks'] if task['id'] == task_id)
 
     def management_command(self, data_dir):
+        import gameframe
+        core = str(Path(gameframe.__file__).resolve().parent.parent)
         environment = os.environ.copy()
         environment['PYTHONPATH'] = os.pathsep.join(
-            path for path in (str(self.source), environment.get('PYTHONPATH')) if path)
+            path for path in (str(self.source), core, environment.get('PYTHONPATH')) if path)
         return {'command': [sys.executable, '-m', 'src.management', '--data-dir', str(data_dir),
-                            '--version', self.manifest['version']],
+                            '--version', self.manifest['version'], '--package-root', str(self.root)],
                 'cwd': str(self.source), 'env': environment}
 
     def run(self, task_id, context):
@@ -45,6 +56,9 @@ class WutheringWavesNativePackage:
         definition = self._definition(task_id)
         self._bind_source()
         from src.runtime.native_logging import configure_logging
+        from src.runtime.native_diagnostics import attach_native_executor, record_native_event
+        from src.runtime.native_errors import TaskDisabledException
+        from gameframe.api import Cancelled
         from src.runtime.native_combat_host import NativeCombatHost
         from src.combat.settings import COMBAT_GLOBAL_DEFAULTS, TEMPLATE_MATCHING_DEFAULTS
 
@@ -71,6 +85,7 @@ class WutheringWavesNativePackage:
                 task_requirements={task['id']: frozenset(task['required_capabilities'])
                                    for task in self.manifest['tasks']},
                 device_identity=type(context.device).__name__)
+            attach_native_executor(host.executor)
             if session:
                 return host.run_session(task_id)
             if definition['kind'] == 'service':
@@ -81,6 +96,14 @@ class WutheringWavesNativePackage:
             if isinstance(business_result, dict):
                 details['business_result'] = business_result
             return details
+        except (TaskDisabledException, Cancelled) as error:
+            record_native_event('native_task', task=definition['class'], status='stopped',
+                                stage='execution', error=error)
+            raise
+        except Exception as error:
+            record_native_event('native_task', task=definition['class'], status='failed',
+                                stage='execution', error=error)
+            raise
         finally:
             os.chdir(previous_cwd)
 

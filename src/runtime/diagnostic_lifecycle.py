@@ -76,27 +76,31 @@ def _automatic_archive_worker(root):
         logging.getLogger(__name__).warning('daily diagnostic upload failed: %s', sanitize_text(error))
 
 
-def start_diagnostics(version, root=None):
+def start_diagnostics(version, root=None, *, source_root=None, local_only=False):
     global _session
     if _session is not None:
         return _session
     try:
         root = Path(root or default_root())
         settings(root)
-        from src.runtime.diagnostic_policy import ensure_task
-        threading.Thread(target=ensure_task, args=(root,), name='DisableAutomaticUpload', daemon=True).start()
+        if not local_only:
+            from src.runtime.diagnostic_policy import ensure_task
+            threading.Thread(target=ensure_task, args=(root,), name='DisableAutomaticUpload', daemon=True).start()
         try:
             import psutil
             process_started_at = psutil.Process(os.getpid()).create_time()
         except Exception:
             process_started_at = time.time()
-        session = DiagnosticSession(root, version, source_root=REPO,
+        session = DiagnosticSession(root, version, source_root=source_root if source_root is not None else REPO,
+                                    local_only=local_only,
                                     current_run_started_at=process_started_at)
-        session.on_batch_ready = lambda: wake_uploader(session.root)
+        if not local_only:
+            session.on_batch_ready = lambda: wake_uploader(session.root)
         _session = session
-        from src.runtime.diagnostic_archive_retention import maintenance_loop
-        start_automatic_archive_upload(root)
-        threading.Thread(target=maintenance_loop, args=(root,), name='DiagnosticRetention', daemon=True).start()
+        if not local_only:
+            from src.runtime.diagnostic_archive_retention import maintenance_loop
+            start_automatic_archive_upload(root)
+            threading.Thread(target=maintenance_loop, args=(root,), name='DiagnosticRetention', daemon=True).start()
         logging.getLogger().addHandler(session)
         previous, previous_thread = sys.excepthook, threading.excepthook
 
@@ -114,7 +118,8 @@ def start_diagnostics(version, root=None):
 
         sys.excepthook, threading.excepthook = uncaught, thread_error
         atexit.register(finish_diagnostics)
-        wake_uploader(session.root)
+        if not local_only:
+            wake_uploader(session.root)
         return session
     except Exception as error:
         # Diagnostic setup cannot prevent the game tool from starting.
@@ -198,6 +203,7 @@ def finish_diagnostics():
         _session.capture_last_frame()
         failed = _session.metadata['process_status'] == 'crashed'
         _session.finish('crashed' if failed else 'exited', 1 if failed else 0)
-        wake_uploader(_session.root)
+        if not _session.local_only:
+            wake_uploader(_session.root)
     except Exception:
         pass

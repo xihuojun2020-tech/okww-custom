@@ -9,12 +9,13 @@
   ],
   "execution": "native",
   "source_root": "../..",
-  "version": "1.97.66",
+  "version": "1.97.67",
   "tasks": [
     {
       "id": "DailyTask",
       "title": "📅 每日任务",
       "kind": "one-shot",
+      "visible": true,
       "default_config": {},
       "required_capabilities": [
         "frames",
@@ -30,6 +31,7 @@
       "id": "FarmEchoTask",
       "title": "🌀 Farm 4C Echo in Dungeon/World",
       "kind": "one-shot",
+      "visible": true,
       "default_config": {},
       "required_capabilities": [
         "frames",
@@ -45,6 +47,7 @@
       "id": "WorldBossMaterialTask",
       "title": "讨伐强敌",
       "kind": "one-shot",
+      "visible": true,
       "default_config": {},
       "required_capabilities": [
         "frames",
@@ -60,6 +63,7 @@
       "id": "NightmareNestTask",
       "title": "🌙 Nightmare Nest Task",
       "kind": "one-shot",
+      "visible": false,
       "default_config": {},
       "required_capabilities": [
         "frames",
@@ -75,6 +79,7 @@
       "id": "TacetTask",
       "title": "🌊 Tacet Suppression",
       "kind": "one-shot",
+      "visible": false,
       "default_config": {},
       "required_capabilities": [
         "frames",
@@ -90,6 +95,7 @@
       "id": "ForgeryTask",
       "title": "⚒️ Forgery Challenge",
       "kind": "one-shot",
+      "visible": false,
       "default_config": {},
       "required_capabilities": [
         "frames",
@@ -105,6 +111,7 @@
       "id": "MaterialPlannerTask",
       "title": "养成材料规划",
       "kind": "one-shot",
+      "visible": false,
       "default_config": {},
       "required_capabilities": [
         "frames",
@@ -120,6 +127,7 @@
       "id": "SimulationTask",
       "title": "🧪 Simulation Challenge",
       "kind": "one-shot",
+      "visible": false,
       "default_config": {},
       "required_capabilities": [
         "frames",
@@ -135,6 +143,7 @@
       "id": "MultiAccountDailyTask",
       "title": "👥 多账号每日任务",
       "kind": "one-shot",
+      "visible": true,
       "default_config": {},
       "required_capabilities": [
         "frames",
@@ -150,6 +159,7 @@
       "id": "MultiAccountWeeklyGardenTask",
       "title": "👥 多账号每周乐园",
       "kind": "one-shot",
+      "visible": true,
       "default_config": {},
       "required_capabilities": [
         "frames",
@@ -165,6 +175,7 @@
       "id": "GardenTask",
       "title": "🎡 自动周常乐园",
       "kind": "one-shot",
+      "visible": true,
       "default_config": {},
       "required_capabilities": [
         "frames",
@@ -180,6 +191,7 @@
       "id": "EventTask",
       "title": "悲鸣行动：无音危机",
       "kind": "one-shot",
+      "visible": true,
       "default_config": {},
       "required_capabilities": [
         "frames",
@@ -195,6 +207,7 @@
       "id": "TestAccountSwitchTask",
       "title": "🔄 多账号每日任务：账号切换链路测试",
       "kind": "one-shot",
+      "visible": false,
       "default_config": {},
       "required_capabilities": [
         "frames",
@@ -210,6 +223,7 @@
       "id": "AutoAbyssTask",
       "title": "自动深塔",
       "kind": "one-shot",
+      "visible": true,
       "default_config": {},
       "required_capabilities": [
         "frames",
@@ -225,6 +239,7 @@
       "id": "AutoSeaRuinsTask",
       "title": "自动冥歌海墟",
       "kind": "one-shot",
+      "visible": true,
       "default_config": {},
       "required_capabilities": [
         "frames",
@@ -240,6 +255,7 @@
       "id": "WeeklyBossTask",
       "title": "Weekly Boss Challenge",
       "kind": "one-shot",
+      "visible": true,
       "default_config": {},
       "required_capabilities": [
         "frames",
@@ -255,6 +271,7 @@
       "id": "PianoTeachingTask",
       "title": "Piano Teaching",
       "kind": "one-shot",
+      "visible": true,
       "default_config": {},
       "required_capabilities": [
         "frames",
@@ -270,6 +287,7 @@
       "id": "SecondSolTask",
       "title": "SecondSolTask",
       "kind": "one-shot",
+      "visible": true,
       "default_config": {},
       "required_capabilities": [
         "frames",
@@ -286,6 +304,7 @@
       "id": "EchoesRemainTask",
       "title": "EchoesRemainTask",
       "kind": "one-shot",
+      "visible": true,
       "default_config": {},
       "required_capabilities": [
         "frames",
@@ -301,6 +320,7 @@
       "id": "ResonanceSimulationTask",
       "title": "ResonanceSimulationTask",
       "kind": "one-shot",
+      "visible": true,
       "default_config": {},
       "required_capabilities": [
         "frames",
@@ -318,6 +338,7 @@
       "id": "CharacterTrialTask",
       "title": "Character Trial",
       "kind": "one-shot",
+      "visible": true,
       "default_config": {},
       "required_capabilities": [
         "frames",
@@ -333,6 +354,7 @@
       "id": "TiangongTreasureTask",
       "title": "天工寻物",
       "kind": "one-shot",
+      "visible": true,
       "default_config": {},
       "required_capabilities": [
         "frames",
@@ -348,6 +370,7 @@
       "id": "auto-combat",
       "title": "⚔️ Auto Combat",
       "kind": "service",
+      "visible": true,
       "default_config": {
         "_enabled": true
       },
@@ -365,6 +388,7 @@
       "id": "SoloCombatTask",
       "title": "⚔️ Solo Auto Combat",
       "kind": "service",
+      "visible": true,
       "default_config": {
         "_enabled": true
       },
@@ -382,6 +406,7 @@
       "id": "AutoPickTask",
       "title": "🌸 Auto Pick",
       "kind": "service",
+      "visible": true,
       "default_config": {
         "_enabled": true
       },
@@ -399,6 +424,7 @@
       "id": "AutoLoginTask",
       "title": "🔑 Auto Login",
       "kind": "service",
+      "visible": true,
       "default_config": {
         "_enabled": true
       },
@@ -416,6 +442,7 @@
       "id": "AutoDialogTask",
       "title": "⏭️ Skip Dialog during Quests",
       "kind": "service",
+      "visible": true,
       "default_config": {
         "_enabled": true
       },
@@ -433,6 +460,7 @@
       "id": "FastTravelTask",
       "title": "✈️ Fast Travel",
       "kind": "service",
+      "visible": true,
       "default_config": {
         "_enabled": true
       },
@@ -450,6 +478,7 @@
       "id": "MouseResetTask",
       "title": "🖱️ Prevent Wuthering Waves from moving the mouse",
       "kind": "service",
+      "visible": true,
       "default_config": {
         "_enabled": true
       },
