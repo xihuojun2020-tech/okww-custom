@@ -50,6 +50,26 @@ class TestNativeConfig(unittest.TestCase):
 
 
 class TestNativeErrorsAndLogging(unittest.TestCase):
+    def test_logging_uses_session_output_storage_authority(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data = Path(directory) / 'data'
+            output = Path(directory) / 'output'
+            output.mkdir()
+            logs = output / 'chosen-logs'
+            (data / 'configs').mkdir(parents=True)
+            (data / 'configs/runtime_storage.json').write_text(json.dumps({
+                'root': str(output), 'paths': {'logs': str(logs)}}), encoding='utf-8')
+            handler = configure_logging(data)
+            try:
+                Logger.get_logger('storage-test').warning('selected output')
+                handler.flush()
+                self.assertEqual(Path(handler.baseFilename), logs / 'ok-native.log')
+                self.assertIn('selected output', (logs / 'ok-native.log').read_text(encoding='utf-8'))
+                self.assertFalse((data / 'logs').exists())
+            finally:
+                logging.getLogger().removeHandler(handler)
+                handler.close()
+
     def test_cancelled_becomes_production_stop(self):
         with self.assertRaises(TaskDisabledException) as caught:
             with translate_cancelled():

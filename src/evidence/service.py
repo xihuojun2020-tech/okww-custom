@@ -103,6 +103,16 @@ def get_evidence_service(*, root=None):
         return _service
 
 
+def rebind_evidence_service(root):
+    """Switch a quiescent management owner after verified output migration."""
+    global _service
+    with _service_lock:
+        if _service is not None:
+            _service.close()
+        _service = EvidenceService(EvidenceRepository(root))
+        return _service
+
+
 def begin_daily_run(task):
     from uuid import uuid4
     try:

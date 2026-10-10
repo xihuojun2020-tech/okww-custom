@@ -3,6 +3,7 @@
 No Qt, config, OCR or repository imports are allowed here. Originals survive.
 """
 import hashlib
+import fnmatch
 import json
 import os
 from pathlib import Path, PureWindowsPath
@@ -142,7 +143,7 @@ def discover(repo):
     return result
 
 
-def inventory(root):
+def inventory(root, policy=None):
     root = local_path(root)
     entries = {}
     if not root.exists(): return entries
@@ -152,8 +153,21 @@ def inventory(root):
         for name in files:
             if name.endswith(('.lock', '-wal', '-shm')): continue
             path = Path(directory) / name
+            relative = path.relative_to(root)
+            if policy:
+                top = relative.parts[0]
+                at_root = len(relative.parts) == 1
+                if top in policy.get('exclude_directories', ()) or (
+                        at_root and any(fnmatch.fnmatchcase(name, pattern)
+                                        for pattern in policy.get('exclude_files', ()))):
+                    continue
+                if 'include_files' in policy or 'include_directories' in policy:
+                    if not ((at_root and any(fnmatch.fnmatchcase(name, pattern)
+                                             for pattern in policy.get('include_files', ())))
+                            or (not at_root and top in policy.get('include_directories', ()))):
+                        continue
             stat = path.stat()
-            entries[path.relative_to(root).as_posix()] = [stat.st_size, stat.st_mtime_ns]
+            entries[relative.as_posix()] = [stat.st_size, stat.st_mtime_ns]
     return entries
 
 
@@ -423,7 +437,7 @@ def upgrade_evidence_layout(repo, current, *, progress=lambda message: None, qui
             gate.unlink(missing_ok=True)
 
 
-def migrate(repo, destination, *, progress=lambda message: None, quiesce=None):
+def migrate(repo, destination, *, progress=lambda message: None, quiesce=None, sources=None):
     repo, destination = local_path(repo), local_path(destination)
     if destination.anchor.casefold() != repo.anchor.casefold():
         raise ValueError('目标必须位于程序安装盘')
@@ -435,7 +449,7 @@ def migrate(repo, destination, *, progress=lambda message: None, quiesce=None):
         current = read_json(config, {})
         if current.get('schema') == SCHEMA and Path(current['root']) == destination:
             return validate_current(repo, current)
-        sources = discover(repo)
+        sources = discover(repo) if sources is None else sources
         progress('正在检查来源并暂停本安装的后台写入')
         for item in sources.values():
             for source in [item['source'], *item['history']]:
@@ -472,12 +486,13 @@ def migrate(repo, destination, *, progress=lambda message: None, quiesce=None):
                             else destination / 'migration/history' / kind) /
                            hashlib.sha256(old.encode()).hexdigest()[:12])
                           for kind, item in sources.items() for old in item['history']]
-                before = {str(source): inventory(source) for _, source, _ in roots}
+                policies = {kind: sources[kind].get('inventory') for kind in sources}
+                before = {(kind, str(source)): inventory(source, policies.get(kind)) for kind, source, _ in roots}
                 progress('正在建立数据库一致性快照和文件清单')
                 # Reserve SQLite writers while a separate reader takes the snapshot.
                 # This also protects sources shared by older installations.
-                for _, source, _ in roots:
-                    for relative in before[str(source)]:
+                for kind, source, _ in roots:
+                    for relative in before[kind, str(source)]:
                         path = source / relative
                         with path.open('rb') as stream:
                             is_database = stream.read(16) == b'SQLite format 3\x00'
@@ -486,14 +501,14 @@ def migrate(repo, destination, *, progress=lambda message: None, quiesce=None):
                             db.execute('BEGIN IMMEDIATE')
                 total = sum(len(items) for items in before.values())
                 size = sum(v[0] for items in before.values() for v in items.values())
-                remaining = sum(v[0] for _, source, target in roots for rel, v in before[str(source)].items()
+                remaining = sum(v[0] for kind, source, target in roots for rel, v in before[kind, str(source)].items()
                                 if not (target / rel).exists())
                 if shutil.disk_usage(destination).free < remaining + 512 * 1024**2:
                     raise OSError(f'安装盘空间不足，剩余迁移约 {remaining} 字节，另需 512 MiB 余量')
                 count, checkpoint = 0, time.monotonic()
                 for kind, source, target in roots:
                     target.mkdir(parents=True, exist_ok=True)
-                    for relative in before[str(source)]:
+                    for relative in before[kind, str(source)]:
                         dest = target / relative
                         key = (dest.relative_to(destination).as_posix() if dest.is_relative_to(destination)
                                else '@installation/' + dest.relative_to(repo).as_posix())
@@ -507,7 +522,7 @@ def migrate(repo, destination, *, progress=lambda message: None, quiesce=None):
                         if count % 32 == 0 or time.monotonic() - checkpoint >= 1:
                             atomic_json(journal, state)
                             checkpoint = time.monotonic()
-                if before != {str(source): inventory(source) for _, source, _ in roots}:
+                if before != {(kind, str(source)): inventory(source, policies.get(kind)) for kind, source, _ in roots}:
                     raise OSError('源数据在迁移期间变化，未切换；请关闭相关程序后重试')
                 state['phase'] = 'REWRITE'
                 atomic_json(journal, state)

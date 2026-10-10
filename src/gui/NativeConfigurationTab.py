@@ -76,9 +76,12 @@ class NativeConfigurationTab(QWidget):
     lifecycle_failed = Signal(str)
     response_received = Signal(dict)
     busy_changed = Signal(bool)
+    live_completed = Signal(object, object)
 
-    def __init__(self, data_dir, version, manifest_path, parent=None):
+    def __init__(self, data_dir, version, manifest_path, parent=None, *, live_bridge=None):
         super().__init__(parent)
+        self.live_bridge = live_bridge
+        self.live_completed.connect(self._live_finished, Qt.QueuedConnection)
         from gameframe.packages import PackageManifest
         manifest = PackageManifest.read(Path(manifest_path).parent)
         self.schema = None
@@ -156,11 +159,11 @@ class NativeConfigurationTab(QWidget):
 
     def _fail_lifecycle(self, message):
         self._fail(message)
-        self._pending.clear()
+        self._pending.intersection_update(value for value in self._pending if isinstance(value, str))
         if not self._closing and self._startup_failure is None:
             self._startup_failure = str(message)
             self.lifecycle_failed.emit(self._startup_failure)
-        self.busy_changed.emit(False)
+        self.busy_changed.emit(bool(self._pending))
 
     def _process_error(self, error):
         message = self.process.errorString()
@@ -248,6 +251,30 @@ class NativeConfigurationTab(QWidget):
     def _set(self, scope, identifier, key, value):
         self.request('set-config', scope=scope, id=identifier, values={key: value})
 
+    def _live_action(self, task_id, action_id):
+        if self._closing:
+            self._fail('配置窗口正在关闭')
+            return
+        future = self.live_bridge.request('invoke-action', task_id=task_id, action_id=action_id)
+        self._pending.add(future.request_id)
+        self.scroll.setEnabled(False)
+        self.refresh_button.setEnabled(False)
+        self.status.setText('正在执行设备动作…')
+        self.busy_changed.emit(True)
+        future.add_done_callback(lambda result: self.live_completed.emit(result.request_id, result))
+
+    def _live_finished(self, request_id, future):
+        self._pending.discard(request_id)
+        self.scroll.setEnabled(not self._pending and not self._closing)
+        self.refresh_button.setEnabled(not self._pending and not self._closing)
+        try:
+            future.result()
+        except Exception as error:
+            self._fail(str(error))
+        else:
+            self.status.setText('设备动作已执行。')
+        self.busy_changed.emit(bool(self._pending))
+
     def _render(self, row):
         while self.form.rowCount():
             self.form.removeRow(0)
@@ -300,13 +327,16 @@ class NativeConfigurationTab(QWidget):
             layout.setContentsMargins(0, 0, 0, 0)
             for definition in details.get('buttons', [details]):
                 button = QPushButton(definition.get('text', definition.get('name', key)), body)
-                if definition.get('requires_device'):
+                requires_device = definition.get('requires_device', False)
+                if requires_device and self.live_bridge is None:
                     button.setEnabled(False)
                     button.setToolTip('此动作需要执行器连接游戏设备。')
                 if definition['target'] == 'management':
                     button.clicked.connect(self.management_requested)
                 else:
-                    button.clicked.connect(lambda _=False, action=definition['action_id']:
+                    button.clicked.connect(lambda _=False, action=definition['action_id'],
+                                                  live=requires_device:
+                        self._live_action(identifier, action) if live else
                         self.request('invoke-action', task_id=identifier, action_id=action))
                 layout.addWidget(button)
             return body

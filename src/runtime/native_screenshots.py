@@ -21,7 +21,8 @@ def masked_native_frame(frame):
 def save_native_screenshot(data_dir, name, frame):
     if name is None:
         raise ValueError('screenshot name cannot be None')
-    root = (Path(data_dir) / 'okww监控室').resolve()
+    from src.runtime.diagnostic_storage import storage_path
+    root = storage_path('screenshots', Path(data_dir) / 'okww监控室', repo=data_dir).resolve()
     destination = (root / f'{name}.png').resolve()
     if not destination.is_relative_to(root):
         raise ValueError('Screenshot name leaves the evidence directory')

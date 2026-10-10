@@ -37,8 +37,10 @@ class Logger:
 
 
 def configure_logging(data_dir, *, debug=False):
-    """Write native task logs inside the caller's explicit data directory."""
-    log_dir = Path(data_dir) / 'logs'
+    """Write native task logs using the caller's storage configuration."""
+    from src.runtime.diagnostic_storage import storage_path
+    data_root = Path(data_dir).resolve()
+    log_dir = storage_path('logs', data_root / 'logs', repo=data_root).resolve()
     log_dir.mkdir(parents=True, exist_ok=True)
     for handler in tuple(_SINK.handlers):
         if getattr(handler, '_native_handler', False):

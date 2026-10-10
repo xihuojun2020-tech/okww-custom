@@ -7,23 +7,28 @@ import hashlib
 import queue
 import threading
 import zipfile
+import uuid
 from pathlib import Path
 
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import (QApplication, QComboBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel,
-                               QListWidget, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGridLayout, QHBoxLayout, QLabel,
+                               QListWidget, QMenu, QPlainTextEdit, QPushButton, QStyle,
+                               QScrollArea, QSystemTrayIcon, QVBoxLayout, QWidget)
 
 from gameframe.controller import Controller
 from gameframe.packages import discover, install_archive
 from gameframe.launcher_options import load_options, save_options
 from gameframe.package_updates import apply_update, prepare_update, recover_updates
+from gameframe.desktop_controls import HOTKEYS, HotkeyTransition, desktop_preferences
+from gameframe.device_editor import DeviceEditor
 
 
 class GameFrameWindow(QWidget):
-    def __init__(self, packages_dir: Path | str, data_dir: Path | str, *, controller=None):
+    def __init__(self, packages_dir: Path | str, data_dir: Path | str, *, controller=None,
+                 key_state=None):
         super().__init__()
         self.setWindowTitle("GameFrame")
-        self.resize(760, 680)
+        self.resize(980, 800)
         self.packages_dir = Path(packages_dir)
         self.data_dir = Path(data_dir)
         self.controller = controller if controller is not None else Controller()
@@ -52,19 +57,48 @@ class GameFrameWindow(QWidget):
         self._cleanup_done = False
         self._paused = False
         self._exit_requested = False
+        self._live_routes = {}
+        self._reserved_hotkeys = []
+        self._hotkey = HotkeyTransition() if key_state is None else HotkeyTransition(key_state)
+        self._force_close = False
 
         self.package_select = QComboBox()
         for manifest in self.packages:
             self.package_select.addItem(f"{manifest.title}  {manifest.version}")
         self.task_list = QListWidget()
+        self.task_list.setMaximumHeight(130)
         self._visible_tasks = ()
         self.mode_label = QLabel()
         self.config_edit = QPlainTextEdit()
+        self.config_edit.setMaximumHeight(100)
         self.config_label = QLabel('Task config JSON')
         self.device_edit = QPlainTextEdit()
         self.device_edit.setPlainText('{"type": "replay", "frames": []}')
+        self.device_editor = DeviceEditor()
+        self.device_edit.setMaximumHeight(90)
+        self.compatibility_label = QLabel()
+        self.compatibility_label.setWordWrap(True)
+        self.pause_hotkey = QComboBox()
+        self.pause_hotkey.addItems(HOTKEYS)
+        self.tray_notifications = QCheckBox('系统托盘通知')
+        self.close_to_tray = QCheckBox('关闭窗口时最小化到托盘')
+        self.notification_label = QLabel()
+        self.notification_label.setWordWrap(True)
+        self.screenshot_button = QPushButton('保存截图')
+        self.ocr_button = QPushButton('截图并识别文字')
+        self.paths_button = QPushButton('打开资料目录')
+        self._preferences_loading = False
+        self.tray = QSystemTrayIcon(self.style().standardIcon(QStyle.SP_ComputerIcon), self)
+        menu = QMenu(self)
+        menu.addAction('显示窗口', self.showNormal)
+        menu.addAction('暂停 / 恢复', self.toggle_pause)
+        menu.addAction('退出', self._exit_from_tray)
+        self.tray.setContextMenu(menu)
+        self.tray.activated.connect(lambda reason: self.showNormal()
+            if reason == QSystemTrayIcon.DoubleClick else None)
         self.output = QPlainTextEdit()
         self.output.setReadOnly(True)
+        self.output.setMaximumHeight(140)
         self.status_label = QLabel("Ready")
         self.start_button = QPushButton("Start")
         self.stop_button = QPushButton("Stop")
@@ -88,23 +122,31 @@ class GameFrameWindow(QWidget):
         form.addRow("Execution mode", self.mode_label)
         form.addRow("Tasks", self.task_list)
         form.addRow(self.config_label, self.config_edit)
-        form.addRow("Device JSON", self.device_edit)
-        buttons = QHBoxLayout()
-        buttons.addWidget(self.start_button)
-        buttons.addWidget(self.stop_button)
-        buttons.addWidget(self.pause_button)
-        buttons.addWidget(self.install_button)
-        buttons.addWidget(self.update_button)
-        buttons.addWidget(self.disable_button)
-        buttons.addWidget(self.manage_button)
-        buttons.addWidget(self.overview_button)
-        buttons.addWidget(self.refresh_tasks_button)
-        buttons.addWidget(self.reload_tasks_button)
-        buttons.addWidget(self.reload_characters_button)
+        form.addRow('设备', self.device_editor)
+        form.addRow('高级设备 JSON', self.device_edit)
+        form.addRow('能力匹配', self.compatibility_label)
+        form.addRow('暂停 / 恢复热键', self.pause_hotkey)
+        form.addRow(self.tray_notifications, self.close_to_tray)
+        buttons = QGridLayout()
+        for index, button in enumerate((self.start_button, self.stop_button, self.pause_button,
+                self.disable_button, self.manage_button, self.overview_button, self.install_button,
+                self.update_button, self.refresh_tasks_button, self.reload_tasks_button,
+                self.reload_characters_button)):
+            buttons.addWidget(button, index // 4, index % 4)
         layout = QVBoxLayout(self)
-        layout.addLayout(form)
+        form_body = QWidget(self)
+        form_body.setLayout(form)
+        form_scroll = QScrollArea(self)
+        form_scroll.setWidgetResizable(True)
+        form_scroll.setWidget(form_body)
+        layout.addWidget(form_scroll, 1)
         layout.addLayout(buttons)
         layout.addWidget(self.status_label)
+        tools = QHBoxLayout()
+        for button in (self.screenshot_button, self.ocr_button, self.paths_button):
+            tools.addWidget(button)
+        layout.addLayout(tools)
+        layout.addWidget(self.notification_label)
         layout.addWidget(QLabel("Worker output"))
         layout.addWidget(self.output)
 
@@ -121,10 +163,159 @@ class GameFrameWindow(QWidget):
         self.refresh_tasks_button.clicked.connect(self.refresh_tasks)
         self.reload_tasks_button.clicked.connect(self.reload_user_tasks)
         self.reload_characters_button.clicked.connect(self.reload_character_code)
+        self.device_editor.options_changed.connect(self._device_fields_changed)
+        self.device_edit.textChanged.connect(self._device_json_changed)
+        self.pause_hotkey.currentTextChanged.connect(self._desktop_changed)
+        self.tray_notifications.toggled.connect(self._desktop_changed)
+        self.close_to_tray.toggled.connect(self._desktop_changed)
+        self.screenshot_button.clicked.connect(lambda: self.inspect_frame(False))
+        self.ocr_button.clicked.connect(lambda: self.inspect_frame(True))
+        self.paths_button.clicked.connect(self.open_data_directory)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._drain_events)
         self.timer.start(50)
         self._select_package(0)
+
+    def _exit_from_tray(self):
+        self._force_close = True
+        self.close()
+
+    def _device_fields_changed(self, options):
+        self.device_edit.blockSignals(True)
+        self.device_edit.setPlainText(json.dumps(options, ensure_ascii=False, indent=2))
+        self.device_edit.blockSignals(False)
+        self._device_compatibility()
+
+    def _device_json_changed(self):
+        try:
+            self.device_editor.set_options(json.loads(self.device_edit.toPlainText()))
+        except (TypeError, ValueError) as error:
+            self.compatibility_label.setText('设备配置无效：' + str(error))
+        else:
+            self._device_compatibility()
+
+    def _device_compatibility(self):
+        row = self.task_list.currentRow()
+        if not 0 <= row < len(self._visible_tasks):
+            self.compatibility_label.clear()
+            return
+        required = self._visible_tasks[row].required_capabilities
+        missing = set(required) - self.device_editor.capabilities()
+        self.compatibility_label.setText('设备缺少：' + ', '.join(sorted(missing)) if missing else
+            '设备能力匹配；实际连接与游戏运行尚需验证。')
+
+    def _desktop_changed(self, *_):
+        if self._preferences_loading:
+            return
+        manifest = self._manifest()
+        if manifest is None or manifest.execution != 'native':
+            return
+        try:
+            path = self.data_dir / manifest.id / 'launcher.json'
+            options = load_options(path)
+            options.update(pause_hotkey=self.pause_hotkey.currentText(),
+                tray_notifications=self.tray_notifications.isChecked(), close_to_tray=self.close_to_tray.isChecked())
+            save_options(path, options)
+            self._hotkey.set_key(options['pause_hotkey'])
+            self._hotkey_conflict()
+        except (OSError, ValueError) as error:
+            self._error(error)
+
+    def _hotkey_conflict(self):
+        key = self.pause_hotkey.currentText()
+        conflict = key != 'None' and key.casefold() in {str(value).casefold() for value in self._reserved_hotkeys}
+        self.pause_hotkey.setToolTip('与游戏技能键冲突，请选择其他热键。' if conflict else
+                                    '暂停 / 恢复当前执行会话，保留服务启用设置。')
+        self._hotkey.set_key('None' if conflict else key)
+
+    def open_data_directory(self):
+        manifest = self._manifest()
+        if manifest is not None:
+            from PySide6.QtCore import QUrl
+            from PySide6.QtGui import QDesktopServices
+            path = (self.data_dir / manifest.id).resolve()
+            path.mkdir(parents=True, exist_ok=True)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+    def inspect_frame(self, ocr=False):
+        request_id = str(uuid.uuid4())
+        try:
+            self.controller.request_live('inspect-frame', request_id, ocr=ocr)
+        except Exception as error:
+            self._error(error)
+        else:
+            self._live_routes[request_id] = 'inspection'
+            self.status_label.setText('已请求运行进程采集；等待安全任务边界。')
+
+    def _notify(self, event):
+        name = event.get('event')
+        if name == 'combat-notification' or (name == 'task-log' and event.get('notify')):
+            title = event.get('title') or 'GameFrame'
+            message = str(event.get('message', ''))
+            failure = event.get('error') or event.get('level') == 'error'
+        elif name in {'session-task-finished', 'session-task-failed'}:
+            title = str(event['task_id'])
+            failure = name == 'session-task-failed'
+            message = str(event['error']) if failure else '任务已完成。'
+        else:
+            return
+        self.notification_label.setText(str(title) + '：' + message)
+        if self.tray_notifications.isChecked() and QSystemTrayIcon.isSystemTrayAvailable():
+            self.tray.show()
+            self.tray.showMessage(str(title), message,
+                QSystemTrayIcon.Critical if failure else QSystemTrayIcon.Information)
+
+    def _management_live_request(self, line):
+        try:
+            event = json.loads(line)
+        except ValueError:
+            return False
+        if not isinstance(event, dict) or event.get('event') != 'live-request':
+            return False
+        request = {key: value for key, value in event.items() if key != 'event'}
+        request_id = request.get('request_id')
+        try:
+            if not isinstance(request_id, str) or not request_id or request_id in self._live_routes:
+                raise ValueError('A live request needs a unique string request_id')
+            request.pop('request_id')
+            command = request.pop('command')
+            if self._stopping or self._closing:
+                raise RuntimeError('The execution owner is stopping')
+            self.controller.request_live(command, request_id, **request)
+        except Exception as error:
+            self._deliver_management({'event': 'live-response', 'request_id': request_id, 'ok': False,
+                'error': {'type': type(error).__name__, 'message': str(error)}})
+        else:
+            self._live_routes[request_id] = 'management'
+        return True
+
+    def _deliver_management(self, event):
+        try:
+            self.management_controller.deliver_live_response(event)
+        except Exception as error:
+            self._error(error)
+
+    def _live_response(self, event):
+        if event.get('event') not in {'configuration-response', 'live-response'}:
+            return False
+        destination = self._live_routes.pop(event.get('request_id'), None)
+        if destination == 'management':
+            self._deliver_management(event)
+        elif destination == 'hotkeys':
+            if event['ok']:
+                self._reserved_hotkeys = event['schema'].get('reserved_hotkeys', [])
+                self._hotkey_conflict()
+            else:
+                self._error(RuntimeError(event['error']['message']))
+        elif destination == 'inspection':
+            if event['ok']:
+                result = event['result']
+                self.status_label.setText('截图已保存：' + result['path'])
+                if result.get('text'):
+                    self.output.appendPlainText(result['text'])
+            else:
+                self._error(RuntimeError(event['error']['message']))
+        return True
 
     def _manifest(self):
         index = self.package_select.currentIndex()
@@ -155,7 +346,7 @@ class GameFrameWindow(QWidget):
             self._error(error)
             return
         legacy = manifest.execution == "legacy-application"
-        self.manage_button.setEnabled(manifest.management and self.process is None and not self._managing
+        self.manage_button.setEnabled(manifest.management and (self.process is None or manifest.supports_session) and not self._managing
                                       and not self._starting and not self._installing and not self._closing
                                       and not self._updating)
         self.update_button.setEnabled(self.process is None and not self._managing and not self._starting
@@ -168,12 +359,25 @@ class GameFrameWindow(QWidget):
         self.config_label.setText('本次运行覆盖配置（长期设置在管理窗口保存）'
                                   if self._managed_config(manifest) else 'Task config JSON')
         self.device_edit.setEnabled(not legacy)
+        self.device_editor.setEnabled(not legacy)
+        for control in (self.pause_hotkey, self.tray_notifications, self.close_to_tray):
+            control.setEnabled(not legacy)
         if legacy:
             self.config_edit.setPlainText("Production application configuration is used; this editor does not apply.")
             self.device_edit.setPlainText("Production application device selection is used; this editor does not apply.")
         else:
             options = load_options(self.data_dir / manifest.id / 'launcher.json')
             self.device_edit.setPlainText(json.dumps(options['device'], ensure_ascii=False, indent=2))
+            preferences = desktop_preferences(self.data_dir / manifest.id, options)
+            self._preferences_loading = True
+            try:
+                self.pause_hotkey.setCurrentText(preferences['pause_hotkey'])
+                self.tray_notifications.setChecked(preferences['tray_notifications'])
+                self.close_to_tray.setChecked(preferences['close_to_tray'])
+            finally:
+                self._preferences_loading = False
+            self._reserved_hotkeys = []
+            self._hotkey.set_key(preferences['pause_hotkey'])
         for task in self._visible_tasks:
             self.task_list.addItem(f"{task.title}  [{task.kind}]  ({task.id})")
         if self._visible_tasks:
@@ -182,7 +386,7 @@ class GameFrameWindow(QWidget):
             self.task_list.setCurrentRow(row)
         self.start_button.setEnabled(bool(self._visible_tasks) and self.process is None
                                      and not self._starting and not self._installing and not self._closing
-                                     and not self._managing and not self._updating)
+                                     and (not self._managing or manifest.supports_session) and not self._updating)
 
     def refresh_tasks(self):
         manifest = self._manifest()
@@ -232,6 +436,7 @@ class GameFrameWindow(QWidget):
                                                       ensure_ascii=False, indent=2))
             self.disable_button.setEnabled(self.process is not None and manifest.supports_session
                                            and task.kind == 'service' and not self._stopping)
+            self._device_compatibility()
 
     def _managed_config(self, manifest):
         return manifest.execution == 'native' and manifest.supports_session and manifest.management
@@ -241,6 +446,8 @@ class GameFrameWindow(QWidget):
         device = json.loads(self.device_edit.toPlainText())
         if not isinstance(config, dict) or not isinstance(device, dict) or "type" not in device:
             raise ValueError("Native config and device must be JSON objects; device needs a type")
+        self.device_editor.options()  # Invalid unfinished fields must not launch the last valid JSON.
+        self.device_editor.set_options(device)  # A rejected advanced backend must not use stale form state.
         return config, device
 
     def _error(self, error):
@@ -252,13 +459,16 @@ class GameFrameWindow(QWidget):
         manifest = self._manifest()
         row = self.task_list.currentRow()
         if (manifest is None or row < 0
-                or self._starting or self._installing or self._closing or self._managing or self._updating
+                or self._starting or self._installing or self._closing or (self._managing and not manifest.supports_session) or self._updating
                 or (self.process is not None and not manifest.supports_session)):
             return
         task = self._visible_tasks[row]
         try:
             config, device = self._native_options() if manifest.execution == "native" else (None, None)
             if manifest.execution == 'native':
+                missing = task.required_capabilities - self.device_editor.capabilities()
+                if missing:
+                    raise ValueError('设备缺少任务所需能力：' + ', '.join(sorted(missing)))
                 path = self.data_dir / manifest.id / 'launcher.json'
                 options = load_options(path)
                 if self._managed_config(manifest):
@@ -283,6 +493,8 @@ class GameFrameWindow(QWidget):
         self.output.clear()
         self._exit_requested = False
         self._starting = True
+        self.device_edit.setEnabled(False)
+        self.device_editor.setEnabled(False)
         self.package_select.setEnabled(False)
         self.status_label.setText(f"Starting {manifest.id}/{task.id} ({manifest.execution})")
         self.start_button.setEnabled(False)
@@ -509,7 +721,7 @@ class GameFrameWindow(QWidget):
 
     def manage_selected(self):
         manifest = self._manifest()
-        if (manifest is None or not manifest.management or self.process is not None
+        if (manifest is None or not manifest.management or (self.process is not None and not manifest.supports_session)
                 or self._starting or self._installing or self._closing or self._managing or self._updating):
             return
         self._managing = True
@@ -582,7 +794,12 @@ class GameFrameWindow(QWidget):
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
-            return  # Worker output also includes human-readable dependency logs.
+            return False  # Worker output also includes human-readable dependency logs.
+        if not isinstance(event, dict):
+            return False
+        if self._live_response(event):
+            return True  # Private results go only to their requesting UI.
+        self._notify(event)
         if isinstance(event, dict) and event.get('event') == 'task-paused':
             self._paused = event['paused']
             self.pause_button.setText('Resume' if self._paused else 'Pause')
@@ -603,6 +820,7 @@ class GameFrameWindow(QWidget):
             self.status_label.setText('Character code applied: ' + str(event['applied_character_revision']))
         elif isinstance(event, dict) and event.get('event') in ('character-code-reload-failed', 'user-tasks-reload-failed'):
             self._error(RuntimeError(event['error']))
+        return False
 
     def _stop_worker(self):
         try:
@@ -632,22 +850,31 @@ class GameFrameWindow(QWidget):
                 elif value != 0:
                     self._error(RuntimeError(f'Read-only overview exited with code {value}'))
             elif kind == "line":
-                self.output.appendPlainText(value)
-                self._pause_status(value)
+                if not self._pause_status(value):
+                    self.output.appendPlainText(value)
             elif kind == 'management-line':
-                self.output.appendPlainText(value)
-                self._management_update_status(value)
+                if not self._management_live_request(value):
+                    self.output.appendPlainText(value)
+                    self._management_update_status(value)
             elif kind == 'management-started':
                 self._management_process = value
                 self.status_label.setText('Management running')
+                manifest = self._manifest()
+                self.start_button.setEnabled(manifest.supports_session and self.task_list.currentRow() >= 0
+                                             and not self._closing and not self._stopping)
                 threading.Thread(target=self._read_management_output,
                                  args=(value,), daemon=True).start()
             elif kind in {'management-exit', 'management-error'}:
                 self._managing = False
                 self._management_process = None
-                self.package_select.setEnabled(not self._closing and not self._updating)
-                self._select_package(self.package_select.currentIndex())
-                self.install_button.setEnabled(not self._closing and not self._updating)
+                self._live_routes = {key: value for key, value in self._live_routes.items() if value != 'management'}
+                self.package_select.setEnabled(self.process is None and not self._closing and not self._updating)
+                if self.process is None:
+                    self._select_package(self.package_select.currentIndex())
+                else:
+                    self.refresh_tasks()
+                    self.manage_button.setEnabled(self._manifest().management and not self._closing and not self._updating)
+                self.install_button.setEnabled(self.process is None and not self._closing and not self._updating)
                 if kind == 'management-error':
                     if self._updating:
                         self._update_management_error = value
@@ -667,6 +894,9 @@ class GameFrameWindow(QWidget):
                 self.process = process
                 self.package_select.setEnabled(False)
                 self.device_edit.setEnabled(False)
+                self.device_editor.setEnabled(False)
+                self.manage_button.setEnabled(manifest.management and manifest.supports_session
+                                              and not self._managing and not self._closing)
                 self.status_label.setText(f"Running {manifest.id}/{task_id} ({manifest.execution})")
                 self.stop_button.setEnabled(not self._closing)
                 self._paused = False
@@ -681,19 +911,33 @@ class GameFrameWindow(QWidget):
                                                and not self._closing)
                 self._reader = threading.Thread(target=self._read_output, args=(process,), daemon=True)
                 self._reader.start()
+                if manifest.supports_session:
+                    request_id = str(uuid.uuid4())
+                    try:
+                        self.controller.request_live('get-schema', request_id)
+                    except Exception as error:
+                        self._error(error)
+                    else:
+                        self._live_routes[request_id] = 'hotkeys'
             elif kind == "start-error":
                 self._starting = False
-                self.package_select.setEnabled(not self._closing)
+                self.package_select.setEnabled(not self._closing and not self._managing)
+                self.device_edit.setEnabled(not self._closing)
+                self.device_editor.setEnabled(not self._closing)
                 self._error(value)
                 self.start_button.setEnabled(not self._closing and self.task_list.currentRow() >= 0)
                 self.install_button.setEnabled(not self._closing)
                 self.manage_button.setEnabled(self._manifest().management and not self._closing)
                 self.update_button.setEnabled(not self._closing and self._is_installed(self._manifest()))
             elif kind == "exit":
+                for request_id, destination in list(self._live_routes.items()):
+                    self._live_response({'event': 'live-response', 'request_id': request_id,
+                        'ok': False, 'error': {'type': 'RuntimeError', 'message': '执行会话已退出，请启动会话后再试。'}})
                 self.status_label.setText(f"Worker exited with code {value}")
                 self.process = None
-                self.package_select.setEnabled(not self._closing and not self._updating)
+                self.package_select.setEnabled(not self._managing and not self._closing and not self._updating)
                 self.device_edit.setEnabled(self._manifest().execution == 'native' and not self._closing)
+                self.device_editor.setEnabled(self._manifest().execution == 'native' and not self._closing)
                 self.start_button.setText('Start')
                 self.disable_button.setEnabled(False)
                 self.start_button.setEnabled(not self._closing and not self._starting and not self._updating
@@ -705,6 +949,7 @@ class GameFrameWindow(QWidget):
                 self.update_button.setEnabled(not self._closing and not self._updating
                                               and self._is_installed(self._manifest()))
                 if value == 0 and self._exit_requested:
+                    self._force_close = True
                     self.close()
             elif kind == "install-done":
                 self._installing = False
@@ -747,9 +992,27 @@ class GameFrameWindow(QWidget):
                                             and not self._stopping and not self._closing and not self._updating)
         self.reload_characters_button.setEnabled(self.process is not None and self.controller.session
                                                 and not self._stopping and not self._closing and not self._updating)
+        live = self.process is not None and self.controller.session and not self._stopping and not self._closing
+        manifest = self._manifest()
+        editable = manifest is not None and manifest.execution == 'native' and self.process is None
+        editable = editable and not self._starting and not self._closing and not self._updating
+        self.device_editor.setEnabled(editable)
+        self.device_edit.setEnabled(editable)
+        self.screenshot_button.setEnabled(live)
+        self.ocr_button.setEnabled(live)
+        if self.process is not None and not self._stopping and not self._closing and self.pause_button.isEnabled():
+            if self._hotkey.poll():
+                self.toggle_pause()
 
     def closeEvent(self, event):
+        if not self._force_close and not self._closing and self.close_to_tray.isChecked():
+            if QSystemTrayIcon.isSystemTrayAvailable():
+                self.tray.show()
+                self.hide()
+                event.ignore()
+                return
         if self._cleanup_done:
+            self.tray.hide()
             event.accept()
             return
         event.ignore()

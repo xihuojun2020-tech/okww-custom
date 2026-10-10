@@ -135,7 +135,8 @@ class TestAccountManagementEntry(unittest.TestCase):
             original_show = ManagementWindow.show
             def verified_show(window):
                 assert window.tabs.count() == 3
-                assert not window.account_tab.account_tab.read_feature_button.isEnabled()
+                assert window.account_tab.account_tab.read_feature_button.isEnabled()
+                assert window.account_tab.account_tab.native_live_bridge is window.live_bridge
                 assert not window.evidence_tab.capture_button.isEnabled()
                 assert window.evidence_tab.executor is None
                 assert window.evidence_service.repository.root == root / 'data/okww监控室/CompletionEvidence'
@@ -271,7 +272,8 @@ class TestAccountManagementEntry(unittest.TestCase):
                 def verified_show(window):
                     assert window.tabs.count() == 3
                     assert not window.evidence_tab.capture_button.isEnabled()
-                    assert not window.account_tab.account_tab.read_feature_button.isEnabled()
+                    assert window.account_tab.account_tab.read_feature_button.isEnabled()
+                    assert window.account_tab.account_tab.native_live_bridge is window.live_bridge
                     original_show(window)
                 with patch.object(DeviceManager, '__init__', side_effect=AssertionError('device constructed')), \\
                      patch.object(TaskExecutor, '__init__', side_effect=AssertionError('executor constructed')), \\
@@ -335,7 +337,7 @@ class TestAccountManagementEntry(unittest.TestCase):
                     stack.enter_context(patch.object(TaskExecutor, '__init__', side_effect=AssertionError('created executor')))
                     window = ManagementWindow(service)
                     window.show()
-                    assert window.tabs.count() == 9
+                    assert window.tabs.count() == 10
                     assert window.update_tab.package_root == package_root
                     assert window.configuration_tab is not None
                     deadline = time.monotonic() + 10

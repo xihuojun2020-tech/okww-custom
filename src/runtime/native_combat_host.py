@@ -78,8 +78,10 @@ class NativeCombatHost:
             from src.runtime.account_runtime_bootstrap import get_account_runtime
             if get_account_runtime() is not None:
                 from src.evidence.service import get_evidence_service
+                from src.runtime.diagnostic_storage import storage_path
                 executor.completion_evidence_service = get_evidence_service(
-                    root=Path(context.data_dir) / 'okww监控室' / 'CompletionEvidence')
+                    root=storage_path('CompletionEvidence', Path(context.data_dir) / 'okww监控室' / 'CompletionEvidence',
+                                      repo=context.data_dir))
         options = {name: Config(name, defaults, folder=str(config_root))
                    for name, defaults in global_options.items()}
         self.global_configs = options
@@ -331,6 +333,74 @@ class NativeCombatHost:
             self._configuration_service = ConfigurationService(self)
         return self._configuration_service.request(request)
 
+    def live_request(self, request):
+        """Inspect this owner's device without changing pause or combat intent."""
+        from src.runtime.game_runtime_errors import FrameUnavailable
+        response = {'event': 'live-response', 'request_id': request.get('request_id')}
+        def check():
+            if self.context.stop.is_set():
+                raise Cancelled('Task stopped')
+        def capture():
+            check()
+            frame = self.context.device.next_frame(.1)
+            check()
+            return frame
+        try:
+            if self.context.device is None:
+                raise RuntimeError('Live inspection requires an execution device')
+            command = request['command']
+            if command == 'inspect-frame':
+                from uuid import uuid4
+                import cv2
+                from src.runtime.diagnostic_storage import storage_path
+                from src.runtime.native_screenshots import masked_native_frame
+                if type(request.get('ocr', False)) is not bool:
+                    raise ValueError('Frame OCR option must be a boolean')
+                frame = capture()
+                if frame is None:
+                    raise FrameUnavailable('No new device frame')
+                root = storage_path('screenshots', self.context.data_dir / 'okww监控室',
+                                    repo=self.context.data_dir).resolve()
+                path = root / ('live-' + uuid4().hex + '.png')
+                success, encoded = cv2.imencode('.png', masked_native_frame(frame.image))
+                if not success:
+                    raise OSError('Unable to encode live screenshot')
+                root.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(encoded.tobytes())
+                rows = []
+                if request.get('ocr', False):
+                    if self.executor.ocr_engine is None:
+                        raise RuntimeError('Live OCR engine is not configured')
+                    detected = self.executor.ocr_engine.ocr(frame.image)
+                    check()
+                    for positions, (text, confidence) in detected[0] or []:
+                        rows.append({'text': text, 'confidence': float(confidence),
+                            'x': round(positions[0][0]), 'y': round(positions[0][1]),
+                            'width': round(positions[2][0] - positions[0][0]),
+                            'height': round(positions[2][1] - positions[0][1])})
+                result = {'path': str(path), 'masked': True, 'sequence': frame.sequence,
+                    'captured_ns': frame.captured_ns, 'timestamp_source': frame.timestamp_source,
+                    'ocr_rows': rows, 'text': '\n'.join(row['text'] for row in rows)}
+            elif command == 'inspect-account-feature':
+                from src.task.account_feature_verification import observe, read_code
+                def image():
+                    frame = capture()
+                    return frame.image if frame is not None else None
+                def pause(seconds):
+                    self.context.stop.wait(seconds)
+                    check()
+                observation = observe(image, lambda frame: read_code(self.task, frame), check, pause)
+                if observation.status != 'verified':
+                    raise RuntimeError('当前特征码无法稳定读取；请确保游戏内特征码可见后重试')
+                result = {'code': observation.code, 'evidence': observation.metadata()}
+            else:
+                raise ValueError('Unknown live inspection command: ' + str(command))
+            check()
+            response.update(ok=True, result=result)
+        except Exception as error:
+            response.update(ok=False, error={'type': type(error).__name__, 'message': str(error)})
+        return response
+
     def run_session(self, initial_task_id):
         """Dispatch foreground work and background services on one input owner."""
         from src.runtime.native_task import NativeTriggerTask
@@ -359,6 +429,10 @@ class NativeCombatHost:
                 except Empty:
                     request = None
             if request is not None:
+                if request.get('command') in ('inspect-frame', 'inspect-account-feature'):
+                    response = self.live_request(request)
+                    self.context.emit(response.pop('event'), **response)
+                    continue
                 if request.get('command') == 'reload-character-code':
                     try:
                         result = self.reload_character_code()

@@ -125,4 +125,6 @@ class TaskMetadata:
                              'default_config': json_value(config.default),
                              'current_config': json_value(config),
                              'readonly_values': {}, **metadata})
-        return {'tasks': tasks, 'globals': globals_}
+        return {'tasks': tasks, 'globals': globals_,
+                'reserved_hotkeys': list(self.host.global_configs['Game Hotkey'].values())
+                    if 'Game Hotkey' in self.host.global_configs else []}

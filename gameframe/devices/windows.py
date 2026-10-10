@@ -56,6 +56,24 @@ class _Point(ctypes.Structure):
     _fields_ = [("x", wintypes.LONG), ("y", wintypes.LONG)]
 
 
+def enumerate_windows():
+    """Read visible top-level HWND metadata only when explicitly requested."""
+    import win32gui
+    import win32process
+
+    windows = []
+
+    def collect(hwnd, _):
+        title = win32gui.GetWindowText(hwnd)
+        if win32gui.IsWindowVisible(hwnd) and title:
+            windows.append({'hwnd': hwnd, 'title': title,
+                            'pid': win32process.GetWindowThreadProcessId(hwnd)[1]})
+        return True
+
+    win32gui.EnumWindows(collect, None)
+    return windows
+
+
 class _WindowBackend:
     def __init__(self):
         import win32api

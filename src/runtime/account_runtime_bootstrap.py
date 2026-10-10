@@ -161,13 +161,14 @@ def prepare_native_account_runtime(data_dir, program_version) -> AccountRuntime:
     from src.runtime import combat_api
     from src.storage import resolve_config_backup_dir
     from src.evidence.service import get_evidence_service
+    from src.runtime.diagnostic_storage import storage_path
     root = Path(data_dir).resolve()
     combat_api.configure(native=True, data_dir=root)
     runtime = initialize_account_runtime(
         root, program_version, install_start_guard=False,
         backup_dir=resolve_config_backup_dir(root), restore_prepared=True)
     runtime.require_ready()
-    get_evidence_service(root=root / 'okww监控室' / 'CompletionEvidence')
+    get_evidence_service(root=storage_path('CompletionEvidence', root / 'okww监控室' / 'CompletionEvidence', repo=root))
     return runtime
 
 

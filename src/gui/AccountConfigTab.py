@@ -1181,19 +1181,24 @@ class AccountConfigTab(CustomTab):
     def read_feature_code(self):
         if self.operation.busy or self.draft is None:
             return
-        from ok import og
-        from src.evidence.service import request_capture
         submitted = copy.deepcopy(self.draft)
         try:
             self.status.setText('正在读取特征码，请保持游戏右下角完整可见…')
-            future = request_capture(og.executor, feature_code=True)
+            bridge = getattr(self, 'native_live_bridge', None)
+            if bridge is not None:
+                future = bridge.request('inspect-account-feature')
+            else:
+                from ok import og
+                from src.evidence.service import request_capture
+                future = request_capture(og.executor, feature_code=True)
         except Exception as error:
             self.status.setText('读取失败：' + sanitize_error(error))
             logging.getLogger(__name__).warning('feature_code_capture_failed: %s', type(error).__name__)
             return
 
         def received(value):
-            if self.draft is None or self.draft.profile_id != submitted.profile_id:
+            if (self.draft is None or self.draft.profile_id != submitted.profile_id
+                    or (bridge is not None and self.draft.revision != submitted.revision)):
                 self.status.setText('所选账号已变化，请重新读取特征码')
                 return
             requested = {'game_feature_code': value['code']}

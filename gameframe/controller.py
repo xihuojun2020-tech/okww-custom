@@ -120,9 +120,22 @@ class Controller:
             try:
                 self.process.stdin.write(json.dumps({'command': command, **values}) + '\n')
                 self.process.stdin.flush()
+                return True
             except BrokenPipeError:
                 # The execution process exited while its stop command was in flight.
                 self.process.wait(timeout=3)
+        return False
+
+    def request_live(self, command, request_id, **values):
+        if command not in {'get-schema', 'set-config', 'invoke-action',
+                           'inspect-frame', 'inspect-account-feature'}:
+            raise ValueError(f'Unsupported live request: {command}')
+        if not self.session or not self._send_control(command, request_id=request_id, **values):
+            raise RuntimeError('A shared execution session is not running')
+
+    def deliver_live_response(self, response):
+        if self.execution != 'management' or not self._send_control('live-response', response=response):
+            raise RuntimeError('The management process is not running')
 
     def request_stop(self):
         self._send_control('stop')

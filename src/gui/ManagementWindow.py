@@ -29,12 +29,14 @@ class ManagementWindow(QMainWindow):
     def __init__(self, service):
         super().__init__()
         self.service = service
+        from src.native_management import NativeLiveBridge
+        self.live_bridge = NativeLiveBridge(self)
         self.stop_requested.connect(self.close, Qt.QueuedConnection)
         self.setWindowTitle('鸣潮账号与完成证据管理')
         self.resize(1180, 780)
         body = QWidget(self)
         layout = QVBoxLayout(body)
-        self.notice = QLabel('独立管理窗口：账号设置、序列与已有完成证据；读取特征码和游戏截图需在任务窗口操作。', body)
+        self.notice = QLabel('独立管理窗口：账号设置、序列与已有完成证据；读取特征码和设备动作由已启动的任务进程执行。', body)
         self.notice.setWordWrap(True)
         layout.addWidget(self.notice)
         row = QHBoxLayout()
@@ -65,6 +67,7 @@ class ManagementWindow(QMainWindow):
         self.schedule_tab = None
         self.user_task_tab = None
         self.character_code_tab = None
+        self.storage_tab = None
         self._pending_maintenance = False
         self._configuration_restart_message = None
         self._maintenance_committed_failure = False
@@ -74,7 +77,8 @@ class ManagementWindow(QMainWindow):
             from src.gui.NativeScheduleTab import NativeScheduleTab
             from src.gui.NativeConfigurationTab import NativeConfigurationTab
             self.configuration_tab = NativeConfigurationTab(
-                service.root, service.runtime.program_version, service.package_root / 'manifest.json')
+                service.root, service.runtime.program_version, service.package_root / 'manifest.json',
+                live_bridge=self.live_bridge)
             self.tabs.addTab(self.configuration_tab, '任务与配置')
             self.configuration_tab.management_requested.connect(self._show_account_management)
             from src.gui.NativeUserTaskTab import NativeUserTaskTab
@@ -89,6 +93,11 @@ class ManagementWindow(QMainWindow):
             self.maintenance_tab = NativeMaintenanceTab(
                 NativeMaintenanceService(service.root, service.runtime.program_version), self._maintain)
             self.tabs.addTab(self.maintenance_tab, '配置备份与恢复')
+            from src.gui.NativeStorageTab import NativeStorageTab
+            from src.runtime.native_storage import NativeStorageService
+            self.storage_tab = NativeStorageTab(NativeStorageService(service.root), self._maintain_storage)
+            self.tabs.addTab(self.storage_tab, '输出目录')
+            self.storage_tab.operation.busy_changed.connect(self._operation_changed)
             self.schedule_tab = NativeScheduleTab(service.package_root, service.root)
             self.tabs.addTab(self.schedule_tab, '系统定时任务')
             self.configuration_tab.schema_changed.connect(self.schedule_tab.set_schema)
@@ -103,8 +112,10 @@ class ManagementWindow(QMainWindow):
                 description = QLabel('当前为源码工作目录，不能在管理窗口替换游戏包；请使用已安装且带文件清单的游戏包。')
                 description.setWordWrap(True)
                 self.tabs.addTab(description, '游戏包更新')
+        from src.runtime.diagnostic_storage import storage_path
         self.evidence_service = get_evidence_service(
-            root=service.root / 'okww监控室' / 'CompletionEvidence')
+            root=storage_path('CompletionEvidence', service.root / 'okww监控室' / 'CompletionEvidence',
+                              repo=service.root).resolve())
         self.operation = BackgroundOperation(self, (self.first_button, self.import_button,
                                                      self.export_button, self.review_button))
         self._closing = False
@@ -131,8 +142,8 @@ class ManagementWindow(QMainWindow):
                             self.service.runtime.integrity_service.describe(result))
         if result.ok and self.account_tab is None:
             self.account_tab = AccountSettingsTab()
-            self.account_tab.account_tab.read_feature_button.setEnabled(False)
-            self.account_tab.account_tab.read_feature_button.setToolTip('管理窗口未连接游戏，请在任务窗口读取特征码')
+            self.account_tab.account_tab.native_live_bridge = self.live_bridge
+            self.account_tab.account_tab.read_feature_button.setToolTip('由已启动的任务进程连续读取特征码，再确认绑定账号')
             self.tabs.addTab(self.account_tab, '账号与序列')
             if self.evidence_tab is None:
                 self.evidence_tab = CompletionCheckTab(None)
@@ -227,8 +238,16 @@ class ManagementWindow(QMainWindow):
                     if rebind:
                         self.service.rebind(self.maintenance_tab.service.runtime)
                         self._rebuild_accounts()
-                    success(value)
-                    message = '配置维护已提交。' if rebind else '配置备份已创建。'
+                    try:
+                        success(value)
+                    except MaintenanceCommittedError as callback_error:
+                        error = callback_error
+                        committed_failure = self._maintenance_committed_failure = True
+                        failure(error)
+                        message = '维护失败：' + sanitize_error(error)
+                    else:
+                        message = ('输出目录已提交。' if isinstance(value, dict) and value.get('scope') == 'outputs'
+                                   else '配置维护已提交。' if rebind else '配置备份已创建。')
                 else:
                     failure(error)
                     message = '维护失败：' + sanitize_error(error)
@@ -242,6 +261,10 @@ class ManagementWindow(QMainWindow):
                     self.user_task_tab.setEnabled(False)
                     self.character_code_tab.setEnabled(False)
                     self.maintenance_tab.setEnabled(False)
+                    self.storage_tab.setEnabled(False)
+                    if self.evidence_tab is not None:
+                        self.evidence_tab.setEnabled(False)
+                    self.diagnostics_tab.setEnabled(False)
                     self.status.setText(message + ' 磁盘已提交，请重启管理窗口以重新加载账号；旧账号编辑已停用。')
                 elif not self._closing:
                     self._configuration_restart_message = message
@@ -254,6 +277,45 @@ class ManagementWindow(QMainWindow):
 
         self.operation.start(work, lambda value: finish(value=value),
                              lambda error: finish(error=error))
+
+    def _maintain_storage(self, work, success, failure, rebind):
+        def applied(result):
+            from src.runtime.native_storage import NativeStorageCommittedError
+            from src.evidence.service import rebind_evidence_service
+            try:
+                paths = result['paths']
+                self.evidence_service = rebind_evidence_service(paths['CompletionEvidence'])
+                if self.evidence_tab is not None:
+                    old = self.evidence_tab
+                    index = self.tabs.indexOf(old)
+                    self.tabs.removeTab(index)
+                    old._export_cancel.set()
+                    old.deleteLater()
+                    self.evidence_tab = CompletionCheckTab(None)
+                    self.tabs.insertTab(index, self.evidence_tab, '完成检查')
+                    self.evidence_tab.load_operation.busy_changed.connect(self._operation_changed)
+                old = self.diagnostics_tab
+                index = self.tabs.indexOf(old)
+                self.tabs.removeTab(index)
+                old.deleteLater()
+                self.diagnostics_tab = DiagnosticStatusCard(root=paths['diagnostics'], source_root=self.service.root,
+                    program_version=self.service.runtime.program_version, local_only=True, capture_enabled=False)
+                self.tabs.insertTab(index, self.diagnostics_tab, '日志与诊断')
+                self.diagnostics_tab.operation.busy_changed.connect(self._operation_changed)
+                from src.native_maintenance import NativeMaintenanceService
+                from src.gui.NativeMaintenanceTab import NativeMaintenanceTab
+                old = self.maintenance_tab
+                index = self.tabs.indexOf(old)
+                self.tabs.removeTab(index)
+                old.deleteLater()
+                self.maintenance_tab = NativeMaintenanceTab(
+                    NativeMaintenanceService(self.service.root, self.service.runtime.program_version), self._maintain)
+                self.tabs.insertTab(index, self.maintenance_tab, '配置备份与恢复')
+                self.maintenance_tab.operation.busy_changed.connect(self._operation_changed)
+                success(result)
+            except Exception as error:
+                raise NativeStorageCommittedError(error) from error
+        self._maintain(work, applied, failure, rebind)
 
     def _create_first(self):
         dialog = NewAccountDialog(('序列1', '序列2'), self)
@@ -324,6 +386,7 @@ class ManagementWindow(QMainWindow):
         if details is not None:
             operations.append(details.operation)
         return (self._pending_maintenance or bool(self.user_task_tab and self.user_task_tab.busy)
+                or bool(self.storage_tab and self.storage_tab.operation.busy)
                 or bool(self.character_code_tab and self.character_code_tab.busy)
                 or bool(self.configuration_tab and self.configuration_tab._pending)
                 or any(operation.busy for operation in operations))
@@ -354,18 +417,9 @@ def run_management_window(service):
     apply_codex_light_theme(app)
     window = ManagementWindow(service)
 
-    def read_commands():
-        for line in sys.stdin:
-            try:
-                message = json.loads(line)
-            except ValueError as error:
-                print(json.dumps({'type': 'management-error', 'error': str(error)}), flush=True)
-                continue
-            if message.get('command') == 'stop':
-                window.stop_requested.emit()
-                return
-
-    threading.Thread(target=read_commands, name='ManagementCommands', daemon=True).start()
+    from src.native_management import read_management_commands
+    threading.Thread(target=read_management_commands, args=(window, sys.stdin),
+                     name='ManagementCommands', daemon=True).start()
     window.show()
     print(json.dumps({'type': 'management-ready'}), flush=True)
     result = app.exec()
