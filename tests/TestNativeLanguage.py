@@ -110,6 +110,15 @@ class TestNativeLanguage(unittest.TestCase):
         preferences = GLOBAL_METADATA['Program Preferences']
         msgids.update(('Program Preferences', preferences['description'], 'Auto'))
         msgids.update(preferences['config_description'].values())
+        msgids.update(preferences['config_type']['Blur Algorithm']['options'])
+        tree = ast.parse((ROOT / 'src/runtime/native_gpu_advisory.py').read_text(encoding='utf-8'))
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == 'translate' and node.args
+                and isinstance(node.args[0], ast.Constant)):
+                msgids.add(node.args[0].value)
+        msgids.update(('Filter Profile', 'Image Sharpening', 'RTX Dynamic Vibrance',
+                       'RTX HDR', 'Radeon Image Sharpening'))
         manifest = json.loads((PACK / 'manifest.json').read_text(encoding='utf-8'))
         msgids.update(task['category'] for task in manifest['tasks'])
         for locale in LANGUAGE_OPTIONS[:-1]:
@@ -288,7 +297,8 @@ class TestNativeLanguage(unittest.TestCase):
                     self.assertEqual(set(language['current_config']), {'Language'})
                     self.assertEqual(set(globals_['Program Preferences']['current_config']),
                                      {'Auto Resize Game Window', 'Mute Game while in Background',
-                                      'Exit App when Game Exits', 'Trigger Interval', 'Use DirectML'})
+                                      'Exit App when Game Exits', 'Trigger Interval', 'Use DirectML',
+                                      'Enable Blur', 'Blur Algorithm', 'Blur Interval'})
                 saved = next(entry for entry in replies[1]['schema']['globals'] if entry['id'] == 'Language')
                 self.assertEqual(saved['current_config']['Language'], 'en_US')
                 tasks = {entry['id']: entry for entry in replies[0]['schema']['tasks']}

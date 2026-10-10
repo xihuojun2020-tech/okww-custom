@@ -65,6 +65,7 @@ class GameFrameWindow(QWidget):
         self._update_management_error = None
         self._stopping = False
         self._closing = False
+        self._overlay = None
         self._cleanup_done = False
         self._paused = False
         self._exit_requested = False
@@ -986,6 +987,7 @@ class GameFrameWindow(QWidget):
     def stop_selected(self):
         if self.process is None or self._stopping:
             return
+        self._clear_overlay()
         self._stopping = True
         self.stop_button.setEnabled(False)
         self.pause_button.setEnabled(False)
@@ -1022,6 +1024,26 @@ class GameFrameWindow(QWidget):
             self.pause_button.setEnabled(False)
             self.status_label.setText('Resume requested' if self._paused else 'Pause requested')
 
+    def _clear_overlay(self):
+        if self._overlay is not None:
+            self._overlay.clear()
+
+    def _overlay_event(self, event):
+        if event.get('event') not in {'overlay-update', 'overlay-clear'}:
+            return False
+        try:
+            if event['event'] == 'overlay-update' and not self._closing and not self._stopping:
+                if self._overlay is None:
+                    from gameframe.overlay import PatchOverlay
+                    self._overlay = PatchOverlay()
+                self._overlay.apply_event(event)
+            elif event['event'] == 'overlay-clear' and self._overlay is not None:
+                self._overlay.apply_event(event)
+        except Exception as error:
+            self._clear_overlay()
+            self._error(error)
+        return True
+
     def _pause_status(self, line):
         try:
             event = json.loads(line)
@@ -1031,13 +1053,18 @@ class GameFrameWindow(QWidget):
             return False
         if self._live_response(event):
             return True  # Private results go only to their requesting UI.
+        if self._overlay_event(event):
+            return True
         self._notify(event)
         if isinstance(event, dict) and event.get('event') == 'task-paused':
             self._paused = event['paused']
             self._set_label(self.pause_button, 'Resume' if self._paused else 'Pause')
             self.pause_button.setEnabled(self.process is not None and not self._stopping and not self._closing)
+            if self._paused:
+                self._clear_overlay()
             self.status_label.setText('Paused' if self._paused else 'Running')
         elif isinstance(event, dict) and event.get('event') == 'finished':
+            self._clear_overlay()
             result = event.get('result', {})
             self._exit_requested = bool(result.get('exit_requested')
                                         or result.get('business_result', {}).get('exit_requested'))
@@ -1181,6 +1208,7 @@ class GameFrameWindow(QWidget):
                 self.manage_button.setEnabled(self._manifest().management and not self._closing)
                 self.update_button.setEnabled(not self._closing and self._is_installed(self._manifest()))
             elif kind == "exit":
+                self._clear_overlay()
                 for request_id, destination in list(self._live_routes.items()):
                     self._live_response({'event': 'live-response', 'request_id': request_id,
                         'ok': False, 'error': {'type': 'RuntimeError', 'message': '执行会话已退出，请启动会话后再试。'}})
@@ -1273,6 +1301,7 @@ class GameFrameWindow(QWidget):
             elif self.process is None and editable and manifest.supports_session and not self._managing:
                 self.start_session()
     def closeEvent(self, event):
+        self._clear_overlay()
         if not self._closing:
             self._save_launcher_context()
         if not self._force_close and not self._closing and self.close_to_tray.isChecked():

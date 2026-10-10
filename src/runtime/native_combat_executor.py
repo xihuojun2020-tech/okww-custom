@@ -39,12 +39,15 @@ class NativeCombatExecutor:
         self._diagnostic_frame = None
         self.width = self.height = 0
         self.connected = False
+        self.overlay_update = None
 
     @property
     def paused(self):
         return self.pause_event is not None and self.pause_event.is_set()
 
     def check_enabled(self, check_pause=True):
+        if self.overlay_update is not None and (self.paused or self.exit_event.is_set()):
+            self.overlay_update(None)
         if self.session_checkpoint is not None:
             self.session_checkpoint()
         self._call(self.context.observe_pause)
@@ -142,11 +145,15 @@ class NativeCombatExecutor:
                 captured = self._call(self.context.device.next_frame, budget)
             except Exception:
                 self.connected = False
+                if self.overlay_update is not None:
+                    self.overlay_update(None)
                 raise
             self.check_enabled()
             if captured is not None:
                 break
             self.connected = False
+            if self.overlay_update is not None:
+                self.overlay_update(None)
             if deadline is not None and time.monotonic() >= deadline:
                 raise FrameUnavailable('No new device frame')
             # Replay EOF returns immediately; spend this frame budget rather than spin.
@@ -159,6 +166,8 @@ class NativeCombatExecutor:
         self._diagnostic_frame = (self._frame, self._last_frame_time,
                                   time.monotonic())
         self.connected = True
+        if self.overlay_update is not None:
+            self.overlay_update(self._frame)
         return self._frame
 
     def sleep(self, timeout):

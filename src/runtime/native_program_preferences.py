@@ -8,7 +8,8 @@ from src.runtime.native_config import Config
 
 NAME = 'Program Preferences'
 DEFAULTS = {'Auto Resize Game Window': True, 'Mute Game while in Background': False,
-            'Exit App when Game Exits': False, 'Trigger Interval': 1, 'Use DirectML': 'Auto'}
+            'Exit App when Game Exits': False, 'Trigger Interval': 1, 'Use DirectML': 'Auto',
+            'Enable Blur': False, 'Blur Algorithm': 'Inpaint', 'Blur Interval': 1}
 
 
 class NativeProgramPreferences:
@@ -23,9 +24,11 @@ class NativeProgramPreferences:
         for key, value in values.items():
             if key == 'Use DirectML':
                 if value not in ('Yes', 'No', 'Auto'): raise ValueError('Invalid DirectML preference')
-            elif key == 'Trigger Interval':
+            elif key == 'Blur Algorithm':
+                if value not in ('Blur', 'Inpaint'): raise ValueError('Invalid blur algorithm')
+            elif key in ('Trigger Interval', 'Blur Interval'):
                 if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
-                    raise ValueError('Invalid trigger interval')
+                    raise ValueError('Invalid program interval: ' + key)
             elif type(value) is not bool:
                 raise ValueError('Invalid boolean program preference: ' + key)
         self.config = Config(NAME, {**DEFAULTS, **values}, folder=str(folder))

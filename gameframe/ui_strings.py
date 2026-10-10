@@ -14,6 +14,7 @@ LABELS = (
     'Windows 用户：{user}\n资料根：{root}\n游戏包资料：{package_root}',
     '启动会话 / 暂停 / 恢复，保留服务启用设置。',
     '账号配置已更新；当前操作结束后请刷新账号上下文。',
+    'Capture method', 'Input method',
 )
 
 

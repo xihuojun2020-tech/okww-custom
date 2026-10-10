@@ -903,3 +903,75 @@ msgid "账号配置已更新；当前操作结束后请刷新账号上下文。"
 msgstr ""
 "Configuración de cuenta actualizada; actualiza el contexto de cuenta cuando "
 "termine la acción actual."
+
+msgid "Enable Blur"
+msgstr "Activar ocultación"
+
+msgid "Blur Algorithm"
+msgstr "Algoritmo de ocultación"
+
+msgid "Blur Interval"
+msgstr "Intervalo de ocultación"
+
+msgid "Blur Game UID etc to enhance OLED life"
+msgstr ""
+"Ocultar el UID del juego y otras áreas para prolongar la vida de la pantalla"
+" OLED"
+
+msgid "Method used to obscure configured areas"
+msgstr "Método para ocultar las áreas configuradas"
+
+msgid "Seconds between processed overlay updates"
+msgstr "Segundos entre las actualizaciones de la superposición procesada"
+
+msgid "Blur"
+msgstr "Desenfoque"
+
+msgid "Inpaint"
+msgstr "Reconstrucción"
+
+msgid "GPU Driver Warning"
+msgstr "Advertencia del controlador de GPU"
+
+msgid "{vendor} {feature} is enabled and may cause malfunctions!"
+msgstr "¡{vendor} {feature} está activado y puede causar fallos!"
+
+msgid "GPU driver check incomplete; unavailable results remain unknown."
+msgstr ""
+"La comprobación del controlador de GPU está incompleta; los resultados no "
+"disponibles siguen siendo desconocidos."
+
+msgid "GPU driver checks completed; no enabled effects were detected."
+msgstr ""
+"Comprobación del controlador de GPU completada; no se detectaron efectos "
+"activados."
+
+msgid "GPU driver check skipped for this device."
+msgstr ""
+"Se omitió la comprobación del controlador de GPU para este dispositivo."
+
+msgid "GPU driver check failed; state remains unknown ({error})."
+msgstr ""
+"La comprobación del controlador de GPU falló; el estado sigue siendo "
+"desconocido ({error})."
+
+msgid "Filter Profile"
+msgstr "Perfil de filtros"
+
+msgid "Image Sharpening"
+msgstr "Nitidez de imagen"
+
+msgid "RTX Dynamic Vibrance"
+msgstr "RTX Dynamic Vibrance"
+
+msgid "RTX HDR"
+msgstr "RTX HDR"
+
+msgid "Radeon Image Sharpening"
+msgstr "Radeon Image Sharpening"
+
+msgid "Capture method"
+msgstr "Método de captura"
+
+msgid "Input method"
+msgstr "Método de entrada"

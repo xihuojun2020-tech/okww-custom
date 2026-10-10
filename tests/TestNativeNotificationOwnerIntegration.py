@@ -41,7 +41,8 @@ class TestNativeNotificationOwnerIntegration(unittest.TestCase):
         host = NativeCombatHost.__new__(NativeCombatHost)
         host.context = context
         host.notifications = NativeNotificationHub(context, http, desktop=owner)
-        host.executor = SimpleNamespace(paused=False, session_checkpoint=None)
+        host.uid_overlay = None
+        host.executor = SimpleNamespace(paused=False, session_checkpoint=None, nullable_frame=lambda: None)
         host.task = SimpleNamespace(enabled=True, config={'_enabled': True}, should_trigger=lambda: True)
         host._combat_recovery = None
         return host, owner, trace, events
@@ -158,6 +159,7 @@ class Host:
         trace.append('foreground-unwind')
         return {'status':'completed'}
     def drain_desktop_notification(self): return self.notifications.desktop.drain_one()
+    def clear_uid_overlay(self): pass
 with patch.object(native_combat_host,'NativeCombatHost',Host), \
      patch.object(native_notifications,'NativeNotifications',Http), \
      patch.object(native_desktop_notifications,'create_owner_desktop_notifications',desktop):

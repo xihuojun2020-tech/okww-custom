@@ -34,6 +34,7 @@ class NativeCombatHost:
 
         self.context = context
         self.notifications = None
+        self.uid_overlay = None
         self.program_preferences = program_preferences
         self.live_status = live_status
         config_root = (Path(context.data_dir) / 'configs').resolve()
@@ -194,6 +195,32 @@ class NativeCombatHost:
         for item in user_tasks:
             self.task_requirements[item['id']] = item['required_capabilities']
         self.applied_revision = None
+        target_state = getattr(context.device, 'overlay_target', None)
+        if native and target_state is not None and program_preferences is not None:
+            from src.runtime.native_uid_overlay import NativeUIDOverlay
+            from src.runtime.native_program_preferences import NAME
+            self.uid_overlay = NativeUIDOverlay(context, self.global_configs[NAME], target_state)
+            executor.overlay_update = self.update_uid_overlay
+
+    def update_uid_overlay(self, frame):
+        if self.uid_overlay is None:
+            return
+        try:
+            self.uid_overlay.poll(frame)
+        except Exception:
+            logger.exception('UID overlay update failed')
+            self.clear_uid_overlay()
+            try:
+                self.context.emit('overlay-failed', message='UID overlay update failed')
+            except Exception:
+                logger.exception('Unable to report UID overlay failure')
+
+    def clear_uid_overlay(self):
+        if self.uid_overlay is not None:
+            try:
+                self.uid_overlay.clear()
+            except Exception:
+                logger.exception('UID overlay clear failed')
 
     def notify_external(self, title, message, images=None, screenshot=False):
         if self.notifications is None:
@@ -447,6 +474,7 @@ class NativeCombatHost:
         deferred_tasks = deque()
         deferred_enables = self._configuration_service_enables
         while True:
+            self.update_uid_overlay(self.executor.nullable_frame())
             paused = self.context.observe_pause()
             stopped = self.context.stop.is_set()
             preference_only = paused or stopped
@@ -695,6 +723,7 @@ class NativeCombatHost:
         """Run inside the caller's single input-owner scope without changing intent."""
         from src.runtime.native_combat_executor import SessionPreempted
         while self.task.enabled:
+            self.update_uid_overlay(self.executor.nullable_frame())
             self.context.check_stop()
             if self.executor.paused:
                 self.context.sleep(.1)

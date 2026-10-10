@@ -119,6 +119,9 @@ def main(argv=None):
         prepare_device = getattr(device, 'prepare', None)
         if prepare_device is not None:
             prepare_device(stop)
+        device_ready = getattr(package, 'device_ready', None)
+        if device_ready is not None:
+            device_ready(device, options.data_dir, emit)
         store = RunStore(options.data_dir / 'runs.sqlite')
         runtime = Runtime(store, emit)
         if options.session:

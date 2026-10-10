@@ -836,3 +836,66 @@ msgstr "クリア"
 
 msgid "账号配置已更新；当前操作结束后请刷新账号上下文。"
 msgstr "アカウント設定を更新しました。現在の操作が終了したら、アカウント状態を更新してください。"
+
+msgid "Enable Blur"
+msgstr "マスクを有効化"
+
+msgid "Blur Algorithm"
+msgstr "マスク方式"
+
+msgid "Blur Interval"
+msgstr "マスク更新間隔"
+
+msgid "Blur Game UID etc to enhance OLED life"
+msgstr "ゲームの UID などを隠し、OLED 画面の寿命を延ばします"
+
+msgid "Method used to obscure configured areas"
+msgstr "設定した領域を隠す方法"
+
+msgid "Seconds between processed overlay updates"
+msgstr "処理済みオーバーレイの更新間隔（秒）"
+
+msgid "Blur"
+msgstr "ぼかし"
+
+msgid "Inpaint"
+msgstr "画像修復"
+
+msgid "GPU Driver Warning"
+msgstr "GPU ドライバーの警告"
+
+msgid "{vendor} {feature} is enabled and may cause malfunctions!"
+msgstr "{vendor} {feature} が有効で、動作に不具合が生じる可能性があります！"
+
+msgid "GPU driver check incomplete; unavailable results remain unknown."
+msgstr "GPU ドライバーの確認は未完了です。取得できない結果は不明のままです。"
+
+msgid "GPU driver checks completed; no enabled effects were detected."
+msgstr "GPU ドライバーの確認が完了しました。有効な効果は検出されませんでした。"
+
+msgid "GPU driver check skipped for this device."
+msgstr "このデバイスでは GPU ドライバーの確認をスキップしました。"
+
+msgid "GPU driver check failed; state remains unknown ({error})."
+msgstr "GPU ドライバーの確認に失敗しました。状態は不明のままです（{error}）。"
+
+msgid "Filter Profile"
+msgstr "フィルタープロファイル"
+
+msgid "Image Sharpening"
+msgstr "画像の鮮明化"
+
+msgid "RTX Dynamic Vibrance"
+msgstr "RTX ダイナミック バイブランス"
+
+msgid "RTX HDR"
+msgstr "RTX HDR"
+
+msgid "Radeon Image Sharpening"
+msgstr "Radeon Image Sharpening"
+
+msgid "Capture method"
+msgstr "キャプチャ方式"
+
+msgid "Input method"
+msgstr "入力方式"

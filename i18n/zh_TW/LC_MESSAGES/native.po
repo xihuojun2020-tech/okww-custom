@@ -828,3 +828,66 @@ msgstr "清除"
 
 msgid "账号配置已更新；当前操作结束后请刷新账号上下文。"
 msgstr "帳號設定已更新；目前操作結束後請重新整理帳號狀態。"
+
+msgid "Enable Blur"
+msgstr "啟用遮罩"
+
+msgid "Blur Algorithm"
+msgstr "遮罩演算法"
+
+msgid "Blur Interval"
+msgstr "遮罩間隔"
+
+msgid "Blur Game UID etc to enhance OLED life"
+msgstr "遮蓋遊戲 UID 等區域，延長 OLED 螢幕壽命"
+
+msgid "Method used to obscure configured areas"
+msgstr "用於遮蓋指定區域的方法"
+
+msgid "Seconds between processed overlay updates"
+msgstr "處理後遮罩畫面的更新間隔（秒）"
+
+msgid "Blur"
+msgstr "模糊"
+
+msgid "Inpaint"
+msgstr "內容修復"
+
+msgid "GPU Driver Warning"
+msgstr "顯示卡驅動程式警告"
+
+msgid "{vendor} {feature} is enabled and may cause malfunctions!"
+msgstr "{vendor} {feature} 已啟用，可能導致執行異常！"
+
+msgid "GPU driver check incomplete; unavailable results remain unknown."
+msgstr "顯示卡驅動程式檢查未完成；無法取得的結果仍為未知。"
+
+msgid "GPU driver checks completed; no enabled effects were detected."
+msgstr "顯示卡驅動程式檢查完成；未偵測到已啟用的效果。"
+
+msgid "GPU driver check skipped for this device."
+msgstr "此裝置已略過顯示卡驅動程式檢查。"
+
+msgid "GPU driver check failed; state remains unknown ({error})."
+msgstr "顯示卡驅動程式檢查失敗；狀態仍為未知（{error}）。"
+
+msgid "Filter Profile"
+msgstr "濾鏡設定"
+
+msgid "Image Sharpening"
+msgstr "影像銳利化"
+
+msgid "RTX Dynamic Vibrance"
+msgstr "RTX 動態鮮豔度"
+
+msgid "RTX HDR"
+msgstr "RTX HDR"
+
+msgid "Radeon Image Sharpening"
+msgstr "Radeon 影像銳利化"
+
+msgid "Capture method"
+msgstr "擷取方式"
+
+msgid "Input method"
+msgstr "輸入方式"

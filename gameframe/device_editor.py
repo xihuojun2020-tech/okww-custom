@@ -16,6 +16,8 @@ _BACKENDS = {
 }
 _FIELDS = {
     'windows': (('hwnd', 'HWND (decimal or 0x)', 'integer', 0),
+                ('capture_method', 'Capture method', 'choice', 'WGC'),
+                ('input_method', 'Input method', 'choice', 'SendInput'),
                 ('launch_command', 'Launch command (one argument per line)', 'list', []),
                 ('target_executable', 'Target executable (absolute path)', 'optional', '')),
     'mumu': (('install_dir', 'MuMu installation directory', 'text', ''),
@@ -27,6 +29,8 @@ _FIELDS = {
             ('adb_path', 'ADB executable path', 'text', 'adb')),
     'replay': (('frames', 'Frame paths (one per line)', 'list', []),),
 }
+_CHOICES = {'capture_method': ('WGC', 'BitBlt_RenderFull', 'PrintWindow'),
+            'input_method': ('SendInput', 'PostMessage')}
 
 
 class DeviceEditor(QWidget):
@@ -60,14 +64,18 @@ class DeviceEditor(QWidget):
                 form.addRow('Visible window', row)
             self.fields[kind] = {}
             for key, label, field_type, _ in _FIELDS[kind]:
-                if field_type == 'list':
+                if field_type == 'choice':
+                    field = QComboBox()
+                    field.addItems(_CHOICES[key])
+                elif field_type == 'list':
                     field = QPlainTextEdit()
                     field.setMaximumHeight(90)
                 else:
                     field = QLineEdit()
                 field.setObjectName(f'device_{kind}_{key}')
                 self.fields[kind][key] = field
-                field.textChanged.connect(lambda *args, name=key: self._field_changed(name))
+                signal = field.currentIndexChanged if field_type == 'choice' else field.textChanged
+                signal.connect(lambda *args, name=key: self._field_changed(name))
                 form.addRow(label, field)
             self.pages.addWidget(page)
         layout = QVBoxLayout(self)
@@ -103,7 +111,9 @@ class DeviceEditor(QWidget):
                 else:
                     text = str(value if value is not None else '')
                 field = self.fields[kind][key]
-                if field_type == 'list':
+                if field_type == 'choice':
+                    field.setCurrentIndex(field.findText(text))
+                elif field_type == 'list':
                     field.setPlainText(text)
                 else:
                     field.setText(text)
@@ -121,7 +131,8 @@ class DeviceEditor(QWidget):
             if key not in self._dirty:
                 continue
             field = self.fields[kind][key]
-            text = field.toPlainText() if field_type == 'list' else field.text()
+            text = (field.currentText() if field_type == 'choice' else
+                    field.toPlainText() if field_type == 'list' else field.text())
             if field_type == 'integer':
                 try:
                     value = int(text, 16 if text.lower().startswith('0x') else 10)
@@ -144,7 +155,10 @@ class DeviceEditor(QWidget):
     def capabilities(self) -> frozenset:
         kind = self._options['type']
         module = import_module(f'gameframe.devices.{kind}')
-        return getattr(module, _BACKENDS[kind][1]).capabilities
+        capabilities = getattr(module, _BACKENDS[kind][1]).capabilities
+        if kind == 'windows' and self._options.get('input_method') == 'PostMessage':
+            capabilities = capabilities - {'relative-mouse'}
+        return capabilities
 
     def _field_changed(self, key):
         if self._loading:
@@ -160,6 +174,7 @@ class DeviceEditor(QWidget):
             return
         self.error_label.clear()
         self._options = deepcopy(options)
+        self.capabilities_label.setText('Capabilities: ' + ', '.join(sorted(self.capabilities())))
         if options['type'] == 'windows':
             self._select_hwnd(options.get('hwnd', 0))
         self.options_changed.emit(options)

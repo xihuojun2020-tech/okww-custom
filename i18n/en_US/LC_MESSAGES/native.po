@@ -895,3 +895,66 @@ msgid "账号配置已更新；当前操作结束后请刷新账号上下文。"
 msgstr ""
 "Account configuration updated; refresh account context after the current "
 "action finishes."
+
+msgid "Enable Blur"
+msgstr "Enable Blur"
+
+msgid "Blur Algorithm"
+msgstr "Blur Algorithm"
+
+msgid "Blur Interval"
+msgstr "Blur Interval"
+
+msgid "Blur Game UID etc to enhance OLED life"
+msgstr "Blur Game UID etc to enhance OLED life"
+
+msgid "Method used to obscure configured areas"
+msgstr "Method used to obscure configured areas"
+
+msgid "Seconds between processed overlay updates"
+msgstr "Seconds between processed overlay updates"
+
+msgid "Blur"
+msgstr "Blur"
+
+msgid "Inpaint"
+msgstr "Inpaint"
+
+msgid "GPU Driver Warning"
+msgstr "GPU Driver Warning"
+
+msgid "{vendor} {feature} is enabled and may cause malfunctions!"
+msgstr "{vendor} {feature} is enabled and may cause malfunctions!"
+
+msgid "GPU driver check incomplete; unavailable results remain unknown."
+msgstr "GPU driver check incomplete; unavailable results remain unknown."
+
+msgid "GPU driver checks completed; no enabled effects were detected."
+msgstr "GPU driver checks completed; no enabled effects were detected."
+
+msgid "GPU driver check skipped for this device."
+msgstr "GPU driver check skipped for this device."
+
+msgid "GPU driver check failed; state remains unknown ({error})."
+msgstr "GPU driver check failed; state remains unknown ({error})."
+
+msgid "Filter Profile"
+msgstr "Filter Profile"
+
+msgid "Image Sharpening"
+msgstr "Image Sharpening"
+
+msgid "RTX Dynamic Vibrance"
+msgstr "RTX Dynamic Vibrance"
+
+msgid "RTX HDR"
+msgstr "RTX HDR"
+
+msgid "Radeon Image Sharpening"
+msgstr "Radeon Image Sharpening"
+
+msgid "Capture method"
+msgstr "Capture method"
+
+msgid "Input method"
+msgstr "Input method"

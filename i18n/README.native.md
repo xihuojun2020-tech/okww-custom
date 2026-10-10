@@ -17,6 +17,12 @@ existing `ok` translation in the five non-English locales, without a duplicate
 native entry. Other new labels use native entries. Configuration keys, saved
 credentials and user-entered text are never translated.
 
+The v75 UID overlay preferences, algorithm choices, GPU advisory messages and
+capture/input method labels are also included in all six native catalogs.
+Their exact source strings have no entries in the existing `ok` catalogs, so
+these translations were authored here. GPU vendor names and device method IDs
+remain unchanged; GPU availability remains unknown when a check is unavailable.
+
 No catalogs or other resources were copied from the installed `ok-script`,
 Qt or qfluentwidgets dependencies. qfluentwidgets' translator is loaded from
 the installed dependency at runtime. Package catalogs stay in the AGPL

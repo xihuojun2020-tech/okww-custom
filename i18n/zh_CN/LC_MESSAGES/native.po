@@ -828,3 +828,66 @@ msgstr "清除"
 
 msgid "账号配置已更新；当前操作结束后请刷新账号上下文。"
 msgstr "账号配置已更新；当前操作结束后请刷新账号上下文。"
+
+msgid "Enable Blur"
+msgstr "启用遮罩"
+
+msgid "Blur Algorithm"
+msgstr "遮罩算法"
+
+msgid "Blur Interval"
+msgstr "遮罩间隔"
+
+msgid "Blur Game UID etc to enhance OLED life"
+msgstr "遮盖游戏 UID 等区域，延长 OLED 屏幕寿命"
+
+msgid "Method used to obscure configured areas"
+msgstr "用于遮盖指定区域的方法"
+
+msgid "Seconds between processed overlay updates"
+msgstr "处理后遮罩画面的更新间隔（秒）"
+
+msgid "Blur"
+msgstr "模糊"
+
+msgid "Inpaint"
+msgstr "内容修复"
+
+msgid "GPU Driver Warning"
+msgstr "显卡驱动警告"
+
+msgid "{vendor} {feature} is enabled and may cause malfunctions!"
+msgstr "{vendor} {feature} 已启用，可能导致运行异常！"
+
+msgid "GPU driver check incomplete; unavailable results remain unknown."
+msgstr "显卡驱动检查未完成；无法获取的结果仍为未知。"
+
+msgid "GPU driver checks completed; no enabled effects were detected."
+msgstr "显卡驱动检查完成；未检测到已启用的效果。"
+
+msgid "GPU driver check skipped for this device."
+msgstr "此设备已跳过显卡驱动检查。"
+
+msgid "GPU driver check failed; state remains unknown ({error})."
+msgstr "显卡驱动检查失败；状态仍为未知（{error}）。"
+
+msgid "Filter Profile"
+msgstr "滤镜配置"
+
+msgid "Image Sharpening"
+msgstr "图像锐化"
+
+msgid "RTX Dynamic Vibrance"
+msgstr "RTX 动态鲜艳度"
+
+msgid "RTX HDR"
+msgstr "RTX HDR"
+
+msgid "Radeon Image Sharpening"
+msgstr "Radeon 图像锐化"
+
+msgid "Capture method"
+msgstr "截图方式"
+
+msgid "Input method"
+msgstr "输入方式"

@@ -52,6 +52,8 @@ class Host:
         return {{'fixture':self.context.run_id}}
     def run_session(self, task_id):
         return self.run_service()
+    def clear_uid_overlay(self):
+        pass
 def first_events(event): events.append(('first',event))
 def second_events(event): events.append(('second',event))
 one = TaskContext(SimpleNamespace(capabilities=frozenset()), {{}}, root, threading.Event(), 'context-one', first_events)

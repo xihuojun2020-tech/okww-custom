@@ -15,6 +15,7 @@ class WutheringWavesNativePackage:
         self.engine = None
         self._live_writer = None
         self._notifications = None
+        self._gpu_advisory = None
 
     def _bind_source(self):
         source = str(self.source)
@@ -25,6 +26,15 @@ class WutheringWavesNativePackage:
         self._bind_source()
         from src.native_maintenance import prepare_native_data
         return prepare_native_data(data_dir, self.manifest['version'])
+
+    def device_ready(self, device, data_dir, emit):
+        self._bind_source()
+        from src.runtime.native_gpu_advisory import NativeGpuAdvisory
+        from src.runtime.native_language import load_language
+        if self._gpu_advisory is None:
+            self._gpu_advisory = NativeGpuAdvisory()
+        language = load_language(data_dir, pack_root=self.root)
+        return self._gpu_advisory.check(device, emit, language.translate)
 
     def prepare(self, task_id, data_dir):
         definition = self._definition(task_id, data_dir)
@@ -152,6 +162,7 @@ class WutheringWavesNativePackage:
                 previous_events(event)
         context.events = observe_event
         previous_cwd = Path.cwd()
+        host = None
         try:
             # The OCR dependency writes compiled model caches relative to cwd.
             # This worker owns its process; private writable data stays outside the pack.
@@ -209,6 +220,8 @@ class WutheringWavesNativePackage:
             raise
         finally:
             try:
+                if host is not None:
+                    host.clear_uid_overlay()
                 if self._notifications is not None:
                     self._notifications.close()
                     self._notifications = None

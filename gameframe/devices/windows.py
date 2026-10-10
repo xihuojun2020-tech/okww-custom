@@ -1,4 +1,4 @@
-"""HWND WGC capture and same-session Windows SendInput delivery."""
+"""Explicit HWND capture/input choices; default WGC and foreground SendInput."""
 
 from __future__ import annotations
 
@@ -39,6 +39,9 @@ NAMED_KEYS = {
     "right": 0x27, "down": 0x28,
     **{f"f{number}": 0x6F + number for number in range(1, 25)},
 }
+
+CAPTURE_METHODS = ('WGC', 'BitBlt_RenderFull', 'PrintWindow')
+INPUT_METHODS = ('SendInput', 'PostMessage')
 
 
 def virtual_key(key):
@@ -144,6 +147,12 @@ class _WindowBackend:
     def client_to_screen(self, hwnd, x, y):
         with _physical_coordinates(self.user32):
             return self.gui.ClientToScreen(hwnd, (int(x), int(y)))
+
+    def client_screen_rect(self, hwnd):
+        with _physical_coordinates(self.user32):
+            left, top, right, bottom = self.gui.GetClientRect(hwnd)
+            x, y = self.gui.ClientToScreen(hwnd, (left, top))
+        return x, y, right - left, bottom - top
 
     def cursor(self):
         with _physical_coordinates(self.user32):
@@ -259,6 +268,118 @@ class _Win32Geometry:
         return _client_roi(bounds, client, origin, frame_width, frame_height)
 
 
+class _BitmapInfo(ctypes.Structure):
+    _fields_ = [('size', wintypes.DWORD), ('width', wintypes.LONG), ('height', wintypes.LONG),
+                ('planes', wintypes.WORD), ('bits', wintypes.WORD), ('compression', wintypes.DWORD),
+                ('image_size', wintypes.DWORD), ('x_pixels', wintypes.LONG), ('y_pixels', wintypes.LONG),
+                ('colors_used', wintypes.DWORD), ('colors_important', wintypes.DWORD)]
+
+
+class _GdiCapture:
+    """Capture the selected client, without WGC fallback or screen DC writes.
+
+    PrintWindow is synchronous and target-renderer dependent. Its API does not
+    guarantee responsiveness, fresh pixels, minimized capture or game support.
+    Per-call DC/bitmap ownership avoids stale buffers after resize/rebinding.
+    """
+
+    def __init__(self, hwnd, method, *, user32=None, gdi32=None):
+        self.hwnd, self.method = hwnd, method
+        self.user32 = user32 if user32 is not None else ctypes.WinDLL('user32', use_last_error=True)
+        self.gdi32 = gdi32 if gdi32 is not None else ctypes.WinDLL('gdi32', use_last_error=True)
+        for name, args, result in (
+            ('GetDC', (wintypes.HWND,), wintypes.HDC),
+            ('ReleaseDC', (wintypes.HWND, wintypes.HDC), ctypes.c_int),
+            ('PrintWindow', (wintypes.HWND, wintypes.HDC, wintypes.UINT), wintypes.BOOL),
+            ('GetWindowRect', (wintypes.HWND, ctypes.POINTER(wintypes.RECT)), wintypes.BOOL),
+            ('GetClientRect', (wintypes.HWND, ctypes.POINTER(wintypes.RECT)), wintypes.BOOL),
+            ('ClientToScreen', (wintypes.HWND, ctypes.POINTER(_Point)), wintypes.BOOL),
+            ('IsIconic', (wintypes.HWND,), wintypes.BOOL),
+            ('SetThreadDpiAwarenessContext', (ctypes.c_void_p,), ctypes.c_void_p),
+        ):
+            function = getattr(self.user32, name)
+            function.argtypes, function.restype = args, result
+        for name, args, result in (
+            ('CreateCompatibleDC', (wintypes.HDC,), wintypes.HDC),
+            ('DeleteDC', (wintypes.HDC,), wintypes.BOOL),
+            ('GdiFlush', (), wintypes.BOOL),
+            ('CreateDIBSection', (wintypes.HDC, ctypes.POINTER(_BitmapInfo), wintypes.UINT,
+                                  ctypes.POINTER(ctypes.c_void_p), wintypes.HANDLE, wintypes.DWORD), wintypes.HANDLE),
+            ('SelectObject', (wintypes.HDC, wintypes.HANDLE), wintypes.HANDLE),
+            ('DeleteObject', (wintypes.HANDLE,), wintypes.BOOL),
+            ('BitBlt', (wintypes.HDC, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                       wintypes.HDC, ctypes.c_int, ctypes.c_int, wintypes.DWORD), wintypes.BOOL),
+        ):
+            function = getattr(self.gdi32, name)
+            function.argtypes, function.restype = args, result
+
+    @contextmanager
+    def _bitmap(self, source, width, height):
+        dc = self.gdi32.CreateCompatibleDC(source)
+        if not dc:
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            info = _BitmapInfo(ctypes.sizeof(_BitmapInfo), width, -height, 1, 32, 0, width * height * 4)
+            pixels = ctypes.c_void_p()
+            bitmap = self.gdi32.CreateDIBSection(source, ctypes.byref(info), 0, ctypes.byref(pixels), None, 0)
+            if not bitmap:
+                raise ctypes.WinError(ctypes.get_last_error())
+            try:
+                previous = self.gdi32.SelectObject(dc, bitmap)
+                if not previous or previous == ctypes.c_void_p(-1).value:
+                    raise ctypes.WinError(ctypes.get_last_error())
+                try:
+                    buffer = (ctypes.c_ubyte * (width * height * 4)).from_address(pixels.value)
+                    yield dc, np.ctypeslib.as_array(buffer).reshape(height, width, 4)
+                finally:
+                    restored = self.gdi32.SelectObject(dc, previous)
+                    if not restored or restored == ctypes.c_void_p(-1).value:
+                        raise ctypes.WinError(ctypes.get_last_error())
+            finally:
+                if not self.gdi32.DeleteObject(bitmap):
+                    raise ctypes.WinError(ctypes.get_last_error())
+        finally:
+            if not self.gdi32.DeleteDC(dc):
+                raise ctypes.WinError(ctypes.get_last_error())
+
+    def read(self):
+        hwnd, api = self.hwnd, self.user32
+        if api.IsIconic(hwnd):
+            raise RuntimeError('Selected GDI capture does not support a minimized window')
+        with _physical_coordinates(api):
+            client = wintypes.RECT()
+            if not api.GetClientRect(hwnd, ctypes.byref(client)):
+                raise ctypes.WinError(ctypes.get_last_error())
+            width, height = client.right - client.left, client.bottom - client.top
+            if width <= 0 or height <= 0:
+                raise OSError('Selected window has no drawable client area')
+            source = api.GetDC(hwnd)
+            if not source:
+                raise ctypes.WinError(ctypes.get_last_error())
+            try:
+                with self._bitmap(source, width, height) as (dc, image):
+                    if self.method == 'PrintWindow':
+                        if not api.PrintWindow(hwnd, dc, 3):  # PW_CLIENTONLY | PW_RENDERFULLCONTENT
+                            raise OSError('PrintWindow failed to render the selected client')
+                    else:
+                        bounds, origin = wintypes.RECT(), _Point(0, 0)
+                        if not api.GetWindowRect(hwnd, ctypes.byref(bounds)) or not api.ClientToScreen(hwnd, ctypes.byref(origin)):
+                            raise ctypes.WinError(ctypes.get_last_error())
+                        full_width, full_height = bounds.right - bounds.left, bounds.bottom - bounds.top
+                        left, top, _, _ = _client_roi(bounds, client, origin, full_width, full_height)
+                        with self._bitmap(source, full_width, full_height) as (full_dc, _):
+                            if not api.PrintWindow(hwnd, full_dc, 2):  # PW_RENDERFULLCONTENT
+                                raise OSError('PrintWindow failed to render the selected window')
+                            if not self.gdi32.BitBlt(dc, 0, 0, width, height, full_dc, left, top, 0x00CC0020):
+                                raise ctypes.WinError(ctypes.get_last_error())
+                    if not self.gdi32.GdiFlush():
+                        raise ctypes.WinError(ctypes.get_last_error())
+                    return np.array(image[:, :, :3], copy=True, order='C')
+            finally:
+                if not api.ReleaseDC(hwnd, source):
+                    raise ctypes.WinError(ctypes.get_last_error())
+
+
 class _MouseInput(ctypes.Structure):
     _fields_ = [("dx", wintypes.LONG), ("dy", wintypes.LONG), ("mouseData", wintypes.DWORD),
                 ("dwFlags", wintypes.DWORD), ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
@@ -343,6 +464,121 @@ class _SendInput:
             dx, dy, 0, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK, 0, 0)))
 
 
+class _PostMessage(_SendInput):
+    """Address window messages only; delivery does not prove game acceptance."""
+
+    BUTTON_MESSAGES = {'left': (0x0201, 0x0202, 1), 'right': (0x0204, 0x0205, 2),
+                       'middle': (0x0207, 0x0208, 0x10)}
+
+    def __init__(self, hwnd, validate_target, *, user32=None):
+        if user32 is None:
+            super().__init__()
+        else:
+            self._user32 = user32
+        self.hwnd, self.validate_target = hwnd, validate_target
+        self.position = (0, 0)
+        self.keys, self.buttons = set(), set()
+        for name, args, result in (
+            ('PostMessageW', (wintypes.HWND, wintypes.UINT, ctypes.c_size_t, ctypes.c_ssize_t), wintypes.BOOL),
+            ('MapVirtualKeyW', (wintypes.UINT, wintypes.UINT), wintypes.UINT),
+            ('GetWindowDpiAwarenessContext', (wintypes.HWND,), ctypes.c_void_p),
+            ('SetThreadDpiAwarenessContext', (ctypes.c_void_p,), ctypes.c_void_p),
+            ('PhysicalToLogicalPointForPerMonitorDPI', (wintypes.HWND, ctypes.POINTER(_Point)), wintypes.BOOL),
+            ('ScreenToClient', (wintypes.HWND, ctypes.POINTER(_Point)), wintypes.BOOL),
+            ('ClientToScreen', (wintypes.HWND, ctypes.POINTER(_Point)), wintypes.BOOL),
+        ):
+            function = getattr(self._user32, name)
+            function.argtypes, function.restype = args, result
+
+    def _post(self, message, wparam, lparam):
+        self.validate_target()
+        if not self._user32.PostMessageW(self.hwnd, message, wparam, lparam):
+            raise ctypes.WinError(ctypes.get_last_error())
+
+    @contextmanager
+    def _target_coordinates(self):
+        context = self._user32.GetWindowDpiAwarenessContext(self.hwnd)
+        if not context:
+            raise ctypes.WinError(ctypes.get_last_error())
+        previous = self._user32.SetThreadDpiAwarenessContext(context)
+        if not previous:
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            yield
+        finally:
+            if not self._user32.SetThreadDpiAwarenessContext(previous):
+                raise ctypes.WinError(ctypes.get_last_error())
+
+    @staticmethod
+    def _point_param(x, y):
+        if not (-32768 <= x <= 32767 and -32768 <= y <= 32767):
+            raise ValueError('Window message coordinates exceed signed 16-bit range')
+        return (x & 0xFFFF) | ((y & 0xFFFF) << 16)
+
+    def _modifiers(self, buttons=None):
+        held = self.buttons if buttons is None else buttons
+        flags = sum(self.BUTTON_MESSAGES[button][2] for button in held)
+        if self.keys.intersection((0x10, 0xA0, 0xA1)):
+            flags |= 4
+        if self.keys.intersection((0x11, 0xA2, 0xA3)):
+            flags |= 8
+        return flags
+
+    def key(self, vk, down):
+        scan = self._user32.MapVirtualKeyW(vk, 4)  # MAPVK_VK_TO_VSC_EX
+        lparam = 1 | ((scan & 0xFF) << 16)
+        if scan & 0xFF00 == 0xE000:
+            lparam |= 1 << 24
+        alt = bool(self.keys.intersection((0x12, 0xA4, 0xA5)))
+        if alt:
+            lparam |= 1 << 29
+        if not down or vk in self.keys:
+            lparam |= 1 << 30
+        if not down:
+            lparam |= 1 << 31
+        system = alt or vk in (0x12, 0xA4, 0xA5, 0x79)  # Alt and F10 use WM_SYSKEY*.
+        message_key = {0xA0: 0x10, 0xA1: 0x10, 0xA2: 0x11, 0xA3: 0x11,
+                       0xA4: 0x12, 0xA5: 0x12}.get(vk, vk)
+        self._post((0x0104 if down else 0x0105) if system else (0x0100 if down else 0x0101), message_key, lparam)
+        (self.keys.add if down else self.keys.discard)(vk)
+
+    def unicode_key(self, scan, down):
+        if down:
+            self._post(0x0102, scan, 1)  # WM_CHAR, including UTF-16 surrogate units
+
+    def move_client(self, hwnd, x, y):
+        point = _Point(x, y)
+        with _physical_coordinates(self._user32):
+            if not self._user32.ClientToScreen(hwnd, ctypes.byref(point)):
+                raise ctypes.WinError(ctypes.get_last_error())
+        if not self._user32.PhysicalToLogicalPointForPerMonitorDPI(hwnd, ctypes.byref(point)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        with self._target_coordinates():
+            if not self._user32.ScreenToClient(hwnd, ctypes.byref(point)):
+                raise ctypes.WinError(ctypes.get_last_error())
+        self._post(0x0200, self._modifiers(), self._point_param(point.x, point.y))
+        self.position = (point.x, point.y)
+
+    def move_relative(self, dx, dy):
+        raise RuntimeError('PostMessage does not implement raw relative mouse input')
+
+    def button(self, button, down):
+        held = self.buttons | {button} if down else self.buttons - {button}
+        message = self.BUTTON_MESSAGES[button][0 if down else 1]
+        self._post(message, self._modifiers(held), self._point_param(*self.position))
+        self.buttons = held
+
+    def scroll(self, clicks):
+        delta = clicks * 120
+        if not -32768 <= delta <= 32767:
+            raise ValueError('Window message wheel delta exceeds signed 16-bit range')
+        point = _Point(*self.position)
+        with self._target_coordinates():
+            if not self._user32.ClientToScreen(self.hwnd, ctypes.byref(point)):
+                raise ctypes.WinError(ctypes.get_last_error())
+        self._post(0x020A, self._modifiers() | ((delta & 0xFFFF) << 16), self._point_param(point.x, point.y))
+
+
 class WindowsDevice:
     """Owns the latest HWND frame and held same-session keys/buttons.
 
@@ -360,7 +596,13 @@ class WindowsDevice:
 
     def __init__(self, hwnd: int = 0, *, capture_factory=None, input_backend=None, geometry=None,
                  window_backend=None, process_factory=None, launch_factory=None,
-                 launch_command=None, target_executable=None):
+                 launch_command=None, target_executable=None,
+                 capture_method='WGC', input_method='SendInput'):
+        if capture_method not in CAPTURE_METHODS or input_method not in INPUT_METHODS:
+            raise ValueError('Unsupported Windows capture or input method')
+        self.capture_method, self.input_method = capture_method, input_method
+        if input_method == 'PostMessage':
+            self.capabilities = self.capabilities - {'relative-mouse'}
         if hwnd < 0:
             raise ValueError("HWND cannot be negative")
         self.hwnd = hwnd
@@ -432,14 +674,56 @@ class WindowsDevice:
         return self._window
 
     def is_foreground(self):
-        if self._input_backend is None:
-            self._input_backend = _SendInput()
+        self._ensure_input()
         return self._input_backend.is_foreground(self.hwnd)
+
+    def _check_target_identity(self):
+        window, platform = self.window, self._platform()
+        if (not window.exists or platform.pid(self.hwnd) != window._pid
+                or platform.process_created(window._pid) != window._process_created):
+            raise RuntimeError('Selected HWND or process identity changed; operation refused')
+
+    def overlay_target(self):
+        """Read physical client geometry for the unchanged selected foreground HWND.
+
+        No capture, activation, input backend or Qt construction is performed.
+        Absent/reused/background targets return None; backend failures propagate.
+        """
+        if self._closed or not self.hwnd:
+            return None
+        platform = self._platform()
+        if platform.foreground() != self.hwnd or not platform.exists(self.hwnd):
+            return None
+        import psutil
+        try:
+            window = self.window
+            owner = {'hwnd': self.hwnd, 'pid': window._pid, 'created': window._process_created}
+            if (platform.pid(self.hwnd) != owner['pid']
+                    or platform.process_created(owner['pid']) != owner['created']):
+                return None
+            x, y, width, height = platform.client_screen_rect(self.hwnd)
+            # Geometry reads may race target closure, focus changes or HWND reuse.
+            if (width <= 0 or height <= 0 or self.hwnd != owner['hwnd']
+                    or platform.foreground() != owner['hwnd']
+                    or not platform.exists(owner['hwnd'])
+                    or platform.pid(owner['hwnd']) != owner['pid']
+                    or platform.process_created(owner['pid']) != owner['created']):
+                return None
+        except psutil.NoSuchProcess:
+            return None
+        return {'owner': owner, 'x': x, 'y': y, 'width': width, 'height': height}
+
+    def _ensure_input(self):
+        if self._input_backend is None:
+            self._input_backend = (_PostMessage(self.hwnd, self._check_target_identity)
+                                   if self.input_method == 'PostMessage' else _SendInput())
 
     def get_cursor_pos(self):
         return self._platform().cursor()
 
     def set_cursor_pos(self, position):
+        if self.input_method == 'PostMessage':
+            raise RuntimeError('PostMessage does not move the physical desktop cursor')
         self._platform().set_cursor(position)
 
     def client_to_screen(self, x, y):
@@ -487,6 +771,8 @@ class WindowsDevice:
     def _bind_window(self, hwnd):
         self._discard_capture()
         self.release_all()
+        if self.input_method == 'PostMessage':
+            self._input_backend = None
         if self._window is None:
             self.hwnd = hwnd
             self._window = WindowsWindow(self, self._platform())
@@ -579,6 +865,10 @@ class WindowsDevice:
     def _start(self) -> None:
         if self._capture is not None:
             return
+        if self.capture_method != 'WGC':
+            factory = self._capture_factory or _GdiCapture
+            self._capture = factory(self.hwnd, self.capture_method)
+            return
         if self._capture_factory is None:
             from windows_capture import WindowsCapture  # Optional dependency, loaded only when capturing.
             factory = WindowsCapture
@@ -614,6 +904,11 @@ class WindowsDevice:
         if self._closed:
             raise RuntimeError("Windows device is closed")
         self._start()
+        if self.capture_method != 'WGC':
+            self._check_target_identity()
+            image = self._capture.read()
+            self._sequence += 1
+            return Frame(self._sequence, image, time.monotonic_ns(), 'host-received')
         deadline = time.monotonic() + timeout
         with self._condition:
             while self._sequence == self._delivered and not self._capture_closed:
@@ -643,16 +938,17 @@ class WindowsDevice:
     def submit(self, action: Action) -> None:
         if self._closed:
             raise RuntimeError("Windows device is closed")
-        if self._input_backend is None:
-            self._input_backend = _SendInput()
+        self._ensure_input()
         kind, values = action.kind, action.values
+        if self.input_method == 'PostMessage':
+            self._check_target_identity()
         if kind == 'activate':
             if not self._input_backend.is_foreground(self.hwnd):
                 self._input_backend.activate(self.hwnd)
             if not self._input_backend.is_foreground(self.hwnd):
                 raise RuntimeError('Target HWND did not become foreground after activation')
             return
-        if not self._input_backend.is_foreground(self.hwnd):
+        if self.input_method == 'SendInput' and not self._input_backend.is_foreground(self.hwnd):
             raise RuntimeError("Target HWND is not foreground; SendInput would reach another window")
         if kind in ("key_down", "key_up"):
             vk = virtual_key(values["key"])
