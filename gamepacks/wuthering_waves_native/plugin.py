@@ -1,6 +1,7 @@
 """Metadata-safe entrypoint for real production combat on the independent runtime."""
 
 import json
+import logging
 import os
 from pathlib import Path
 import sys
@@ -12,11 +13,17 @@ class WutheringWavesNativePackage:
         self.manifest = json.loads((self.root / 'manifest.json').read_text(encoding='utf-8'))
         self.source = (self.root / self.manifest['source_root']).resolve()
         self.engine = None
+        self._live_writer = None
 
     def _bind_source(self):
         source = str(self.source)
         if source not in sys.path:
             sys.path.insert(0, source)
+
+    def prepare_data(self, data_dir):
+        self._bind_source()
+        from src.native_maintenance import prepare_native_data
+        return prepare_native_data(data_dir, self.manifest['version'])
 
     def prepare(self, task_id, data_dir):
         definition = self._definition(task_id)
@@ -51,6 +58,11 @@ class WutheringWavesNativePackage:
     def run(self, task_id, context):
         return self._run(task_id, context, session=False)
 
+    def overview_command(self, data_dir):
+        launch = self.management_command(data_dir)
+        launch['command'][launch['command'].index('src.management')] = 'src.native_overview'
+        return launch
+
     def close(self):
         self._bind_source()
         from src.evidence.service import close_existing_evidence_service
@@ -58,7 +70,12 @@ class WutheringWavesNativePackage:
         try:
             close_existing_evidence_service()
         finally:
-            close_native_diagnostics()
+            try:
+                close_native_diagnostics()
+            finally:
+                if self._live_writer is not None:
+                    self._live_writer.close()
+                    self._live_writer = None
 
     def run_session(self, task_id, context):
         return self._run(task_id, context, session=True)
@@ -66,16 +83,30 @@ class WutheringWavesNativePackage:
     def _run(self, task_id, context, *, session):
         definition = self._definition(task_id)
         self._bind_source()
+        from src.runtime import combat_api
+        combat_api.configure(native=True, data_dir=context.data_dir)
         from src.runtime.native_logging import configure_logging
         from src.runtime.native_diagnostics import attach_native_executor, record_native_event
         from src.runtime.native_errors import TaskDisabledException
         from gameframe.api import Cancelled
         from src.runtime.native_combat_host import NativeCombatHost
+        from src.runtime.native_live_status import NativeLiveWriter
         from src.combat.settings import COMBAT_GLOBAL_DEFAULTS, TEMPLATE_MATCHING_DEFAULTS
 
         data_dir = Path(context.data_dir).resolve()
         data_dir.mkdir(parents=True, exist_ok=True)
         configure_logging(data_dir)
+        writer = NativeLiveWriter(context, self.manifest['id'], self.manifest['version'])
+        self._live_writer = writer
+        previous_events = context.events
+        def observe_event(event):
+            try:
+                writer.observe_event(event)
+            except Exception:
+                logging.getLogger(__name__).exception('Unable to observe native execution status')
+            finally:
+                previous_events(event)
+        context.events = observe_event
         previous_cwd = Path.cwd()
         try:
             # The OCR dependency writes compiled model caches relative to cwd.
@@ -95,7 +126,7 @@ class WutheringWavesNativePackage:
                                        for task in self.manifest['tasks']),
                 task_requirements={task['id']: frozenset(task['required_capabilities'])
                                    for task in self.manifest['tasks']},
-                device_identity=type(context.device).__name__)
+                device_identity=type(context.device).__name__, live_status=writer)
             attach_native_executor(host.executor)
             if session:
                 return host.run_session(task_id)
@@ -116,6 +147,7 @@ class WutheringWavesNativePackage:
                                 stage='execution', error=error)
             raise
         finally:
+            context.events = previous_events
             os.chdir(previous_cwd)
 
 

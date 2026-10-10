@@ -37,6 +37,8 @@ class Package:
         return {'command': [sys.executable, '-u', str(Path(__file__).with_name('management.py'))],
                 'cwd': str(data_dir), 'env': os.environ.copy()}
 
+    overview_command = management_command
+
     def run_session(self, task_id, context):
         context.emit('fixture-ready', pid=os.getpid())
         while True:
@@ -69,7 +71,7 @@ class TestGameFrameCLI(unittest.TestCase):
             'id': 'cli-fixture', 'title': 'CLI transport fixture', 'version': '1.00.00',
             'api_version': 1, 'entrypoint': 'plugin.py:Package', 'license': 'test',
             'platforms': ['windows'], 'execution': 'native', 'supports_session': True,
-            'management': True, 'tasks': [{'id': 'fixture', 'title': 'Fixture', 'kind': 'one-shot'}],
+            'management': True, 'overview': True, 'tasks': [{'id': 'fixture', 'title': 'Fixture', 'kind': 'one-shot'}],
         }), encoding='utf-8')
 
     def launch(self, mode):
@@ -157,6 +159,28 @@ class TestGameFrameCLI(unittest.TestCase):
         failure = self.wait_event(lambda value: value.get('event') == 'fixture-failed')
         self.assertEqual(failure['error'], 'management fixture failure')
         self.assertEqual(process.wait(timeout=10), 7)
+
+    def test_overview_stop_and_metadata_version_gate(self):
+        from gameframe.packages import PackageManifest
+        from gameframe.controller import Controller
+        from unittest.mock import patch
+        manifest = PackageManifest.read(self.pack)
+        self.assertTrue(manifest.overview)
+        process = self.launch('overview')
+        self.send(process, {'command': 'stop'})
+        self.wait_event(lambda value: value.get('event') == 'fixture-stopped')
+        self.assertEqual(process.wait(timeout=10), 0)
+        self.assertEqual(list(self.data.iterdir()), [])
+        value = json.loads((self.pack / 'manifest.json').read_text())
+        value['version'] = '1.00.01'
+        (self.pack / 'manifest.json').write_text(json.dumps(value))
+        with patch.object(PackageManifest, 'load') as load:
+            with self.assertRaisesRegex(ValueError, 'version changed'):
+                Controller().start_overview(manifest, data_dir=self.data)
+            load.assert_not_called()
+        value.pop('overview')
+        (self.pack / 'manifest.json').write_text(json.dumps(value))
+        self.assertFalse(PackageManifest.read(self.pack).overview)
 
 
 if __name__ == '__main__':

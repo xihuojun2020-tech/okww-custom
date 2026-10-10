@@ -75,6 +75,16 @@ class Controller:
             launch = manifest.load().management_command(Path(data_dir).resolve())
         return self._launch(launch['command'], launch['cwd'], launch['env'], 'management', False)
 
+    def start_overview(self, manifest, *, data_dir):
+        if not manifest.overview:
+            raise ValueError('This package does not provide a read-only overview')
+        self.assert_idle()
+        with package_lease(manifest.root):
+            if PackageManifest.read(manifest.root).version != manifest.version:
+                raise ValueError('Gamepack version changed before overview launch')
+            launch = manifest.load().overview_command(Path(data_dir).resolve())
+        return self._launch(launch['command'], launch['cwd'], launch['env'], 'overview', False)
+
     def _launch(self, command, cwd, environment, execution, session):
         if self._protected_path is not None:
             self._protected_path.unlink(missing_ok=True)

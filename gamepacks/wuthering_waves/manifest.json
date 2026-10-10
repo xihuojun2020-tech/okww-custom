@@ -11,7 +11,7 @@
   "source_root": "../..",
   "migration": "legacy-compatible",
   "data_scope": "production-installation",
-  "version": "1.97.68",
+  "version": "1.97.69",
   "tasks": [
     {
       "id": "application",

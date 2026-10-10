@@ -28,6 +28,9 @@ class GameFrameWindow(QWidget):
         self.data_dir = Path(data_dir)
         self.controller = controller if controller is not None else Controller()
         self.management_controller = Controller()
+        self.overview_controller = Controller()
+        self._overview_thread = None
+        self._overview_starting = False
         recover_updates(self.packages_dir, ensure_idle=self._assert_owners_idle)
         self.packages = discover(self.packages_dir)
         self._management_thread = None
@@ -71,6 +74,7 @@ class GameFrameWindow(QWidget):
         self.disable_button = QPushButton('Disable selected service')
         self.disable_button.setEnabled(False)
         self.manage_button = QPushButton('Manage gamepack')
+        self.overview_button = QPushButton('Read-only overview')
         self.stop_button.setEnabled(False)
         self.pause_button.setEnabled(False)
 
@@ -88,6 +92,7 @@ class GameFrameWindow(QWidget):
         buttons.addWidget(self.update_button)
         buttons.addWidget(self.disable_button)
         buttons.addWidget(self.manage_button)
+        buttons.addWidget(self.overview_button)
         layout = QVBoxLayout(self)
         layout.addLayout(form)
         layout.addLayout(buttons)
@@ -104,6 +109,7 @@ class GameFrameWindow(QWidget):
         self.update_button.clicked.connect(self.update_selected)
         self.disable_button.clicked.connect(self.disable_selected)
         self.manage_button.clicked.connect(self.manage_selected)
+        self.overview_button.clicked.connect(self.overview_selected)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._drain_events)
         self.timer.start(50)
@@ -115,6 +121,11 @@ class GameFrameWindow(QWidget):
 
     def _select_package(self, index):
         manifest = self._manifest()
+        self.overview_button.setEnabled(manifest is not None and manifest.overview
+                                        and not self._closing and not self._updating
+                                        and not self._installing and not self._overview_starting
+                                        and (self.overview_controller.process is None
+                                             or self.overview_controller.process.poll() is not None))
         self._visible_tasks = tuple(task for task in manifest.tasks if task.visible) if manifest is not None else ()
         self.task_list.clear()
         if manifest is None:
@@ -271,6 +282,7 @@ class GameFrameWindow(QWidget):
     def _assert_owners_idle(self):
         self.controller.assert_idle()
         self.management_controller.assert_idle()
+        self.overview_controller.assert_idle()
 
     def _assert_update_idle(self):
         if self._starting or self._stopping or self._managing or self._installing:
@@ -305,6 +317,7 @@ class GameFrameWindow(QWidget):
         if request['package_id'] != manifest.id or request['current_version'] != manifest.version:
             raise ValueError('Update request does not match the selected installed package')
         self._updating = True
+        self.overview_button.setEnabled(False)
         self._update_management_error = None
         self.package_select.setEnabled(False)
         self.start_button.setEnabled(False)
@@ -317,6 +330,10 @@ class GameFrameWindow(QWidget):
 
     def _prepare_update_worker(self, request):
         try:
+            if self._overview_thread is not None:
+                self._overview_thread.join()
+            self.overview_controller.close()
+            self.overview_controller.assert_idle()
             archive = Path(request['archive'])
             if not archive.is_absolute():
                 raise ValueError('Update archive must be an absolute path')
@@ -339,6 +356,33 @@ class GameFrameWindow(QWidget):
             self._events.put(('update-error', error))
         else:
             self._events.put(('update-prepared', plan))
+
+    def overview_selected(self):
+        manifest = self._manifest()
+        if (manifest is None or not manifest.overview or self._closing or self._updating
+                or self._installing or self._overview_starting):
+            return
+        self._overview_starting = True
+        self.overview_button.setEnabled(False)
+        self._overview_thread = threading.Thread(target=self._overview_worker, args=(manifest,), daemon=True)
+        self._overview_thread.start()
+
+    def _overview_worker(self, manifest):
+        try:
+            process = self.overview_controller.start_overview(manifest, data_dir=self.data_dir / manifest.id)
+        except Exception as error:
+            self._events.put(('overview-error', error))
+        else:
+            self._events.put(('overview-started', process))
+            threading.Thread(target=self._read_overview_output, args=(process,), daemon=True).start()
+
+    def _read_overview_output(self, process):
+        try:
+            for line in process.stdout:
+                self._events.put(('overview-line', line.rstrip()))
+            self._events.put(('overview-exit', process.wait()))
+        except Exception as error:
+            self._events.put(('overview-error', error))
 
     def _management_update_status(self, line):
         try:
@@ -509,7 +553,20 @@ class GameFrameWindow(QWidget):
                 kind, value = self._events.get_nowait()
             except queue.Empty:
                 break
-            if kind == "line":
+            if kind == 'overview-started':
+                self._overview_starting = False
+            elif kind == 'overview-line':
+                self.output.appendPlainText(value)
+            elif kind in ('overview-exit', 'overview-error'):
+                self._overview_starting = False
+                manifest = self._manifest()
+                self.overview_button.setEnabled(manifest is not None and manifest.overview
+                                                and not self._closing and not self._updating and not self._installing)
+                if kind == 'overview-error':
+                    self._error(value)
+                elif value != 0:
+                    self._error(RuntimeError(f'Read-only overview exited with code {value}'))
+            elif kind == "line":
                 self.output.appendPlainText(value)
                 self._pause_status(value)
             elif kind == 'management-line':
@@ -636,6 +693,7 @@ class GameFrameWindow(QWidget):
         self.disable_button.setEnabled(False)
         self.manage_button.setEnabled(False)
         self.status_label.setText("Closing worker…")
+        self.overview_button.setEnabled(False)
         threading.Thread(target=self._close_worker, daemon=True).start()
 
     def _close_worker(self):
@@ -649,6 +707,10 @@ class GameFrameWindow(QWidget):
             if self._management_thread is not None:
                 self._management_thread.join()
             self.management_controller.close()
+            if self._overview_thread is not None:
+                self._overview_thread.join()
+            self.overview_controller.close()
+            self.overview_controller.assert_idle()
             self.controller.close()
         except Exception as error:
             self._events.put(("cleanup-error", error))

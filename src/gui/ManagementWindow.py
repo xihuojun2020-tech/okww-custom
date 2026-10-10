@@ -61,12 +61,28 @@ class ManagementWindow(QMainWindow):
         self.tabs.addTab(self.diagnostics_tab, '日志与诊断')
         self.configuration_tab = None
         self.update_tab = None
+        self.maintenance_tab = None
+        self.schedule_tab = None
+        self._pending_maintenance = False
+        self._configuration_restart_message = None
+        self._maintenance_committed_failure = False
         if service.package_root is not None:
+            from src.native_maintenance import NativeMaintenanceService
+            from src.gui.NativeMaintenanceTab import NativeMaintenanceTab
+            from src.gui.NativeScheduleTab import NativeScheduleTab
             from src.gui.NativeConfigurationTab import NativeConfigurationTab
             self.configuration_tab = NativeConfigurationTab(
                 service.root, service.runtime.program_version, service.package_root / 'manifest.json')
             self.tabs.addTab(self.configuration_tab, '任务与配置')
             self.configuration_tab.management_requested.connect(self._show_account_management)
+            self.maintenance_tab = NativeMaintenanceTab(
+                NativeMaintenanceService(service.root, service.runtime.program_version), self._maintain)
+            self.tabs.addTab(self.maintenance_tab, '配置备份与恢复')
+            self.schedule_tab = NativeScheduleTab(service.package_root, service.root)
+            self.tabs.addTab(self.schedule_tab, '系统定时任务')
+            self.configuration_tab.schema_changed.connect(self.schedule_tab.set_schema)
+            self.configuration_tab.schema_changed.connect(self._configuration_ready)
+            self.configuration_tab.lifecycle_failed.connect(self._configuration_failed)
             if (service.package_root / 'files.json').is_file():
                 from src.gui.NativeGamePackUpdateCard import NativeGamePackUpdateCard
                 self.update_tab = NativeGamePackUpdateCard(
@@ -85,6 +101,8 @@ class ManagementWindow(QMainWindow):
         self.diagnostics_tab.operation.busy_changed.connect(self._operation_changed)
         if self.update_tab is not None:
             self.update_tab.operation.busy_changed.connect(self._operation_changed)
+        if self.maintenance_tab is not None:
+            self.maintenance_tab.operation.busy_changed.connect(self._operation_changed)
         self.first_button.clicked.connect(self._create_first)
         self.import_button.clicked.connect(self._import)
         self.export_button.clicked.connect(self._export)
@@ -105,9 +123,15 @@ class ManagementWindow(QMainWindow):
             self.account_tab.account_tab.read_feature_button.setEnabled(False)
             self.account_tab.account_tab.read_feature_button.setToolTip('管理窗口未连接游戏，请在任务窗口读取特征码')
             self.tabs.addTab(self.account_tab, '账号与序列')
-            self.evidence_tab = CompletionCheckTab(None)
-            self.tabs.addTab(self.evidence_tab, '完成检查')
+            if self.evidence_tab is None:
+                self.evidence_tab = CompletionCheckTab(None)
+                self.tabs.addTab(self.evidence_tab, '完成检查')
+                self.evidence_tab.load_operation.busy_changed.connect(self._operation_changed)
+            else:
+                self.evidence_tab.reload_accounts()
             self.account_tab.account_changed.connect(lambda _: self.evidence_tab.reload_accounts())
+            self.account_tab.account_tab.operation.busy_changed.connect(self._operation_changed)
+            self.account_tab.sequence_tab.operation.busy_changed.connect(self._operation_changed)
             if self.configuration_tab is not None:
                 self.account_tab.account_changed.connect(self._account_config_changed)
         elif result.ok:
@@ -142,6 +166,81 @@ class ManagementWindow(QMainWindow):
             self.configuration_tab.reload()
         except RuntimeError as error:
             self._failed(error)
+
+    def _configuration_ready(self, _schema):
+        if self._configuration_restart_message is not None:
+            self.status.setText(self._configuration_restart_message + ' 配置进程已重新加载。')
+            self._configuration_restart_message = None
+
+    def _configuration_failed(self, message):
+        prefix = self._configuration_restart_message or '配置进程启动失败。'
+        self._configuration_restart_message = None
+        self._failed(RuntimeError(prefix + ' 配置进程未恢复：' + message))
+
+    def _rebuild_accounts(self):
+        if self.account_tab is not None:
+            old = self.account_tab
+            self.tabs.removeTab(self.tabs.indexOf(old))
+            old.deleteLater()
+            self.account_tab = None
+        # CompletionCheckTab resolves the fresh default account repository.
+        self.refresh()
+
+    def _maintain(self, work, success, failure, rebind):
+        if self._operations_busy() or self._closing or self._maintenance_committed_failure:
+            failure(RuntimeError('已有操作正在进行，或账号运行时需要重新启动；暂不能维护配置'))
+            return
+        self._pending_maintenance = True
+        controls = (self.tabs, self.first_button, self.import_button,
+                    self.export_button, self.review_button)
+        enabled = tuple(control.isEnabled() for control in controls)
+        for control in controls:
+            control.setEnabled(False)
+        try:
+            self.configuration_tab.shutdown()
+        except RuntimeError as error:
+            for control, state in zip(controls, enabled):
+                control.setEnabled(state)
+            self._pending_maintenance = False
+            failure(error)
+            return
+
+        def finish(value=None, error=None):
+            from src.native_maintenance import MaintenanceCommittedError
+            committed_failure = isinstance(error, MaintenanceCommittedError)
+            self._maintenance_committed_failure = committed_failure
+            try:
+                for control, state in zip(controls, enabled):
+                    control.setEnabled(state)
+                if error is None:
+                    if rebind:
+                        self.service.rebind(self.maintenance_tab.service.runtime)
+                        self._rebuild_accounts()
+                    success(value)
+                    message = '配置维护已提交。' if rebind else '配置备份已创建。'
+                else:
+                    failure(error)
+                    message = '维护失败：' + sanitize_error(error)
+                self.status.setText(message)
+                if committed_failure:
+                    for control in controls[1:]:
+                        control.setEnabled(False)
+                    if self.account_tab is not None:
+                        self.account_tab.setEnabled(False)
+                    self.configuration_tab.setEnabled(False)
+                    self.maintenance_tab.setEnabled(False)
+                    self.status.setText(message + ' 磁盘已提交，请重启管理窗口以重新加载账号；旧账号编辑已停用。')
+                elif not self._closing:
+                    self._configuration_restart_message = message
+                    self.status.setText(message + ' 正在重新加载配置进程…')
+                    self._reload_configuration()
+            finally:
+                self._pending_maintenance = False
+                if self._closing:
+                    self.close()
+
+        self.operation.start(work, lambda value: finish(value=value),
+                             lambda error: finish(error=error))
 
     def _create_first(self):
         dialog = NewAccountDialog(('序列1', '序列2'), self)
@@ -201,10 +300,17 @@ class ManagementWindow(QMainWindow):
         operations = [self.operation, self.diagnostics_tab.operation]
         if self.update_tab is not None:
             operations.append(self.update_tab.operation)
+        if self.maintenance_tab is not None:
+            operations.append(self.maintenance_tab.operation)
+        if self.account_tab is not None:
+            operations.extend((self.account_tab.account_tab.operation,
+                               self.account_tab.sequence_tab.operation))
+        if self.evidence_tab is not None:
+            operations.append(self.evidence_tab.load_operation)
         details = getattr(self.diagnostics_tab, '_details', None)
         if details is not None:
             operations.append(details.operation)
-        return any(operation.busy for operation in operations)
+        return self._pending_maintenance or any(operation.busy for operation in operations)
 
     def closeEvent(self, event):
         if self._operations_busy():

@@ -96,8 +96,11 @@ def main(argv=None):
             raise ValueError('Legacy packages use their explicit production bootstrap')
         if options.session and not manifest.supports_session:
             raise ValueError('This package does not provide a shared task session')
-        leases.enter_context(data_lease(options.data_dir))
         package = manifest.load()
+        prepare_data = getattr(package, 'prepare_data', None)
+        if prepare_data is not None:
+            prepare_data(options.data_dir)
+        leases.enter_context(data_lease(options.data_dir))
         prepare = getattr(package, 'prepare', None)
         if prepare is not None:
             prepare(task.id, options.data_dir)

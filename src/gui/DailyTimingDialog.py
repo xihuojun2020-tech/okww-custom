@@ -1,6 +1,7 @@
 """Read-only account daily duration history."""
 from datetime import datetime
 
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QTreeWidget, QTreeWidgetItem, QVBoxLayout
 from src.daily_timing import PROCESS_SESSION, duration_text
 
@@ -8,7 +9,7 @@ RESULTS = {'running': '运行中', 'completed': '完成', 'failed': '失败',
            'stopped': '已停止', 'partial_failure': '部分失败'}
 
 
-def history_rows(batches, profile_id):
+def history_rows(batches, profile_id, *, live_timings=None):
     days = {}
     for batch in batches:
         day = days.setdefault(batch['game_day'], {'total': 0, 'rows': []})
@@ -19,7 +20,11 @@ def history_rows(batches, profile_id):
             elapsed = attempt['elapsed_seconds']
             result = RESULTS[attempt['result']]
             if finished is None:
-                if batch['session'] == PROCESS_SESSION and batch['finished_at'] is None:
+                key = (batch['session'], batch['batch_id'], profile_id, attempt['attempt_number'])
+                if live_timings is not None and key in live_timings and batch['finished_at'] is None:
+                    result = '运行中'
+                    elapsed = live_timings[key]
+                elif live_timings is None and batch['session'] == PROCESS_SESSION and batch['finished_at'] is None:
                     result = '运行中'
                     elapsed = (datetime.now(datetime.fromisoformat(attempt['started_at']).tzinfo)
                                - datetime.fromisoformat(attempt['started_at'])).total_seconds()
@@ -37,9 +42,12 @@ def history_rows(batches, profile_id):
 
 
 class DailyTimingDialog(QDialog):
-    def __init__(self, repository, profile_id, parent=None):
+    def __init__(self, repository, profile_id, parent=None, *, live_provider=None, readonly=False):
         super().__init__(parent)
         self.repository, self.profile_id = repository, profile_id
+        self.live_provider = live_provider
+        self.readonly = readonly
+        self._batches = []
         self.setWindowTitle('每日耗时记录')
         self.resize(1000, 500)
         layout = QVBoxLayout(self)
@@ -52,11 +60,26 @@ class DailyTimingDialog(QDialog):
         buttons.addButton('刷新', QDialogButtonBox.ActionRole).clicked.connect(self.refresh)
         layout.addWidget(buttons)
         self.refresh()
+        if live_provider is not None:
+            self.timer = QTimer(self)
+            self.timer.timeout.connect(self._render)
+            self.timer.start(1000)
 
     def refresh(self):
+        try:
+            self._batches = (self.repository.daily_timings(self.profile_id, readonly=True) if self.readonly
+                             else self.repository.daily_timings(self.profile_id))
+        except Exception as error:
+            self.tree.clear()
+            QTreeWidgetItem(self.tree, ['读取时间记录失败', '', '', '', type(error).__name__])
+            return
+        self._render()
+
+    def _render(self):
         self.tree.clear()
         try:
-            days = history_rows(self.repository.daily_timings(self.profile_id), self.profile_id)
+            days = history_rows(self._batches, self.profile_id,
+                                live_timings=self.live_provider() if self.live_provider is not None else None)
         except Exception as error:
             QTreeWidgetItem(self.tree, ['读取时间记录失败', '', '', '', type(error).__name__])
             return

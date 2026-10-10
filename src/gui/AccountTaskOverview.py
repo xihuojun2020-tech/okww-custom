@@ -16,10 +16,11 @@ class AccountTaskOverview(QWidget):
     records = Signal(str)
     launch_page = Signal(str)
 
-    def __init__(self, repository, live_provider, parent=None):
+    def __init__(self, repository, live_provider, parent=None, *, readonly=False):
         super().__init__(parent)
         self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
         self.repository, self.live_provider = repository, live_provider
+        self.readonly = readonly
         self.profile_id = None
         self._last_signature = None
         self._last_loaded = 0
@@ -117,6 +118,7 @@ class AccountTaskOverview(QWidget):
         for row in self._rows.values():
             if row.card.state == 'running':
                 row.update_card(row.card, live)
+                self._apply_readonly(row)
         now = beijing_now()
         signature = (self.profile_id, game_day_key(now), tuple(sorted((k, v) for k, v in live.items() if k != 'elapsed')))
         if not force and signature == self._last_signature and monotonic() - self._last_loaded < 10:
@@ -199,7 +201,12 @@ class AccountTaskOverview(QWidget):
 
     def _update_writable(self, *_):
         for row in self._rows.values():
-            row.set_writable(not self._stale and not self.marking.busy)
+            row.set_writable(not self.readonly and not self._stale and not self.marking.busy)
+
+    def _apply_readonly(self, row):
+        if self.readonly:
+            for button in (row.primary, row.settings, row.launch, row.retry):
+                button.hide()
 
     def _render(self, cards, now, live):
         from src.gui.TaskOverviewRow import TaskOverviewRow
@@ -240,6 +247,7 @@ class AccountTaskOverview(QWidget):
                     row.update_card(card, live)
             elif row.card != card or card.state == 'running':
                 row.update_card(card, live)
+            self._apply_readonly(row)
             group = self._groups[self._group_key(card)]
             if row.parentWidget() != group.content:
                 group.add_widget(row)
@@ -257,7 +265,7 @@ class AccountTaskOverview(QWidget):
         self._update_writable()
 
     def _mark(self, task_id, done):
-        if self._stale or self.marking.busy:
+        if self.readonly or self._stale or self.marking.busy:
             return
         identity, repository = self.profile_id, self.repository
         def work():
@@ -275,7 +283,7 @@ class AccountTaskOverview(QWidget):
             self.notice.show()
 
     def _reset_abyss(self):
-        if self._stale or self.marking.busy:
+        if self.readonly or self._stale or self.marking.busy:
             return
         identity, service = self.profile_id, self.repository.integrity_service
         if self.live_provider():

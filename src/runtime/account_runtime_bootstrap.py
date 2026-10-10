@@ -44,7 +44,7 @@ def _default_root() -> Path:
 
 def initialize_account_runtime(root=None, program_version=None, *,
                                install_start_guard=True, controller_cls=None,
-                               backup_dir=None) -> AccountRuntime:
+                               backup_dir=None, restore_prepared=False) -> AccountRuntime:
     """Initialize once, recovering publication state before integrity checks."""
     global _RUNTIME
     resolved = Path(root or _default_root()).resolve()
@@ -59,8 +59,14 @@ def initialize_account_runtime(root=None, program_version=None, *,
         install_redaction_filters()
         from src.config_backup import ConfigBackupService
         from src.storage import get_config_backup_dir
-        ConfigBackupService(resolved / 'configs', backup_dir if backup_dir is not None
-                            else get_config_backup_dir(resolved))
+        selected_backup_dir = backup_dir if backup_dir is not None else get_config_backup_dir(resolved)
+        if restore_prepared:
+            from src.account_change_lock import get_account_change_lock
+            from src.native_maintenance import require_no_pending_restore
+            with get_account_change_lock(resolved / 'configs'):
+                require_no_pending_restore(resolved, selected_backup_dir)
+        else:
+            ConfigBackupService(resolved / 'configs', selected_backup_dir)
         from src.account_config_bundle import AccountConfigBundleService
         # Recover legacy/runtime writes before either mirrors or integrity checks.
         AccountConfigBundleService(resolved).recover_incomplete_transactions()
@@ -135,6 +141,21 @@ def get_account_runtime() -> AccountRuntime | None:
     return _RUNTIME
 
 
+def reload_account_runtime(root, program_version, *, backup_dir=None) -> AccountRuntime:
+    """Replace account caches after a committed maintenance operation under EX."""
+    global _RUNTIME
+    resolved = Path(root).resolve()
+    with _LOCK:
+        if _RUNTIME is not None and _RUNTIME.root != resolved:
+            raise RuntimeError('account runtime is already initialized for another root')
+        _RUNTIME = None
+        set_default_service(None)
+        set_default_repository(None)
+        return initialize_account_runtime(
+            resolved, program_version, install_start_guard=False,
+            backup_dir=backup_dir, restore_prepared=True)
+
+
 def prepare_native_account_runtime(data_dir, program_version) -> AccountRuntime:
     """Run the existing account preflight before a native device is created."""
     from src.runtime import combat_api
@@ -144,7 +165,7 @@ def prepare_native_account_runtime(data_dir, program_version) -> AccountRuntime:
     combat_api.configure(native=True, data_dir=root)
     runtime = initialize_account_runtime(
         root, program_version, install_start_guard=False,
-        backup_dir=resolve_config_backup_dir(root))
+        backup_dir=resolve_config_backup_dir(root), restore_prepared=True)
     runtime.require_ready()
     get_evidence_service(root=root / 'okww监控室' / 'CompletionEvidence')
     return runtime
@@ -185,6 +206,7 @@ __all__ = [
     "get_account_runtime",
     "prepare_native_account_runtime",
     "initialize_account_runtime",
+    "reload_account_runtime",
     "require_account_runtime_for_task",
     "require_account_runtime_ready",
 ]

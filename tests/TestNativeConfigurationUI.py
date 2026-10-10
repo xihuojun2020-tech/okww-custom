@@ -11,6 +11,71 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestNativeConfigurationUI(unittest.TestCase):
+    def test_schema_and_failure_signals_follow_real_owner_lifecycle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            script = Path(directory) / 'lifecycle_probe.py'
+            script.write_text('''
+import sys,time
+from pathlib import Path
+from unittest.mock import patch
+sys.path.insert(0,sys.argv[1])
+from tests.fixture_support import make_account_environment
+from PySide6.QtCore import QProcess
+from PySide6.QtWidgets import QApplication
+from src.gui.NativeConfigurationTab import NativeConfigurationTab
+root=Path(sys.argv[2])
+make_account_environment(root/'data')
+app=QApplication([])
+manifest=Path(sys.argv[1])/'gamepacks/wuthering_waves_native/manifest.json'
+tab=NativeConfigurationTab(root/'data','test-signals',manifest)
+schemas,failures=[],[]
+tab.schema_changed.connect(schemas.append)
+tab.lifecycle_failed.connect(failures.append)
+def until(condition):
+    deadline=time.monotonic()+20
+    while not condition():
+        app.processEvents()
+        if time.monotonic()>deadline:
+            raise AssertionError(tab.status.text())
+        time.sleep(.01)
+try:
+    until(lambda:len(schemas)==1)
+    assert schemas[0]==tab.schema and not failures
+    tab.request('set-config',scope='global',id='missing-fixture',values={})
+    until(lambda:not tab._pending)
+    assert len(schemas)==1 and not failures
+    version_index=tab._arguments.index('--expected-version')+1
+    expected=tab._arguments[version_index]
+    tab._arguments[version_index]='fixture-version-mismatch'
+    tab.reload()
+    assert tab.schema is None
+    until(lambda:len(failures)==1 and tab.process.state()==QProcess.NotRunning)
+    assert len(schemas)==1
+    tab._arguments[version_index]=expected
+    tab.reload()
+    assert tab.schema is None
+    until(lambda:len(schemas)==2)
+    assert len(failures)==1
+finally:
+    tab.shutdown()
+assert len(failures)==1 and tab.process.exitCode()==0
+with patch('src.gui.NativeConfigurationTab.sys.executable',str(root/'missing-python.exe')):
+    failed=NativeConfigurationTab(root/'data','test-signals',manifest)
+    startup=[]
+    failed.lifecycle_failed.connect(startup.append)
+    failed.schema_changed.connect(lambda _: (_ for _ in ()).throw(AssertionError('false ready')))
+    until(lambda:len(startup)==1 and failed.process.state()==QProcess.NotRunning)
+assert failed.schema is None
+failed.shutdown()
+assert len(startup)==1
+print('configuration-lifecycle-signals-pass')
+''', encoding='utf-8')
+            environment = dict(os.environ, QT_QPA_PLATFORM='offscreen', PYTHONPATH=str(ROOT))
+            result = subprocess.run([sys.executable, '-I', '-X', 'utf8', str(script), str(ROOT), directory],
+                                    env=environment, capture_output=True, text=True, encoding='utf-8', timeout=55)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn('configuration-lifecycle-signals-pass', result.stdout)
+
     def test_full_form_render_global_save_and_ordered_values_without_game(self):
         with tempfile.TemporaryDirectory() as directory:
             script = Path(directory) / 'ui_probe.py'

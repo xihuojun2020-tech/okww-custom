@@ -46,6 +46,9 @@ class DailyTiming:
         except Exception:
             logger.exception('每日耗时记录保存失败，原任务继续执行')
             self.task.info['耗时记录错误'] = '保存失败，请检查日志；任务流程不受影响'
+        observer = getattr(self.task.executor, 'live_status', None)
+        if observer is not None:
+            observer.publish_timing(self)
 
     def begin_account(self, profile_id, account, phase='首次'):
         if self.active is not None and self.active['profile_id'] == profile_id:

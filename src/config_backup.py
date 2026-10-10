@@ -425,10 +425,10 @@ class ConfigBackupService:
             return False
 
     def cleanup(self, *, protected=()):
-        """Bound retention work and stop visibly when deletion makes no progress."""
+        """Return whether retention completed; stop visibly if deletion stalls."""
         with self._lock:
             if self._pending_restore_journal() is not None:
-                return
+                return False
             protected = set(protected)
             for kind, limit in (('daily', self.daily_limit), ('transaction', self.transaction_limit)):
                 snapshots = sorted(self._snapshots(kind), key=self._snapshot_sort_key)
@@ -436,15 +436,15 @@ class ConfigBackupService:
                 candidates = [path for path in snapshots if path not in protected]
                 for item in candidates[:excess]:
                     if not self._delete_snapshot(item):
-                        return
+                        return False
             while True:
                 daily = sorted(self._snapshots('daily'), key=self._snapshot_sort_key)
                 transactions = sorted(self._snapshots('transaction'), key=self._snapshot_sort_key)
                 if self._snapshot_size(daily + transactions) <= self.total_limit_bytes:
-                    return
+                    return True
                 candidates = [path for path in daily + transactions if path not in protected]
                 if not candidates or not self._delete_snapshot(candidates[0]):
-                    return
+                    return False
 
     @staticmethod
     def _delete_snapshot(path):

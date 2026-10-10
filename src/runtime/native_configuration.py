@@ -120,7 +120,7 @@ def create_configuration_host(data_dir, program_version, manifest_path, events):
     root = Path(data_dir).resolve()
     combat_api.configure(native=True, data_dir=root)
     initialize_account_runtime(root, program_version, install_start_guard=False,
-                               backup_dir=resolve_config_backup_dir(root))
+                               backup_dir=resolve_config_backup_dir(root), restore_prepared=True)
     manifest = json.loads(Path(manifest_path).read_text(encoding='utf-8'))
     definitions = manifest['tasks']
     source = Path(__file__).resolve().parents[2]
@@ -149,6 +149,8 @@ def main(argv=None):
     leases = ExitStack()
     try:
         leases.enter_context(package_lease(args.manifest.parent))
+        from src.native_maintenance import prepare_native_data
+        prepare_native_data(args.data_dir, args.version)
         leases.enter_context(data_lease(args.data_dir))
         host = create_configuration_host(args.data_dir, args.version, args.manifest, emit)
         emit({'event': 'configuration-ready'})

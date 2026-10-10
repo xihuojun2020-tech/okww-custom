@@ -14,7 +14,7 @@
 
 “游戏包更新”仅适用于已安装且包含完整 `files.json` 的包，源码目录显示限制说明。用户点击检查后读取独立发布源 `GameFrame-Packages/wuthering_waves_native/stable/latest.json`；下载的 `wuthering_waves_native-X.YY.ZZ.zip` 暂存于数据目录。校验身份、版本、大小、SHA256、文件索引和两份 requirements 后，由启动器在自己持有的执行/管理进程退出后交换包代码并重新发现任务。也可用启动器 Update gamepack 选择本地 ZIP。实际依赖变化拒绝热更新，需完整环境升级；更新不会自动启动游戏。
 
-跨启动器/CLI 的输入与更新锁已接入；自定义角色/任务热载、日历与耗时视图继续迁移。
+跨启动器/CLI 的输入与更新锁已接入；完整配置维护、系统定时和只读运行/耗时总览已接入；自定义角色/任务热载继续迁移。
 
 源码模式包的素材位于当前仓库；ZIP 构建包含自己的 `payload/src` 和 `payload/assets`，不依赖原 checkout。构建命令：
 
@@ -24,4 +24,6 @@
 
 当前不承诺游戏实战、后台会话兼容性或硬件延迟。本轮禁止启动游戏／模拟器。Windows WGC 和 SendInput 仍要求执行器位于目标会话，输入目标处于该会话前台。MuMu 设备提供触控而非 PC 键鼠，此鸣潮包不会据此宣称模拟器能运行鸣潮。
 
-执行器持包和数据共享锁到设备、诊断及证据写入者实际收尾完成；同一桌面输入由实际worker独占。管理与配置由核心package_process在导入payload前持包锁并核对版本，包更新需要独占代码锁。恢复/存储迁移管理入口仍在迁移；锁实现不等于这些页面已经完成。ADB和MuMu同模拟器实例的跨backend身份映射尚未提供。
+执行器持包和数据共享锁到设备、诊断及证据写入者实际收尾完成；同一桌面输入由实际worker独占。管理与配置由核心package_process在导入payload前持包锁并核对版本，包更新需要独占代码锁。备份/恢复页停止配置owner后取得数据独占锁，提交后重建账号页；存储路径迁移继续推进。ADB和MuMu同模拟器实例的跨backend身份映射尚未提供。
+
+只读总览通过启动器Overview gamepack或`gameframe overview PACKAGE_PATH --data-dir ABS_DATA_PATH`打开，显示已保存任务和明确选定worker的活状态；不执行账号迁移、设备连接或配置写入。“系统定时任务”保存当前Windows用户的交互任务，使用稳定任务ID和已保存设备，用户手动切换Windows账号。恢复、系统定时和总览仅完成离线验收，未注册真实系统任务或进行游戏运行验证。

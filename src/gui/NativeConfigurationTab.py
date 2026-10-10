@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QProcess, Signal, Qt
+from PySide6.QtCore import QProcess, Signal, Qt, QTimer
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
     QFormLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QPlainTextEdit, QPushButton, QScrollArea, QSpinBox, QSplitter, QVBoxLayout, QWidget)
@@ -72,6 +72,8 @@ class OrderedValues(QWidget):
 
 class NativeConfigurationTab(QWidget):
     management_requested = Signal()
+    schema_changed = Signal(dict)
+    lifecycle_failed = Signal(str)
 
     def __init__(self, data_dir, version, manifest_path, parent=None):
         super().__init__(parent)
@@ -112,14 +114,20 @@ class NativeConfigurationTab(QWidget):
         self.process.readyReadStandardOutput.connect(self._read)
         self.process.readyReadStandardError.connect(self._read_errors)
         self.process.finished.connect(self._finished)
-        self.process.errorOccurred.connect(lambda _: self._fail(self.process.errorString()))
+        self.process.errorOccurred.connect(self._process_error)
         self.process.started.connect(lambda: self.request('get-schema'))
         self._arguments = ['-u', '-m', 'gameframe.package_process',
             '--package', str(manifest.root), '--expected-version', manifest.version,
             '--module', 'src.runtime.native_configuration', '--',
             '--data-dir', str(Path(data_dir).resolve()), '--version', version,
             '--manifest', str(Path(manifest_path).resolve())]
-        self.process.start(sys.executable, self._arguments)
+        # FailedToStart can be emitted synchronously. Let the window connect
+        # lifecycle signals before the first launch.
+        QTimer.singleShot(0, self._start)
+
+    def _start(self):
+        if not self._closing:
+            self.process.start(sys.executable, self._arguments)
 
     def refresh(self):
         if self.process.state() == QProcess.NotRunning:
@@ -132,14 +140,28 @@ class NativeConfigurationTab(QWidget):
         self.shutdown()
         self._closing = False
         self._startup_failure = None
+        self.schema = None
         self._buffer = b''
         self._pending.clear()
         self.selection.setEnabled(True)
         self.refresh_button.setEnabled(True)
-        self.process.start(sys.executable, self._arguments)
+        self._start()
 
     def _fail(self, message):
         self.status.setText('配置操作失败：' + str(message))
+
+    def _fail_lifecycle(self, message):
+        self._fail(message)
+        if not self._closing and self._startup_failure is None:
+            self._startup_failure = str(message)
+            self.lifecycle_failed.emit(self._startup_failure)
+
+    def _process_error(self, error):
+        message = self.process.errorString()
+        if error in (QProcess.FailedToStart, QProcess.Crashed):
+            self._fail_lifecycle(message)
+        else:
+            self._fail(message)
 
     def _read_errors(self):
         message = bytes(self.process.readAllStandardError()).decode('utf-8', errors='replace').strip()
@@ -148,7 +170,7 @@ class NativeConfigurationTab(QWidget):
 
     def _finished(self, code, _status):
         if not self._closing and self._startup_failure is None:
-            self._fail(f'配置进程退出（{code}）')
+            self._fail_lifecycle(f'配置进程退出（{code}）')
         self.selection.setEnabled(False)
         self.scroll.setEnabled(False)
         self.refresh_button.setEnabled(not self._closing)
@@ -174,8 +196,7 @@ class NativeConfigurationTab(QWidget):
             except ValueError:
                 continue  # Business logs share stdout; protocol replies are JSON events.
             if value.get('event') == 'configuration-failed':
-                self._startup_failure = value['error']['message']
-                self._fail(self._startup_failure)
+                self._fail_lifecycle(value['error']['message'])
                 continue
             if value.get('event') != 'configuration-response':
                 continue
@@ -185,9 +206,14 @@ class NativeConfigurationTab(QWidget):
             if not value['ok']:
                 if self.schema is not None:
                     self.set_schema(self.schema)
-                self._fail(value['error']['message'])
+                if value.get('command') == 'get-schema' and self.schema is None:
+                    self._fail_lifecycle(value['error']['message'])
+                else:
+                    self._fail(value['error']['message'])
                 continue
             self.set_schema(value['schema'])
+            if value.get('command') == 'get-schema':
+                self.schema_changed.emit(self.schema)
             self.status.setText('配置已保存。' if value.get('command') != 'get-schema' else '配置已加载。')
 
     def set_schema(self, schema):

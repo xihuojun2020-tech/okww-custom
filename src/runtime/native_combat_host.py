@@ -26,12 +26,13 @@ class NativeCombatHost:
                  template_matching, window=None, device_identity='replay',
                  supported_ratio=16 / 9, translate=gettext.gettext, pause=None,
                  native=True, task_entry='src.task.AutoCombatTask:AutoCombatTask',
-                 registered_tasks=(), ocr_config=None, task_requirements=None):
+                 registered_tasks=(), ocr_config=None, task_requirements=None, live_status=None):
         from src.runtime import combat_api
         combat_api.configure(native=native, data_dir=context.data_dir)
         from src.runtime.combat_api import Box, Config, TaskDisabledException, WaitFailedException
 
         self.context = context
+        self.live_status = live_status
         config_root = (Path(context.data_dir) / 'configs').resolve()
         config_root.mkdir(parents=True, exist_ok=True)
         Config.config_folder = str(config_root)
@@ -157,6 +158,7 @@ class NativeCombatHost:
         executor.current_task = task
         self.task = task
         self.executor = executor
+        executor.live_status = live_status
         self.ocr = OCR(executor, ocr_engine, text_fix=executor.text_fix,
                        resolve_box=task.get_box_by_name, box_factory=Box,
                        screenshot_writer=task.screenshot, draw_boxes=task.draw_boxes)
@@ -345,6 +347,8 @@ class NativeCombatHost:
         task._enabled = True
         task.running = True
         task.start_time = time.time()
+        if self.live_status is not None:
+            self.live_status.begin_foreground(task)
         try:
             self.executor.reset_scene()
             before_run = getattr(task, 'before_run', None)
@@ -365,6 +369,8 @@ class NativeCombatHost:
                     task.running = False
                     task._enabled = False
                     self.executor.wait_on_pause = previous_pause_policy
+                    if self.live_status is not None:
+                        self.live_status.finish_foreground(task)
         self.context.check_stop()
         if task.exit_after_task or task.config.get('Exit After Task'):
             self.context.device.stop_target()

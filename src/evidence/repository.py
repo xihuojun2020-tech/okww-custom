@@ -116,10 +116,12 @@ class EvidenceRepository:
             db.execute('INSERT OR REPLACE INTO daily_timings VALUES (?, ?, ?)',
                        (record['batch_id'], record['game_day'], json.dumps(record, ensure_ascii=False)))
 
-    def daily_timings(self, profile_id):
+    def daily_timings(self, profile_id, *, readonly=False):
         if not self.database.exists():
             return []
-        with self._connect() as db:
+        connection = (closing(sqlite3.connect(self.database.as_uri() + '?mode=ro', uri=True))
+                      if readonly else self._connect())
+        with connection as db:
             if not db.execute("SELECT 1 FROM sqlite_master WHERE name='daily_timings'").fetchone():
                 return []
             rows = db.execute('SELECT metadata FROM daily_timings ORDER BY game_day DESC, rowid DESC').fetchall()

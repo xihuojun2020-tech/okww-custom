@@ -42,6 +42,7 @@ class PackageManifest:
     tasks: tuple[TaskDefinition, ...]
     supports_session: bool = False
     management: bool = False
+    overview: bool = False
 
     @classmethod
     def read(cls, directory: Path | str) -> PackageManifest:
@@ -69,13 +70,13 @@ class PackageManifest:
         execution = value.get('execution', 'native')
         if execution not in {'native', 'legacy-application'}:
             raise ValueError('Unknown package execution mode')
-        for name in ('supports_session', 'management'):
+        for name in ('supports_session', 'management', 'overview'):
             if not isinstance(value.get(name, False), bool):
                 raise ValueError(f'Package {name} must be a boolean')
         return cls(root, value['id'], value.get('title', value['id']), value['version'],
                    value['entrypoint'], value['license'], tuple(value['platforms']),
                    execution, tasks, value.get('supports_session', False),
-                   value.get('management', False))
+                   value.get('management', False), value.get('overview', False))
 
     def task(self, task_id: str) -> TaskDefinition:
         for task in self.tasks:

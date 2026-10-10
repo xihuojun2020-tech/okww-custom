@@ -278,7 +278,7 @@ class TestAccountManagementEntry(unittest.TestCase):
                      patch.object(ManagementWindow, 'show', verified_show):
                     assert manage(root / 'data', 'artifact-test') == 0
                 assert not any(name.split('.')[0] in {'config','main','custom_ok'} for name in sys.modules)
-            ''', source_root=payload, stdin='{"command":"stop"}\n')
+            ''', source_root=payload, core_root=ROOT, stdin='{"command":"stop"}\n')
             self.assertIn('management-ready', output)
 
     def test_installed_plugin_management_root_configuration_shutdown_and_update_are_explicit(self):
@@ -335,7 +335,7 @@ class TestAccountManagementEntry(unittest.TestCase):
                     stack.enter_context(patch.object(TaskExecutor, '__init__', side_effect=AssertionError('created executor')))
                     window = ManagementWindow(service)
                     window.show()
-                    assert window.tabs.count() == 5
+                    assert window.tabs.count() == 7
                     assert window.update_tab.package_root == package_root
                     assert window.configuration_tab is not None
                     deadline = time.monotonic() + 10
@@ -356,6 +356,13 @@ class TestAccountManagementEntry(unittest.TestCase):
                     with patch.object(window.configuration_tab, 'reload', side_effect=RuntimeError('test reload stop timeout')):
                         window._done(None)
                         assert 'test reload stop timeout' in window.status.text()
+                    # Refresh queues an account read in the reused evidence page.
+                    # Drain it before exercising the explicit child-stop failure.
+                    deadline = time.monotonic() + 10
+                    while window._operations_busy() and time.monotonic() < deadline:
+                        app.processEvents()
+                        time.sleep(.01)
+                    assert not window._operations_busy()
                     with patch.object(window.configuration_tab, 'shutdown', side_effect=RuntimeError('test configuration timeout')):
                         window.close()
                         assert window.isVisible()

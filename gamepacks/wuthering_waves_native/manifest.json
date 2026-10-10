@@ -9,7 +9,7 @@
   ],
   "execution": "native",
   "source_root": "../..",
-  "version": "1.97.68",
+  "version": "1.97.69",
   "tasks": [
     {
       "id": "DailyTask",
@@ -494,5 +494,6 @@
     }
   ],
   "supports_session": true,
-  "management": true
+  "management": true,
+  "overview": true
 }

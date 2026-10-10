@@ -47,6 +47,9 @@ def publish_task_status(task, *, account=None, stage=None, detail=None, profile_
                 setter(key, value)
             else:
                 owner.info[key] = value
+        observer = getattr(getattr(owner, 'executor', None), 'live_status', None)
+        if observer is not None:
+            observer.publish(owner)
     except Exception:
         pass
 

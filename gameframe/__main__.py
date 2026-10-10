@@ -30,6 +30,9 @@ def main(argv=None):
     managing = commands.add_parser('manage', help='Open the selected package management application')
     managing.add_argument('package', type=Path)
     managing.add_argument('--data-dir', type=Path, required=True)
+    overview = commands.add_parser('overview', help='Open the selected package read-only overview')
+    overview.add_argument('package', type=Path)
+    overview.add_argument('--data-dir', type=Path, required=True)
     gui = commands.add_parser('gui', help='Open the framework launcher')
     gui.add_argument('--packages', type=Path, default=Path.home() / '.gameframe' / 'gamepacks')
     gui.add_argument('--data-dir', type=Path, default=Path.home() / '.gameframe')
@@ -48,6 +51,7 @@ def main(argv=None):
         package = PackageManifest.read(args.package)
         print(json.dumps({'id': package.id, 'execution': package.execution,
                           'supports_session': package.supports_session, 'management': package.management,
+                          'overview': package.overview,
                           'license': package.license, 'tasks': [
                               {'id': task.id, 'title': task.title, 'kind': task.kind,
                                'default_config': task.default_config,
@@ -62,10 +66,12 @@ def main(argv=None):
         manifest = PackageManifest.read(args.package)
         if args.command == 'manage':
             process = controller.start_management(manifest, data_dir=args.data_dir)
+        elif args.command == 'overview':
+            process = controller.start_overview(manifest, data_dir=args.data_dir)
         else:
             process = controller.start(manifest, args.task, data_dir=args.data_dir,
                                        config=args.config, device=args.device, session=args.session)
-        if args.command == 'manage' or args.session:
+        if args.command in ('manage', 'overview') or args.session:
             def forward_controls():
                 for line in sys.stdin:
                     try:

@@ -41,6 +41,9 @@ class FixtureController:
         if self.process is not None and self.process.poll() is None:
             raise RuntimeError('An owned execution process is still running')
 
+    def start_overview(self, manifest, *, data_dir):
+        return self.start(manifest, 'overview', data_dir=data_dir)
+
     def stop(self):
         if self.process is not None and self.process.poll() is None:
             self.process.stdin.write("stop\n")
@@ -106,6 +109,25 @@ class TestGameFrameLauncher(unittest.TestCase):
         if not self.window._cleanup_done:
             self.window.close()
             self._until(lambda: self.window._cleanup_done)
+
+    def test_overview_coexists_with_worker_and_closes_owned_process(self):
+        from dataclasses import replace
+        self.window.packages = tuple(replace(manifest, overview=True) for manifest in self.window.packages)
+        overview = FixtureController()
+        self.window.overview_controller = overview
+        self.window._select_package(0)
+        self.window.start_selected()
+        self._until(lambda: self.window.process is not None)
+        self.assertTrue(self.window.overview_button.isEnabled())
+        self.window.overview_selected()
+        self._until(lambda: overview.process is not None and not self.window._overview_starting)
+        self.assertIsNone(self.controller.process.poll())
+        self.assertIsNone(overview.process.poll())
+        self.window.close()
+        self._until(lambda: self.window._cleanup_done)
+        self.assertEqual(overview.process.returncode, 0)
+        self.assertTrue(overview.closed)
+        overview.assert_idle()
 
     def test_manifest_selection_stays_metadata_only_and_legacy_fields_do_not_apply(self):
         self.assertEqual(self.window.package_select.count(), 2)
@@ -249,6 +271,23 @@ class TestGameFrameLauncher(unittest.TestCase):
         self.assertEqual(private.read_bytes(), b'private data')
         self.assertEqual(self.controller.starts, [])
         self.assertIn('Updated native', self.window.status_label.text())
+
+    def test_update_normally_closes_overview_before_applying(self):
+        from dataclasses import replace
+        archive = self.update_archive()
+        self.window.packages = tuple(replace(manifest, overview=True) for manifest in self.window.packages)
+        overview = FixtureController()
+        self.window.overview_controller = overview
+        self.window._select_package(0)
+        self.window.overview_selected()
+        self._until(lambda: overview.process is not None and not self.window._overview_starting)
+        with patch('gameframe.gui.QFileDialog.getOpenFileName', return_value=(str(archive), 'ZIP')):
+            self.window.update_button.click()
+        self._until(lambda: not self.window._updating)
+        self.assertEqual(self.window._manifest().version, '1.00.01')
+        self.assertEqual(overview.process.returncode, 0)
+        self.assertTrue(overview.closed)
+        overview.assert_idle()
 
     def test_management_update_waits_for_successful_exit_and_checks_actual_owner(self):
         archive = self.update_archive()

@@ -15,9 +15,15 @@ class AccountManagementService:
         self.package_root = Path(package_root).resolve() if package_root is not None else None
         self.runtime = initialize_account_runtime(
             self.root, program_version, install_start_guard=False,
-            backup_dir=resolve_config_backup_dir(self.root))
+            backup_dir=resolve_config_backup_dir(self.root), restore_prepared=True)
         self.bundles = AccountConfigBundleService(
             self.root, integrity_service=self.runtime.integrity_service)
+
+    def rebind(self, runtime):
+        """Use the freshly reconstructed runtime after a committed restore."""
+        self.runtime = runtime
+        self.bundles = AccountConfigBundleService(
+            self.root, integrity_service=runtime.integrity_service)
 
     def first_account_available(self):
         paths = self.runtime.integrity_service.paths
@@ -59,8 +65,12 @@ def manage(data_dir, program_version, *, package_root=None):
 
 def _manage(data_dir, program_version, *, package_root=None):
     from src.runtime import combat_api
+    from gameframe.process_locks import data_lease
+    from src.native_maintenance import prepare_native_data
     combat_api.configure(native=False, data_dir=data_dir)
-    service = AccountManagementService(data_dir, program_version, package_root=package_root)
+    prepare_native_data(data_dir, program_version)
+    with data_lease(data_dir):
+        service = AccountManagementService(data_dir, program_version, package_root=package_root)
     from src.gui.ManagementWindow import run_management_window
     return run_management_window(service)
 
