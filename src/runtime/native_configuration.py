@@ -219,12 +219,15 @@ def create_configuration_host(data_dir, program_version, manifest_path, events):
     from src.runtime.native_language import LANGUAGE_DEFAULTS, create_language_config, load_language
     from src.runtime.native_program_preferences import DEFAULTS, NAME, NativeProgramPreferences
     preferences = NativeProgramPreferences(root)
+    from src.runtime.native_notifications import NativeNotificationPreferences
+    notification_preferences = NativeNotificationPreferences(root)
     create_language_config(root)
     language = load_language(root, pack_root=Path(manifest_path).parent)
     context = TaskContext(None, {}, root, threading.Event(), 'configuration', events)
     host = NativeCombatHost(
         context, coco_path=source / 'assets/coco_annotations.json',
-        global_options={**COMBAT_GLOBAL_DEFAULTS, NAME: DEFAULTS, 'Language': LANGUAGE_DEFAULTS},
+        global_options={**COMBAT_GLOBAL_DEFAULTS, NAME: DEFAULTS, 'Language': LANGUAGE_DEFAULTS,
+                        notification_preferences.config.config_file.stem: notification_preferences.config.default},
         ocr_engine=None,
         translate=language.translate,
         template_matching=TEMPLATE_MATCHING_DEFAULTS,

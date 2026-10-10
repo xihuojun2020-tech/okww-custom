@@ -827,3 +827,71 @@ msgstr ""
 "Windows user: {user}\n"
 "Data root: {root}\n"
 "Gamepack data: {package_root}"
+
+msgid "Discord Notification"
+msgstr "Discord Notification"
+
+msgid "Discord Webhook"
+msgstr "Discord Webhook"
+
+msgid "Telegram Notification"
+msgstr "Telegram Notification"
+
+msgid "Telegram Bot Token"
+msgstr "Telegram Bot Token"
+
+msgid "Telegram Chat ID"
+msgstr "Telegram Chat ID"
+
+msgid "Enterprise WeChat Webhook Notification"
+msgstr "Enterprise WeChat Webhook Notification"
+
+msgid "Enterprise WeChat Webhook URL"
+msgstr "Enterprise WeChat Webhook URL"
+
+msgid "QQ Bot API Notification"
+msgstr "QQ Bot API Notification"
+
+msgid "QQ Bot API App ID"
+msgstr "QQ Bot API App ID"
+
+msgid "QQ Bot API Token"
+msgstr "QQ Bot API Token"
+
+msgid "QQ Bot API Channel ID"
+msgstr "QQ Bot API Channel ID"
+
+msgid "QQ Desktop Notification (Not Reliable)"
+msgstr "QQ Desktop Notification (Not Reliable)"
+
+msgid "QQ Desktop Nickname"
+msgstr "QQ Desktop Nickname"
+
+msgid "WeChat Desktop Notification (Not Reliable)"
+msgstr "WeChat Desktop Notification (Not Reliable)"
+
+msgid "WeChat Desktop Nickname"
+msgstr "WeChat Desktop Nickname"
+
+msgid "Native Notifications"
+msgstr "Native Notifications"
+
+msgid "Notification channels; desktop delivery uses the current input owner."
+msgstr "Notification channels; desktop delivery uses the current input owner."
+
+msgid "启动 / 暂停 / 恢复热键"
+msgstr "Start / pause / resume hotkey"
+
+msgid "启动会话 / 暂停 / 恢复，保留服务启用设置。"
+msgstr "Start session / pause / resume, keeping service settings."
+
+msgid "已配置；输入新值以替换"
+msgstr "Configured; enter a new value to replace"
+
+msgid "清除"
+msgstr "Clear"
+
+msgid "账号配置已更新；当前操作结束后请刷新账号上下文。"
+msgstr ""
+"Account configuration updated; refresh account context after the current "
+"action finishes."

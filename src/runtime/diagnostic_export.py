@@ -12,8 +12,8 @@ from src.observability import redact_data, redact_message
 
 MAX_FILE = 64 * 1024 * 1024
 MAX_BATCH = 256 * 1024 * 1024
-PRIVATE = re.compile(r'(?i)(api[_ -]?key|access[_ -]?token|refresh[_ -]?token|session[_ -]?id|secret|password|cookie|authorization|私钥|身份证)')
-ASSIGNMENT = re.compile(r'''(?im)((?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|session[_ -]?id|secret|password|cookie|authorization)["']?\s*[:=]\s*)(?:"[^"\n]*"|'[^'\n]*'|[^\r\n]+)''')
+PRIVATE = re.compile(r'(?i)(api[_ -]?key|token|webhook|session[_ -]?id|secret|password|cookie|authorization|desktop nickname|chat id|channel id|私钥|身份证)')
+ASSIGNMENT = re.compile(r'''(?im)((?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|session[_ -]?id|secret|password|cookie|authorization|Telegram Bot Token|QQ Bot API Token|Discord Webhook|Enterprise WeChat Webhook URL)["']?\s*[:=]\s*)(?:"[^"\n]*"|'[^'\n]*'|[^\r\n]+)''')
 PEM = re.compile(r'-----BEGIN [^-\r\n]*PRIVATE KEY-----.*?(?:-----END [^-\r\n]*PRIVATE KEY-----|\Z)', re.S)
 
 

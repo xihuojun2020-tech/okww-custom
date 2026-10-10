@@ -835,3 +835,71 @@ msgstr ""
 "Usuario de Windows: {user}\n"
 "Raíz de datos: {root}\n"
 "Datos del paquete: {package_root}"
+
+msgid "Discord Notification"
+msgstr "Notificaciones de Discord"
+
+msgid "Telegram Notification"
+msgstr "Notificaciones de Telegram"
+
+msgid "Telegram Bot Token"
+msgstr "Token del bot de Telegram"
+
+msgid "Telegram Chat ID"
+msgstr "ID del chat de Telegram"
+
+msgid "Enterprise WeChat Webhook Notification"
+msgstr "Notificaciones por webhook de WeCom"
+
+msgid "Enterprise WeChat Webhook URL"
+msgstr "URL del webhook de WeCom"
+
+msgid "QQ Bot API Notification"
+msgstr "Notificaciones por API del bot de QQ"
+
+msgid "QQ Bot API App ID"
+msgstr "ID de aplicación de la API del bot de QQ"
+
+msgid "QQ Bot API Token"
+msgstr "Token de la API del bot de QQ"
+
+msgid "QQ Bot API Channel ID"
+msgstr "ID del canal de la API del bot de QQ"
+
+msgid "QQ Desktop Notification (Not Reliable)"
+msgstr "Notificaciones de escritorio de QQ (no fiables)"
+
+msgid "QQ Desktop Nickname"
+msgstr "Nombre del contacto de QQ de escritorio"
+
+msgid "WeChat Desktop Notification (Not Reliable)"
+msgstr "Notificaciones de escritorio de WeChat (no fiables)"
+
+msgid "WeChat Desktop Nickname"
+msgstr "Nombre del contacto de WeChat de escritorio"
+
+msgid "Native Notifications"
+msgstr "Notificaciones nativas"
+
+msgid "Notification channels; desktop delivery uses the current input owner."
+msgstr ""
+"Canales de notificación; las notificaciones de escritorio las envía la "
+"sesión que controla la entrada."
+
+msgid "启动 / 暂停 / 恢复热键"
+msgstr "Atajo para iniciar / pausar / reanudar"
+
+msgid "启动会话 / 暂停 / 恢复，保留服务启用设置。"
+msgstr ""
+"Iniciar sesión / pausar / reanudar, conservando los servicios habilitados."
+
+msgid "已配置；输入新值以替换"
+msgstr "Configurado; introduce un nuevo valor para reemplazarlo"
+
+msgid "清除"
+msgstr "Borrar"
+
+msgid "账号配置已更新；当前操作结束后请刷新账号上下文。"
+msgstr ""
+"Configuración de cuenta actualizada; actualiza el contexto de cuenta cuando "
+"termine la acción actual."

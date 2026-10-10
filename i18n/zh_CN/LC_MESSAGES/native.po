@@ -765,3 +765,66 @@ msgstr ""
 "Windows 用户：{user}\n"
 "资料根：{root}\n"
 "游戏包资料：{package_root}"
+
+msgid "Discord Notification"
+msgstr "Discord 通知"
+
+msgid "Telegram Notification"
+msgstr "Telegram 通知"
+
+msgid "Telegram Bot Token"
+msgstr "Telegram 机器人令牌"
+
+msgid "Telegram Chat ID"
+msgstr "Telegram 聊天 ID"
+
+msgid "Enterprise WeChat Webhook Notification"
+msgstr "企业微信 Webhook 通知"
+
+msgid "Enterprise WeChat Webhook URL"
+msgstr "企业微信 Webhook 地址"
+
+msgid "QQ Bot API Notification"
+msgstr "QQ 机器人 API 通知"
+
+msgid "QQ Bot API App ID"
+msgstr "QQ 机器人 API 应用 ID"
+
+msgid "QQ Bot API Token"
+msgstr "QQ 机器人 API 令牌"
+
+msgid "QQ Bot API Channel ID"
+msgstr "QQ 机器人 API 频道 ID"
+
+msgid "QQ Desktop Notification (Not Reliable)"
+msgstr "QQ 桌面通知（不可靠）"
+
+msgid "QQ Desktop Nickname"
+msgstr "QQ 桌面昵称"
+
+msgid "WeChat Desktop Notification (Not Reliable)"
+msgstr "微信桌面通知（不可靠）"
+
+msgid "WeChat Desktop Nickname"
+msgstr "微信桌面昵称"
+
+msgid "Native Notifications"
+msgstr "原生通知"
+
+msgid "Notification channels; desktop delivery uses the current input owner."
+msgstr "通知渠道；桌面通知由当前持有输入控制权的会话发送。"
+
+msgid "启动 / 暂停 / 恢复热键"
+msgstr "启动 / 暂停 / 恢复热键"
+
+msgid "启动会话 / 暂停 / 恢复，保留服务启用设置。"
+msgstr "启动会话 / 暂停 / 恢复，保留服务启用设置。"
+
+msgid "已配置；输入新值以替换"
+msgstr "已配置；输入新值以替换"
+
+msgid "清除"
+msgstr "清除"
+
+msgid "账号配置已更新；当前操作结束后请刷新账号上下文。"
+msgstr "账号配置已更新；当前操作结束后请刷新账号上下文。"

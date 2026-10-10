@@ -773,3 +773,66 @@ msgstr ""
 "Windows ユーザー：{user}\n"
 "データルート：{root}\n"
 "ゲームパッケージのデータ：{package_root}"
+
+msgid "Discord Notification"
+msgstr "Discord 通知"
+
+msgid "Telegram Notification"
+msgstr "Telegram 通知"
+
+msgid "Telegram Bot Token"
+msgstr "Telegram ボットトークン"
+
+msgid "Telegram Chat ID"
+msgstr "Telegram チャット ID"
+
+msgid "Enterprise WeChat Webhook Notification"
+msgstr "WeCom Webhook 通知"
+
+msgid "Enterprise WeChat Webhook URL"
+msgstr "WeCom Webhook URL"
+
+msgid "QQ Bot API Notification"
+msgstr "QQ ボット API 通知"
+
+msgid "QQ Bot API App ID"
+msgstr "QQ ボット API アプリ ID"
+
+msgid "QQ Bot API Token"
+msgstr "QQ ボット API トークン"
+
+msgid "QQ Bot API Channel ID"
+msgstr "QQ ボット API チャンネル ID"
+
+msgid "QQ Desktop Notification (Not Reliable)"
+msgstr "QQ デスクトップ通知（不安定）"
+
+msgid "QQ Desktop Nickname"
+msgstr "QQ デスクトップのニックネーム"
+
+msgid "WeChat Desktop Notification (Not Reliable)"
+msgstr "WeChat デスクトップ通知（不安定）"
+
+msgid "WeChat Desktop Nickname"
+msgstr "WeChat デスクトップのニックネーム"
+
+msgid "Native Notifications"
+msgstr "ネイティブ通知"
+
+msgid "Notification channels; desktop delivery uses the current input owner."
+msgstr "通知先の設定。デスクトップ通知は現在の入力制御を担当するセッションから送信されます。"
+
+msgid "启动 / 暂停 / 恢复热键"
+msgstr "起動 / 一時停止 / 再開ホットキー"
+
+msgid "启动会话 / 暂停 / 恢复，保留服务启用设置。"
+msgstr "セッションを起動 / 一時停止 / 再開し、サービスの有効化設定を維持します。"
+
+msgid "已配置；输入新值以替换"
+msgstr "設定済み。置き換えるには新しい値を入力"
+
+msgid "清除"
+msgstr "クリア"
+
+msgid "账号配置已更新；当前操作结束后请刷新账号上下文。"
+msgstr "アカウント設定を更新しました。現在の操作が終了したら、アカウント状態を更新してください。"

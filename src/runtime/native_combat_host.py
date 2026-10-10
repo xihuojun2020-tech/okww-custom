@@ -33,6 +33,7 @@ class NativeCombatHost:
         from src.runtime.combat_api import Box, Config, TaskDisabledException, WaitFailedException
 
         self.context = context
+        self.notifications = None
         self.program_preferences = program_preferences
         self.live_status = live_status
         config_root = (Path(context.data_dir) / 'configs').resolve()
@@ -141,6 +142,13 @@ class NativeCombatHost:
                     context.emit('combat-notification', message=message, title=title, error=error)
                 except Exception:
                     logger.exception('Unable to deliver combat notification')
+                host.notify_external(title or self.name, message, images, screenshot)
+
+            def _log(self, level, message, exception=None, notify=False,
+                     images=None, screenshot=False):
+                super()._log(level, message, exception, notify, images, screenshot)
+                if notify:
+                    host.notify_external(self.name, message, images, screenshot or level == 'error')
 
         task_arguments = dict(executor=executor, app=app)
         if native:
@@ -186,6 +194,25 @@ class NativeCombatHost:
         for item in user_tasks:
             self.task_requirements[item['id']] = item['required_capabilities']
         self.applied_revision = None
+
+    def notify_external(self, title, message, images=None, screenshot=False):
+        if self.notifications is None:
+            return
+        try:
+            cached = self.executor.nullable_frame() if screenshot else None
+            self.notifications.notify(title, message, images, cached_frame=cached)
+        except Exception as error:
+            # The notification boundary reports failure without stopping combat.
+            self.context.emit('notification-delivery', results=[{
+                'route': 'notification', 'status': 'failed', 'failure': type(error).__name__}])
+
+    def desktop_notification_checkpoint(self):
+        if self.notifications is not None and self.notifications.desktop is not None:
+            self.notifications.desktop.checkpoint()
+
+    def drain_desktop_notification(self):
+        return (self.notifications is not None and self.notifications.desktop is not None
+                and self.notifications.desktop.drain_one())
 
     def create_task(self, task_class, *, descriptor=None, config=None, initialize=True):
         """Construct through the same native services used by installed tasks."""
@@ -409,6 +436,7 @@ class NativeCombatHost:
         def checkpoint():
             if not self.context.requests.empty():
                 raise SessionPreempted('Background service yielded to a user request')
+            self.desktop_notification_checkpoint()
         from src.runtime.native_metadata import task_id
         background_id = task_id(self.task)
         initial_request = None
@@ -560,6 +588,8 @@ class NativeCombatHost:
             if paused:
                 self.context.stop.wait(.1)
                 continue
+            if self.drain_desktop_notification():
+                continue
             for task in self.tasks.values():
                 if not isinstance(task, NativeTriggerTask) or not task.enabled:
                     continue
@@ -663,17 +693,23 @@ class NativeCombatHost:
 
     def run_service(self):
         """Run inside the caller's single input-owner scope without changing intent."""
+        from src.runtime.native_combat_executor import SessionPreempted
         while self.task.enabled:
             self.context.check_stop()
             if self.executor.paused:
                 self.context.sleep(.1)
+                continue
+            if self.drain_desktop_notification():
                 continue
             if not self.task.should_trigger():
                 delay = self.task.retry_delay if self._combat_recovery is not None else 0
                 self.context.sleep(min(.1, delay or self.task.trigger_interval))
                 continue
             try:
+                self.executor.session_checkpoint = self.desktop_notification_checkpoint
                 self.last_result = self.poll()
+            except SessionPreempted:
+                pass
             except Cancelled:
                 # A background poll interrupted by pause resumes with the same task.
                 if self.context.stop.is_set() or not self.executor.paused:
@@ -682,5 +718,8 @@ class NativeCombatHost:
                 if self._combat_recovery is None:
                     raise
                 self._combat_recovery(error)
+            finally:
+                self.executor.session_checkpoint = None
+                self.context.device.release_all()
         return {'status': 'skipped',
                 'reason': 'combat-disabled' if self._combat_recovery is not None else 'service-disabled'}

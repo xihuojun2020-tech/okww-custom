@@ -43,6 +43,7 @@ class Runtime:
             context.requests = requests
         if not self._input_owner.acquire(blocking=False):
             raise RuntimeError('Another task owns device input')
+        context._input_owner_thread = threading.get_ident()
         begun = False
         try:
             try:
@@ -75,6 +76,7 @@ class Runtime:
             context.emit('finished', status='failed', error=str(error))
             raise
         finally:
+            context._input_owner_thread = None
             self._input_owner.release()
 
     def run_service(self, manifest, package, task_id, device, data_dir, *, stop,

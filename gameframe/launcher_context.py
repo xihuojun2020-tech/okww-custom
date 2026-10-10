@@ -26,6 +26,8 @@ def load_context(path):
         raise ValueError('Invalid launcher context')
     if 'data_root' in value:
         value['data_root'] = str(local_root(value['data_root']))
+    if 'window_geometry' in value and not isinstance(value['window_geometry'], str):
+        raise ValueError('Invalid window geometry')
     return value
 
 

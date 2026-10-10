@@ -356,7 +356,7 @@ class WindowsDevice:
     """
 
     capabilities = frozenset({"frames", "keyboard", "mouse", "relative-mouse", "scroll", "text", "activate",
-                              'foreground-query', 'hotkey-query'})
+                              'foreground-query', 'hotkey-query', 'desktop-handoff'})
 
     def __init__(self, hwnd: int = 0, *, capture_factory=None, input_backend=None, geometry=None,
                  window_backend=None, process_factory=None, launch_factory=None,

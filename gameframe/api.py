@@ -54,6 +54,11 @@ class TaskContext:
     requests: Queue = field(default_factory=Queue)
     task_definition: TaskDefinition | None = None
     _pause_released: bool = field(default=False, init=False)
+    _input_owner_thread: int | None = field(default=None, init=False)
+
+    def assert_input_owner(self) -> None:
+        if self._input_owner_thread != threading.get_ident():
+            raise RuntimeError('Operation requires the active input owner thread')
 
     def observe_pause(self) -> bool:
         """Release held input on the execution thread when it observes a pause."""

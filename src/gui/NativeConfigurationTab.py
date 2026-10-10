@@ -319,6 +319,21 @@ class NativeConfigurationTab(QWidget):
                 self._set(scope, identifier, key, result)
         if kind == 'label':
             return QLabel(str(readonly.get(key, value)), self)
+        if details.get('secret'):
+            body = QWidget(self)
+            layout = QHBoxLayout(body)
+            layout.setContentsMargins(0, 0, 0, 0)
+            widget = QLineEdit(self)
+            widget.setEchoMode(QLineEdit.Password)
+            widget.setPlaceholderText(translate('已配置；输入新值以替换') if details.get('configured') else '')
+            apply = QPushButton(translate('保存'), body)
+            clear = QPushButton(translate('清除'), body)
+            apply.clicked.connect(lambda: self._set(scope, identifier, key, widget.text()) if widget.text() else None)
+            clear.clicked.connect(lambda: self._set(scope, identifier, key, ''))
+            layout.addWidget(widget)
+            layout.addWidget(apply)
+            layout.addWidget(clear)
+            return body
         if kind == 'global':
             button = QPushButton(translate('编辑全局配置'), self)
             button.clicked.connect(lambda: self._select_global(key))

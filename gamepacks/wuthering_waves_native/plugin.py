@@ -14,6 +14,7 @@ class WutheringWavesNativePackage:
         self.source = (self.root / self.manifest['source_root']).resolve()
         self.engine = None
         self._live_writer = None
+        self._notifications = None
 
     def _bind_source(self):
         source = str(self.source)
@@ -87,14 +88,19 @@ class WutheringWavesNativePackage:
         from src.evidence.service import close_existing_evidence_service
         from src.runtime.native_diagnostics import close_native_diagnostics
         try:
-            close_existing_evidence_service()
+            if self._notifications is not None:
+                self._notifications.close()
+                self._notifications = None
         finally:
             try:
-                close_native_diagnostics()
+                close_existing_evidence_service()
             finally:
-                if self._live_writer is not None:
-                    self._live_writer.close()
-                    self._live_writer = None
+                try:
+                    close_native_diagnostics()
+                finally:
+                    if self._live_writer is not None:
+                        self._live_writer.close()
+                        self._live_writer = None
 
     def run_session(self, task_id, context):
         return self._run(task_id, context, session=True)
@@ -121,6 +127,9 @@ class WutheringWavesNativePackage:
         create_language_config(data_dir)
         language = load_language(data_dir, pack_root=self.root)
         preferences = NativeProgramPreferences(data_dir)
+        from src.runtime.native_notifications import NativeNotificationPreferences, NativeNotifications
+        from src.runtime.native_notification_hub import NativeNotificationHub
+        notification_preferences = NativeNotificationPreferences(data_dir)
         user_store = NativeUserTaskStore(data_dir)
         user_tasks = user_store.load_tasks()
         user = next((item for item in user_tasks if item['id'] == task_id), None)
@@ -152,7 +161,8 @@ class WutheringWavesNativePackage:
                 self.engine = create_ocr(preferences.config)
             host = NativeCombatHost(
                 context, coco_path=self.source / 'assets/coco_annotations.json',
-                global_options={**COMBAT_GLOBAL_DEFAULTS, NAME: DEFAULTS, 'Language': LANGUAGE_DEFAULTS},
+                global_options={**COMBAT_GLOBAL_DEFAULTS, NAME: DEFAULTS, 'Language': LANGUAGE_DEFAULTS,
+                                notification_preferences.config.config_file.stem: notification_preferences.config.default},
                 ocr_engine=self.engine, translate=language.translate,
                 ocr_config={'default': {'lib': 'onnxocr'}},
                 template_matching=TEMPLATE_MATCHING_DEFAULTS, native=True,
@@ -166,6 +176,12 @@ class WutheringWavesNativePackage:
                 user_tasks=user_tasks, program_preferences=preferences.config)
             host.task_metadata = {task['id']: task for task in self.manifest['tasks']}
             host.program_preferences = host.global_configs[NAME]
+            from src.runtime.native_desktop_notifications import create_owner_desktop_notifications
+            notification_config = host.global_configs[notification_preferences.config.config_file.stem]
+            self._notifications = NativeNotificationHub(context, NativeNotifications(
+                notification_config), desktop=create_owner_desktop_notifications(
+                    context, self.engine, notification_config))
+            host.notifications = self._notifications
             configure_preferences = getattr(context.device, 'configure_preferences', None)
             if configure_preferences is not None:
                 configure_preferences(host.program_preferences, **self.manifest['window_preferences'])
@@ -176,6 +192,8 @@ class WutheringWavesNativePackage:
             if definition['kind'] == 'service':
                 return host.run_service()
             result = host.run_once()
+            while host.drain_desktop_notification():
+                pass
             details = {'info': dict(host.task.info)}
             business_result = result if isinstance(result, dict) else getattr(host.task, 'last_result', None)
             if isinstance(business_result, dict):
@@ -190,8 +208,13 @@ class WutheringWavesNativePackage:
                                 stage='execution', error=error)
             raise
         finally:
-            context.events = previous_events
-            os.chdir(previous_cwd)
+            try:
+                if self._notifications is not None:
+                    self._notifications.close()
+                    self._notifications = None
+            finally:
+                context.events = previous_events
+                os.chdir(previous_cwd)
 
 
 def create_package():

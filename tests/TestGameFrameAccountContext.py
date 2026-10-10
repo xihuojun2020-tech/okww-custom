@@ -157,6 +157,7 @@ for line in sys.stdin:
             window._drain_events()
         self.assertFalse(window._restore_pending)
         self.assertFalse(window._configuration_querying)
+
         window._restore_pending = True
         window._configuration_querying = True
         window._events.put(('context-error', RuntimeError('child failed')))
@@ -164,6 +165,102 @@ for line in sys.stdin:
             window._drain_events()
         self.assertFalse(window._restore_pending)
         self.assertFalse(window._configuration_querying)
+
+    def test_successful_management_exit_refreshes_context_or_explains_busy_state(self):
+        window = self.window
+        window._managing = True
+        window._events.put(('management-exit', 0))
+        window._drain_events()
+        self.fixture.fixture._until(lambda: not window._configuration_querying)
+        self.assertEqual(window.account_select.currentData(), 'A1')
+        calls = []
+        window.process = SimpleNamespace(poll=lambda: None)
+        self.addCleanup(setattr, window, 'process', None)
+        window.controller.session = True
+        window.controller.request_live = lambda command, request_id, **values: calls.append(command)
+        window._events.put(('management-exit', 0))
+        window._drain_events()
+        self.assertEqual(calls, ['get-context'])
+        window._foreground_requested = True
+        window._events.put(('management-exit', 0))
+        window._drain_events()
+        self.assertEqual(calls, ['get-context'])
+        self.assertIn('请刷新账号上下文', window.account_context_label.text())
+
+
+class TestGameFrameWindowPreferences(unittest.TestCase):
+    def setUp(self):
+        from tests.TestGameFrameDesktopControls import TestGameFrameDesktopControls
+        self.fixture = TestGameFrameDesktopControls()
+        self.fixture.setUp()
+        self.addCleanup(self.fixture.doCleanups)
+        self.window = self.fixture.window
+        self.window.restore_services.setChecked(False)
+
+    def test_geometry_normal_size_and_maximized_state_survive_restart(self):
+        from gameframe.gui import GameFrameWindow
+        from tests.TestGameFrameLauncher import FixtureController
+        window = self.window
+        window.show()
+        window.resize(1100, 860)
+        self.fixture.fixture.app.processEvents()
+        window.showMaximized()
+        self.fixture.fixture.app.processEvents()
+        geometry = bytes(window.saveGeometry().toHex()).decode('ascii')
+        window._force_close = True
+        window.close()
+        self.fixture.fixture._until(lambda: window._cleanup_done)
+        saved = json.loads(window._context_path.read_text(encoding='utf-8'))
+        self.assertEqual(saved['window_geometry'], geometry)
+        restored = GameFrameWindow(window.packages_dir, window._context_path.parent, controller=FixtureController())
+        restored.restore_services.setChecked(False)
+        restored.show()
+        self.fixture.fixture.app.processEvents()
+        self.assertTrue(restored.isMaximized())
+        restored.showNormal()
+        self.fixture.fixture.app.processEvents()
+        self.assertFalse(restored.isMaximized())
+        self.assertTrue(restored.normalGeometry().isValid())
+        restored._force_close = True
+        restored.close()
+        self.fixture.fixture._until(lambda: restored._cleanup_done)
+
+    def test_idle_start_stop_hotkey_starts_session_preserving_disabled_combat(self):
+        window = self.window
+        window.packages = tuple(replace(item, supports_session=True) if item.id == 'native' else item
+                                for item in window.packages)
+        window._select_package(window.package_select.currentIndex())
+        config = window.data_dir / 'native/configs/AutoCombatTask.json'
+        config.parent.mkdir(parents=True)
+        config.write_text('{"_enabled":false}', encoding='utf-8')
+        before = config.read_bytes()
+        pressed = [False]
+        window._hotkey.reader = lambda key: pressed[0]
+        window.pause_hotkey.setCurrentText('F10')
+        pressed[0] = True
+        window._drain_events()
+        self.fixture.fixture._until(lambda: window.process is not None)
+        self.assertEqual(self.fixture.fixture.controller.starts[0][1:3], (None, {}))
+        self.assertEqual(config.read_bytes(), before)
+        window._drain_events()
+        self.assertEqual(self.fixture.fixture.controller.controls, [])
+        pressed[0] = False
+        window._drain_events()
+        pressed[0] = True
+        window._drain_events()
+        self.assertEqual(self.fixture.fixture.controller.controls, ['pause'])
+
+    def test_idle_hotkey_missing_session_capability_reports_failure(self):
+        window = self.window
+        window.packages = tuple(replace(item, supports_session=True,
+                                session_required_capabilities=frozenset({'fixture-missing'}))
+                                if item.id == 'native' else item for item in window.packages)
+        window._select_package(window.package_select.currentIndex())
+        window._hotkey.reader = lambda key: True
+        window.pause_hotkey.setCurrentText('F10')
+        window._drain_events()
+        self.assertIn('fixture-missing', window.status_label.text())
+        self.assertEqual(self.fixture.fixture.controller.starts, [])
 
 
 class TestGameFrameProductionContextChild(unittest.TestCase):

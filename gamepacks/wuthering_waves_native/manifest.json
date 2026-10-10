@@ -9,7 +9,7 @@
   ],
   "execution": "native",
   "source_root": "../..",
-  "version": "1.97.73",
+  "version": "1.97.74",
   "tasks": [
     {
       "id": "DailyTask",

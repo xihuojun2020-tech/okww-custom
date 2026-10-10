@@ -3,9 +3,15 @@
 
 from copy import deepcopy
 from src.runtime.native_language import LANGUAGE_METADATA
+from src.runtime.native_notifications import NAME as NOTIFICATION_NAME, SECRET_KEYS
 
 
 GLOBAL_METADATA = {
+    NOTIFICATION_NAME: {
+        'description': 'Notification channels; desktop delivery uses the current input owner.',
+        'config_description': {},
+        'config_type': {key: {'secret': True} for key in SECRET_KEYS},
+    },
     'Language': LANGUAGE_METADATA,
     'Program Preferences': {
         'description': 'Window, audio and inference preferences',
@@ -141,9 +147,14 @@ class TaskMetadata:
             metadata = deepcopy(GLOBAL_METADATA[name])
             metadata['description'] = tr(metadata['description'])
             metadata['config_description'] = {key: tr(value) for key, value in metadata['config_description'].items()}
+            current = json_value(config)
+            if name == NOTIFICATION_NAME:
+                for key in SECRET_KEYS:
+                    metadata['config_type'][key]['configured'] = bool(current[key])
+                    current[key] = ''
             globals_.append({'id': name, 'name': tr(name),
                              'default_config': json_value(config.default),
-                             'current_config': json_value(config),
+                             'current_config': current,
                              'readonly_values': {}, **metadata})
         return {'tasks': tasks, 'globals': globals_,
                 'launcher_labels': {text: tr(text) for text in LABELS},

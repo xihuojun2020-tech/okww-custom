@@ -161,6 +161,7 @@ class PreferencesTests(unittest.TestCase):
             waits.append(seconds)
             stopped[0] = True
         host = NativeCombatHost.__new__(NativeCombatHost)
+        host.notifications = None
         host.context = SimpleNamespace(observe_pause=lambda: paused, requests=Queue(),
             stop=SimpleNamespace(is_set=lambda: stopped[0], wait=wait),
             device=SimpleNamespace(poll_preferences=poll, release_all=lambda: releases.append(True)),

@@ -11,6 +11,12 @@ for production task metadata. The English task source text uses gettext's
 `NullTranslations`, because the repository has no English `ok` catalog.
 There is no separate OCR translation domain.
 
+The v74 notification labels, credential editor text and launcher hotkey/account
+messages are included in the native catalogs. `Discord Webhook` reuses the
+existing `ok` translation in the five non-English locales, without a duplicate
+native entry. Other new labels use native entries. Configuration keys, saved
+credentials and user-entered text are never translated.
+
 No catalogs or other resources were copied from the installed `ok-script`,
 Qt or qfluentwidgets dependencies. qfluentwidgets' translator is loaded from
 the installed dependency at runtime. Package catalogs stay in the AGPL

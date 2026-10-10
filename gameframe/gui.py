@@ -11,7 +11,7 @@ import zipfile
 import uuid
 from pathlib import Path
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QByteArray, QTimer
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGridLayout, QHBoxLayout, QLabel,
                                QListWidget, QMenu, QPlainTextEdit, QPushButton, QStyle,
                                QScrollArea, QSystemTrayIcon, QVBoxLayout, QWidget)
@@ -160,7 +160,7 @@ class GameFrameWindow(QWidget):
         form.addRow('设备', self.device_editor)
         form.addRow('高级设备 JSON', self.device_edit)
         form.addRow('能力匹配', self.compatibility_label)
-        form.addRow('暂停 / 恢复热键', self.pause_hotkey)
+        form.addRow('启动 / 暂停 / 恢复热键', self.pause_hotkey)
         form.addRow(self.tray_notifications, self.close_to_tray)
         buttons = QGridLayout()
         for index, button in enumerate((self.start_button, self.session_button, self.stop_button, self.pause_button,
@@ -216,13 +216,17 @@ class GameFrameWindow(QWidget):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._drain_events)
         self.timer.start(50)
+        if 'window_geometry' in self._launcher_context:
+            if not self.restoreGeometry(QByteArray(bytes.fromhex(self._launcher_context['window_geometry']))):
+                raise ValueError('Invalid window geometry')
         self._select_package(self.package_select.currentIndex())
         QTimer.singleShot(0, self._restore_saved_session)
 
     def _save_launcher_context(self, *_):
         manifest = self._manifest()
         self._launcher_context.update(selected_package=manifest.id if manifest else None,
-            restore_services=self.restore_services.isChecked(), data_root=str(self.data_dir))
+            restore_services=self.restore_services.isChecked(), data_root=str(self.data_dir),
+            window_geometry=bytes(self.saveGeometry().toHex()).decode('ascii'))
         save_context(self._context_path, self._launcher_context)
 
     def choose_data_root(self):
@@ -251,7 +255,7 @@ class GameFrameWindow(QWidget):
         self.start_session()
 
     def refresh_account_context(self):
-        self._query_account_context('get-context')
+        return self._query_account_context('get-context')
 
     def _change_account_context(self, field):
         control = self.sequence_select if field == 'sequence' else self.account_select
@@ -262,21 +266,23 @@ class GameFrameWindow(QWidget):
         manifest = self._manifest()
         if (manifest is None or not manifest.configuration or self._configuration_querying
                 or self._foreground_requested or self._closing or self._updating or self._starting):
-            return
+            return False
         if self.process is not None:
             request_id = str(uuid.uuid4())
             try:
                 self.controller.request_live(command, request_id, **values)
             except Exception as error:
                 self._error(error)
+                return False
             else:
                 self._live_routes[request_id] = 'account-context'
-            return
+            return True
         self._configuration_querying = True
         self.package_select.setEnabled(False)
         self._configuration_thread = threading.Thread(target=self._query_context_worker,
             args=(manifest, self.data_dir / manifest.id, command, values), daemon=True)
         self._configuration_thread.start()
+        return True
 
     def _query_context_worker(self, manifest, data_dir, command, values):
         try:
@@ -308,6 +314,8 @@ class GameFrameWindow(QWidget):
         schema = event.get('schema', {})
         self._launcher_labels = schema.get('launcher_labels', {})
         apply_labels(self, self._launcher_labels)
+        help_text = '启动会话 / 暂停 / 恢复，保留服务启用设置。'
+        self.pause_hotkey.setToolTip(self._launcher_labels.get(help_text, help_text))
         self._task_titles = {task['id']: task['name'] for task in schema.get('tasks', ())}
         by_id = {task['id']: task for task in schema.get('tasks', ())}
         category_labels = {task.category: by_id[task.id]['category'] for task in self._all_tasks
@@ -413,7 +421,7 @@ class GameFrameWindow(QWidget):
         key = self.pause_hotkey.currentText()
         conflict = key != 'None' and key.casefold() in {str(value).casefold() for value in self._reserved_hotkeys}
         self.pause_hotkey.setToolTip('与游戏技能键冲突，请选择其他热键。' if conflict else
-                                    '暂停 / 恢复当前执行会话，保留服务启用设置。')
+                                    '启动会话 / 暂停 / 恢复，保留服务启用设置。')
         self._hotkey.set_key('None' if conflict else key)
 
     def open_data_directory(self):
@@ -1121,6 +1129,9 @@ class GameFrameWindow(QWidget):
                     self._error(value)
                 else:
                     self.status_label.setText(f'Management exited with code {value}')
+                    if value == 0 and not self._updating and not self._closing and self._manifest().configuration:
+                        if not self.refresh_account_context():
+                            self._set_label(self.account_context_label, '账号配置已更新；当前操作结束后请刷新账号上下文。')
                     if self._updating:
                         if value == 0:
                             self._apply_pending_update()
@@ -1256,10 +1267,14 @@ class GameFrameWindow(QWidget):
             and not self._updating and not context_busy)
         self.screenshot_button.setEnabled(live)
         self.ocr_button.setEnabled(live)
-        if self.process is not None and not self._stopping and not self._closing and self.pause_button.isEnabled():
-            if self._hotkey.poll():
+        if not self._stopping and not self._closing and self._hotkey.poll():
+            if self.process is not None and self.pause_button.isEnabled():
                 self.toggle_pause()
+            elif self.process is None and editable and manifest.supports_session and not self._managing:
+                self.start_session()
     def closeEvent(self, event):
+        if not self._closing:
+            self._save_launcher_context()
         if not self._force_close and not self._closing and self.close_to_tray.isChecked():
             if QSystemTrayIcon.isSystemTrayAvailable():
                 self.tray.show()

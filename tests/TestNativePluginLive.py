@@ -54,8 +54,9 @@ class Host:
         return self.run_service()
 def first_events(event): events.append(('first',event))
 def second_events(event): events.append(('second',event))
-one = TaskContext(None, {{}}, root, threading.Event(), 'context-one', first_events)
-two = TaskContext(None, {{}}, root, threading.Event(), 'context-two', second_events)
+one = TaskContext(SimpleNamespace(capabilities=frozenset()), {{}}, root, threading.Event(), 'context-one', first_events)
+two = TaskContext(SimpleNamespace(capabilities=frozenset()), {{}}, root, threading.Event(), 'context-two', second_events)
+one._input_owner_thread = two._input_owner_thread = threading.get_ident()
 cwd = Path.cwd()
 with patch.object(native_combat_host, 'NativeCombatHost', Host):
     assert package.run('auto-combat', one) == {{'fixture':'context-one'}}

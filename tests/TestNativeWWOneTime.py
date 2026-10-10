@@ -564,7 +564,8 @@ class TestNativeWWOneTime(unittest.TestCase):
             self.assertTrue(any(a.kind == 'key_down' and a.values['key'] == 'f'
                                 for a in device.actions))
             self.assertFalse(device.held)
-            device.release_all.assert_called_once()
+            # Service unwind releases its input before Runtime closes the owner.
+            self.assertEqual(device.release_all.call_count, 2)
         finally:
             watchdog.cancel()
             store.close()
@@ -605,7 +606,7 @@ class TestNativeWWOneTime(unittest.TestCase):
             self.assertEqual([type(char).__name__ for char in hosts[0].task.chars], ['Qingxiao'])
             self.assertTrue(any(action.kind.endswith('_down') for action in device.actions))
             self.assertFalse(device.held)
-            device.release_all.assert_called_once()
+            self.assertEqual(device.release_all.call_count, 2)
             self.assertTrue(store.enabled(manifest.id, task.id))
         finally:
             watchdog.cancel()

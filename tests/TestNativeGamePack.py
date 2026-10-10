@@ -101,7 +101,8 @@ try:
         raise AssertionError('Expected explicit device-boundary stop')
     for name in ('_run_combat', 'perform_combat_rotation', 'perform', 'do_perform'):
         assert name in calls, (name, calls)
-    assert device.actions and released == [True] and not device.held
+    # Service unwind and Runtime owner cleanup each release held input.
+    assert device.actions and released == [True, True] and not device.held
     assert store.history()[0]['status'] == 'cancelled'
     assert store.enabled(manifest.id, 'auto-combat')
     payload = (manifest.root / 'payload').resolve()

@@ -124,12 +124,37 @@ class TestNativeLanguage(unittest.TestCase):
                 fields = lambda text: {name for _, name, _, _ in Formatter().parse(text) if name is not None}
                 self.assertEqual(fields(entry.msgid), fields(entry.msgstr), (locale, entry.msgid))
 
+    def test_notification_metadata_and_labels_reuse_existing_task_catalog(self):
+        import polib
+        from src.runtime.native_metadata import GLOBAL_METADATA
+        from src.runtime.native_notifications import DEFAULTS, NAME
+        names = {'zh_CN': '原生通知', 'zh_TW': '原生通知', 'en_US': 'Native Notifications',
+                 'es_ES': 'Notificaciones nativas', 'ja_JP': 'ネイティブ通知', 'ko_KR': '네이티브 알림'}
+        required = set(DEFAULTS) | {NAME, GLOBAL_METADATA[NAME]['description']}
+        for selected in LANGUAGE_OPTIONS[:-1]:
+            with self.subTest(selected=selected), tempfile.TemporaryDirectory() as directory:
+                create_language_config(directory)['Language'] = selected
+                language = load_language(directory)
+                path = ROOT / f'i18n/{selected}/LC_MESSAGES/native.po'
+                native = polib.pofile(path)
+                production_path = path.with_name('ok.po')
+                production = polib.pofile(production_path) if production_path.exists() else None
+                for source in required:
+                    entry = native.find(source) or (production.find(source) if production else None)
+                    self.assertIsNotNone(entry, (selected, source))
+                    self.assertTrue(entry.msgstr, (selected, source))
+                    self.assertEqual(language.translate(source), entry.msgstr)
+                self.assertEqual(language.translate(NAME), names[selected])
+                if production is not None:
+                    self.assertIsNone(native.find('Discord Webhook'))
+                    self.assertEqual(language.translate('Discord Webhook'), production.find('Discord Webhook').msgstr)
+
     def test_offscreen_management_subtabs_and_overview_text(self):
         from tests.TestAccountManagementEntry import TestAccountManagementEntry
         TestAccountManagementEntry().run_probe('''
             from types import SimpleNamespace
             from unittest.mock import patch
-            from PySide6.QtWidgets import QApplication, QLabel, QDialogButtonBox
+            from PySide6.QtWidgets import QApplication, QLabel, QDialogButtonBox, QLineEdit, QPushButton
             from src.runtime.native_language import create_language_config, load_language, install_qt_language
             from src.management import AccountManagementService
             from src.gui.ManagementWindow import ManagementWindow
@@ -161,6 +186,10 @@ class TestNativeLanguage(unittest.TestCase):
                 overview=NativeExecutionOverviewDialog(repository,reader)
                 app.processEvents()
                 assert configuration.refresh_button.text()=='Refresh configuration'
+                secret=configuration._widget('global','Native Notifications','Telegram Bot Token',
+                    '','',{'secret':True,'configured':True},{})
+                assert secret.findChild(QLineEdit).placeholderText()=='Configured; enter a new value to replace'
+                assert 'Clear' in [button.text() for button in secret.findChildren(QPushButton)]
                 assert user.new_button.text()=='Create task'
                 assert user.code.toPlainText()==TEMPLATE
                 assert character.refresh_button.text()=='Refresh characters'
@@ -221,6 +250,8 @@ class TestNativeLanguage(unittest.TestCase):
         from tests.TestAccountManagementEntry import TestAccountManagementEntry
         package_labels = {'zh_CN': '游戏包', 'zh_TW': '遊戲包', 'en_US': 'Package',
                           'es_ES': 'Paquete', 'ja_JP': 'ゲームパッケージ', 'ko_KR': '게임 패키지'}
+        notification_names = {'zh_CN': '原生通知', 'zh_TW': '原生通知', 'en_US': 'Native Notifications',
+                              'es_ES': 'Notificaciones nativas', 'ja_JP': 'ネイティブ通知', 'ko_KR': '네이티브 알림'}
         for selected in LANGUAGE_OPTIONS[:-1]:
             with self.subTest(selected=selected):
                 body = '''
@@ -250,6 +281,7 @@ class TestNativeLanguage(unittest.TestCase):
                     schema = response['schema']
                     self.assertEqual(schema['launcher_labels']['Package'], package_labels[selected])
                     globals_ = {entry['id']: entry for entry in schema['globals']}
+                    self.assertEqual(globals_['Native Notifications']['name'], notification_names[selected])
                     language = globals_['Language']
                     self.assertEqual(language['config_type']['Language']['options'], list(LANGUAGE_OPTIONS))
                     self.assertTrue(language['config_type']['Language']['restart_required'])
