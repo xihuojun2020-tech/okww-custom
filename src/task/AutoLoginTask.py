@@ -1,5 +1,5 @@
 import time
-from ok import TriggerTask, Logger
+from src.runtime.combat_api import TriggerTask, Logger
 from src.scene.WWScene import WWScene
 from src.task.BaseWWTask import BaseWWTask
 

@@ -55,9 +55,14 @@ class FakeInput:
         self.calls = []
         self.fail_up = False
         self.fail_button_up = False
+        self.activation_changes_foreground = True
 
     def is_foreground(self, hwnd):
         return self.foreground
+
+    def activate(self, hwnd):
+        self.calls.append(('activate', hwnd))
+        self.foreground = self.activation_changes_foreground
 
     def key(self, vk, down):
         self.calls.append(("key", vk, down))
@@ -149,6 +154,23 @@ class FakeAdbRunner:
 
 
 class TestGameFrameDevices(unittest.TestCase):
+    def test_windows_activation_precedes_input_gate_and_verifies_foreground(self):
+        backend = FakeInput()
+        device = WindowsDevice(42, input_backend=backend)
+        backend.foreground = False
+        device.submit(Action('activate'))
+        device.submit(Action('key_down', {'key': 'W'}))
+        self.assertEqual(backend.calls, [('activate', 42), ('key', ord('W'), True)])
+        device.release_all()
+        backend.foreground = False
+        backend.activation_changes_foreground = False
+        with self.assertRaisesRegex(RuntimeError, 'did not become foreground'):
+            device.submit(Action('activate'))
+        with self.assertRaisesRegex(RuntimeError, 'not foreground'):
+            device.submit(Action('key_down', {'key': 'E'}))
+        self.assertEqual(backend.calls[-1], ('activate', 42))
+        device.close()
+
     def test_windows_scroll_and_unicode_text_use_device_input(self):
         backend = FakeInput()
         device = WindowsDevice(42, input_backend=backend)

@@ -1,5 +1,8 @@
-# Native combat uses no ok-script, Qt or Fluent UI dependency.
+# Native execution worker dependencies. Optional Qt/ok-script management
+# dependencies are listed separately in requirements-management.txt.
 numpy==2.2.6
 opencv-python==4.12.0.88
 onnxocr-ppocrv5==0.0.20
 openvino==2026.2.1
+Pillow==11.3.0
+pywin32==311; sys_platform == 'win32'

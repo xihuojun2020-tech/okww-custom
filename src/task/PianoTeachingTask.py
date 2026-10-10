@@ -1,7 +1,7 @@
 """Play notes highlighted by the Wuthering Waves piano teaching UI."""
 import time
 
-from ok import TaskDisabledException
+from src.runtime.combat_api import TaskDisabledException
 
 from src.task.BaseWWTask import BaseWWTask
 from src.task.WWOneTimeTask import WWOneTimeTask

@@ -196,6 +196,31 @@ class TestNativeCombatHost(unittest.TestCase):
         self.assertTrue(host.task.enabled)
         self.assertFalse(device.held)
 
+    def test_pause_during_poll_resumes_before_next_explicit_stop(self):
+        host, device = self.make_host('weekly_boss/list1.png')
+        pause = host.executor.pause_event
+        poll = host.poll
+        calls = []
+        resume = threading.Timer(.15, pause.clear)
+        def pause_then_stop():
+            calls.append(len(calls) + 1)
+            if len(calls) == 1:
+                pause.set()
+                resume.start()
+            else:
+                host.context.stop.set()
+            return poll()
+        try:
+            with patch.object(host, 'poll', side_effect=pause_then_stop):
+                with self.assertRaises(Cancelled):
+                    host.run_service()
+            self.assertEqual(calls, [1, 2])
+            self.assertTrue(host.context.stop.is_set())
+            self.assertTrue(host.task.enabled)
+            self.assertFalse(device.actions)
+        finally:
+            resume.cancel()
+
     def test_log_screenshot_failure_does_not_replace_combat_error(self):
         host, _ = self.make_host()
         with patch.object(host, 'save_screenshot', side_effect=OSError('disk unavailable')):

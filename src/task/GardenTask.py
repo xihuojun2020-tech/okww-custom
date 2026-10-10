@@ -4,8 +4,7 @@ from src.task.weekly_garden import (GardenRunResult, garden_week_key,
                                   garden_weekly_page, garden_current_points)
 
 
-from ok import Logger, run_task
-from config import config
+from src.runtime.combat_api import Logger
 from src.Labels import Labels
 from src.task.BaseWWTask import BaseWWTask
 from src.task.WWOneTimeTask import WWOneTimeTask
@@ -274,4 +273,6 @@ class GardenTask(WWOneTimeTask, BaseWWTask):
 
 
 if __name__ == "__main__":
+    from ok import run_task
+    from config import config
     run_task(config, task=GardenTask, debug=True)

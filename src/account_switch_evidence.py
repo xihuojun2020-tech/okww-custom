@@ -253,23 +253,34 @@ class AccountSwitchEvidenceSession:
         )
 
     def _annotate(self, frame, metadata=None):
+        from src.runtime.combat_api import is_native
+        native = is_native()
+        if native:
+            # Never return a raw identity frame if annotation later fails.
+            image = frame.copy()
+            from src.runtime.account_task_support import blur_area
+            height, width = image.shape[:2]
+            box = (self.blur_area or blur_area)(width, height)
+            image[max(0, box.y):min(height, box.y + box.height),
+                  max(0, box.x):min(width, box.x + box.width)] = 0
         try:
             import cv2
-            image = frame.copy()
-            try:
-                from ok import og
-                from ok.util.blur import apply_blur_areas, get_blur_algorithm
+            if not native:
+                image = frame.copy()
+                try:
+                    from ok import og
+                    from ok.util.blur import apply_blur_areas, get_blur_algorithm
 
-                blur_area = self.blur_area
-                if not callable(blur_area):
-                    runtime_config = getattr(og, 'config', None)
-                    blur_area = runtime_config.get('blur_area') if runtime_config is not None else None
-                algorithm = get_blur_algorithm(getattr(og, 'global_config', None))
-                image = apply_blur_areas(image, blur_area, algorithm)
-            except Exception:
-                # A missing optional GUI global must never prevent evidence
-                # capture; the normal framework path remains best effort.
-                pass
+                    blur_area = self.blur_area
+                    if not callable(blur_area):
+                        runtime_config = getattr(og, 'config', None)
+                        blur_area = runtime_config.get('blur_area') if runtime_config is not None else None
+                    algorithm = get_blur_algorithm(getattr(og, 'global_config', None))
+                    image = apply_blur_areas(image, blur_area, algorithm)
+                except Exception:
+                    # A missing optional GUI global must never prevent evidence
+                    # capture; the normal framework path remains best effort.
+                    pass
             metadata = metadata or {}
             # A regular/stage frame has no click association.  Never paint
             # clicks from later in the session onto it; only the forced frame
@@ -303,7 +314,7 @@ class AccountSwitchEvidenceSession:
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 1, cv2.LINE_AA)
             return image
         except Exception:
-            return frame
+            return image if native else frame
 
     def _write_failure_event(self, event_dir, event_id, reason, stage, last_account, frames):
         """Write a complete event into a private directory, then publish it."""

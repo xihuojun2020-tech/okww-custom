@@ -9,8 +9,7 @@
 """
 import re
 
-from qfluentwidgets import FluentIcon as Icon
-from ok import TaskDisabledException
+from src.runtime.combat_api import TaskDisabledException, is_native
 
 from src.task.BaseWWTask import BaseWWTask
 from src.task.WWOneTimeTask import WWOneTimeTask
@@ -41,7 +40,9 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
         )
         self.group_name = "🧪 测试功能"
         self.visible = False
-        self.group_icon = Icon.DEVELOPER_TOOLS
+        if not is_native():
+            from qfluentwidgets import FluentIcon
+            self.group_icon = FluentIcon.DEVELOPER_TOOLS
         self._account_refresh_pending = False
 
         profile_names = self._get_profile_names()
@@ -99,7 +100,7 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
             if repository is not None:
                 projection = repository.get_detached_projection()
                 return list(projection.get('profiles', {}))
-            from ok.util.file import get_relative_path, read_json_file
+            from src.runtime.account_task_support import get_relative_path, read_json_file
             profiles = read_json_file(get_relative_path('configs', 'daily_profiles.json'))
             if isinstance(profiles, dict) and 'profiles' in profiles:
                 return list(profiles['profiles'].keys())
@@ -117,6 +118,10 @@ class TestAccountSwitchTask(WWOneTimeTask, BaseWWTask):
             return False
         names = self._get_profile_names()
         self.config_type['目标账号']['options'] = ['（自动识别）'] + names
+        if is_native():
+            self._account_refresh_pending = False
+            self.executor.context.emit('task-config-changed', task=type(self).__name__)
+            return True
         try:
             from ok import og
             main_window = getattr(og, 'main_window', None)

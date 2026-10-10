@@ -43,8 +43,8 @@ class TestDailyTaskStatus(unittest.TestCase):
         gui_thread = object()
 
         with patch('ok.og', fake_og), \
-                patch('src.task.DailyTask.QApplication') as application, \
-                patch('src.task.DailyTask.QThread') as q_thread:
+                patch('PySide6.QtWidgets.QApplication') as application, \
+                patch('PySide6.QtCore.QThread') as q_thread:
             application.instance.return_value.thread.return_value = gui_thread
             q_thread.currentThread.return_value = object()
             self.assertFalse(task._refresh_gui())
@@ -63,8 +63,8 @@ class TestDailyTaskStatus(unittest.TestCase):
         gui_thread = object()
 
         with patch('ok.og', fake_og), \
-                patch('src.task.DailyTask.QApplication') as application, \
-                patch('src.task.DailyTask.QThread') as q_thread:
+                patch('PySide6.QtWidgets.QApplication') as application, \
+                patch('PySide6.QtCore.QThread') as q_thread:
             application.instance.return_value.thread.return_value = gui_thread
             q_thread.currentThread.return_value = gui_thread
             self.assertTrue(task._refresh_gui())

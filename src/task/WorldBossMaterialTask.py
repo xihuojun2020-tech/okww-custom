@@ -3,8 +3,7 @@ import re
 from copy import deepcopy
 import time
 from dataclasses import dataclass
-from ok import TaskDisabledException
-from ok.task.exceptions import FinishedException
+from src.runtime.combat_api import TaskDisabledException, FinishedException
 from src.task.FarmEchoTask import FarmEchoTask, FarmCycleResult
 from src.task.WeeklyBossTask import WeeklyBossTask
 from src.task.BaseCombatTask import CombatStateUnknown, NotInCombatException, CharDeadException, CharRevivedInPlace

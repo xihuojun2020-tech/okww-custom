@@ -10,6 +10,10 @@ from gameframe.api import Action, Cancelled
 from src.runtime.game_runtime_errors import FrameUnavailable
 
 
+class SessionPreempted(BaseException):
+    """A background service yields to an explicit session task request."""
+
+
 class NativeCombatExecutor:
     def __init__(self, context, *, scene=None, feature_set=None,
                  stop_exception=Cancelled, wait_exception=TimeoutError, pause=None,
@@ -20,7 +24,11 @@ class NativeCombatExecutor:
         self.feature_set = feature_set
         self.stop_exception = stop_exception
         self.wait_exception = wait_exception
-        self.pause_event = pause
+        self.pause_event = pause if pause is not None else context.pause
+        context.pause = self.pause_event
+        self.wait_on_pause = False
+        self.tasks_by_class = {}
+        self.session_checkpoint = None
         self.current_task = None
         self.interaction = self
         self.method = self
@@ -37,10 +45,66 @@ class NativeCombatExecutor:
         return self.pause_event is not None and self.pause_event.is_set()
 
     def check_enabled(self, check_pause=True):
+        if self.session_checkpoint is not None:
+            self.session_checkpoint()
+        self._call(self.context.observe_pause)
+        while check_pause and self.wait_on_pause and self.paused:
+            self.check_enabled(check_pause=False)
+            self._call(self.context.sleep, .1)
         if (self.exit_event.is_set() or
                 (self.current_task is not None and not self.current_task._enabled) or
                 (check_pause and self.paused)):
             raise self.stop_exception('Combat execution interrupted')
+
+    def set_task_registry(self, tasks):
+        self.tasks_by_class = tasks
+
+    def get_task_by_class(self, cls):
+        return next((task for task in self.tasks_by_class.values()
+                     if isinstance(task, cls)), None)
+
+    def ocr_lib(self, name='default'):
+        if name != 'default':
+            raise ValueError(f'Native executor has no OCR engine named {name}')
+        return self.ocr_engine
+
+    def pause(self, task=None):
+        if task is not None and task is not self.current_task:
+            raise RuntimeError('Can only pause current task')
+        self.pause_event.set()
+        self.reset_scene(check_enabled=False)
+        self._call(self.context.observe_pause)
+
+    def unpause(self):
+        self.pause_event.clear()
+        self._call(self.context.observe_pause)
+
+    def ensure_in_front(self):
+        self._act('activate')
+
+    def refresh_device(self, current=False):
+        self.check_enabled()
+        result = self._call(self.context.device.refresh_target)
+        self.connected = False
+        self.reset_scene(check_enabled=False)
+        return result
+
+    def start_capture(self):
+        self.check_enabled()
+        result = self._call(self.context.device.start_capture)
+        self.reset_scene(check_enabled=False)
+        return result
+
+    def start_device(self):
+        self.check_enabled()
+        result = self._call(self.context.device.start_target, self.exit_event)
+        self.connected = False
+        self.reset_scene(check_enabled=False)
+        self.check_enabled()
+        return result
+
+    def back(self):
+        self.send_key('esc')
 
     def _call(self, operation, *args, **kwargs):
         try:
@@ -158,7 +222,9 @@ class NativeCombatExecutor:
         self._call(self.context.act, kind, **values)
         self.check_enabled()
 
-    def send_key_down(self, key):
+    def send_key_down(self, key, activate=False):
+        if activate:
+            self.ensure_in_front()
         self._act('key_down', key=key)
 
     def send_key_up(self, key):
@@ -184,13 +250,18 @@ class NativeCombatExecutor:
 
     def click(self, x=-1, y=-1, move_back=False, name=None, move=True,
               down_time=.02, key='left'):
-        if move_back:
-            raise NotImplementedError('Device cursor read/restore is required for move_back')
-        self.mouse_down(x if move else -1, y if move else -1, name=name, key=key)
+        original_cursor = self.context.device.get_cursor_pos() if move_back else None
         try:
-            self.sleep(down_time)
+            # Legacy move=False still sends the requested point in its window
+            # message. Foreground SendInput must move there to honor that point.
+            self.mouse_down(x, y, name=name, key=key)
+            try:
+                self.sleep(down_time)
+            finally:
+                self.mouse_up(key=key)
         finally:
-            self.mouse_up(key=key)
+            if move_back:
+                self.context.device.set_cursor_pos(original_cursor)
 
     def move(self, x, y):
         self._act('move_client', x=int(x), y=int(y))

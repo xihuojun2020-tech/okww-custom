@@ -1,6 +1,6 @@
 import re
 
-from ok import Logger
+from src.runtime.combat_api import Logger
 from src.task.DomainTask import DomainTask
 
 logger = Logger.get_logger(__name__)

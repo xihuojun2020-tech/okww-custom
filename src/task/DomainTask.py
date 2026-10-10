@@ -2,7 +2,7 @@ import re
 import time
 
 
-from ok import Logger, WaitFailedException, TaskDisabledException
+from src.runtime.combat_api import Logger, WaitFailedException, TaskDisabledException
 from src.runtime.game_runtime_errors import FrameUnavailable, GameProcessLost
 from src.config_integrity import ConfigIntegrityBlocked, ConfigWriteBlocked
 from src.task.BaseCombatTask import BaseCombatTask, CombatStateUnknown, CharDeadException

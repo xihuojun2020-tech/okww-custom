@@ -83,6 +83,61 @@ class TestNativeTask(unittest.TestCase):
         with self.assertRaises(TaskDisabledException):
             self.task.next_frame()
 
+    def test_subtask_real_run_shares_info_and_keeps_parent_input_owner(self):
+        child = CombatTask(self.executor, SimpleNamespace(tr=lambda text: text),
+                           ocr_engine=SimpleNamespace(ocr=lambda image: [[]]),
+                           global_configs={}, supported_ratio=16 / 9)
+        self.executor.set_task_registry({CombatTask: child})
+        old_info = child.info
+        result = self.task.run_task_by_class(NativeTriggerTask)
+        self.assertEqual(result.name, 'logout_power_icon')
+        self.assertIs(child.info, old_info)
+        self.assertIs(self.executor.current_task, self.task)
+        self.assertEqual([action.kind for action in self.device.actions],
+                         ['move_client', 'button_down', 'button_up', 'key_down', 'key_up'])
+
+    def test_subtask_failure_restores_info_and_propagates(self):
+        class FailedTask(CombatTask):
+            def run(child):
+                child.info_set('child', 'entered')
+                child.send_key('f', down_time=0)
+                raise ValueError('subtask failed')
+        child = FailedTask(self.executor, SimpleNamespace(tr=lambda text: text),
+                           ocr_engine=SimpleNamespace(ocr=lambda image: [[]]),
+                           global_configs={}, supported_ratio=16 / 9)
+        self.executor.set_task_registry({FailedTask: child})
+        old_info = child.info
+        with self.assertRaisesRegex(ValueError, 'subtask failed'):
+            self.task.run_task_by_class(FailedTask)
+        self.assertIs(child.info, old_info)
+        self.assertEqual(self.task.info['child'], 'entered')
+        self.assertIs(self.executor.current_task, self.task)
+        self.assertFalse(self.device.held)
+
+    def test_activate_and_back_use_device_actions(self):
+        self.task.ensure_in_front()
+        self.task.back()
+        self.assertEqual([action.kind for action in self.device.actions],
+                         ['activate', 'key_down', 'key_up'])
+        self.assertEqual(self.device.actions[1].values['key'], 'esc')
+
+    def test_real_exit_dialog_click_restores_cursor_after_stop(self):
+        self.device.paths = iter([ROOT / 'assets/images/33.png'])
+        button = self.task.find_one('gray_confirm_exit_button', threshold=.7)
+        self.assertIsNotNone(button)
+        self.device.set_cursor_pos((71, 82))
+        submit = self.device.submit
+        def stop_after_press(action):
+            submit(action)
+            if action.kind == 'button_down':
+                self.stop.set()
+        self.device.submit = stop_after_press
+        with self.assertRaises(TaskDisabledException):
+            self.task.click_box(button, move_back=True, after_sleep=0)
+        self.assertEqual(self.device.get_cursor_pos(), (71, 82))
+        self.device.release_all()
+        self.assertFalse(self.device.held)
+
     def test_wait_uses_fresh_replay_frame(self):
         found = self.task.wait_feature('logout_power_icon', threshold=.6,
                                        time_out=1)
@@ -106,7 +161,7 @@ class TestNativeTask(unittest.TestCase):
     def test_ocr_threshold_uses_mutable_engine_setting(self):
         self.assertEqual(self.task.ocr_default_threshold, .2)
         self.task.ocr_default_threshold = .65
-        self.assertEqual(self.task._ocr.ocr_default_threshold, .65)
+        self.assertEqual(self.task._ocr_service.ocr_default_threshold, .65)
 
     def test_jiyan_relative_middle_click_contract(self):
         self.executor.width, self.executor.height = 200, 100

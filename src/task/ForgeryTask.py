@@ -1,6 +1,6 @@
 import cv2
 
-from ok import Logger, find_color_rectangles
+from src.runtime.combat_api import Logger, find_color_rectangles
 from src.task.DomainTask import DomainTask
 
 logger = Logger.get_logger(__name__)

@@ -4,7 +4,7 @@ import time
 import cv2
 from dataclasses import dataclass
 
-from ok import Logger, TaskDisabledException, WaitFailedException
+from src.runtime.combat_api import Logger, TaskDisabledException, WaitFailedException
 from src.task.BaseCombatTask import BaseCombatTask, CombatStateUnknown, CharDeadException, CharRevivedException
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task_status import publish_task_status
@@ -692,8 +692,7 @@ def convert_image_to_negative(img):
     return _mat
 
 
-from ok import run_task
-from config import config
-
 if __name__ == "__main__":
+    from ok import run_task
+    from config import config
     run_task(config, task=NightmareNestTask, debug=True)

@@ -113,7 +113,8 @@ class CompletionCheckTab(QWidget):
         self.executor = executor
         self.service = EvidenceService(repository) if repository else get_evidence_service()
         self.repository = self.service.repository
-        executor.completion_evidence_service = self.service
+        if executor is not None:
+            executor.completion_evidence_service = self.service
         self.account_provider = account_provider or get_default_repository
         self._profiles, self._sequences, self._rows = {}, {}, []
         self._nicknames = {}
@@ -181,6 +182,9 @@ class CompletionCheckTab(QWidget):
         actions = QHBoxLayout()
         self.pending_only = QCheckBox('仅待检查', right)
         self.capture_button = PrimaryPushButton('保存当前画面', right)
+        self.capture_button.setEnabled(executor is not None)
+        if executor is None:
+            self.capture_button.setToolTip('管理窗口未连接游戏，请在任务窗口保存当前画面')
         self.export_button = PushButton('打包当前账号截图', right)
         self.export_button.setEnabled(False)
         self.reexport_button = PushButton('重新打包', right)
@@ -641,7 +645,7 @@ class CompletionCheckTab(QWidget):
         if project in CYCLE_PROJECTS and self.mode.currentData() == 'current':
             save_button = PushButton('保存当前画面为证据', card)
             save_button.setObjectName('saveCurrentEvidence')
-            save_button.setEnabled(not self.capture_operation.busy)
+            save_button.setEnabled(self.executor is not None and not self.capture_operation.busy)
             save_button.clicked.connect(partial(self.capture_evidence, project))
             layout.addWidget(save_button)
         if record:
@@ -750,9 +754,12 @@ class CompletionCheckTab(QWidget):
         for card in self._cards:
             button = card.findChild(QPushButton, 'saveCurrentEvidence')
             if button:
-                button.setEnabled(not busy)
+                button.setEnabled(self.executor is not None and not busy)
 
     def capture_evidence(self, project_id=None):
+        if self.executor is None:
+            self._error(RuntimeError('管理窗口未连接游戏，无法保存当前画面'))
+            return
         if self.capture_operation.busy:
             return
         if not self._profiles:

@@ -3,7 +3,7 @@ from typing import Tuple
 import cv2
 import numpy as np
 
-from ok import Logger, Box, sort_boxes
+from src.runtime.combat_api import Logger, Box, sort_boxes
 
 logger = Logger.get_logger(__name__)
 

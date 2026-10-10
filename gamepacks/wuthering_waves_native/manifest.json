@@ -1,26 +1,469 @@
 {
   "id": "wuthering_waves_native",
-  "title": "鸣潮（独立战斗运行时）",
+  "title": "鸣潮（独立规则运行时）",
   "api_version": 1,
   "entrypoint": "plugin.py:create_package",
   "license": "AGPL-3.0-or-later; asset and model licenses retained",
-  "platforms": ["windows"],
+  "platforms": [
+    "windows"
+  ],
   "execution": "native",
   "source_root": "../..",
-  "version": "1.97.65",
+  "version": "1.97.66",
   "tasks": [
     {
+      "id": "DailyTask",
+      "title": "📅 每日任务",
+      "kind": "one-shot",
+      "default_config": {},
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.DailyTask",
+      "class": "DailyTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "FarmEchoTask",
+      "title": "🌀 Farm 4C Echo in Dungeon/World",
+      "kind": "one-shot",
+      "default_config": {},
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.FarmEchoTask",
+      "class": "FarmEchoTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "WorldBossMaterialTask",
+      "title": "讨伐强敌",
+      "kind": "one-shot",
+      "default_config": {},
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.WorldBossMaterialTask",
+      "class": "WorldBossMaterialTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "NightmareNestTask",
+      "title": "🌙 Nightmare Nest Task",
+      "kind": "one-shot",
+      "default_config": {},
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.NightmareNestTask",
+      "class": "NightmareNestTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "TacetTask",
+      "title": "🌊 Tacet Suppression",
+      "kind": "one-shot",
+      "default_config": {},
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.TacetTask",
+      "class": "TacetTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "ForgeryTask",
+      "title": "⚒️ Forgery Challenge",
+      "kind": "one-shot",
+      "default_config": {},
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.ForgeryTask",
+      "class": "ForgeryTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "MaterialPlannerTask",
+      "title": "养成材料规划",
+      "kind": "one-shot",
+      "default_config": {},
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.MaterialPlannerTask",
+      "class": "MaterialPlannerTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "SimulationTask",
+      "title": "🧪 Simulation Challenge",
+      "kind": "one-shot",
+      "default_config": {},
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.SimulationTask",
+      "class": "SimulationTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "MultiAccountDailyTask",
+      "title": "👥 多账号每日任务",
+      "kind": "one-shot",
+      "default_config": {},
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.MultiAccountDailyTask",
+      "class": "MultiAccountDailyTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "MultiAccountWeeklyGardenTask",
+      "title": "👥 多账号每周乐园",
+      "kind": "one-shot",
+      "default_config": {},
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.MultiAccountWeeklyGardenTask",
+      "class": "MultiAccountWeeklyGardenTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "GardenTask",
+      "title": "🎡 自动周常乐园",
+      "kind": "one-shot",
+      "default_config": {},
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.GardenTask",
+      "class": "GardenTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "EventTask",
+      "title": "悲鸣行动：无音危机",
+      "kind": "one-shot",
+      "default_config": {},
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.EventTask",
+      "class": "EventTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "TestAccountSwitchTask",
+      "title": "🔄 多账号每日任务：账号切换链路测试",
+      "kind": "one-shot",
+      "default_config": {},
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.TestAccountSwitchTask",
+      "class": "TestAccountSwitchTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "AutoAbyssTask",
+      "title": "自动深塔",
+      "kind": "one-shot",
+      "default_config": {},
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.AutoAbyssTask",
+      "class": "AutoAbyssTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "AutoSeaRuinsTask",
+      "title": "自动冥歌海墟",
+      "kind": "one-shot",
+      "default_config": {},
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.AutoSeaRuinsTask",
+      "class": "AutoSeaRuinsTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "WeeklyBossTask",
+      "title": "Weekly Boss Challenge",
+      "kind": "one-shot",
+      "default_config": {},
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.WeeklyBossTask",
+      "class": "WeeklyBossTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "PianoTeachingTask",
+      "title": "Piano Teaching",
+      "kind": "one-shot",
+      "default_config": {},
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.PianoTeachingTask",
+      "class": "PianoTeachingTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "SecondSolTask",
+      "title": "SecondSolTask",
+      "kind": "one-shot",
+      "default_config": {},
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse",
+        "foreground-query"
+      ],
+      "module": "src.task.SecondSolTask",
+      "class": "SecondSolTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "EchoesRemainTask",
+      "title": "EchoesRemainTask",
+      "kind": "one-shot",
+      "default_config": {},
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.EchoesRemainTask",
+      "class": "EchoesRemainTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "ResonanceSimulationTask",
+      "title": "ResonanceSimulationTask",
+      "kind": "one-shot",
+      "default_config": {},
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse",
+        "foreground-query",
+        "hotkey-query"
+      ],
+      "module": "src.task.ResonanceSimulationTask",
+      "class": "ResonanceSimulationTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "CharacterTrialTask",
+      "title": "Character Trial",
+      "kind": "one-shot",
+      "default_config": {},
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.CharacterTrialTask",
+      "class": "CharacterTrialTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "TiangongTreasureTask",
+      "title": "天工寻物",
+      "kind": "one-shot",
+      "default_config": {},
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.TiangongTreasureTask",
+      "class": "TiangongTreasureTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
       "id": "auto-combat",
-      "title": "自动战斗（独立运行时，离线验收）",
+      "title": "⚔️ Auto Combat",
       "kind": "service",
       "default_config": {
-        "Auto Target": true,
-        "Use Liberation": true,
-        "Check Levitator": true,
-        "Switch to Healer before and after Combat": true
+        "_enabled": true
       },
-      "required_capabilities": ["frames", "keyboard", "mouse"],
-      "integration": "native-production-combat"
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.AutoCombatTask",
+      "class": "AutoCombatTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "SoloCombatTask",
+      "title": "⚔️ Solo Auto Combat",
+      "kind": "service",
+      "default_config": {
+        "_enabled": true
+      },
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.SoloCombatTask",
+      "class": "SoloCombatTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "AutoPickTask",
+      "title": "🌸 Auto Pick",
+      "kind": "service",
+      "default_config": {
+        "_enabled": true
+      },
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.AutoPickTask",
+      "class": "AutoPickTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "AutoLoginTask",
+      "title": "🔑 Auto Login",
+      "kind": "service",
+      "default_config": {
+        "_enabled": true
+      },
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.AutoLoginTask",
+      "class": "AutoLoginTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "AutoDialogTask",
+      "title": "⏭️ Skip Dialog during Quests",
+      "kind": "service",
+      "default_config": {
+        "_enabled": true
+      },
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.SkipDialogTask",
+      "class": "AutoDialogTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "FastTravelTask",
+      "title": "✈️ Fast Travel",
+      "kind": "service",
+      "default_config": {
+        "_enabled": true
+      },
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.FastTravelTask",
+      "class": "FastTravelTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
+    },
+    {
+      "id": "MouseResetTask",
+      "title": "🖱️ Prevent Wuthering Waves from moving the mouse",
+      "kind": "service",
+      "default_config": {
+        "_enabled": true
+      },
+      "required_capabilities": [
+        "frames",
+        "keyboard",
+        "mouse"
+      ],
+      "module": "src.task.MouseResetTask",
+      "class": "MouseResetTask",
+      "integration": "native-production-rules",
+      "config_scope": "native-data-directory"
     }
-  ]
+  ],
+  "supports_session": true,
+  "management": true
 }

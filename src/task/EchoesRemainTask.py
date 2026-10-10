@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 from uuid import uuid4
 
-from ok import TaskDisabledException
+from src.runtime.combat_api import TaskDisabledException, is_native
 from src.activity_catalog import LEGACY_ACTIVITIES as ACTIVITIES
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.character_trial import compact, exact_button
@@ -255,17 +255,26 @@ class EchoesRemainTask(EchoesContinuation, WWOneTimeTask, BaseCombatTask):
     def _save_proof(self, frame):
         import cv2
         from PIL import Image
-        from ok.gui.debug.Screenshot import Screenshot
         from src.runtime.diagnostic_storage import storage_path
         from src.runtime.diagnostic_export import atomic_json
         from src.evidence.model import now_iso
         self.last_result['captured_at'] = now_iso()
-        folder = storage_path('screenshots', Path('screenshots')) / 'echoes_remain'
+        if is_native():
+            from src.runtime.account_task_support import data_root
+            root = data_root()
+            folder = storage_path('screenshots', root / 'screenshots', repo=root) / 'echoes_remain'
+        else:
+            folder = storage_path('screenshots', Path('screenshots')) / 'echoes_remain'
         folder.mkdir(parents=True, exist_ok=True)
         safe = frame.copy()
         safe[:round(len(safe)*.025)] = 0
         safe[round(len(safe)*.975):] = 0
-        path = Screenshot.save_pil_image('formation_'+uuid4().hex, str(folder), Image.fromarray(cv2.cvtColor(safe, cv2.COLOR_BGR2RGB)))
+        if is_native():
+            path = str(folder / ('formation_' + uuid4().hex + '.png'))
+            Image.fromarray(cv2.cvtColor(safe, cv2.COLOR_BGR2RGB)).save(path)
+        else:
+            from ok.gui.debug.Screenshot import Screenshot
+            path = Screenshot.save_pil_image('formation_'+uuid4().hex, str(folder), Image.fromarray(cv2.cvtColor(safe, cv2.COLOR_BGR2RGB)))
         atomic_json(Path(path).with_suffix('.json'), self.last_result)
         self.last_result['proof'] = path
 

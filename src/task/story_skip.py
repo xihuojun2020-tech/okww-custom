@@ -4,7 +4,7 @@ from pathlib import Path
 from dataclasses import dataclass
 
 import cv2
-from ok import Box
+from src.runtime.combat_api import Box
 
 
 ASSETS = Path(__file__).resolve().parents[2] / 'assets/images/story_skip'

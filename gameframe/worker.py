@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 import threading
+from queue import Queue
 from pathlib import Path
 
 from gameframe.api import Cancelled
@@ -40,7 +41,7 @@ def emit(value):
     print(json.dumps(value, ensure_ascii=False), flush=True)
 
 
-def listen_stop(stop):
+def listen_stop(stop, pause, requests=None):
     for line in sys.stdin:
         try:
             message = json.loads(line)
@@ -49,6 +50,15 @@ def listen_stop(stop):
             emit({'event': 'control-failed', 'error': str(error)})
             stop.set()
             return
+        if command == 'pause':
+            pause.set()
+            continue
+        if command == 'resume':
+            pause.clear()
+            continue
+        if requests is not None and command in {'run-task', 'set-service'}:
+            requests.put(message)
+            continue
         if command != 'stop':
             emit({'event': 'control-failed', 'error': f'Unknown control command: {command}'})
         stop.set()
@@ -62,27 +72,44 @@ def main(argv=None):
     parser.add_argument('--data-dir', type=Path, required=True)
     parser.add_argument('--device', type=json_object, required=True)
     parser.add_argument('--config', type=json_object, default={})
+    parser.add_argument('--session', action='store_true')
     options = parser.parse_args(argv)
-    manifest = PackageManifest.read(options.package)
-    task = manifest.task(options.task)
-    if manifest.execution != 'native':
-        raise ValueError('Legacy packages use their explicit production bootstrap')
-    package = manifest.load()
     stop = threading.Event()
-    threading.Thread(target=listen_stop, args=(stop,), daemon=True).start()
-    device = create_device(options.device)
+    pause = threading.Event()
+    requests = Queue() if options.session else None
+    threading.Thread(target=listen_stop, args=(stop, pause, requests), daemon=True).start()
+    device = None
     store = None
     try:
+        manifest = PackageManifest.read(options.package)
+        task = manifest.task(options.task)
+        if manifest.execution != 'native':
+            raise ValueError('Legacy packages use their explicit production bootstrap')
+        if options.session and not manifest.supports_session:
+            raise ValueError('This package does not provide a shared task session')
+        package = manifest.load()
+        prepare = getattr(package, 'prepare', None)
+        if prepare is not None:
+            prepare(task.id, options.data_dir)
+        if stop.is_set():
+            raise Cancelled('Task stopped before device creation')
+        device = create_device(options.device)
+        prepare_device = getattr(device, 'prepare', None)
+        if prepare_device is not None:
+            prepare_device(stop)
         store = RunStore(options.data_dir / 'runs.sqlite')
         runtime = Runtime(store, emit)
-        if task.kind == 'service':
+        if options.session:
+            runtime.run(manifest, package, task.id, device, options.data_dir,
+                        options.config, stop, pause, session=True, requests=requests)
+        elif task.kind == 'service':
             # Launching a service is an explicit enable action; errors never clear it.
             store.set_enabled(manifest.id, task.id, True)
             runtime.run_service(manifest, package, task.id, device, options.data_dir,
-                                stop=stop, config=options.config)
+                                stop=stop, pause=pause, config=options.config)
         else:
             runtime.run(manifest, package, task.id, device, options.data_dir,
-                        options.config, stop)
+                        options.config, stop, pause)
         if hasattr(device, 'save_actions'):
             device.save_actions(options.data_dir / 'actions.json')
         return 0
@@ -93,7 +120,8 @@ def main(argv=None):
         return 1
     finally:
         try:
-            device.close()
+            if device is not None:
+                device.close()
         finally:
             if store is not None:
                 store.close()

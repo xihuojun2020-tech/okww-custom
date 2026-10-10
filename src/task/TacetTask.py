@@ -1,7 +1,7 @@
 
 import time
 
-from ok import Logger
+from src.runtime.combat_api import Logger
 from src.task.BaseCombatTask import BaseCombatTask, CharRevivedException, CombatStateUnknown
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.tacet_targets import TACET_STRUCTURE, TACET_NAMES, TACET_OPTIONS, TACET_BUTTON_LABELS, tacet_serial

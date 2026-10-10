@@ -1,7 +1,6 @@
 import time
 
-from ok import FindFeature, Logger
-from ok import TriggerTask
+from src.runtime.combat_api import Logger, TriggerTask
 from src.scene.WWScene import WWScene
 from src.task.BaseWWTask import BaseWWTask, f_white_color
 

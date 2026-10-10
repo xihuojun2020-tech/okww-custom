@@ -4,13 +4,13 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import numpy as np
 
 from gameframe.api import Cancelled, Frame, TaskContext
 from src.runtime.game_runtime_errors import FrameUnavailable
-from src.runtime.native_combat_executor import NativeCombatExecutor
+from src.runtime.native_combat_executor import NativeCombatExecutor, SessionPreempted
 
 
 class Stopped(Exception):
@@ -23,16 +23,26 @@ class MemoryDevice:
         self.actions = []
         self.held = set()
         self.releases = 0
+        self.cursor = (0, 0)
+
+    def get_cursor_pos(self):
+        return self.cursor
+
+    def set_cursor_pos(self, position):
+        self.cursor = position
 
     def next_frame(self, timeout=1):
         return next(self.frames, None)
 
     def submit(self, action):
         self.actions.append(action)
-        identity = (action.kind.split('_')[0], next(iter(action.values.values())))
+        if action.kind == 'move_client':
+            self.cursor = (action.values['x'], action.values['y'])
         if action.kind.endswith('_down'):
+            identity = (action.kind.split('_')[0], next(iter(action.values.values())))
             self.held.add(identity)
         elif action.kind.endswith('_up'):
+            identity = (action.kind.split('_')[0], next(iter(action.values.values())))
             self.held.discard(identity)
 
     def release_all(self):
@@ -50,6 +60,89 @@ def production_method(path, class_name, name, globals_):
 
 
 class TestNativeCombatExecutor(unittest.TestCase):
+    def test_session_preemption_bypasses_business_exception_recovery(self):
+        executor, _ = self.make_executor()
+        def preempt():
+            raise SessionPreempted()
+        executor.session_checkpoint = preempt
+        recovery = Mock()
+        with self.assertRaises(SessionPreempted):
+            try:
+                executor.check_enabled()
+            except Exception:
+                recovery()
+        recovery.assert_not_called()
+
+    def test_raw_identity_ocr_uses_explicit_engine(self):
+        from src.task.account_feature_verification import read_code
+        executor, _ = self.make_executor()
+        executor.config = {'ocr': {'lib': 'onnxocr'}}
+        executor.ocr_engine = SimpleNamespace(ocr=Mock(return_value=[[
+            ([[0, 0], [20, 0], [20, 10], [0, 10]], ('特征码：12345', .98))]]))
+        with patch('src.task.account_feature_verification.region', return_value=(0, 0, 10, 10)):
+            self.assertEqual(read_code(SimpleNamespace(executor=executor),
+                                       np.zeros((20, 30, 3), dtype=np.uint8)), '12345')
+        self.assertEqual(executor.ocr_engine.ocr.call_args.args[0].shape, (30, 30, 3))
+        with self.assertRaisesRegex(ValueError, 'no OCR engine named'):
+            executor.ocr_lib('other')
+
+    def test_explicit_key_activation_uses_actual_device_action(self):
+        executor, device = self.make_executor()
+        executor.send_key_down('e', activate=False)
+        executor.send_key_up('e')
+        executor.send_key_down('q', activate=True)
+        executor.send_key_up('q')
+        self.assertEqual([action.kind for action in device.actions],
+                         ['key_down', 'key_up', 'activate', 'key_down', 'key_up'])
+
+    def test_pause_releases_held_key_then_resume_can_send_next_key(self):
+        executor, device = self.make_executor()
+        executor.send_key_down('w')
+        self.assertTrue(device.held)
+        executor.pause()
+        self.assertFalse(device.held)
+        self.assertEqual(device.releases, 1)
+        executor.check_enabled(check_pause=False)
+        self.assertEqual(device.releases, 1)
+        executor.unpause()
+        executor.send_key('e', 0)
+        self.assertEqual([action.values['key'] for action in device.actions], ['w', 'e', 'e'])
+        executor.exit_event.set()
+        with self.assertRaises(Stopped):
+            executor.send_key('f', 0)
+
+    def test_foreground_pause_retains_call_stack_until_resume(self):
+        executor, device = self.make_executor()
+        executor.wait_on_pause = True
+        executor.pause()
+        completed = threading.Event()
+        worker = threading.Thread(target=lambda: (executor.send_key('f', 0), completed.set()))
+        worker.start()
+        self.assertFalse(completed.wait(.05))
+        self.assertFalse(device.actions)
+        executor.unpause()
+        worker.join(1)
+        self.assertTrue(completed.is_set())
+        self.assertEqual([action.kind for action in device.actions], ['key_down', 'key_up'])
+
+    def test_foreground_pause_remains_interruptible_by_stop(self):
+        executor, device = self.make_executor()
+        executor.wait_on_pause = True
+        executor.pause()
+        errors = []
+        def work():
+            try:
+                executor.send_key('f', 0)
+            except Stopped as error:
+                errors.append(error)
+        worker = threading.Thread(target=work)
+        worker.start()
+        executor.exit_event.set()
+        worker.join(1)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(len(errors), 1)
+        self.assertFalse(device.actions)
+
     def make_executor(self, sizes=((12, 20), (24, 40)), **kwargs):
         frames = [Frame(i, np.full((h, w, 3), i, dtype=np.uint8), time.monotonic_ns())
                   for i, (h, w) in enumerate(sizes, 1)]
@@ -179,15 +272,15 @@ class TestNativeCombatExecutor(unittest.TestCase):
     def test_legacy_click_movement_flags_have_explicit_semantics(self):
         executor, device = self.make_executor()
         executor.click(10, 20, move=False, down_time=0)
-        self.assertEqual([action.kind for action in device.actions], ['button_down', 'button_up'])
+        self.assertEqual([action.kind for action in device.actions], ['move_client', 'button_down', 'button_up'])
         device.actions.clear()
         executor.click(10, 20, move=True, down_time=0)
         self.assertEqual([action.kind for action in device.actions],
                          ['move_client', 'button_down', 'button_up'])
         device.actions.clear()
-        with self.assertRaisesRegex(NotImplementedError, 'cursor read/restore'):
-            executor.click(10, 20, move_back=True)
-        self.assertFalse(device.actions)
+        device.cursor = (90, 100)
+        executor.click(10, 20, move_back=True, down_time=0)
+        self.assertEqual(device.cursor, (90, 100))
 
     def test_stop_during_inflight_capture_releases_held_input_at_owner(self):
         executor, device = self.make_executor()

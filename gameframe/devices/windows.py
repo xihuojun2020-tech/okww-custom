@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import ctypes
+import os
 import struct
+import subprocess
 import threading
 import time
 from contextlib import contextmanager
@@ -11,7 +13,8 @@ from ctypes import wintypes
 
 import numpy as np
 
-from gameframe.api import Action, Frame
+from gameframe.api import Action, Cancelled, Frame
+from gameframe.process_ownership import register_device_process
 
 
 INPUT_MOUSE = 0
@@ -51,6 +54,113 @@ def virtual_key(key):
 
 class _Point(ctypes.Structure):
     _fields_ = [("x", wintypes.LONG), ("y", wintypes.LONG)]
+
+
+class _WindowBackend:
+    def __init__(self):
+        import win32api
+        import win32gui
+        import win32process
+        self.api, self.gui, self.process = win32api, win32gui, win32process
+        self.user32 = ctypes.WinDLL('user32', use_last_error=True)
+        self.user32.SetThreadDpiAwarenessContext.argtypes = (ctypes.c_void_p,)
+        self.user32.SetThreadDpiAwarenessContext.restype = ctypes.c_void_p
+
+    def exists(self, hwnd):
+        return bool(self.gui.IsWindow(hwnd))
+
+    def pid(self, hwnd):
+        return self.process.GetWindowThreadProcessId(hwnd)[1]
+
+    def process_created(self, pid):
+        import psutil
+        return psutil.Process(pid).create_time()
+
+    def foreground(self):
+        return self.gui.GetForegroundWindow()
+
+    def title(self, hwnd):
+        return self.gui.GetWindowText(hwnd)
+
+    def is_visible(self, hwnd):
+        return bool(self.gui.IsWindowVisible(hwnd))
+
+    def windows(self, pid):
+        windows = []
+        def collect(hwnd, _):
+            if self.pid(hwnd) == pid:
+                windows.append(hwnd)
+            return True
+        self.gui.EnumWindows(collect, None)
+        return windows
+
+    def root(self, hwnd):
+        return self.gui.GetAncestor(hwnd, 2)  # GA_ROOT
+
+    def client_to_screen(self, hwnd, x, y):
+        with _physical_coordinates(self.user32):
+            return self.gui.ClientToScreen(hwnd, (int(x), int(y)))
+
+    def cursor(self):
+        with _physical_coordinates(self.user32):
+            return self.gui.GetCursorPos()
+
+    def set_cursor(self, position):
+        with _physical_coordinates(self.user32):
+            self.api.SetCursorPos(position)
+
+    def hotkey_pressed(self, vk):
+        return bool(self.api.GetAsyncKeyState(vk) & 0x8000)
+
+
+class WindowsWindow:
+    """Live metadata for the selected HWND and its process's login dialogs."""
+
+    def __init__(self, device, backend):
+        self.device, self.backend = device, backend
+        self._pid = backend.pid(device.hwnd)
+        self._process_created = backend.process_created(self._pid)
+        self.hwnds = []
+        self.do_update_window_size()
+
+    @property
+    def hwnd(self):
+        return self.device.hwnd
+
+    @property
+    def exists(self):
+        return self.backend.exists(self.hwnd)
+
+    @property
+    def visible(self):
+        return self.exists and self.backend.foreground() in (self.hwnd, self.top_hwnd)
+
+    @property
+    def hwnd_title(self):
+        return self.backend.title(self.hwnd)
+
+    @property
+    def top_hwnd(self):
+        foreground = self.backend.foreground()
+        if foreground and self.backend.pid(foreground) == self._pid:
+            return foreground
+        return self.backend.root(self.hwnd)
+
+    def get_capture_origin(self):
+        return self.backend.client_to_screen(self.hwnd, 0, 0)
+
+    def do_update_window_size(self):
+        self.hwnds = self.backend.windows(self._pid)
+
+    def bind(self, hwnd):
+        self.device.hwnd = hwnd
+        self._pid = self.backend.pid(hwnd)
+        self._process_created = self.backend.process_created(self._pid)
+        self.do_update_window_size()
+
+    def bring_to_front(self):
+        self.device.submit(Action('activate', {}))
+        return self.device.is_foreground()
 
 
 def _client_roi(bounds, client, origin, frame_width, frame_height):
@@ -132,6 +242,8 @@ class _SendInput:
         self._user32.SendInput.argtypes = (wintypes.UINT, ctypes.POINTER(_Input), ctypes.c_int)
         self._user32.SendInput.restype = wintypes.UINT
         self._user32.GetForegroundWindow.restype = wintypes.HWND
+        self._user32.SetForegroundWindow.argtypes = (wintypes.HWND,)
+        self._user32.SetForegroundWindow.restype = wintypes.BOOL
         self._user32.ClientToScreen.argtypes = (wintypes.HWND, ctypes.POINTER(_Point))
         self._user32.ClientToScreen.restype = wintypes.BOOL
         self._user32.GetSystemMetrics.argtypes = (ctypes.c_int,)
@@ -141,6 +253,11 @@ class _SendInput:
 
     def is_foreground(self, hwnd: int) -> bool:
         return int(self._user32.GetForegroundWindow() or 0) == hwnd
+
+    def activate(self, hwnd: int) -> None:
+        # Windows may reject activation under its foreground-lock rules.
+        if not self._user32.SetForegroundWindow(hwnd):
+            raise RuntimeError('Windows rejected SetForegroundWindow for target HWND')
 
     def _send(self, item: _Input) -> None:
         if self._user32.SendInput(1, ctypes.byref(item), ctypes.sizeof(_Input)) != 1:
@@ -189,19 +306,37 @@ class WindowsDevice:
     button_down/up {button: left|right|middle}, move_relative {dx, dy},
     move_client {x, y} in HWND client coordinates,
     scroll {clicks} in signed wheel detents, text {text} as UTF-16 Unicode input,
-    click {x, y, button?: left|right|middle} in HWND client coordinates.
+    click {x, y, button?: left|right|middle} in HWND client coordinates,
+    activate {} requests foreground ownership under Windows activation rules.
     SendInput requires the target to be foreground.
     """
 
-    capabilities = frozenset({"frames", "keyboard", "mouse", "relative-mouse", "scroll", "text"})
+    capabilities = frozenset({"frames", "keyboard", "mouse", "relative-mouse", "scroll", "text", "activate",
+                              'foreground-query', 'hotkey-query'})
 
-    def __init__(self, hwnd: int, *, capture_factory=None, input_backend=None, geometry=None):
-        if hwnd <= 0:
-            raise ValueError("HWND must be positive")
+    def __init__(self, hwnd: int = 0, *, capture_factory=None, input_backend=None, geometry=None,
+                 window_backend=None, process_factory=None, launch_factory=None,
+                 launch_command=None, target_executable=None):
+        if hwnd < 0:
+            raise ValueError("HWND cannot be negative")
         self.hwnd = hwnd
         self._capture_factory = capture_factory
         self._input_backend = input_backend
         self._geometry = geometry
+        self._window_backend = window_backend
+        self._window = None
+        self._process_factory = process_factory
+        self._launch_factory = launch_factory
+        if launch_command is not None or target_executable is not None:
+            if (not isinstance(launch_command, (list, tuple)) or not launch_command or
+                    not all(isinstance(item, str) and item for item in launch_command) or
+                    not os.path.isabs(launch_command[0]) or
+                    not isinstance(target_executable, str) or not os.path.isabs(target_executable)):
+                raise ValueError('Windows launch requires an absolute launch_command and target_executable')
+        self.launch_command = list(launch_command) if launch_command is not None else None
+        self.target_executable = os.path.normcase(os.path.abspath(target_executable)) if target_executable else None
+        if not hwnd and self.launch_command is None:
+            raise ValueError('Windows requires a positive HWND or complete launch configuration')
         self._condition = threading.Condition()
         self._capture = None
         self._control = None
@@ -213,6 +348,162 @@ class WindowsDevice:
         self._keys = set()
         self._unicode_keys = set()
         self._buttons = set()
+
+    def _platform(self):
+        if self._window_backend is None:
+            self._window_backend = _WindowBackend()
+        return self._window_backend
+
+    @property
+    def window(self):
+        if self._window is None:
+            self._window = WindowsWindow(self, self._platform())
+        return self._window
+
+    def is_foreground(self):
+        if self._input_backend is None:
+            self._input_backend = _SendInput()
+        return self._input_backend.is_foreground(self.hwnd)
+
+    def get_cursor_pos(self):
+        return self._platform().cursor()
+
+    def set_cursor_pos(self, position):
+        self._platform().set_cursor(position)
+
+    def client_to_screen(self, x, y):
+        return self._platform().client_to_screen(self.hwnd, x, y)
+
+    def hotkey_pressed(self, vk):
+        return self._platform().hotkey_pressed(vk)
+
+    def foreground_pid(self):
+        platform = self._platform()
+        hwnd = platform.foreground()
+        return platform.pid(hwnd) if hwnd else 0
+
+    def stop_target(self):
+        """End only the live process owning the selected trusted HWND."""
+        window = self.window
+        platform = self._platform()
+        if not window.exists or platform.pid(self.hwnd) != window._pid:
+            raise RuntimeError('Selected HWND no longer belongs to the trusted game process')
+        if self._process_factory is None:
+            import psutil
+            self._process_factory = psutil.Process
+        process = self._process_factory(window._pid)
+        if process.create_time() != window._process_created:
+            raise RuntimeError('Selected game process identity has been reused')
+        # Check again after acquiring psutil's process identity. Its kill method
+        # additionally checks PID reuse before delivering the termination.
+        if not window.exists or platform.pid(self.hwnd) != process.pid:
+            raise RuntimeError('Selected HWND process changed before termination')
+        self.release_all()
+        process.kill()
+        process.wait(timeout=10)
+
+    def _discard_capture(self):
+        try:
+            if self._control is not None:
+                self._control.stop()
+                self._control.wait()
+        finally:
+            with self._condition:
+                self._capture = self._control = self._latest = None
+                self._capture_closed = False
+                self._delivered = self._sequence
+
+    def _bind_window(self, hwnd):
+        self._discard_capture()
+        self.release_all()
+        if self._window is None:
+            self.hwnd = hwnd
+            self._window = WindowsWindow(self, self._platform())
+        else:
+            self._window.bind(hwnd)
+
+    def prepare(self, stop):
+        if not self.hwnd:
+            self.start_target(stop)
+
+    def refresh_target(self):
+        window = self.window
+        window.do_update_window_size()
+        if window.exists:
+            if (self._platform().pid(window.hwnd) != window._pid or
+                    self._platform().process_created(window._pid) != window._process_created):
+                raise RuntimeError('Selected game window or process identity has been reused')
+            return True
+        self._discard_capture()
+        candidates = [hwnd for hwnd in window.hwnds if self._platform().is_visible(hwnd)]
+        if len(candidates) > 1:
+            raise RuntimeError('Multiple replacement windows belong to the selected process')
+        if not candidates:
+            return False
+        if self._platform().process_created(window._pid) != window._process_created:
+            raise RuntimeError('Selected game process identity has been reused')
+        self._bind_window(candidates[0])
+        return True
+
+    def start_capture(self):
+        if not self.window.exists:
+            raise RuntimeError('Selected HWND does not exist; configure a launch command to start the game')
+        self._start()
+        return True
+
+    def start_target(self, stop, timeout=30):
+        if self.launch_command is None:
+            raise RuntimeError('Starting the game requires launch_command and target_executable device configuration')
+        if stop.is_set():
+            raise Cancelled('Game launch stopped')
+        if self._process_factory is None:
+            import psutil
+            self._process_factory = psutil.Process
+        if self._launch_factory is None:
+            options = {'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}
+            launched = subprocess.Popen(self.launch_command, shell=False, **options)
+        else:
+            launched = self._launch_factory(self.launch_command)
+        import psutil
+        try:
+            launcher = self._process_factory(launched.pid)
+        except psutil.NoSuchProcess as error:
+            raise RuntimeError('Launcher exited before its process family could be recorded') from error
+        register_device_process(launcher)
+        # Retain process objects once observed; a launcher may exit before its
+        # child creates the actual game window.
+        processes = {launcher.pid: launcher}
+        deadline = time.monotonic() + timeout
+        while True:
+            if stop.is_set():
+                raise Cancelled('Game launch stopped while waiting for its window')
+            for process in tuple(processes.values()):
+                try:
+                    children = process.children(recursive=True)
+                except psutil.NoSuchProcess:
+                    if process is launcher and len(processes) == 1:
+                        raise RuntimeError('Launcher exited before its process family could be recorded')
+                    children = []
+                for child in children:
+                    register_device_process(child)
+                    processes[child.pid] = child
+            candidates = []
+            for process in processes.values():
+                try:
+                    if not process.is_running() or os.path.normcase(os.path.abspath(process.exe())) != self.target_executable:
+                        continue
+                except psutil.NoSuchProcess:
+                    continue
+                candidates.extend(hwnd for hwnd in self._platform().windows(process.pid)
+                                  if self._platform().is_visible(hwnd))
+            if len(candidates) > 1:
+                raise RuntimeError('Multiple windows match the launched target executable')
+            if candidates:
+                self._bind_window(candidates[0])
+                return True
+            if time.monotonic() >= deadline:
+                raise TimeoutError('Launched process family did not create a unique target window')
+            stop.wait(min(.1, max(0, deadline - time.monotonic())))
 
     def _start(self) -> None:
         if self._capture is not None:
@@ -283,9 +574,15 @@ class WindowsDevice:
             raise RuntimeError("Windows device is closed")
         if self._input_backend is None:
             self._input_backend = _SendInput()
+        kind, values = action.kind, action.values
+        if kind == 'activate':
+            if not self._input_backend.is_foreground(self.hwnd):
+                self._input_backend.activate(self.hwnd)
+            if not self._input_backend.is_foreground(self.hwnd):
+                raise RuntimeError('Target HWND did not become foreground after activation')
+            return
         if not self._input_backend.is_foreground(self.hwnd):
             raise RuntimeError("Target HWND is not foreground; SendInput would reach another window")
-        kind, values = action.kind, action.values
         if kind in ("key_down", "key_up"):
             vk = virtual_key(values["key"])
             self._input_backend.key(vk, kind == "key_down")

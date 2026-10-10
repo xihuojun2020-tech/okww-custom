@@ -11,7 +11,7 @@ import win32gui
 import win32process
 import win32ui
 
-from ok.util.color import is_close_to_pure_color
+from src.runtime.account_task_support import is_close_to_pure_color
 
 CAPTUREBLT = 0x40000000
 

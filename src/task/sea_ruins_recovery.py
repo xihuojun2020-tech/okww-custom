@@ -1,5 +1,5 @@
 """In-process checkpoints for sea ruins, using the framework's existing pause UI."""
-from ok import TaskDisabledException
+from src.runtime.combat_api import TaskDisabledException
 from src.task.sea_ruins import ENDLESS, choose_loadout, floor_label, next_floor, season_rule
 from src.task import sea_ruins_vision as vision
 from src.task.WWOneTimeTask import WWOneTimeTask

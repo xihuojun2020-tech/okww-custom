@@ -191,12 +191,15 @@ class TestAccountFeatureVerification(unittest.TestCase):
         executor.paused = True
         executor.debug_mode = False
         executor.current_task = None
+        executor.onetime_tasks = []
+        executor.trigger_tasks = []
         executor.exit_event = threading.Event()
         executor.reset_scene = Mock()
         executor.next_task = Mock(side_effect=AssertionError('must remain paused'))
         executor._wake_executor = Mock()
         executor._wait_for_activity = lambda *args: executor.exit_event.wait(.01)
-        executor.device_manager = SimpleNamespace(hwnd_window=SimpleNamespace(hwnd=12, exists=True))
+        executor.device_manager = SimpleNamespace(hwnd_window=SimpleNamespace(hwnd=12, exists=True),
+                                                  interaction=None)
         frames = [np.full((720, 1280, 3), number, np.uint8) for number in range(3)]
         executor.device_manager.capture_method = SimpleNamespace(get_frame=Mock(side_effect=frames))
         executor.get_task_by_class = Mock(return_value=object())

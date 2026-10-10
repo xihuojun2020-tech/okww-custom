@@ -4,9 +4,12 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import psutil
+
+from gameframe.process_ownership import PROTECTED_PROCESSES_ENV, protected_process_identities
 
 
 class Controller:
@@ -14,14 +17,18 @@ class Controller:
         self.process = None
         self.execution = None
         self._owner = None
+        self.session = False
+        self._protected_path = None
 
-    def start(self, manifest, task_id, *, data_dir, config=None, device=None):
+    def start(self, manifest, task_id, *, data_dir, config=None, device=None, session=False):
         manifest.task(task_id)
         data_dir = Path(data_dir).resolve()
         if config is not None and not isinstance(config, dict):
             raise ValueError('Task config must be a JSON object')
         if device is not None and not isinstance(device, dict):
             raise ValueError('Device config must be a JSON object')
+        if session and (manifest.execution != 'native' or not manifest.supports_session):
+            raise ValueError('This package does not provide a shared task session')
         if self.process is not None and self.process.poll() is None:
             raise RuntimeError('An execution process is already running')
         if manifest.execution == 'legacy-application':
@@ -35,20 +42,47 @@ class Controller:
             command = [sys.executable, '-m', 'gameframe.worker', '--package', str(manifest.root),
                        '--task', task_id, '--data-dir', str(data_dir),
                        '--device', json.dumps(device), '--config', json.dumps(config or {})]
+            if session:
+                command.append('--session')
             cwd = str(Path.cwd())
             environment = os.environ.copy()
+            environment['GAMEFRAME_CONTROLLER_PID'] = str(os.getpid())
             # Preserve caller-relative assets while also supporting a source checkout.
             module_root = str(Path(__file__).resolve().parents[1])
             environment['PYTHONPATH'] = os.pathsep.join(
                 path for path in (module_root, environment.get('PYTHONPATH')) if path)
+        return self._launch(command, cwd, environment, manifest.execution, session)
+
+    def start_management(self, manifest, *, data_dir):
+        if not manifest.management:
+            raise ValueError('This package does not provide a management application')
+        if self.process is not None and self.process.poll() is None:
+            raise RuntimeError('A management process is already running')
+        launch = manifest.load().management_command(Path(data_dir).resolve())
+        return self._launch(launch['command'], launch['cwd'], launch['env'], 'management', False)
+
+    def _launch(self, command, cwd, environment, execution, session):
+        if self._protected_path is not None:
+            self._protected_path.unlink(missing_ok=True)
+        with tempfile.NamedTemporaryFile('w', encoding='utf-8', prefix='gameframe-processes-',
+                                         suffix='.json', delete=False) as stream:
+            stream.write('[]')
+            self._protected_path = Path(stream.name)
+        environment[PROTECTED_PROCESSES_ENV] = str(self._protected_path)
         environment['PYTHONIOENCODING'] = 'utf-8'
         environment['PYTHONUNBUFFERED'] = '1'
         options = {'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}
-        self.process = subprocess.Popen(command, cwd=cwd, env=environment,
-                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                        stderr=subprocess.STDOUT, text=True, encoding='utf-8',
-                                        errors='replace', bufsize=1, **options)
-        self.execution = manifest.execution
+        try:
+            self.process = subprocess.Popen(command, cwd=cwd, env=environment,
+                                            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                            stderr=subprocess.STDOUT, text=True, encoding='utf-8',
+                                            errors='replace', bufsize=1, **options)
+        except BaseException:
+            self._protected_path.unlink(missing_ok=True)
+            self._protected_path = None
+            raise
+        self.execution = execution
+        self.session = session
         try:
             self._owner = psutil.Process(self.process.pid)
             self._owner.create_time()  # Retain identity before any PID reuse.
@@ -56,14 +90,37 @@ class Controller:
             self._owner = None  # A short task may already have exited.
         return self.process
 
-    def request_stop(self):
+    def _send_control(self, command, **values):
         if self.process is not None and self.process.poll() is None:
             try:
-                self.process.stdin.write('{"command":"stop"}\n')
+                self.process.stdin.write(json.dumps({'command': command, **values}) + '\n')
                 self.process.stdin.flush()
             except BrokenPipeError:
                 # The execution process exited while its stop command was in flight.
                 self.process.wait(timeout=3)
+
+    def request_stop(self):
+        self._send_control('stop')
+
+    def request_task(self, task_id, config):
+        if not self.session:
+            raise ValueError('A shared task session is not running')
+        self._send_control('run-task', task_id=task_id, config=config)
+
+    def set_service(self, task_id, enabled, config=None):
+        if not self.session:
+            raise ValueError('A shared task session is not running')
+        self._send_control('set-service', task_id=task_id, enabled=enabled, config=config or {})
+
+    def pause(self):
+        if self.execution != 'native':
+            raise ValueError('Compatibility application controls its own pause')
+        self._send_control('pause')
+
+    def resume(self):
+        if self.execution != 'native':
+            raise ValueError('Compatibility application controls its own pause')
+        self._send_control('resume')
 
     def stop(self, timeout=5):
         if self.process is None:
@@ -85,7 +142,17 @@ class Controller:
                     descendants += self._owner.children(recursive=True)
                 except psutil.NoSuchProcess:
                     pass
-            for child in reversed(list({item.pid: item for item in descendants}.values())):
+            protected = protected_process_identities(self._protected_path)
+            owned = {}
+            for child in descendants:
+                try:
+                    identity = (child.pid, child.create_time())
+                except psutil.NoSuchProcess:
+                    continue
+                if identity not in protected:
+                    owned[identity] = child
+            descendants = list(owned.values())
+            for child in reversed(descendants):
                 try:
                     child.terminate()
                 except psutil.NoSuchProcess:
@@ -102,3 +169,6 @@ class Controller:
             for stream in (self.process.stdin, self.process.stdout):
                 if stream is not None:
                     stream.close()
+        if self._protected_path is not None:
+            self._protected_path.unlink(missing_ok=True)
+            self._protected_path = None

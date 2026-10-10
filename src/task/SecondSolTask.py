@@ -2,9 +2,11 @@
 import random
 import time
 
-import win32gui
-from ok import BaseTask
+from src.runtime.combat_api import BaseTask, is_native
 from src.activity_catalog import LEGACY_ACTIVITIES as ACTIVITIES
+
+if not is_native():
+    import win32gui
 
 
 class SecondSolTask(BaseTask):
@@ -19,6 +21,8 @@ class SecondSolTask(BaseTask):
         self.support_schedule_task = False
 
     def _game_in_foreground(self):
+        if is_native():
+            return self.executor.context.device.is_foreground()
         window = self.hwnd
         if window is None or not window.exists:
             raise RuntimeError('游戏窗口已断开，停止活动按键')

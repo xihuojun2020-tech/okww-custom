@@ -675,7 +675,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         events = []
         task = self._switch_task(account_box=None, in_team=(True, 0, 3), events=events)
 
-        with patch('src.task.BaseWWTask.og.my_app', SimpleNamespace(logged_in=True)):
+        with patch('ok.og.my_app', SimpleNamespace(logged_in=True)):
             self.assertEqual(task.switch_to_account('A3'), 'A3')
         self.assertEqual(events[:2], ['logout', 'wait_login'])
 
@@ -683,7 +683,7 @@ class TestMultiAccountDailyTask(unittest.TestCase):
         events = []
         task = self._switch_task(account_box=object(), in_team=(True, 0, 3), events=events)
 
-        with patch('src.task.BaseWWTask.og.my_app', SimpleNamespace(logged_in=True)):
+        with patch('ok.og.my_app', SimpleNamespace(logged_in=True)):
             self.assertEqual(task.switch_to_account('A3'), 'A3')
         self.assertEqual(events, ['wait_login'])
 

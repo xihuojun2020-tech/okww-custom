@@ -1,7 +1,7 @@
 """Run each available Tiangong stage once, with feature-code-bound checkpoints."""
 import time
 
-from ok import TaskDisabledException
+from src.runtime.combat_api import TaskDisabledException
 from src.combat.CombatCheck import CombatFlowInterrupt
 from src.task.BaseCombatTask import BaseCombatTask, CombatStateUnknown, NotInCombatException, CharDeadException
 from src.evidence.model import now_iso

@@ -31,7 +31,7 @@ def parse_feature_code(text):
 
 
 def region(frame):
-    from config import blur_area
+    from src.runtime.account_task_support import blur_area
     h, w = frame.shape[:2]
     box = blur_area(w, h)
     return int(box.x), int(box.y), int(box.width), int(box.height)
@@ -306,7 +306,7 @@ class FeatureRun:
         return status
 
     def save(self, result, frame, status, reason):
-        from config import version
+        from src.runtime.account_task_support import program_version
         from src.evidence.service import get_evidence_service
         # Mask exactly the existing identity area in the persisted copy.
         if frame is None:
@@ -316,7 +316,7 @@ class FeatureRun:
         safe[y:y+h, x:x+w] = 0
         metadata = dict(profile_id=self.profile_id, project_id='character_trial', source='automatic',
                         identity_source='feature_code', completion_status=status, reason=reason,
-                        run_id=self.run_id, event_id=self.run_id, captured_at=now_iso(), version=version,
+                        run_id=self.run_id, event_id=self.run_id, captured_at=now_iso(), version=program_version(),
                         require_image=True, progress={key: value for key, value in result.items()
                                                      if key not in ('complete', 'evidence_id', 'evidence_pending')},
                         verification=dict(start=self.start.metadata(), end=self.end.metadata() if self.end else None))

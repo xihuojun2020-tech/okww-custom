@@ -9,6 +9,7 @@ import unittest
 
 from gameframe.packages import PackageManifest, install_archive
 from scripts.build_native_gamepack import build_native_gamepack
+from scripts.build_gamepack import source_metadata
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,6 +18,8 @@ PACK = ROOT / 'gamepacks/wuthering_waves_native'
 
 class TestNativeGamePack(unittest.TestCase):
     def test_discovery_loads_only_metadata(self):
+        expected = [task['class'] if task['class'] != 'AutoCombatTask' else 'auto-combat'
+                    for task in source_metadata(ROOT)['tasks'][1:]]
         code = f'''
 import sys
 sys.path.insert(0, {str(ROOT)!r})
@@ -28,7 +31,7 @@ manifest = PackageManifest.read({str(PACK)!r})
 package = manifest.load()
 assert manifest.execution == 'native'
 assert package.engine is None
-assert [task.id for task in manifest.tasks] == ['auto-combat']
+assert [task.id for task in manifest.tasks] == {expected!r}
 print('metadata-only')
 '''
         result = subprocess.run([sys.executable, '-I', '-c', code], capture_output=True,
@@ -43,6 +46,8 @@ print('metadata-only')
             self.assertEqual(manifest.id, 'wuthering_waves_native')
             self.assertTrue((manifest.root / 'payload/assets/coco_annotations.json').is_file())
             self.assertFalse((manifest.root / 'payload/config.py').exists())
+            from tests.fixture_support import make_account_environment
+            make_account_environment(root / 'data')
             code = f'''
 import importlib.abc
 import json
@@ -63,6 +68,8 @@ from gameframe.runtime import Runtime
 from gameframe.state import RunStore
 manifest = PackageManifest.read({str(manifest.root)!r})
 package = manifest.load()
+data_dir = Path({str(root / 'data')!r})
+package.prepare('auto-combat', data_dir)
 stop = threading.Event()
 device = ReplayDevice([{str(ROOT / 'tests/images/in_combat.png')!r}] * 32)
 submit = device.submit
@@ -79,7 +86,6 @@ def cleanup():
     released.append(True)
     release()
 device.release_all = cleanup
-data_dir = Path({str(root / 'data')!r})
 store = RunStore(data_dir / 'runs.sqlite')
 store.set_enabled(manifest.id, 'auto-combat', True)
 watchdog = threading.Timer(30, stop.set)

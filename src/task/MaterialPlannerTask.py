@@ -11,6 +11,7 @@ import cv2
 import numpy as np
 
 from src.task.BaseWWTask import BaseWWTask
+from src.runtime.combat_api import is_native
 from src.materials.catalog import Catalog
 from src.materials.model import (Settlement, calculate_gap, equivalent, is_satisfied,
                                  count_reward_units, aggregate_settlements, week_id)
@@ -31,7 +32,11 @@ class MaterialPlannerTask(BaseWWTask):
         self.visible = False
         self.default_config = {}
         self.catalog = Catalog()
-        self.repository = MaterialRepository()
+        if is_native():
+            from src.runtime.account_task_support import data_root
+            self.repository = MaterialRepository(root=data_root() / 'MaterialPlanner')
+        else:
+            self.repository = MaterialRepository()
         self.report = None
 
     def _report(self, key, value):

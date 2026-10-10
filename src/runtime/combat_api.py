@@ -42,6 +42,7 @@ _NATIVE_SYMBOLS = {
     'Logger': ('src.runtime.native_logging', 'Logger'),
     'Box': ('src.vision.boxes', 'Box'),
     'find_boxes_by_name': ('src.vision.boxes', 'find_boxes_by_name'),
+    'sort_boxes': ('src.vision.boxes', 'sort_boxes'),
     'find_color_rectangles': ('src.vision.color', 'find_color_rectangles'),
     **{name: ('src.runtime.native_errors', name) for name in (
         'TaskDisabledException', 'FinishedException', 'CaptureException',
@@ -68,6 +69,17 @@ def app_services(task):
     if _native or hasattr(task, '_combat_app_services'):
         return task._app if _native else task._combat_app_services
     return importlib.import_module('ok').og.my_app
+
+
+def is_native():
+    return _native
+
+
+def is_post_message_interaction(interaction):
+    if _native:
+        return False
+    from ok import PostMessageInteraction
+    return isinstance(interaction, PostMessageInteraction)
 
 
 def emit_task_state(task):

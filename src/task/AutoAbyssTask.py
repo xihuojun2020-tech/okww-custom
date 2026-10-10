@@ -631,7 +631,7 @@ class AutoAbyssTask(WWOneTimeTask, BaseCombatTask):
     """Scan and automatically challenge every available Adversity Tower floor."""
 
     navigation_section = "tasks"
-    _ASSET_DIR = Path("assets/images")
+    _ASSET_DIR = Path(__file__).resolve().parents[2] / 'assets/images'
     _TEMPLATES = {
         "period_selected": _ASSET_DIR / "abyss_period_challenge_selected.png",
         "period_unselected": _ASSET_DIR / "abyss_period_challenge_unselected.png",

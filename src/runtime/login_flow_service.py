@@ -5,7 +5,7 @@ from __future__ import annotations
 from contextlib import nullcontext
 from typing import Any
 
-from ok import TaskDisabledException
+from src.runtime.combat_api import TaskDisabledException, is_native
 from .game_runtime_errors import GameProcessLost, FrameUnavailable, StartupStateChanged
 from ..config_integrity import ConfigIntegrityBlocked, ConfigWriteBlocked
 
@@ -20,6 +20,8 @@ class LoginFlowService:
         if not target:
             raise ValueError("target account is required")
         task = self.task
+        if is_native():
+            task.executor.check_enabled()
         task._guard_account_transition()
         task._begin_account_switch_evidence(target)
         mouse_reset_task = None

@@ -1,6 +1,6 @@
 import time
 
-from ok import TriggerTask, Logger, TaskDisabledException
+from src.runtime.combat_api import TriggerTask, Logger, TaskDisabledException
 from src.task.SkipBaseTask import SkipBaseTask
 from src.task.trigger_navigation import advance
 from src.task.ui_transition import TransitionContextChanged, TransitionTimeout

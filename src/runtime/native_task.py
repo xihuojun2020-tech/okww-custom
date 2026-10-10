@@ -4,7 +4,6 @@
 
 import logging
 import time
-from pathlib import Path
 
 import cv2
 
@@ -64,7 +63,7 @@ class NativeBaseTask:
         self._supported_ratio = supported_ratio
         self._box_factory = box_factory
         self._debug = debug
-        self._ocr = OCR(executor, ocr_engine, translator=translator,
+        self._ocr_service = OCR(executor, ocr_engine, translator=translator,
                         text_fix=text_fix, locale=locale,
                         resolve_box=self.get_box_by_name,
                         box_factory=box_factory,
@@ -86,6 +85,7 @@ class NativeBaseTask:
         self.trigger_interval = 0
         self.last_trigger_time = 0
         self.start_time = 0
+        self.exit_after_task = False
         self.sleep_check_interval = -1
         self.last_sleep_check_time = 0
         self.in_sleep_check = False
@@ -101,11 +101,11 @@ class NativeBaseTask:
 
     @property
     def ocr_default_threshold(self):
-        return self._ocr.ocr_default_threshold
+        return self._ocr_service.ocr_default_threshold
 
     @ocr_default_threshold.setter
     def ocr_default_threshold(self, value):
-        self._ocr.ocr_default_threshold = value
+        self._ocr_service.ocr_default_threshold = value
 
     @property
     def frame(self):
@@ -145,7 +145,21 @@ class NativeBaseTask:
         return self._global_configs[option]
 
     def get_task_by_class(self, cls):
-        return self._tasks_by_class.get(cls)
+        return self.executor.get_task_by_class(cls)
+
+    def run_task_by_class(self, cls):
+        task = self.get_task_by_class(cls)
+        old_info = task.info
+        current_task = self.executor.current_task
+        task.info = self.info
+        try:
+            return task.run()
+        except Exception as error:
+            self.log_error(f'run_task_by_class {cls}', error)
+            raise
+        finally:
+            task.info = old_info
+            self.executor.current_task = current_task
 
     def is_browser(self):
         device = self.executor.device_manager.get_preferred_device()
@@ -169,12 +183,14 @@ class NativeBaseTask:
     def on_destroy(self):
         return None
 
-    def after_init(self, executor=None, scene=None):
+    def after_init(self, executor=None, scene=None, config=None):
         if executor is not None:
             self._executor = executor
-            self._ocr.executor = executor
+            self._ocr_service.executor = executor
         self.scene = scene if scene is not None else self.executor.scene
         self.load_config()
+        if config is not None:
+            self.config.update(config)
         self.on_create()
         self.executor.current_task = self
 
@@ -210,6 +226,32 @@ class NativeBaseTask:
 
     def exit_is_set(self):
         return self.executor.exit_event.is_set()
+
+    def add_exit_after_config(self):
+        self.default_config['Exit After Task'] = False
+        self.config_description['Exit After Task'] = 'Exit the Game and the App after Successfully Executing the Task'
+
+    def ensure_in_front(self):
+        return self.executor.ensure_in_front()
+
+    def start_device(self):
+        return self.executor.start_device()
+
+    def ensure_capture(self, config=None):
+        config = self.capture_config if config is None else config
+        if config:
+            raise NotImplementedError('GameFrame device selection belongs to the runtime, not task capture_config')
+
+    def pause(self):
+        self.executor.pause(None if isinstance(self, NativeTriggerTask) else self)
+
+    def unpause(self):
+        self.executor.unpause()
+
+    def back(self, after_sleep=0):
+        self.executor.back()
+        if after_sleep > 0:
+            self.sleep(after_sleep)
 
     def next_frame(self):
         return self.executor.next_frame()
@@ -344,10 +386,10 @@ class NativeBaseTask:
         return True
 
     def ocr(self, *args, **kwargs):
-        return self._ocr.ocr(*args, **kwargs)
+        return self._ocr_service.ocr(*args, **kwargs)
 
     def add_text_fix(self, fix):
-        self._ocr.add_text_fix(fix)
+        self._ocr_service.add_text_fix(fix)
 
     def wait_ocr(self, x=0, y=0, to_x=1, to_y=1, width=0, height=0,
                  name=None, box=None, match=None, threshold=0, frame=None,
@@ -538,18 +580,9 @@ class NativeBaseTask:
             self.sleep(after_sleep)
 
     def screenshot(self, name=None, frame=None, show_box=False, frame_box=None):
-        if name is None:
-            raise ValueError('screenshot name cannot be None')
+        from src.runtime.native_screenshots import save_native_screenshot
         image = self.frame if frame is None else frame
-        root = Path(self.executor.context.data_dir) / 'okww监控室'
-        destination = root / f'{name}.png'
-        if not destination.resolve().is_relative_to(root.resolve()):
-            raise ValueError('screenshot name must stay inside data directory')
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        success, encoded = cv2.imencode('.png', image)
-        if not success:
-            raise OSError(f'Unable to encode screenshot: {name}')
-        destination.write_bytes(encoded.tobytes())
+        destination = save_native_screenshot(self.executor.context.data_dir, name, image)
         self._emit('screenshot', name=name, path=str(destination),
                    show_box=show_box)
         return destination

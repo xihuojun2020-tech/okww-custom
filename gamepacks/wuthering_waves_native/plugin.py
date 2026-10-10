@@ -10,13 +10,40 @@ class WutheringWavesNativePackage:
     def __init__(self):
         self.root = Path(__file__).resolve().parent
         self.manifest = json.loads((self.root / 'manifest.json').read_text(encoding='utf-8'))
+        self.source = (self.root / self.manifest['source_root']).resolve()
         self.engine = None
 
+    def _bind_source(self):
+        source = str(self.source)
+        if source not in sys.path:
+            sys.path.insert(0, source)
+
+    def prepare(self, task_id, data_dir):
+        self._definition(task_id)
+        self._bind_source()
+        from src.runtime.account_runtime_bootstrap import prepare_native_account_runtime
+        prepare_native_account_runtime(data_dir, self.manifest['version'])
+
+    def _definition(self, task_id):
+        return next(task for task in self.manifest['tasks'] if task['id'] == task_id)
+
+    def management_command(self, data_dir):
+        environment = os.environ.copy()
+        environment['PYTHONPATH'] = os.pathsep.join(
+            path for path in (str(self.source), environment.get('PYTHONPATH')) if path)
+        return {'command': [sys.executable, '-m', 'src.management', '--data-dir', str(data_dir),
+                            '--version', self.manifest['version']],
+                'cwd': str(self.source), 'env': environment}
+
     def run(self, task_id, context):
-        if task_id != 'auto-combat':
-            raise KeyError(f'Unknown native Wuthering Waves task: {task_id}')
-        source = (self.root / self.manifest['source_root']).resolve()
-        sys.path.insert(0, str(source))
+        return self._run(task_id, context, session=False)
+
+    def run_session(self, task_id, context):
+        return self._run(task_id, context, session=True)
+
+    def _run(self, task_id, context, *, session):
+        definition = self._definition(task_id)
+        self._bind_source()
         from src.runtime.native_logging import configure_logging
         from src.runtime.native_combat_host import NativeCombatHost
         from src.combat.settings import COMBAT_GLOBAL_DEFAULTS, TEMPLATE_MATCHING_DEFAULTS
@@ -33,11 +60,27 @@ class WutheringWavesNativePackage:
                 from onnxocr.onnx_paddleocr import ONNXPaddleOcr
                 self.engine = ONNXPaddleOcr(use_angle_cls=False, use_npu=False, use_openvino=True)
             host = NativeCombatHost(
-                context, coco_path=source / 'assets/coco_annotations.json',
+                context, coco_path=self.source / 'assets/coco_annotations.json',
                 global_options=COMBAT_GLOBAL_DEFAULTS, ocr_engine=self.engine,
+                ocr_config={'default': {'lib': 'onnxocr'}},
                 template_matching=TEMPLATE_MATCHING_DEFAULTS, native=True,
+                window=getattr(context.device, 'window', None),
+                task_entry=definition['module'] + ':' + definition['class'],
+                registered_tasks=tuple(task['module'] + ':' + task['class']
+                                       for task in self.manifest['tasks']),
+                task_requirements={task['id']: frozenset(task['required_capabilities'])
+                                   for task in self.manifest['tasks']},
                 device_identity=type(context.device).__name__)
-            return host.run_service()
+            if session:
+                return host.run_session(task_id)
+            if definition['kind'] == 'service':
+                return host.run_service()
+            result = host.run_once()
+            details = {'info': dict(host.task.info)}
+            business_result = result if isinstance(result, dict) else getattr(host.task, 'last_result', None)
+            if isinstance(business_result, dict):
+                details['business_result'] = business_result
+            return details
         finally:
             os.chdir(previous_cwd)
 

@@ -1,5 +1,5 @@
 import re
-from ok import TriggerTask, Logger
+from src.runtime.combat_api import TriggerTask, Logger
 from src.task.BaseWWTask import BaseWWTask
 
 logger = Logger.get_logger(__name__)

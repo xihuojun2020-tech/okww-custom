@@ -101,6 +101,43 @@ def _flatten(value: Mapping[str, Any], prefix: str) -> dict[str, Any]:
     return result
 
 
+def new_account_payload(task_template, *, display_name, phone, nickname,
+                        game_feature_code="", alias_enabled=False, alias_text=""):
+    """Validate identity fields shared by first setup and later profile creation."""
+    label = str(display_name or "").strip().upper()
+    full_phone = re.sub(r"\s+", "", str(phone or ""))
+    nickname = str(nickname or "").strip()
+    feature_code = str(game_feature_code or "").strip()
+    alias = str(alias_text or "").strip()
+    from .account_slots import SLOT_KEY
+    if not re.fullmatch(r"[AB]([1-9]|10)", label):
+        raise AccountConfigEditorError("请选择固定位置 A1～A10 或 B1～B10")
+    if not re.fullmatch(r"1[3-9]\d{9}", full_phone):
+        raise AccountConfigEditorError("完整手机号格式无效")
+    if not nickname:
+        raise AccountConfigEditorError("游戏昵称不能为空")
+    if alias_enabled and not alias:
+        raise AccountConfigEditorError("启用备用识别名称后必须填写具体名称")
+    tasks = copy.deepcopy(dict(task_template))
+    # A shared template may opt in, but newly created accounts always start closed.
+    tasks['Garden Execution Mode'] = 'closed'
+    from src.recording_policy import RECORDING_PAGES
+    tasks['Record Pages'] = list(RECORDING_PAGES)
+    tasks[_ALIAS_ENABLE] = "使用" if alias_enabled else "无"
+    tasks[_ALIAS_TEXT] = alias
+    account = {
+        "display_name": label,
+        "phone": full_phone,
+        "masked_phone": masked_phone(full_phone),
+        "nickname": nickname,
+        "alternate_login_name": alias if alias_enabled else "",
+        "game_feature_code": feature_code,
+        "account_aliases": [],
+        'extensions': {SLOT_KEY: {'sequence': '序列1' if label[0] == 'A' else '序列2', 'slot': label}},
+    }
+    return account, tasks
+
+
 class AccountConfigEditor:
     """Draft, preview, confirm, backup, then CAS-publish one profile."""
 
@@ -180,40 +217,13 @@ class AccountConfigEditor:
     def create_profile(self, template: Any, *, display_name: str, phone: str, nickname: str,
                        game_feature_code: str = "", alias_enabled: bool = False,
                        alias_text: str = "", sequence_ids: tuple[str, ...] = ()) -> Any:
-        label = str(display_name or "").strip().upper()
-        full_phone = re.sub(r"\s+", "", str(phone or ""))
-        nickname = str(nickname or "").strip()
-        feature_code = str(game_feature_code or "").strip()
-        alias = str(alias_text or "").strip()
-        from .account_slots import account_slot, SLOT_KEY
-        if not re.fullmatch(r"[AB]([1-9]|10)", label):
-            raise AccountConfigEditorError("请选择固定位置 A1～A10 或 B1～B10")
-        if any((assignment := account_slot(record.account)) and assignment['slot'] == label
+        account, tasks = new_account_payload(
+            template.tasks, display_name=display_name, phone=phone, nickname=nickname,
+            game_feature_code=game_feature_code, alias_enabled=alias_enabled, alias_text=alias_text)
+        from .account_slots import account_slot
+        if any((assignment := account_slot(record.account)) and assignment['slot'] == account['display_name']
                for record in self.repository.list_profiles()):
             raise AccountConfigEditorError('账号编号已存在')
-        if not re.fullmatch(r"1[3-9]\d{9}", full_phone):
-            raise AccountConfigEditorError("完整手机号格式无效")
-        if not nickname:
-            raise AccountConfigEditorError("游戏昵称不能为空")
-        if alias_enabled and not alias:
-            raise AccountConfigEditorError("启用备用识别名称后必须填写具体名称")
-        tasks = copy.deepcopy(dict(template.tasks))
-        # A shared template may opt in, but newly created accounts always start closed.
-        tasks['Garden Execution Mode'] = 'closed'
-        from src.recording_policy import RECORDING_PAGES
-        tasks['Record Pages'] = list(RECORDING_PAGES)
-        tasks[_ALIAS_ENABLE] = "使用" if alias_enabled else "无"
-        tasks[_ALIAS_TEXT] = alias
-        account = {
-            "display_name": label,
-            "phone": full_phone,
-            "masked_phone": masked_phone(full_phone),
-            "nickname": nickname,
-            "alternate_login_name": alias if alias_enabled else "",
-            "game_feature_code": feature_code,
-            "account_aliases": [],
-            'extensions': {SLOT_KEY: {'sequence': '序列1' if label[0] == 'A' else '序列2', 'slot': label}},
-        }
         return self.repository.create_profile(
             account, tasks, sequence_ids=tuple(sequence_ids),
             expected_revision=str(template.revision),
@@ -233,4 +243,4 @@ class AccountConfigEditor:
 
 __all__ = ["AccountConfigEditor", "AccountConfigEditorError", "AccountLabelMismatch",
            "DiffEntry", "LockedProfileField", "ProfileDiff", "ProfileDraft", "ProfileEditScope",
-           "LOCKED_IDENTITY_FIELDS", "sanitize_error"]
+           "LOCKED_IDENTITY_FIELDS", "sanitize_error", "new_account_payload"]

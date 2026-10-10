@@ -1,7 +1,7 @@
 import re
 import time
 
-from ok import Logger
+from src.runtime.combat_api import Logger
 
 from src.task.BaseWWTask import BaseWWTask
 from src.vision.preprocess import convert_bw, convert_dialog_icon

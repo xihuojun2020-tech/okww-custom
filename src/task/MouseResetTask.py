@@ -1,8 +1,6 @@
 import math
 
-import win32api
-
-from ok import TriggerTask, Logger
+from src.runtime.combat_api import TriggerTask, Logger, is_native
 
 logger = Logger.get_logger(__name__)
 
@@ -13,6 +11,8 @@ class MouseResetTask(TriggerTask):
         super().__init__(*args, **kwargs)
         self.default_config = {'_enabled': True}
         self.trigger_interval = 10
+        if is_native():
+            self.trigger_interval = .05
         self.name = "🖱️ Prevent Wuthering Waves from moving the mouse"
         self.description = "Turn on if you mouse jumps around"
         self.mouse_pos = None
@@ -25,13 +25,31 @@ class MouseResetTask(TriggerTask):
     def run(self):
         if not self.enabled or self.is_browser():
             return
+        if is_native():
+            return self._native_mouse_reset()
         self.post_mouse_reset(0.01)
+
+    def _native_mouse_reset(self):
+        device = self.executor.context.device
+        current_position = device.get_cursor_pos()
+        if self.mouse_pos and self.hwnd and self.hwnd.exists and not self.hwnd.visible:
+            distance = math.dist(current_position, self.mouse_pos)
+            if distance > 200:
+                self.next_frame()
+                center_pos = device.client_to_screen(self.width_of_screen(.5), self.height_of_screen(.5))
+                if math.dist(current_position, center_pos) < 50:
+                    device.set_cursor_pos(self.mouse_pos)
+                    self.trigger_interval = 1
+                    return
+        self.mouse_pos = current_position
+        self.trigger_interval = .05
 
     def post_mouse_reset(self, delay):
         if self.enabled:
             self.handler.post(self.mouse_reset, delay, remove_existing=True)
 
     def mouse_reset(self):
+        import win32api
         if not self.enabled or self.is_browser():
             return
         try:

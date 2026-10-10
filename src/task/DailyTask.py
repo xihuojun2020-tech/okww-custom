@@ -9,17 +9,11 @@ from contextlib import contextmanager
 from src.daily_timing import record_daily_duration
 from datetime import datetime, timedelta, timezone
 
-from PySide6.QtCore import QThread
-from PySide6.QtWidgets import QApplication
-
-from ok import Logger, TaskDisabledException
-from ok.task.exceptions import FinishedException
-from ok.util.file import get_relative_path, read_json_file, write_json_file
-from src.task.ForgeryTask import ForgeryTask
+from src.runtime.combat_api import Logger, TaskDisabledException, FinishedException, is_native
+from src.runtime.account_task_support import (get_relative_path, read_json_file,
+                                              write_json_file, emit_config_changed)
 from src.task.MaterialPlannerTask import MaterialPlannerTask, MATERIAL_PLANNER
 from src.task.world_boss_material_plan import MATERIAL_TARGETS, material_plan
-from src.task.GardenTask import GardenTask
-from src.task.WeeklyBossTask import WeeklyBossTask
 from src.task.weekly_boss import (WEEKLY_TARGET, WEEKLY_DISABLED, WEEKLY_BOSSES, WEEKLY_AUTO,
                                 WEEKLY_MONDAY, WEEKLY_SUNDAY, weekly_check_window,
                                 weekly_account_plan, weekly_account_check_due,
@@ -27,8 +21,6 @@ from src.task.weekly_boss import (WEEKLY_TARGET, WEEKLY_DISABLED, WEEKLY_BOSSES,
 from src.task.MergeEchoTask import MergeEchoTask
 from src.task.NightmareNestTask import (FARM_NIGHTMARE_SETTLEMENTS, FARM_TACET_DISCORD_NESTS,
                                         NightmareNestTask)
-from src.task.TacetTask import TacetTask
-from src.task.SimulationTask import SimulationTask
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.BaseCombatTask import BaseCombatTask
 from src.task.BaseWWTask import BaseWWTask
@@ -360,11 +352,15 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         try:
             result = super().after_init(*args, **kwargs)
             if self.config is not None:
+                if is_native():
+                    self.config.on_change = self._config_changed
                 self.config[MERGE_ECHO_ON_SUNDAY] = False
                 self._sync_sequence_options()
             return result
         except Exception as e:
             self.log_error('after_init 同步序列选项失败', e)
+            if is_native():
+                raise
             return None
 
     @record_daily_duration
@@ -636,6 +632,9 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         return self._readonly_profile_config()
 
     def _run_profile_stamina(self, config, *, activity_ready, used_stamina):
+        from src.task.ForgeryTask import ForgeryTask
+        from src.task.TacetTask import TacetTask
+        from src.task.SimulationTask import SimulationTask
         from src.task.farming_task_queue import FARMING_TASKS
         if FARMING_TASKS in config:
             from src.task.farming_task_scheduler import run_stamina_queue
@@ -1481,6 +1480,12 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         injected = getattr(self, 'account_bundle_service', None)
         if injected is not None:
             return injected
+        if is_native():
+            from src.account_config_bundle import AccountConfigBundleService
+            from src.runtime.account_task_support import data_root
+            return AccountConfigBundleService(
+                data_root(), integrity_service=self.integrity_service,
+                transaction_snapshot_hook=self._transaction_snapshot_hook)
         for module_name in ('src.account_config_bundle', 'src.account_bundle',
                             'src.account_bundle_service', 'src.services.account_bundle'):
             try:
@@ -1794,13 +1799,20 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                     try:
                         self.config[PROFILE_SEQUENCE] = seq
                     except Exception:
+                        if is_native():
+                            raise
                         pass
                 self.config_type[DAILY_PROFILE]['options'] = self.get_profile_names(seq or None)
         except Exception as e:
             self.log_error('同步序列选项失败', e)
+            if is_native():
+                raise
 
     def _update_dropdown_items(self, key, options):
         """直接更新任务卡片中指定下拉控件的选项（单控件更新，不重建——避免白屏）。"""
+        if is_native():
+            emit_config_changed(self)
+            return
         try:
             from ok import og
             if not og.main_window or not hasattr(og.main_window, 'onetime_tab'):
@@ -1868,7 +1880,12 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         注意：导入/新建方案后，新方案名要下次进入任务页/重启后才出现在下拉框中
         （重建任务页有白屏风险，故不采用）。
         """
+        if is_native():
+            emit_config_changed(self)
+            return True
         try:
+            from PySide6.QtCore import QThread
+            from PySide6.QtWidgets import QApplication
             app = QApplication.instance()
             if app is not None and QThread.currentThread() is not app.thread():
                 return False
@@ -1881,6 +1898,11 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         except Exception as e:
             self.log_error('刷新界面失败', e)
         return False
+
+    def _config_changed(self, key, value):
+        if key in (DAILY_PROFILE, PROFILE_SEQUENCE):
+            self._sync_sequence_options()
+            emit_config_changed(self)
 
     def validate_config(self, key, value):
         """当 Daily Profile 下拉框变化时，自动保存旧方案并加载新方案。
@@ -1903,15 +1925,16 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                 finally:
                     self._switching_profile = False
                 # 延迟刷新：等 __setitem__ 写入完成、事件循环稳定后再刷新控件显示
-                from PySide6.QtCore import QTimer
+                if not is_native():
+                    from PySide6.QtCore import QTimer
 
-                def _delayed_refresh():
-                    try:
-                        self._refresh_gui()
-                    except Exception as e:
-                        self.log_error('refresh daily profiles ui failed', e)
+                    def _delayed_refresh():
+                        try:
+                            self._refresh_gui()
+                        except Exception as e:
+                            self.log_error('refresh daily profiles ui failed', e)
 
-                QTimer.singleShot(0, _delayed_refresh)
+                    QTimer.singleShot(0, _delayed_refresh)
         elif key == PROFILE_SEQUENCE and not self._switching_profile:
             # 切换序列 → 「账号配置」下拉随之只显示该序列的方案（即时更新单控件，不重建）
             seq = value or ''
@@ -1932,6 +1955,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         from src.game_period import beijing_now
 
     def check_weekly_boss(self):
+        from src.task.WeeklyBossTask import WeeklyBossTask
         from src.task.farming_task_queue import FARMING_TASKS
         from src.task.weekly_boss_progress import confirmed_weekly_claims
         identity = self._active_profile_id()
@@ -2107,6 +2131,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def run_weekly_garden_only(self):
         """Run only the garden flow and persist its verified shared completion."""
+        from src.task.GardenTask import GardenTask
         from src.task.weekly_garden import (GARDEN_CLOSED, GardenRunResult,
                                             garden_completed_this_week, garden_week_key)
 
@@ -2184,6 +2209,12 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _refresh_weekly_garden_consumers(self):
         """Refresh visible weekly cards after shared completion changes, without changing run targets."""
+        if is_native():
+            for task in self.executor.tasks_by_class.values():
+                if type(task).__name__ == 'MultiAccountWeeklyGardenTask':
+                    task._refresh_garden_status()
+                    emit_config_changed(task)
+            return
         try:
             from ok import og
             executor = getattr(og, 'executor', None)
@@ -2279,6 +2310,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                     self.log_info(f'监控录像已保存（{len(recorded_pages)} 页）', notify=True)
 
     def _capture_progress_page(self, page, frame):
+        from src.task.GardenTask import GardenTask
         from src.evidence.service import record_task_evidence
         projects = {'任务页': 'daily_activity', '每周乐园': 'weekly_garden',
                     '战令': 'battle_pass', '残像聚落': 'nightmare_nest'}
@@ -2323,6 +2355,7 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
 
     def _open_record_page(self, page):
         """打开指定页面并停留，返回是否成功。"""
+        from src.task.GardenTask import GardenTask
         if page == '任务页':
             self._open_daily_page()
             return True
@@ -2580,9 +2613,8 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         self.ensure_main(time_out=10)
 
 
-from ok import run_task
-from config import config
-
 if __name__ == "__main__":
+    from ok import run_task
+    from config import config
     initialize_account_runtime()
     run_task(config, task=DailyTask, debug=True)

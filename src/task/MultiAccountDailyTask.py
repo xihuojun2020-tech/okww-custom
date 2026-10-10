@@ -23,8 +23,9 @@ import time
 from contextlib import contextmanager, nullcontext
 from src.daily_timing import record_daily_duration
 
-from ok import Box, Logger, TaskDisabledException
-from ok.util.file import get_relative_path, read_json_file, write_json_file
+from src.runtime.combat_api import Box, Logger, TaskDisabledException, is_native
+from src.runtime.account_task_support import (get_relative_path, read_json_file,
+                                              write_json_file, emit_config_changed)
 from src.task.DailyTask import DailyTask, DAILY_PROFILE, LOGOUT_AFTER_DAILY as LOGOUT_AFTER_DAILY_KEY
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.BaseCombatTask import BaseCombatTask
@@ -252,12 +253,18 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         """配置加载后刷新依赖当前配置的序列/账号选项。"""
         result = super().after_init(*args, **kwargs)
         if getattr(self, 'config', None) is not None:
+            if is_native():
+                self.config.on_change = self._config_changed
             self.refresh_account_options()
         return result
 
+    def _config_changed(self, key, value):
+        if key == CURRENT_SEQUENCE:
+            self.refresh_account_options()
+
     def validate_config(self, key, value):
         result = super().validate_config(key, value)
-        if not result and key == CURRENT_SEQUENCE:
+        if not result and key == CURRENT_SEQUENCE and not is_native():
             from PySide6.QtCore import QTimer
             # Validation precedes Config's write; refresh after the value is stored.
             QTimer.singleShot(0, self.refresh_account_options)
@@ -510,6 +517,9 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 self.config_type[CURRENT_SEQUENCE]['sub_configs'] = {
                     seq: [CURRENT_SEQUENCE_MEMBERS] for seq in seq_names
                 }
+            if is_native():
+                emit_config_changed(self)
+                return
             # 更新「当前序列」下拉控件选项（单控件更新，不重建）
             from ok import og
             if og.main_window and hasattr(og.main_window, 'onetime_tab'):
@@ -525,6 +535,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                             combo.blockSignals(False)
                             return
         except Exception:
+            if is_native():
+                raise
             pass
 
     def refresh_account_options(self):
@@ -562,6 +574,10 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             current_account = ''
             self.config[CURRENT_ACCOUNT] = ''
         self.config_type[CURRENT_ACCOUNT]['options'] = ['', UNREGISTERED_ACCOUNT] + account_options
+        if is_native():
+            self._account_refresh_pending = False
+            emit_config_changed(self)
+            return True
         try:
             from ok import og
             main_window = getattr(og, 'main_window', None)
@@ -1334,8 +1350,13 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             config = getattr(self, 'config', None)
             if isinstance(config, dict):
                 blur_area = config.get('blur_area')
+            session_arguments = {}
+            if is_native():
+                from src.runtime.account_task_support import data_root, blur_area as identity_area
+                session_arguments['root'] = data_root() / 'okww监控室' / 'account_switch_failures'
+                blur_area = identity_area
             self._account_switch_evidence = AccountSwitchEvidenceSession(
-                target, blur_area=blur_area,
+                target, blur_area=blur_area, **session_arguments,
             )
             self._account_switch_attempt = None
             self._account_switch_evidence.record_stage('start')
@@ -3778,9 +3799,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         return None
 
 
-from ok import run_task
-from config import config
-
 if __name__ == "__main__":
+    from ok import run_task
+    from config import config
     initialize_account_runtime()
     run_task(config, task=MultiAccountDailyTask, debug=True)

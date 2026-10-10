@@ -43,7 +43,8 @@ def _default_root() -> Path:
 
 
 def initialize_account_runtime(root=None, program_version=None, *,
-                               install_start_guard=True, controller_cls=None) -> AccountRuntime:
+                               install_start_guard=True, controller_cls=None,
+                               backup_dir=None) -> AccountRuntime:
     """Initialize once, recovering publication state before integrity checks."""
     global _RUNTIME
     resolved = Path(root or _default_root()).resolve()
@@ -58,7 +59,8 @@ def initialize_account_runtime(root=None, program_version=None, *,
         install_redaction_filters()
         from src.config_backup import ConfigBackupService
         from src.storage import get_config_backup_dir
-        ConfigBackupService(resolved / 'configs', get_config_backup_dir(resolved))
+        ConfigBackupService(resolved / 'configs', backup_dir if backup_dir is not None
+                            else get_config_backup_dir(resolved))
         from src.account_config_bundle import AccountConfigBundleService
         # Recover legacy/runtime writes before either mirrors or integrity checks.
         AccountConfigBundleService(resolved).recover_incomplete_transactions()
@@ -133,6 +135,21 @@ def get_account_runtime() -> AccountRuntime | None:
     return _RUNTIME
 
 
+def prepare_native_account_runtime(data_dir, program_version) -> AccountRuntime:
+    """Run the existing account preflight before a native device is created."""
+    from src.runtime import combat_api
+    from src.storage import resolve_config_backup_dir
+    from src.evidence.service import get_evidence_service
+    root = Path(data_dir).resolve()
+    combat_api.configure(native=True, data_dir=root)
+    runtime = initialize_account_runtime(
+        root, program_version, install_start_guard=False,
+        backup_dir=resolve_config_backup_dir(root))
+    runtime.require_ready()
+    get_evidence_service(root=root / 'okww监控室' / 'CompletionEvidence')
+    return runtime
+
+
 def require_account_runtime_ready() -> AccountRuntime:
     runtime = _RUNTIME
     if runtime is None:
@@ -166,6 +183,7 @@ def _reset_account_runtime_for_tests() -> None:
 __all__ = [
     "AccountRuntime",
     "get_account_runtime",
+    "prepare_native_account_runtime",
     "initialize_account_runtime",
     "require_account_runtime_for_task",
     "require_account_runtime_ready",

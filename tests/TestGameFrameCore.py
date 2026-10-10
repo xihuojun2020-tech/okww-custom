@@ -93,6 +93,17 @@ class TestGameFrameCore(unittest.TestCase):
         self.run_package()
         self.assertEqual(len(self.store.history()), 2)
 
+    def test_returned_success_cannot_override_explicit_stop(self):
+        class CatchesStop:
+            def run(self, task_id, context):
+                context.act('key_down', key='W')
+                context.stop.set()
+                return {'status': 'success'}
+        with self.assertRaises(Cancelled):
+            self.run_package(CatchesStop())
+        self.assertEqual(self.store.history()[0]['status'], 'cancelled')
+        self.assertFalse(self.device.held)
+
     def test_cleanup_failure_is_failed_and_does_not_lock_next_run(self):
         class BadCleanup(CountingReplay):
             def release_all(self):
@@ -130,7 +141,7 @@ class TestGameFrameCore(unittest.TestCase):
                                      self.root, stop=stop)
         self.assertEqual(service.attempts, 2)
         self.assertTrue(self.store.enabled(self.manifest.id, 'find-template'))
-        self.assertEqual([r['status'] for r in self.store.history()], ['success', 'failed'])
+        self.assertEqual([r['status'] for r in self.store.history()], ['cancelled', 'failed'])
 
     def test_nested_task_cannot_take_input_owner(self):
         outer = self
@@ -171,7 +182,7 @@ class TestGameFrameCore(unittest.TestCase):
                                  self.root, stop=stop)
         self.assertEqual(service.attempts, 3)
         self.assertTrue(self.store.enabled(self.manifest.id, 'find-template'))
-        self.assertEqual([r['status'] for r in self.store.history()], ['success', 'failed', 'failed'])
+        self.assertEqual([r['status'] for r in self.store.history()], ['cancelled', 'failed', 'failed'])
 
     def test_disabled_service_is_not_forcibly_enabled(self):
         class MustNotRun:

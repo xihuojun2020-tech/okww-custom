@@ -171,9 +171,9 @@ class BaseWWTask(BaseTask):
             executor._ui_transition_deadline = old_deadline
 
     def swipe(self, from_x, from_y, to_x, to_y, duration=.5, after_sleep=.1, settle_time=0):
-        from ok import PostMessageInteraction
+        from src.runtime.combat_api import is_post_message_interaction
         interaction = self.executor.interaction
-        if not isinstance(interaction, PostMessageInteraction):
+        if not is_post_message_interaction(interaction):
             return super().swipe(from_x, from_y, to_x, to_y, duration,
                                  after_sleep=after_sleep, settle_time=settle_time)
         from src.runtime.post_message_drag import drag

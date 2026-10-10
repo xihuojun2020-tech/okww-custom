@@ -2,7 +2,7 @@
 import re
 import time
 
-from ok import TaskDisabledException
+from src.runtime.combat_api import TaskDisabledException
 
 from src.char.BaseChar import BaseChar
 from src.char.TrialGenericChar import TrialGenericChar

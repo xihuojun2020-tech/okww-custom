@@ -3,7 +3,13 @@ import re
 import time
 import cv2
 import numpy as np
-from ok.feature.FeatureSet import FeatureSet
+from pathlib import Path
+from src.runtime.combat_api import is_native
+
+if is_native():
+    from src.vision.features import FeatureSet
+else:
+    from ok.feature.FeatureSet import FeatureSet
 
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.BaseCombatTask import BaseCombatTask, CombatStateUnknown, NotInCombatException, CharDeadException
@@ -50,7 +56,8 @@ class AutoSeaRuinsTask(SeaRuinsRecovery, WWOneTimeTask, BaseCombatTask):
             self._character_descriptors = []
             # Do not upscale the shared 720p HUD thumbnail: its lost detail can
             # turn Shorekeeper into Zani. Keep this reference cache sea-local.
-            features = FeatureSet(False, 'assets/coco_annotations.json', 0, 0)
+            features = FeatureSet(False, str(Path(__file__).resolve().parents[2] /
+                                             'assets/coco_annotations.json'), 0, 0)
             reference_frame = np.zeros((1440, 2560, 3), np.uint8)
             for name in char_names:
                 feature = features.get_feature_by_name(reference_frame, name)

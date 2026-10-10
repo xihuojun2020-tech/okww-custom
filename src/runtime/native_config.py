@@ -33,6 +33,7 @@ class Config(dict):
         self.config_file = folder / f'{name}.json'
         self.default = default
         self.validator = validator
+        self.on_change = None
         if self.config_file.exists():
             with self.config_file.open('r', encoding='utf-8') as stream:
                 current = json.load(stream)
@@ -90,6 +91,24 @@ class Config(dict):
         if key not in self or value != self[key]:
             dict.__setitem__(self, key, value)
             self.save_file()
+            if self.on_change is not None:
+                self.on_change(key, value)
+
+    def update(self, *args, **kwargs):
+        incoming = dict(*args, **kwargs)
+        if self.validator is not None:
+            for key, value in incoming.items():
+                valid, message = self.validator(key, value)
+                if not valid:
+                    raise ValueError(message)
+        changed = {key: value for key, value in incoming.items()
+                   if key not in self or value != self[key]}
+        if changed:
+            dict.update(self, changed)
+            self.save_file()
+            if self.on_change is not None:
+                for key, value in changed.items():
+                    self.on_change(key, value)
 
     def has_user_config(self):
         return not all(key.startswith('_') for key in self)

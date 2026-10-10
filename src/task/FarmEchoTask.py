@@ -5,11 +5,11 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ok import Logger, TaskDisabledException
+from src.runtime.combat_api import Logger, TaskDisabledException
 from src.vision.color import color_range_to_bound
 from src.task.BaseCombatTask import BaseCombatTask, white_color
 from src.task.WWOneTimeTask import WWOneTimeTask
-from ok import find_boxes_by_name
+from src.runtime.combat_api import find_boxes_by_name
 
 logger = Logger.get_logger(__name__)
 
@@ -701,8 +701,7 @@ class FarmEchoTask(WWOneTimeTask, BaseCombatTask):
             logger.info(f"boss_string is {find_boxes_by_name(texts, [re.compile(r'(?i)^L[Vv].*')])}")
 
 
-from ok import run_task
-from config import config
-
 if __name__ == "__main__":
+    from ok import run_task
+    from config import config
     run_task(config, task=FarmEchoTask, debug=True)

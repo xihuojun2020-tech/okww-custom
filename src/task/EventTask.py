@@ -6,9 +6,7 @@ import time
 
 import cv2
 import numpy as np
-from qfluentwidgets import FluentIcon as Icon
-
-from ok import Logger, TaskDisabledException
+from src.runtime.combat_api import Logger, TaskDisabledException, is_native
 from src.task.BaseWWTask import BaseWWTask
 from src.task.WWOneTimeTask import WWOneTimeTask
 
@@ -97,7 +95,9 @@ class EventTask(WWOneTimeTask, BaseWWTask):
             "由游戏自带自动战斗清理敌人。"
         )
         self.group_name = "常驻活动"
-        self.group_icon = Icon.GAME
+        if not is_native():
+            from qfluentwidgets import FluentIcon
+            self.group_icon = FluentIcon.GAME
         default_config = {
             # 绕圈
             'Circle Side Time': 0.8,

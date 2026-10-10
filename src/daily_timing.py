@@ -6,7 +6,7 @@ import time
 from functools import wraps
 from uuid import uuid4
 
-from ok import TaskDisabledException
+from src.runtime.combat_api import TaskDisabledException
 from src.game_period import beijing_now, game_day_key
 
 logger = logging.getLogger(__name__)

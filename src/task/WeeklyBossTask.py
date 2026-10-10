@@ -2,7 +2,7 @@
 import re
 import time
 
-from ok import TaskDisabledException
+from src.runtime.combat_api import TaskDisabledException
 from src.task.BaseCombatTask import (
     BaseCombatTask, CharDeadException, CombatStateUnknown, NotInCombatException,
 )

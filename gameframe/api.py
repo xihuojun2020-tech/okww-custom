@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
+from queue import Queue
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Protocol
@@ -46,10 +47,28 @@ class TaskContext:
     stop: threading.Event
     run_id: str
     events: Any
+    pause: threading.Event = field(default_factory=threading.Event)
+    requests: Queue = field(default_factory=Queue)
+    _pause_released: bool = field(default=False, init=False)
+
+    def observe_pause(self) -> bool:
+        """Release held input on the execution thread when it observes a pause."""
+        paused = self.pause.is_set()
+        if paused and not self._pause_released:
+            self.device.release_all()
+            self._pause_released = True
+            self.emit('task-paused', paused=True)
+        elif not paused and self._pause_released:
+            self._pause_released = False
+            self.emit('task-paused', paused=False)
+        return paused
 
     def check_stop(self) -> None:
         if self.stop.is_set():
             raise Cancelled('Task stopped')
+        while self.observe_pause():
+            if self.stop.wait(.1):
+                raise Cancelled('Task stopped while paused')
 
     def frame(self, timeout: float = 1.0) -> Frame:
         self.check_stop()
@@ -63,8 +82,14 @@ class TaskContext:
         self.device.submit(Action(kind, values))
 
     def sleep(self, seconds: float) -> None:
-        if self.stop.wait(seconds):
-            raise Cancelled('Task stopped')
+        deadline = time.monotonic() + seconds
+        while True:
+            self.check_stop()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            if self.stop.wait(min(remaining, .1)):
+                raise Cancelled('Task stopped')
 
     def emit(self, kind: str, **values: Any) -> None:
         self.events({'event': kind, 'run_id': self.run_id,

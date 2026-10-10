@@ -81,14 +81,17 @@ _service = None
 _service_lock = threading.Lock()
 
 
-def get_evidence_service():
+def get_evidence_service(*, root=None):
     global _service
     with _service_lock:
         if _service is None:
-            root = Path(os.environ.get('LOCALAPPDATA', str(Path.home() / '.local/share'))) / 'OKWW' / 'CompletionEvidence'
-            from src.runtime.diagnostic_storage import storage_path
-            root = storage_path('CompletionEvidence', root)
+            if root is None:
+                root = Path(os.environ.get('LOCALAPPDATA', str(Path.home() / '.local/share'))) / 'OKWW' / 'CompletionEvidence'
+                from src.runtime.diagnostic_storage import storage_path
+                root = storage_path('CompletionEvidence', root)
             _service = EvidenceService(EvidenceRepository(root))
+        elif root is not None and _service.repository.root != Path(root).resolve():
+            raise RuntimeError('Completion evidence already belongs to another data directory')
         return _service
 
 

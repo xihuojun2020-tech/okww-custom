@@ -9,7 +9,7 @@ import time
 import win32gui
 import win32process
 
-from ok import PostMessageInteraction
+from src.runtime.combat_api import is_native, is_post_message_interaction
 
 from src.activity_catalog import LEGACY_ACTIVITIES as ACTIVITIES
 from src.runtime.game_runtime_errors import GameProcessLost
@@ -50,13 +50,15 @@ class ResonanceSimulationTask(BaseWWTask):
         self._toggle_vk = self.TOGGLE_KEYS[self._toggle_key]
 
     def _foreground(self):
+        if is_native():
+            return self.executor.context.device.is_foreground()
         window = self.hwnd
         if window is None or not window.exists:
             raise GameProcessLost('游戏窗口已断开，停止群声共振任务')
         return win32gui.GetForegroundWindow() in (window.hwnd, getattr(window, 'top_hwnd', None))
 
     def _input_context_allowed(self):
-        return self._foreground() or isinstance(self.executor.interaction, PostMessageInteraction)
+        return self._foreground() or is_post_message_interaction(self.executor.interaction)
 
     def _input_ready(self):
         executor = self.executor
@@ -71,10 +73,16 @@ class ResonanceSimulationTask(BaseWWTask):
                 return True
         except GameProcessLost:
             return False
+        if is_native():
+            foreground_pid = self.executor.context.device.foreground_pid()
+            launcher_pid = int(os.environ.get('GAMEFRAME_CONTROLLER_PID', '0'))
+            return foreground_pid in {os.getpid(), launcher_pid} and foreground_pid != 0
         foreground = win32gui.GetForegroundWindow()
         return bool(foreground and win32process.GetWindowThreadProcessId(foreground)[1] == os.getpid())
 
     def _hotkey_pressed(self):
+        if is_native():
+            return self.executor.context.device.hotkey_pressed(self._toggle_vk)
         return bool(ctypes.windll.user32.GetAsyncKeyState(self._toggle_vk) & 0x8000)
 
     def _watch_hotkey(self, stop, events):

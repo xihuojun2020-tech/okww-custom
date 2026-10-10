@@ -2,15 +2,15 @@
 
 独立的规则自动化框架：启动器负责游戏包和执行器生命周期；执行器在设备所在 Windows 会话内完成截图、识别、决策和输入。核心不导入 `ok` 或鸣潮业务。游戏包可以提供 Python 规则、素材和任务元数据。
 
-当前提供原生执行接口、离线帧后端、WGC 客户区截图与 SendInput、MuMu 用户 SDK 多触点、MuMu/雷电等通用 ADB 后端，以及完整鸣潮 **AGPL 兼容包**和**独立战斗包**。独立战斗包实际执行原角色轮转，无 ok-script/Qt 导入；日常、多账号、挑战和原界面仍由兼容包提供，继续按模块迁移。框架能够执行独立规则包，不表示修改图片即可自动支持另一个游戏的角色、镜头、地图和日常业务。
+当前提供原生执行接口、离线帧后端、WGC 客户区截图与 SendInput、MuMu 用户 SDK 多触点、MuMu/雷电等通用 ADB 后端，以及完整鸣潮 **AGPL 兼容包**和**独立规则包**。独立包登记原29个任务，执行器使用原业务算法和角色轮转，无 ok-script/Qt 导入；账号与完成记录管理由独立管理进程提供。原诊断上传、更新及其余管理控件继续由兼容包保留并逐项迁移。框架能够执行独立规则包，其他游戏仍需提供自己的角色、镜头、地图和日常规则。
 
 ## 安装和使用
 
 从独立 wheel 安装核心，界面和 Windows 捕获按需要安装可选依赖：
 
 ```powershell
-python -m pip install "gameframe-runtime[gui,windows] @ file:///C:/your/path/gameframe_runtime-1.97.65-py3-none-any.whl"
-gameframe install .\wuthering_waves-1.97.65.zip
+python -m pip install "gameframe-runtime[gui,windows] @ file:///C:/your/path/gameframe_runtime-1.97.66-py3-none-any.whl"
+gameframe install .\wuthering_waves_native-1.97.66.zip
 gameframe list
 gameframe gui
 ```
@@ -23,9 +23,9 @@ gameframe gui
 .\.venv\Scripts\python.exe -m gameframe gui --packages .\gamepacks
 ```
 
-GUI 支持安装 ZIP、选择任务、编辑原生任务 JSON、执行和停止，显示执行器原始输出及退出码。兼容鸣潮任务使用其完整生产配置与设备选择，具体业务完成由原程序的完成检查判断。退出码 0 只表示进程正常返回。
+GUI 支持安装 ZIP、选择任务、保存原生任务 JSON 与设备配置、执行、暂停/恢复、停止，显示执行器原始输出及退出码。支持会话的包在同一执行器中串行运行多个辅助服务和排队任务；前台任务独占输入，结束后继续后台服务。关闭某个服务使用 Disable selected service；Stop 结束执行器并保留服务偏好。兼容鸣潮任务使用其完整生产配置与设备选择，具体业务完成由原程序的完成检查判断。退出码 0 只表示进程正常返回。
 
-独立战斗包 `wuthering_waves_native-1.97.65.zip` 单独安装并按包内 `requirements.txt` 安装 OCR 依赖；它使用 GameFrame 设备和显式数据目录。ZIP 已在禁止旧框架导入的隔离进程中完成真实生产轮转与停止验收，当前只有自动战斗入口；它与完整兼容包的功能范围分别记录。
+独立规则包 `wuthering_waves_native-1.97.66.zip` 按包内 `requirements.txt` 安装执行依赖；管理窗口另需 `requirements-management.txt`。Manage gamepack 打开账号、序列、完整性检查、配置包及完成记录；全新安装须经明确表单/预览/确认建立首账号，或导入自己的配置包，任务入口不会创建空 master。ZIP 已完成禁止旧框架导入的实际生产轮转与停止验收，管理页也在安装载荷中打开并正常关闭；29项任务的代表性离线分支范围详见验收报告，不代表全部实战流程完成。
 
 默认安装与框架状态位于当前 Windows 用户的 `~/.gameframe`。Windows 用户由人手动切换；在各用户目录分别安装游戏包，可以保留各自的游戏包配置和账号组。源模式鸣潮包使用当前源码安装的数据路径；它不会自动复制或迁移私人账号配置。安装拒绝覆盖同 ID 的已有包，避免把更新当成重装而丢失包内配置。
 
@@ -51,6 +51,10 @@ GUI 支持安装 ZIP、选择任务、编辑原生任务 JSON、执行和停止�
 原生包在 `run(task_id, context)` 内用 `context.frame()`、`context.act()`、`context.sleep()` 和 `context.emit()`。设备只声明实际支持的能力；例如 MuMu 需要 `touch_down/move/up(contact=0..9,x,y)`，不把鼠标 click 假装为持续摇杆。Windows 支持虚拟键整数、ASCII 字母/数字，以及 space/tab/enter/esc/shift/ctrl/alt、左右修饰键、方向键和 F1–F24。
 
 停止通过受控 stdin 请求协作退出，任务在 finally 释放持有的输入。对不响应停止的自有执行器，控制器会强制结束其进程树；强制结束无法保证已挂起的原生调用执行清理，不能算正常停止或游戏业务成功。普通服务故障保留 enabled 意图，观察者输出失败也不终止战斗服务。
+
+Windows 可在现有 `hwnd` 上执行，或明确提供 `launch_command`（绝对程序路径及参数）和 `target_executable`（目标游戏绝对路径），省略 HWND 时按此命令启动。重绑只选择该启动进程家族中的唯一可见目标窗口，验证进程身份并重建 WGC；模糊匹配或无法记录启动家族会报错。设备启动的游戏进程有明确身份登记，强制结束执行器时保留这些进程；“Exit After Task”仅在任务成功收尾后结束选定游戏进程并退出启动器。
+
+游戏包声明 `supports_session` 后提供 `run_session(task_id, context)`，通过 `context.requests` 接收 `run-task` 和 `set-service`；包负责自身任务调度与能力检查，核心保留单一输入所有者。管理扩展声明 `management` 并提供 `management_command(data_dir)`，只在用户打开时启动独立进程。元数据发现与 ZIP 安装均不执行这些入口。
 
 ## 后台和商业化边界
 

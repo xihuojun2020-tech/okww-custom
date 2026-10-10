@@ -34,6 +34,10 @@ def resolve_config_backup_dir(root, *, warehouse_root='', legacy_backup_dir='') 
 
 def get_config_backup_dir(root=None) -> Path:
     """Shared settings adapter for startup, maintenance and task restore UI."""
+    from src.runtime.combat_api import is_native
+    if is_native():
+        from src.runtime.account_task_support import data_root
+        return resolve_config_backup_dir(root if root is not None else data_root())
     values = {}
     try:
         from ok import og
@@ -52,6 +56,10 @@ def get_config_backup_dir(root=None) -> Path:
 
 def get_ok_warehouse():
     """读取全局配置「数据仓库文件夹」，返回 ok仓库 路径（自动创建子目录）；未设置返回 None。"""
+    from src.runtime.combat_api import is_native
+    if is_native():
+        from src.runtime.account_task_support import data_root
+        return str(data_root())
     try:
         from ok import og
         global_config = og.executor.global_config.get_config('数据仓库文件夹')
@@ -73,10 +81,16 @@ def get_ok_warehouse():
 def get_warehouse_sub(sub):
     """返回 ok仓库 下的子目录路径（如 okww监控室）；未设置数据仓库返回 None。"""
     from src.runtime.diagnostic_storage import storage_path
-    repo = Path(__file__).resolve().parents[1]
+    from src.runtime.combat_api import is_native
+    native = is_native()
+    if native:
+        from src.runtime.account_task_support import data_root
+        repo = data_root()
+    else:
+        repo = Path(__file__).resolve().parents[1]
     kinds = {'okww监控室': 'recordings', '配置备份': 'backups', '账号数据': 'exports'}
-    if sub in kinds and (repo / 'configs/runtime_storage.json').is_file():
-        path = storage_path(kinds[sub], repo / sub)
+    if sub in kinds and (native or (repo / 'configs/runtime_storage.json').is_file()):
+        path = storage_path(kinds[sub], repo / sub, repo=repo)
         path.mkdir(parents=True, exist_ok=True)
         return str(path)
     wh = get_ok_warehouse()
