@@ -7,7 +7,8 @@ import numpy as np
 from src.char import CharFactory as factory
 from src.char.BaseChar import BaseChar
 from src.char.Hiyuki import Hiyuki
-from src.task.BaseCombatTask import BaseCombatTask, CombatStateUnknown
+from src.char.TrialGenericChar import TrialGenericChar
+from src.task.BaseCombatTask import BaseCombatTask
 
 
 class TestCharacterIdentityRecovery(unittest.TestCase):
@@ -81,12 +82,15 @@ class TestCharacterIdentityRecovery(unittest.TestCase):
         self.task.click.assert_not_called()
         self.task.send_key.assert_not_called()
 
-    def test_load_stale_captures_stop_with_evidence(self):
+    def test_load_stale_captures_use_unknown_generic_with_evidence(self):
         self.prepare_load()
         self.task.executor.next_frame.side_effect = None
-        with self.assertRaises(CombatStateUnknown):
-            BaseCombatTask.load_chars(self.task)
-        self.task.screenshot.assert_called_once()
+        self.assertTrue(BaseCombatTask.load_chars(self.task))
+        generic = self.task.chars[0]
+        self.assertIsInstance(generic, TrialGenericChar)
+        self.assertEqual((generic.char_name, generic.confidence), ('unknown', 0))
+        self.assertTrue(generic._identity_unconfirmed)
+        self.task.report_rotation_anomaly.assert_called_once_with('unconfirmed_identity', generic)
         self.old.reset_state.assert_not_called()
         self.task.click.assert_not_called()
         self.task.send_key.assert_not_called()
@@ -125,10 +129,12 @@ class TestCharacterIdentityRecovery(unittest.TestCase):
     def test_weak_or_ambiguous_replacements_cannot_enter_combat_as_old_char(self):
         self.prepare_load()
         self.candidate.confidence = .83
-        with self.assertRaises(CombatStateUnknown):
-            BaseCombatTask.load_chars(self.task)
-        self.assertIs(self.task.chars[0], self.old)
-        self.task.screenshot.assert_called_once()
+        self.assertTrue(BaseCombatTask.load_chars(self.task))
+        generic = self.task.chars[0]
+        self.assertIsInstance(generic, TrialGenericChar)
+        self.assertEqual(generic.char_name, 'unknown')
+        self.assertTrue(generic._identity_unconfirmed)
+        self.task.report_rotation_anomaly.assert_called_once_with('unconfirmed_identity', generic)
         self.assertIn('0.83', self.task.log_warning.call_args.args[0])
         self.old.reset_state.assert_not_called()
 

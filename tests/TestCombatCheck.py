@@ -250,6 +250,7 @@ class TestExpectedCombatEnd(unittest.TestCase):
         task._in_combat = False
         task.skip_combat_check = False
         task.find_one = lambda *args, **kwargs: None
+        task._local_revive_button = lambda: None
         task.wait_feature = lambda *args, **kwargs: (_ for _ in ()).throw(
             AssertionError('normal combat end must not wait for a revive dialog')
         )

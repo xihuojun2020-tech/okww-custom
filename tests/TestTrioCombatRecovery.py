@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 import numpy as np
 
 from src.char.BaseChar import BaseChar, CharType, SwitchPriority
+from src.char.TrialGenericChar import TrialGenericChar
 from src.char.Qingxiao import Qingxiao
 from src.char.Suisui import Suisui
 from src.char.Iuno import Iuno
@@ -12,7 +13,7 @@ from src.char.Denia import Denia
 from src.char.Mornye import Mornye
 from src.char.CharFactory import get_char_by_pos
 from src.Labels import Labels
-from src.combat.roster_context import roster_context
+from src.combat.roster_context import advance_roster_context, roster_context
 from src.combat.rotation_state import RotationState
 from src.task.BaseCombatTask import BaseCombatTask, CombatStateUnknown
 from src.task.DailyTask import DailyTask
@@ -40,6 +41,194 @@ def combat_task(executor=None):
 
 
 class TestTrioCombatRecovery(unittest.TestCase):
+    def load_unconfirmed_roster(self, task, slots=(1,)):
+        task._in_combat = True
+        task._refresh_battle_roster = Mock()
+        for index in slots:
+            unknown = BaseChar(task, index, char_name='unknown', confidence=0)
+            unknown._identity_unconfirmed = True
+            unknown._identity_evidence = (
+                (Labels.char_suisui, (*roster_context(task), (720, 1280), index)), 1, 1, 0)
+            unknown._identity_observation = ('unmatched', .7, .01, 0)
+            task.chars[index] = unknown
+        with patch('src.task.BaseCombatTask.get_char_by_pos', side_effect=lambda t,b,i,c,**kw: c), \
+                patch('src.runtime.diagnostic_lifecycle.record_combat_anomaly'):
+            self.assertTrue(task.load_chars(force_full_scan=True))
+
+    def test_one_unconfirmed_slot_uses_generic_actions_without_blocking_known_chars(self):
+        task = combat_task()
+        main, _, sub = task.chars
+        main.last_failed_rotation = 123
+        main.last_res = 456
+        task.in_team.return_value = (True, 1, 3)
+        self.load_unconfirmed_roster(task)
+        generic = task.chars[1]
+        self.assertIsInstance(generic, TrialGenericChar)
+        self.assertEqual((generic.char_name, generic.confidence), ('unknown', 0))
+        self.assertTrue(generic._identity_unconfirmed)
+        self.assertEqual(generic._identity_observation, ('unmatched', .7, .01, 0))
+        self.assertEqual(generic._identity_evidence,
+                         ((Labels.char_suisui, (*roster_context(task), (720, 1280), 1)), 1, 1, 0))
+        self.assertIs(task.chars[0], main)
+        self.assertIs(task.chars[2], sub)
+        self.assertEqual((main.last_failed_rotation, main.last_res), (123, 456))
+        self.assertTrue(task._in_combat)
+        for name in ('wait_intro', 'click_echo', 'click_liberation', 'click_resonance',
+                     'continues_normal_attack', 'heavy_attack', 'switch_next_char'):
+            setattr(generic, name, Mock())
+        generic.is_forte_full = Mock(return_value=False)
+        with patch('src.task.BaseCombatTask.get_char_by_pos', return_value=generic) as identify:
+            generic.perform()
+        identify.assert_called_once()
+        self.assertEqual(identify.call_args.args[2], 1)
+        generic.click_echo.assert_called_once()
+        generic.click_liberation.assert_called_once()
+        generic.click_resonance.assert_called_once_with(time_out=1.5)
+        generic.continues_normal_attack.assert_called_once_with(1.5)
+        generic.switch_next_char.assert_called_once()
+        self.assertIs(task.chars[0], main)
+        self.assertIs(task.chars[2], sub)
+
+    def test_all_unconfirmed_slots_can_load_generic_roster(self):
+        task = combat_task()
+        self.load_unconfirmed_roster(task, (0, 1, 2))
+        self.assertTrue(all(isinstance(char, TrialGenericChar) for char in task.chars))
+        self.assertTrue(all(char._identity_unconfirmed for char in task.chars))
+        self.assertEqual([char.index for char in task.chars], [0, 1, 2])
+        self.assertTrue(task._in_combat)
+
+    def test_unconfirmed_specialist_is_replaced_without_calling_its_helpers(self):
+        task = combat_task()
+        task.in_team.return_value = (True, 1, 3)
+        old = task.chars[1]
+        old._identity_unconfirmed = True
+        old.perform_forte3_rotation = Mock(side_effect=AssertionError('stale Suisui rotation'))
+        old.try_e = Mock(side_effect=AssertionError('stale Suisui skill helper'))
+        self.load_unconfirmed_roster(task, slots=())
+        generic = task.chars[1]
+        self.assertIsNot(generic, old)
+        self.assertIsInstance(generic, TrialGenericChar)
+        self.assertEqual((generic.char_name, generic.confidence), ('unknown', 0))
+        self.assertTrue(generic._identity_unconfirmed)
+        for name in ('wait_intro', 'click_echo', 'click_liberation', 'click_resonance',
+                     'continues_normal_attack', 'switch_next_char'):
+            setattr(generic, name, Mock())
+        generic.is_forte_full = Mock(return_value=False)
+        with patch('src.task.BaseCombatTask.get_char_by_pos', return_value=generic):
+            generic.perform()
+        generic.click_resonance.assert_called_once_with(time_out=1.5)
+        generic.continues_normal_attack.assert_called_once_with(1.5)
+        old.perform_forte3_rotation.assert_not_called()
+        old.try_e.assert_not_called()
+
+    def test_unconfirmed_slot_recovers_after_three_frames_without_resetting_rotation(self):
+        task = combat_task()
+        task.in_team.return_value = (True, 1, 3)
+        self.load_unconfirmed_roster(task)
+        main, generic, sub = task.chars
+        main.has_intro = True
+        main.last_failed_rotation = 123
+        generic.has_intro = True
+        generic.has_sub_dps_intro = True
+        generic.last_switch_time = 101
+        generic.last_switch_in_time = 102
+        generic.last_res = 103
+        generic.last_echo = 104
+        generic.last_liberation = 105
+        state = task._rotation_state
+        state.rows[1].update(turns=4, switches=2, field_seconds=3)
+        state.action(generic, 'echo_send_attempt')
+        task.find_best_match_in_box = Mock(side_effect=lambda box, names, **kw:
+            SimpleNamespace(name=Labels.char_suisui, confidence=.846)
+            if Labels.char_suisui in names else SimpleNamespace(confidence=.71))
+        for token in (1, 2):
+            task.executor._last_frame_time = token
+            self.assertTrue(task.prepare_character_rotation(generic))
+        task.executor._last_frame_time = 3
+        generic.do_perform = Mock()
+        generic.perform()
+        generic.do_perform.assert_not_called()
+        recovered = task.chars[1]
+        self.assertIsInstance(recovered, Suisui)
+        self.assertFalse(recovered._identity_unconfirmed)
+        self.assertEqual(recovered.char_name, Labels.char_suisui)
+        self.assertTrue(recovered.has_intro)
+        self.assertTrue(recovered.has_sub_dps_intro)
+        self.assertEqual((recovered.last_switch_time, recovered.last_switch_in_time,
+                          recovered.last_res, recovered.last_echo, recovered.last_liberation),
+                         (101, 102, 103, 104, 105))
+        self.assertIs(task.chars[0], main)
+        self.assertIs(task.chars[2], sub)
+        self.assertTrue(main.has_intro)
+        self.assertEqual(main.last_failed_rotation, 123)
+        self.assertIs(task._rotation_state, state)
+        row = state.rows[1]
+        self.assertEqual((row['script'], row['identity'], row['confidence'], row['role']),
+                         (recovered.name, str(Labels.char_suisui), .846, str(recovered.char_type)))
+        self.assertEqual((row['turns'], row['switches'], row['field_seconds']), (6, 2, 3))
+        self.assertEqual(dict(row['actions']), {'echo_send_attempt': 1})
+        self.assertTrue(task.prepare_character_rotation(recovered))
+
+    def test_dead_unconfirmed_slot_is_not_reidentified_or_selected(self):
+        task = combat_task()
+        self.load_unconfirmed_roster(task)
+        main, generic, sub = task.chars
+        generic._switch_unrevivable = True
+        with patch('src.task.BaseCombatTask.get_char_by_pos') as identify:
+            self.assertTrue(task.prepare_character_rotation(main))
+        identify.assert_not_called()
+        self.assertIs(task._choose_switch_target(main, False), sub)
+
+    def test_confirmation_hud_loss_prevents_generic_actions(self):
+        task = combat_task()
+        task._in_combat = True
+        unknown = BaseChar(task, 1, char_name='unknown', confidence=0)
+        unknown._identity_unconfirmed = True
+        task.chars[1] = unknown
+        task.in_team.side_effect = [(True, 1, 3), (False, -1, 0)]
+        with patch('src.task.BaseCombatTask.get_char_by_pos', side_effect=lambda t,b,i,c,**kw: c):
+            self.assertFalse(task.load_chars(force_full_scan=True))
+        self.assertFalse(task._in_combat)
+        self.assertFalse(any(isinstance(char, TrialGenericChar) for char in task.chars))
+        task.in_team.side_effect = None
+        task.in_team.return_value = (False, -1, 0)
+        task._rotation_roster_recheck = True
+        unknown.do_perform = Mock()
+        with self.assertRaises(CombatStateUnknown):
+            unknown.perform()
+        unknown.do_perform.assert_not_called()
+
+    def test_generic_fallback_survives_screenshot_save_failure(self):
+        task = combat_task()
+        task.screenshot.side_effect = OSError('disk full')
+        self.load_unconfirmed_roster(task)
+        self.assertIsInstance(task.chars[1], TrialGenericChar)
+        self.assertTrue(task._in_combat)
+        task.screenshot.assert_called()
+
+    def test_context_change_discards_old_generic_identity_evidence(self):
+        for change in ('window', 'account'):
+            with self.subTest(change=change):
+                task = combat_task()
+                self.load_unconfirmed_roster(task)
+                generic = task.chars[1]
+                old_evidence = (('candidate', roster_context(task)), 1, 2, 0)
+                generic._identity_evidence = old_evidence
+                if change == 'window':
+                    task.executor.device_manager.hwnd_window.hwnd = 456
+                else:
+                    advance_roster_context(task, 'new-account')
+                def recognize(owner, box, index, cached, **kwargs):
+                    fresh = cached or BaseChar(owner, index, char_name='unknown', confidence=0)
+                    fresh._identity_unconfirmed = True
+                    return fresh
+                with patch('src.task.BaseCombatTask.get_char_by_pos', side_effect=recognize) as identify, \
+                        patch('src.runtime.diagnostic_lifecycle.record_combat_anomaly'):
+                    self.assertTrue(task.load_chars(force_full_scan=True))
+                self.assertTrue(all(call.args[3] is None for call in identify.call_args_list[:3]))
+                self.assertIsNot(task.chars[1], generic)
+                self.assertIsNone(task.chars[1].__dict__.get('_identity_evidence'))
+
     def test_confirmed_battle_rechecks_status_without_identity_scan_or_state_reset(self):
         task = combat_task()
         task._battle_roster_confirmed = True

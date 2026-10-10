@@ -18,6 +18,7 @@ from src import text_white_color
 from src.char import BaseChar
 from src.char.BaseChar import SwitchPriority, dot_color  # noqa
 from src.char.CharFactory import get_char_by_pos
+from src.char.TrialGenericChar import TrialGenericChar
 from src.combat.CombatCheck import CombatCheck
 from src.combat.roster_context import roster_context
 from src.combat.rotation_state import RotationState
@@ -1272,16 +1273,22 @@ class BaseCombatTask(CombatCheck):
                 if not any(c.__dict__.get('_identity_unconfirmed', False) for c in self.chars):
                     break
             if attempt == 5 or time.monotonic() >= deadline:
-                self._in_combat = False
                 details = [{'slot': c.index + 1, 'cached': c.char_name,
                             'observed': c.__dict__.get('_identity_observation'),
                             'unconfirmed': c.__dict__.get('_identity_unconfirmed', False),
                             'pending': c.__dict__.get('_identity_evidence')} for c in self.chars]
                 self.log_warning(f'combat roster unconfirmed team={(in_team, current_index, count)} '
                                  f'chars={details}')
-                self.screenshot('combat_roster_unconfirmed', frame=frame)
-                raise CombatStateUnknown('队伍角色身份未确认，已保存截图；停止使用旧角色战斗脚本')
-            # Complete factory confirmation here, before any rotation can start.
+                for index, char in enumerate(self.chars):
+                    if char.__dict__.get('_identity_unconfirmed', False):
+                        generic = TrialGenericChar(self, char.index, char_name='unknown', confidence=0)
+                        for key in ('_identity_evidence', '_identity_observation'):
+                            if key in char.__dict__:
+                                setattr(generic, key, char.__dict__[key])
+                        generic._identity_unconfirmed = True
+                        self.chars[index] = generic
+                break
+            # Collect independent identity frames before falling back to generic combat.
             self.executor.next_frame(time_out=min(.5, max(.01, deadline - time.monotonic())))
             in_team, current_index, count = self.in_team()
 
@@ -1301,10 +1308,12 @@ class BaseCombatTask(CombatCheck):
             self.finish_rotation_tracking('roster_reload')
             self._rotation_state = RotationState(self.chars)
         if force_full_scan:
-            self.log_info('combat roster verified ' + json.dumps(
+            self.log_info('combat roster loaded ' + json.dumps(
                 dict(context=context, task=type(self).__name__,
                      chars=[dict(slot=c.index + 1, script=c.name, identity=str(c.char_name),
-                                 confidence=round(c.confidence, 3)) for c in self.chars]), ensure_ascii=False))
+                                 confidence=round(c.confidence, 3),
+                                 unconfirmed=c.__dict__.get('_identity_unconfirmed', False))
+                            for c in self.chars]), ensure_ascii=False))
         if identity_changed:
             translated_names = []
             for c in self.chars:
@@ -1317,7 +1326,38 @@ class BaseCombatTask(CombatCheck):
             for c in self.chars:
                 self.log_info(f'loaded chars success {c} {c.confidence}')
         self._battle_roster_confirmed = self.__dict__.get('_in_combat', False)
+        for char in self.chars:
+            if char.__dict__.get('_identity_unconfirmed', False):
+                self.report_rotation_anomaly('unconfirmed_identity', char)
         return True
+
+    def _retry_unconfirmed_chars(self):
+        """Retry unknown identities once, before actions can hold a character reference."""
+        for index, char in enumerate(self.chars):
+            if (not char.__dict__.get('_identity_unconfirmed', False)
+                    or self._unrevivable_switch_target(char)):
+                continue
+            recognized = get_char_by_pos(
+                self, self.get_box_by_name(f'box_char_{char.index + 1}'), char.index,
+                char, force_full_scan=True)
+            if recognized.__dict__.get('_identity_unconfirmed', False):
+                continue
+            for key in ('is_current_char', 'has_intro', 'has_sub_dps_intro', 'last_perform',
+                        'last_switch_time', 'last_switch_in_time', 'last_full_con_switch_time',
+                        'last_res', 'last_echo', 'last_liberation', 'last_outro_time',
+                        '_switch_unrevivable', '_switch_cooldown_until'):
+                if key in char.__dict__:
+                    setattr(recognized, key, char.__dict__[key])
+            self.chars[index] = recognized
+            state = self.__dict__.get('_rotation_state')
+            if state:
+                state.rows[char.index].update(
+                    script=recognized.name, identity=str(recognized.char_name),
+                    confidence=round(recognized.confidence, 3), role=str(recognized.char_type))
+            self.log_info(f'队伍槽位{char.index + 1}身份已确认，恢复专属轮转：{recognized.char_name}')
+            self.info_set('Chars', ', '.join(
+                self.tr(character_display_name(c)) if self._app is not None else character_display_name(c)
+                for c in self.chars))
 
     def prepare_character_rotation(self, char):
         context_changed = self.__dict__.get('_char_context') != roster_context(self)
@@ -1325,6 +1365,8 @@ class BaseCombatTask(CombatCheck):
         if context_changed or recheck or self.__dict__.get('_battle_roster_confirmed', False):
             if not self.load_chars(reset_state=context_changed, force_full_scan=context_changed):
                 raise CombatStateUnknown('战斗动作前未能确认队伍')
+            if self.__dict__.get('_battle_roster_confirmed', False):
+                self._retry_unconfirmed_chars()
             if self.get_current_char() is not char:
                 return False
         state = self.__dict__.get('_rotation_state')
