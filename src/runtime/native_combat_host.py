@@ -27,7 +27,7 @@ class NativeCombatHost:
                  supported_ratio=16 / 9, translate=gettext.gettext, pause=None,
                  native=True, task_entry='src.task.AutoCombatTask:AutoCombatTask',
                  registered_tasks=(), ocr_config=None, task_requirements=None, live_status=None,
-                 user_tasks=()):
+                 user_tasks=(), load_characters=True):
         from src.runtime import combat_api
         combat_api.configure(native=native, data_dir=context.data_dir)
         from src.runtime.combat_api import Box, Config, TaskDisabledException, WaitFailedException
@@ -37,6 +37,13 @@ class NativeCombatHost:
         config_root = (Path(context.data_dir) / 'configs').resolve()
         config_root.mkdir(parents=True, exist_ok=True)
         Config.config_folder = str(config_root)
+        self.applied_character_revision = None
+        if native and load_characters:
+            from src.runtime.native_characters import NativeCharacterService
+            from src.char.CustomCharLoader import bind_native_character_classes
+            snapshot = NativeCharacterService(context.data_dir).load_snapshot()
+            bind_native_character_classes(snapshot['classes'], snapshot['revision'])
+            self.applied_character_revision = snapshot['revision']
         def load_task(entry):
             if isinstance(entry, type):
                 return entry
@@ -49,7 +56,6 @@ class NativeCombatHost:
                                       *(item["task_class"] for item in user_tasks)))
         from src.scene.WWScene import WWScene
         from src.task.process_feature import process_feature
-        from src.vision.features import FeatureSet
         from src.vision.ocr import OCR
         from src.vision.yolo import EchoDetector
         for production_class in task_classes:
@@ -84,15 +90,16 @@ class NativeCombatHost:
             hwnd_window=window, supported_ratio=supported_ratio,
             do_refresh=executor.refresh_device, do_start=executor.start_capture,
             get_preferred_device=lambda: {'device': device_identity})
-        executor.feature_set = FeatureSet(
-            False, str(Path(coco_path).resolve()),
-            template_matching['default_horizontal_variance'],
-            template_matching['default_vertical_variance'],
+        self._coco_path = Path(coco_path).resolve()
+        self._feature_options = dict(
             default_threshold=template_matching['default_threshold'],
             hcenter_features=template_matching['hcenter_features'],
             vcenter_features=template_matching['vcenter_features'],
             feature_processor=process_feature, box_factory=Box,
             observer=self._observe_feature)
+        self._feature_variance = (template_matching['default_horizontal_variance'],
+                                  template_matching['default_vertical_variance'])
+        executor.feature_set = self._build_features(user_tasks)
 
         host = self
         class HostTaskServices:
@@ -187,6 +194,8 @@ class NativeCombatHost:
             instance.native_task_id = descriptor['id']
             instance.native_config_name = descriptor['config_name']
             instance.source_revision = descriptor['source_revision']
+            instance.group_name = descriptor.get('group_name', '')
+            instance.import_namespace = descriptor.get('asset_namespace')
         if initialize:
             previous = self.executor.current_task
             try:
@@ -195,6 +204,43 @@ class NativeCombatHost:
             finally:
                 self.executor.current_task = previous
         return instance
+
+    def _build_features(self, descriptors):
+        from src.vision.features import FeatureSet, read_from_json
+        features = FeatureSet(False, str(self._coco_path), *self._feature_variance, **self._feature_options)
+        sources = set()
+        for item in descriptors:
+            path = item.get('asset_coco_path')
+            if path is None:
+                continue
+            source = (str(path), item['asset_namespace'])
+            if source in sources:
+                continue
+            # Decode the candidate's own immutable assets before on_create/commit.
+            read_from_json(source[0], image_key_prefix=source[1], box_factory=self._feature_options['box_factory'])
+            features.add_coco(source[0], namespace=source[1])
+            sources.add(source)
+        return features
+
+    def reload_character_code(self, service=None):
+        from src.runtime.native_characters import NativeCharacterService
+        from src.char.CustomCharLoader import bind_native_character_classes
+        from src.task.BaseCombatTask import BaseCombatTask
+        service = service or NativeCharacterService(self.context.data_dir)
+        snapshot = service.load_snapshot()
+        candidates = [(task, task.character_code_candidate(snapshot['classes']))
+                      for task in self.tasks.values() if isinstance(task, BaseCombatTask)]
+        for task, candidate in candidates:
+            task._release_combat_inputs()
+            if task._combat_held_keys or task._combat_held_mouse:
+                raise RuntimeError('Character reload requires released task input')
+        if self.context.device is not None:
+            self.context.device.release_all()
+        bind_native_character_classes(snapshot['classes'], snapshot['revision'])
+        for task, candidate in candidates:
+            task.commit_character_code(candidate)
+        self.applied_character_revision = snapshot['revision']
+        return {'applied_character_revision': self.applied_character_revision}
 
     def _tasks_by_id(self):
         from src.runtime.native_metadata import task_id
@@ -210,8 +256,14 @@ class NativeCombatHost:
             from src.runtime.native_user_tasks import NativeUserTaskStore
             store = NativeUserTaskStore(self.context.data_dir)
         descriptors = store.load_tasks()
-        candidates = {item['task_class']: self.create_task(item['task_class'], descriptor=item)
-                      for item in descriptors}
+        candidate_features = self._build_features(descriptors)
+        previous_features = self.executor.feature_set
+        self.executor.feature_set = candidate_features
+        try:
+            candidates = {item['task_class']: self.create_task(item['task_class'], descriptor=item)
+                          for item in descriptors}
+        finally:
+            self.executor.feature_set = previous_features
         retained = {cls: task for cls, task in self.tasks.items() if cls not in self._user_classes}
         proposed = {**retained, **candidates}
         TaskMetadata(SimpleNamespace(tasks=proposed, global_configs=self.global_configs)).snapshot()
@@ -224,6 +276,7 @@ class NativeCombatHost:
             raise RuntimeError('A native host must retain at least one task')
         old_user_ids = {task_id(self.tasks[cls]) for cls in self._user_classes}
         self.tasks = proposed
+        self.executor.feature_set = candidate_features
         self._user_classes = set(candidates)
         self.executor.set_task_registry(self.tasks)
         for identifier in old_user_ids:
@@ -306,6 +359,21 @@ class NativeCombatHost:
                 except Empty:
                     request = None
             if request is not None:
+                if request.get('command') == 'reload-character-code':
+                    try:
+                        result = self.reload_character_code()
+                        self.context.emit('character-code-reloaded', **result)
+                        self.context.emit('configuration-response', request_id=request.get('request_id'),
+                                          command=request['command'], ok=True, **result)
+                    except Exception as error:
+                        self.context.emit('character-code-reload-failed',
+                            applied_character_revision=self.applied_character_revision,
+                            error=f'{type(error).__name__}: {error}')
+                        self.context.emit('configuration-response', request_id=request.get('request_id'),
+                            command=request['command'], ok=False,
+                            applied_character_revision=self.applied_character_revision,
+                            error={'type': type(error).__name__, 'message': str(error)})
+                    continue
                 if request.get('command') == 'reload-user-tasks':
                     try:
                         result = self.reload_user_tasks()

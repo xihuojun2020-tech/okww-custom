@@ -109,6 +109,8 @@ class TaskMetadata:
                 'id': task_id(task), 'name': task.name, 'description': task.description,
                 'kind': 'service' if isinstance(task, NativeTriggerTask) else 'one-shot',
                 'visible': getattr(task, 'visible', True),
+                'group_name': getattr(task, 'group_name', None),
+                'import_namespace': getattr(task, 'import_namespace', None),
                 'support_schedule_task': getattr(task, 'support_schedule_task', False),
                 'default_config': json_value(task.default_config),
                 'current_config': json_value(task.config),

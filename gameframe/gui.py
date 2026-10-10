@@ -78,6 +78,8 @@ class GameFrameWindow(QWidget):
         self.refresh_tasks_button = QPushButton('Refresh tasks')
         self.reload_tasks_button = QPushButton('Apply user task reload')
         self.reload_tasks_button.setEnabled(False)
+        self.reload_characters_button = QPushButton('Apply character code reload')
+        self.reload_characters_button.setEnabled(False)
         self.stop_button.setEnabled(False)
         self.pause_button.setEnabled(False)
 
@@ -98,6 +100,7 @@ class GameFrameWindow(QWidget):
         buttons.addWidget(self.overview_button)
         buttons.addWidget(self.refresh_tasks_button)
         buttons.addWidget(self.reload_tasks_button)
+        buttons.addWidget(self.reload_characters_button)
         layout = QVBoxLayout(self)
         layout.addLayout(form)
         layout.addLayout(buttons)
@@ -117,6 +120,7 @@ class GameFrameWindow(QWidget):
         self.overview_button.clicked.connect(self.overview_selected)
         self.refresh_tasks_button.clicked.connect(self.refresh_tasks)
         self.reload_tasks_button.clicked.connect(self.reload_user_tasks)
+        self.reload_characters_button.clicked.connect(self.reload_character_code)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._drain_events)
         self.timer.start(50)
@@ -207,6 +211,16 @@ class GameFrameWindow(QWidget):
             self._error(error)
         else:
             self.status_label.setText('User task reload requested; waiting for the execution owner')
+
+    def reload_character_code(self):
+        if self.process is None or self._stopping or self._closing or self._updating:
+            return
+        try:
+            self.controller.request_character_reload()
+        except Exception as error:
+            self._error(error)
+        else:
+            self.status_label.setText('Character reload requested; waiting for the execution owner')
 
     def _select_task(self, row):
         manifest = self._manifest()
@@ -585,6 +599,10 @@ class GameFrameWindow(QWidget):
         elif isinstance(event, dict) and event.get('event') == 'user-tasks-reloaded':
             self.refresh_tasks()
             self.status_label.setText('User tasks applied: ' + str(event['applied_revision']))
+        elif isinstance(event, dict) and event.get('event') == 'character-code-reloaded':
+            self.status_label.setText('Character code applied: ' + str(event['applied_character_revision']))
+        elif isinstance(event, dict) and event.get('event') in ('character-code-reload-failed', 'user-tasks-reload-failed'):
+            self._error(RuntimeError(event['error']))
 
     def _stop_worker(self):
         try:
@@ -727,6 +745,8 @@ class GameFrameWindow(QWidget):
         self.reload_tasks_button.setEnabled(manifest is not None and manifest.task_catalog is not None
                                             and self.process is not None and self.controller.session
                                             and not self._stopping and not self._closing and not self._updating)
+        self.reload_characters_button.setEnabled(self.process is not None and self.controller.session
+                                                and not self._stopping and not self._closing and not self._updating)
 
     def closeEvent(self, event):
         if self._cleanup_done:

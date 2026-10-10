@@ -165,8 +165,8 @@ def verify_index(root: Path, *, required=False):
         raise ValueError('Gamepack content does not match its SHA256 index')
 
 
-def extract_archive(archive_path: Path | str, staging: Path, *, require_index=False) -> PackageManifest:
-    """Extract and verify metadata/content without importing the package."""
+def extract_zip(archive_path: Path | str, staging: Path) -> None:
+    """Safely extract ZIP members without assuming an application format."""
     with zipfile.ZipFile(archive_path) as archive:
         names = set()
         for item in archive.infolist():
@@ -184,6 +184,11 @@ def extract_archive(archive_path: Path | str, staging: Path, *, require_index=Fa
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with archive.open(item) as source, target.open('xb') as output:
                     shutil.copyfileobj(source, output)
+
+
+def extract_archive(archive_path: Path | str, staging: Path, *, require_index=False) -> PackageManifest:
+    """Extract and verify metadata/content without importing the package."""
+    extract_zip(archive_path, staging)
     roots = list(staging.iterdir())
     if len(roots) != 1 or not roots[0].is_dir():
         raise ValueError('A gamepack ZIP must contain one package directory')

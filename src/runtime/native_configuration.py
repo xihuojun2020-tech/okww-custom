@@ -10,7 +10,10 @@ from src.runtime.native_metadata import GLOBAL_METADATA, TaskMetadata, task_id
 
 
 COMMANDS = frozenset({'get-schema', 'set-config', 'invoke-action',
-    'user-task-list', 'user-task-read', 'user-task-save', 'user-task-delete'})
+    'user-task-list', 'user-task-read', 'user-task-save', 'user-task-delete',
+    'user-bundle-inspect', 'user-bundle-list', 'user-bundle-read', 'user-bundle-import',
+    'user-bundle-export', 'user-task-export', 'user-bundle-delete',
+    'character-list', 'character-read', 'character-save', 'character-reset', 'character-set-mode'})
 
 
 def _validate_values(values, defaults, config_type):
@@ -99,7 +102,7 @@ class ConfigurationService:
                     if callback is None:
                         raise ValueError('Configuration button has no action')
                     result = callback()
-            elif command.startswith('user-task-') and command in COMMANDS:
+            elif command in {'user-task-list', 'user-task-read', 'user-task-save', 'user-task-delete'}:
                 from src.runtime.native_user_tasks import NativeUserTaskStore
                 store = NativeUserTaskStore(self.host.context.data_dir)
                 if command == 'user-task-list':
@@ -121,6 +124,55 @@ class ConfigurationService:
                                           'applied_revision': self.host.applied_revision}
                     applied = self.host.reload_user_tasks()
                     result = {**result, 'applied': True, **applied}
+            elif command.startswith('user-bundle-') or command == 'user-task-export':
+                from src.runtime.native_user_tasks import NativeUserTaskStore
+                store = NativeUserTaskStore(self.host.context.data_dir)
+                if command == 'user-bundle-inspect':
+                    result = store.inspect_bundle(request['archive_path'])
+                elif command == 'user-bundle-list':
+                    result = {'bundles': store.list_bundles(), 'catalog_revision': store.revision}
+                elif command == 'user-bundle-read':
+                    result = store.read_bundle(request['bundle_id'])
+                elif command == 'user-bundle-export':
+                    result = store.export_bundle(request['bundle_id'], request['output_path'],
+                        expected_revision=request['expected_revision'])
+                elif command == 'user-task-export':
+                    result = store.export_tasks(request['source_ids'], request['output_path'],
+                        file_name=request['file_name'], script_name=request['script_name'],
+                        version=request['version'], expected_revision=request['expected_revision'])
+                elif command in {'user-bundle-import', 'user-bundle-delete'}:
+                    if command == 'user-bundle-import':
+                        result = store.import_bundle(request['archive_path'],
+                            expected_revision=request['expected_revision'],
+                            expected_archive_sha256=request['expected_archive_sha256'],
+                            migration_tasks=request.get('migration_tasks'))
+                    else:
+                        result = store.delete_bundle(request['bundle_id'],
+                            expected_revision=request['expected_revision'])
+                    response['result'] = {**result, 'applied': False,
+                                          'applied_revision': self.host.applied_revision}
+                    result = {**result, 'applied': True, **self.host.reload_user_tasks()}
+                else:
+                    raise ValueError(f'Unknown user bundle command: {command}')
+            elif command.startswith('character-') and command in COMMANDS:
+                from src.runtime.native_characters import NativeCharacterService
+                service = NativeCharacterService(self.host.context.data_dir)
+                if command == 'character-list':
+                    result = service.list()
+                elif command == 'character-read':
+                    result = service.read(request['class_name'])
+                else:
+                    if command == 'character-save':
+                        result = service.save(request['class_name'], request['code'],
+                            expected_revision=request['expected_revision'])
+                    elif command == 'character-reset':
+                        result = service.reset(request['class_name'], expected_revision=request['expected_revision'])
+                    else:
+                        result = service.set_mode(request['class_name'], request['use_custom'],
+                            expected_revision=request['expected_revision'])
+                    response['result'] = {**result, 'applied': False,
+                        'applied_character_revision': self.host.applied_character_revision}
+                    result = {**result, 'applied': True, **self.host.reload_character_code()}
             else:
                 raise ValueError(f'Unknown configuration command: {command}')
             response.update(ok=True, schema=self.metadata.snapshot())
@@ -130,6 +182,7 @@ class ConfigurationService:
         except Exception as error:
             response.update(ok=False, error={'type': type(error).__name__, 'message': str(error)})
         response['applied_revision'] = self.host.applied_revision
+        response['applied_character_revision'] = self.host.applied_character_revision
         return response
 
 

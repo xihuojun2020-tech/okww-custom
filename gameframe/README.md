@@ -9,8 +9,8 @@
 从独立 wheel 安装核心，界面和 Windows 捕获按需要安装可选依赖：
 
 ```powershell
-python -m pip install "gameframe-runtime[gui,windows] @ file:///C:/your/path/gameframe_runtime-1.97.70-py3-none-any.whl"
-gameframe install .\wuthering_waves_native-1.97.70.zip
+python -m pip install "gameframe-runtime[gui,windows] @ file:///C:/your/path/gameframe_runtime-1.97.71-py3-none-any.whl"
+gameframe install .\wuthering_waves_native-1.97.71.zip
 gameframe list
 gameframe gui
 ```
@@ -25,7 +25,7 @@ gameframe gui
 
 GUI 支持安装 ZIP、选择任务、保存原生任务 JSON 与设备配置、执行、暂停/恢复、停止，显示执行器原始输出及退出码。支持会话的包在同一执行器中串行运行多个辅助服务和排队任务；前台任务独占输入，结束后继续后台服务。关闭某个服务使用 Disable selected service；Stop 结束执行器并保留服务偏好。兼容鸣潮任务使用其完整生产配置与设备选择，具体业务完成由原程序的完成检查判断。退出码 0 只表示进程正常返回。
 
-独立规则包 `wuthering_waves_native-1.97.70.zip` 按包内 `requirements.txt` 安装执行依赖；管理窗口另需 `requirements-management.txt`。Manage gamepack 打开账号、序列、完整性检查、配置包及完成记录；全新安装须经明确表单/预览/确认建立首账号，或导入自己的配置包，任务入口不会创建空 master。ZIP 已完成禁止旧框架导入的实际生产轮转与停止验收，管理页也在安装载荷中打开并正常关闭；29项任务的代表性离线分支范围详见验收报告，不代表全部实战流程完成。
+独立规则包 `wuthering_waves_native-1.97.71.zip` 按包内 `requirements.txt` 安装执行依赖；管理窗口另需 `requirements-management.txt`。Manage gamepack 打开账号、序列、完整性检查、配置包及完成记录；全新安装须经明确表单/预览/确认建立首账号，或导入自己的配置包，任务入口不会创建空 master。ZIP 已完成禁止旧框架导入的实际生产轮转与停止验收，管理页也在安装载荷中打开并正常关闭；29项任务的代表性离线分支范围详见验收报告，不代表全部实战流程完成。
 
 默认安装与框架状态位于当前 Windows 用户的 `~/.gameframe`。Windows 用户由人手动切换；在各用户目录分别安装游戏包，可以保留各自的游戏包配置和账号组。源模式鸣潮包使用当前源码安装的数据路径；它不会自动复制或迁移私人账号配置。安装拒绝覆盖同 ID 的已有包，避免把更新当成重装而丢失包内配置。
 
@@ -39,7 +39,7 @@ Manage gamepack 的“任务与配置”页读取生产任务和全局配置的�
 
 管理与配置命令使用 `gameframe.package_process` 在同一实际进程的包共享锁内核对版本、导入载荷并运行。原生worker设备、游戏包异步诊断/证据和账本收尾完成后释放锁。恢复与整树备份在数据独占锁内执行；维护页先停止配置owner，提交后重建账号缓存。兼容bootstrap持包、source_root数据及桌面输入锁，已加载证据和诊断在返回前收尾；旧direct main.py和直接调用bootstrap.run未纳入此框架入口的锁保障。
 
-ADB与MuMu尚未提供跨backend同实例映射，不能据此保证两个后端操作同一个模拟器时互斥。POSIX锁实现未在本轮Windows环境运行。配置备份、系统定时、只读耗时总览与原生用户任务编辑已接入；角色编辑和脚本包导入导出继续迁移。
+ADB与MuMu尚未提供跨backend同实例映射，不能据此保证两个后端操作同一个模拟器时互斥。POSIX锁实现未在本轮Windows环境运行。配置备份、系统定时、只读耗时总览与原生用户任务编辑已接入；角色代码编辑与脚本包导入导出已接入。设备选择、热键通知、手动工具等入口继续迁移。
 
 用户任务在管理页“用户任务代码”中保存，使用 `NativeBaseTask` / `NativeTriggerTask` 和稳定 UUID。框架只读取 JSON 目录来显示任务；源码在无设备的独立验证进程中执行，属于可信可执行代码，不能视为安全沙箱。运行进程使用 Apply user task reload 明确应用目录更新；单次任务通过重新启动应用。Refresh tasks 只刷新列表，保存不代表所有执行器已重载。执行前核对定义版本，长期设置从持久配置加载，运行 JSON 仅提供明确覆盖值。
 
@@ -79,3 +79,7 @@ WGC 可选择 HWND 采集，但 SendInput 仍需要该会话的前台窗口。�
 本轮仅离线图片、mock 接口、隔离 Python 子进程及包结构验证；没有启动游戏或模拟器，也没有验证任何真实账号、后台会话、采集延迟或实战轮转。
 
 只读总览使用 Overview gamepack，或 `gameframe overview PACKAGE_PATH --data-dir ABS_DATA_PATH`，可与worker共存。管理页的“配置备份与恢复”复用完整配置备份与恢复事务；当前worker或其他总览占用数据时，独占维护会明确失败。系统定时任务按当前Windows用户隔离，仅明确点击创建或删除，不自动切用户；执行时需要该用户的交互会话及可用设备。硬件和实际系统定时运行尚未验证。
+
+角色代码页按内置类身份保存自定义代码与使用模式，内置代码只读；Apply character code reload 由实际运行 owner 释放输入后应用，暂停与启用偏好保留。
+
+用户任务页支持多个任务和随包素材的原生脚本包，导入前展示清单与转换差异。旧包只转换已支持的 API，未知依赖明确报错；导入包成员只读，通过整组重导入更新，稳定任务 ID 与私有配置保留。导出不包含私有配置，不覆盖现有文件。随包 COCO 特征以包标识为 namespace；素材更新也改变执行定义 revision。

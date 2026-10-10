@@ -142,6 +142,11 @@ class Controller:
             raise ValueError('A shared task session is not running')
         self._send_control('set-service', task_id=task_id, enabled=enabled, config=config or {})
 
+    def request_character_reload(self):
+        if not self.session:
+            raise RuntimeError('Character reload requires a shared task session')
+        self._send_control('reload-character-code')
+
     def pause(self):
         if self.execution != 'native':
             raise ValueError('Compatibility application controls its own pause')

@@ -85,6 +85,44 @@ class TestNativeUserTaskHost(unittest.TestCase):
         self.assertNotIn('user:one',{row['id'] for row in TaskMetadata(host).snapshot()['tasks']})
         self.assertTrue(first.config['_enabled'])
         self.assertTrue(first.config.config_file.exists())
+
+    def test_bundle_features_commit_with_registry_and_fail_as_one_candidate(self):
+        import json
+        import cv2
+        import numpy as np
+        assets = self.data / 'bundle-fixture'
+        assets.mkdir(exist_ok=True)
+        image = assets / 'icon.png'
+        cv2.imwrite(str(image), np.full((8, 8, 3), 30, dtype=np.uint8))
+        coco = assets / 'coco.json'
+        coco.write_text(json.dumps(dict(images=[dict(id=1,file_name='icon.png')],
+            categories=[dict(id=1,name='icon')], annotations=[dict(image_id=1,category_id=1,bbox=[0,0,8,8])])))
+        descriptor = self.descriptor()
+        descriptor.update(asset_coco_path=coco,asset_namespace='bundle',group_name='Tools')
+        host = self.host((descriptor,))
+        self.assertEqual(len(host.executor.feature_set._coco_sources),2)
+        self.assertEqual(host._tasks_by_id()['user:one'].group_name,'Tools')
+        frame = np.zeros((8,8,3),dtype=np.uint8)
+        self.assertEqual(int(host.executor.feature_set.get_feature_by_name(frame,'bundle/icon').mat[0,0,0]),30)
+        updated = assets / 'updated.png'
+        cv2.imwrite(str(updated), np.full((8,8,3), 90, dtype=np.uint8))
+        value = json.loads(coco.read_text()); value['images'][0]['file_name']='updated.png'
+        new_coco = assets/'new.json'; new_coco.write_text(json.dumps(value))
+        next_descriptor = self.descriptor(Renamed)
+        next_descriptor.update(asset_coco_path=new_coco,asset_namespace='bundle',group_name='Tools')
+        host.reload_user_tasks(SimpleNamespace(load_tasks=lambda:[next_descriptor],revision='new-assets'))
+        self.assertEqual(int(host.executor.feature_set.get_feature_by_name(frame,'bundle/icon').mat[0,0,0]),90)
+        features, registry = host.executor.feature_set, host.tasks
+        broken = dict(next_descriptor,task_class=Bad)
+        with self.assertRaisesRegex(ValueError,'candidate rejected'):
+            host.reload_user_tasks(SimpleNamespace(load_tasks=lambda:[broken],revision='failed'))
+        self.assertIs(host.executor.feature_set,features); self.assertIs(host.tasks,registry)
+        updated.write_bytes(b'not an image')
+        with self.assertRaisesRegex(ValueError,'Could not read image'):
+            host.reload_user_tasks(SimpleNamespace(load_tasks=lambda:[next_descriptor],revision='bad-assets'))
+        self.assertIs(host.executor.feature_set,features); self.assertIs(host.tasks,registry)
+        host.reload_user_tasks(SimpleNamespace(load_tasks=lambda:[],revision='removed'))
+        self.assertFalse(host.executor.feature_set.get_feature_by_name(frame,'bundle/icon'))
     def test_foreground_request_waits_for_destroy_and_release(self):
         host=self.host()
         trace=[]

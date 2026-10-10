@@ -1229,6 +1229,44 @@ class BaseCombatTask(CombatCheck):
             if isinstance(char, char_cls):
                 return char
 
+    def character_code_candidate(self, classes):
+        """Construct replacements without changing the applied combat roster."""
+        from src.char.CharFactory import char_dict
+        from src.combat.rotation_state import RotationState
+        chars = list(self.chars)
+        changed = False
+        observations = ('is_current_char', 'has_intro', 'has_sub_dps_intro',
+            'last_switch_time', 'last_switch_in_time', 'last_res', 'last_echo',
+            'last_liberation', 'last_buff_time', 'last_full_con_switch_time',
+            'last_perform', 'last_outro_time', '_switch_unrevivable', '_switch_cooldown_until')
+        for index, char in enumerate(chars):
+            if char is None:
+                continue
+            info = char_dict.get(char.char_name)
+            if info is None:
+                continue
+            cls = classes[info['cls']]
+            if type(char) is cls:
+                continue
+            replacement = cls(self, char.index, char_name=char.char_name, confidence=char.confidence,
+                ring_index=char.ring_index, char_type=char.char_type, buff_time=char.buff_time)
+            for key in observations:
+                if key in char.__dict__:
+                    setattr(replacement, key, char.__dict__[key])
+            chars[index] = replacement
+            changed = True
+        return (chars, RotationState(chars)) if changed else None
+
+    def commit_character_code(self, candidate):
+        if candidate is None:
+            return
+        chars, rotation = candidate
+        self.finish_rotation_tracking('character_code_reload')
+        self.chars = chars
+        self._battle_roster_confirmed = False
+        self._rotation_roster_recheck = True
+        self._rotation_state = rotation
+
     def load_chars(self, *, reset_state=True, force_full_scan=False):
         """加载队伍中的角色信息。"""
         self.load_hotkey()

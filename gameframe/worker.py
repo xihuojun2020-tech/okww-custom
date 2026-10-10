@@ -59,7 +59,8 @@ def listen_stop(stop, pause, requests=None):
             pause.clear()
             continue
         if requests is not None and command in {'run-task', 'set-service', 'get-schema',
-                                                'set-config', 'invoke-action', 'reload-user-tasks'}:
+                                                'set-config', 'invoke-action', 'reload-user-tasks',
+                                                'reload-character-code'}:
             requests.put(message)
             continue
         if command != 'stop':

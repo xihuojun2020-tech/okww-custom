@@ -89,7 +89,8 @@ class TestNativeUserTaskUI(unittest.TestCase):
         from unittest.mock import patch
         from src.runtime.native_configuration import ConfigurationService
         host = SimpleNamespace(context=SimpleNamespace(data_dir=Path('.')),
-            applied_revision='old-running', reload_user_tasks=lambda: (_ for _ in ()).throw(
+            applied_revision='old-running', applied_character_revision='old-characters',
+            reload_user_tasks=lambda: (_ for _ in ()).throw(
                 ValueError('owner candidate failed')))
         service = ConfigurationService(host)
         result = {'catalog_revision': 'new-saved', 'source_id': 'source'}

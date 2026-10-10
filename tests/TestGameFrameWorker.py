@@ -146,6 +146,8 @@ class SessionPackage(VisionProbe):
                 context.emit('session-result', result=result)
             elif request['command'] == 'reload-user-tasks':
                 context.emit('user-tasks-reloaded', applied_revision='fixture-revision')
+            elif request['command'] == 'reload-character-code':
+                context.emit('character-code-reloaded', applied_character_revision='character-revision')
             else:
                 context.emit('service-request', enabled=request['enabled'])
 def create_package(): return SessionPackage()
@@ -160,6 +162,10 @@ def create_package(): return SessionPackage()
         self.assertEqual(json.loads(process.stdout.readline())['event'], 'session-ready')
         self.controller.request_user_task_reload()
         self.assertEqual(json.loads(process.stdout.readline())['event'], 'user-tasks-reloaded')
+        self.controller.request_character_reload()
+        character_event = json.loads(process.stdout.readline())
+        self.assertEqual(character_event['event'], 'character-code-reloaded')
+        self.assertEqual(character_event['applied_character_revision'], 'character-revision')
         self.controller.set_service('any-service', False)
         service = json.loads(process.stdout.readline())
         self.assertEqual((service['event'], service['enabled']), ('service-request', False))

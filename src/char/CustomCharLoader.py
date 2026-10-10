@@ -1,6 +1,8 @@
 import importlib.util
+import hashlib
 import inspect
 import json
+import sys
 from pathlib import Path
 
 from src.runtime.combat_api import Logger
@@ -12,6 +14,49 @@ CUSTOM_CHAR_FOLDER = "custom_chars"
 CUSTOM_CHAR_MODES_FILE = "custom_chars.json"
 
 _custom_class_cache = {}
+_native_character_snapshot = None
+_native_source_cache = {}
+
+
+def bind_native_character_classes(mapping, revision):
+    global _native_character_snapshot
+    _native_character_snapshot = (dict(mapping), revision)
+
+
+def get_native_character_classes():
+    if _native_character_snapshot is None:
+        raise RuntimeError('Native character classes have not been bound to this owner')
+    return dict(_native_character_snapshot[0])
+
+
+def get_native_character_revision():
+    return None if _native_character_snapshot is None else _native_character_snapshot[1]
+
+
+def load_native_character_source(char_cls, path, source_bytes):
+    """Strict candidate loading; publication does not change the owner snapshot."""
+    digest = hashlib.sha256(source_bytes).hexdigest()
+    key = (char_cls, digest)
+    if key in _native_source_cache:
+        return _native_source_cache[key]
+    module_name = f'okww_native_char_{char_cls.__name__}_{digest}'
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        exec(compile(source_bytes, str(path), 'exec'), module.__dict__)
+        custom_cls = getattr(module, char_cls.__name__, None)
+        from src.char.BaseChar import BaseChar
+        if (not isinstance(custom_cls, type) or not issubclass(custom_cls, BaseChar)
+                or custom_cls.__name__ != char_cls.__name__ or custom_cls.__module__ != module_name):
+            raise TypeError(f'Custom code must define BaseChar subclass {char_cls.__name__}')
+    except BaseException:
+        sys.modules.pop(module_name, None)
+        raise
+    if 'do_perform' in custom_cls.__dict__ and 'perform_solo' not in custom_cls.__dict__:
+        custom_cls.perform_solo = custom_cls.do_perform
+    _native_source_cache[key] = custom_cls
+    return custom_cls
 
 
 def get_custom_char_folder(create=False):
@@ -120,6 +165,11 @@ def clear_custom_char_cache(char_cls_or_name=None):
 
 
 def load_custom_char_class(char_cls):
+    from src.runtime.combat_api import is_native
+    if is_native():
+        if _native_character_snapshot is None:
+            raise RuntimeError('Native character classes have not been bound to this owner')
+        return _native_character_snapshot[0][char_cls]
     if not is_custom_char_enabled(char_cls):
         return char_cls
 

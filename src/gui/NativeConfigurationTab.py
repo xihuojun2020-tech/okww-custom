@@ -83,6 +83,7 @@ class NativeConfigurationTab(QWidget):
         manifest = PackageManifest.read(Path(manifest_path).parent)
         self.schema = None
         self.applied_revision = None
+        self.applied_character_revision = None
         self._entries = []
         self._request_id = 0
         self._pending = set()
@@ -208,6 +209,7 @@ class NativeConfigurationTab(QWidget):
             if value.get('event') != 'configuration-response':
                 continue
             self.applied_revision = value.get('applied_revision', self.applied_revision)
+            self.applied_character_revision = value.get('applied_character_revision', self.applied_character_revision)
             self._pending.discard(value.get('request_id'))
             self.scroll.setEnabled(not self._pending)
             self.refresh_button.setEnabled(not self._pending)
@@ -222,7 +224,8 @@ class NativeConfigurationTab(QWidget):
                 self.busy_changed.emit(bool(self._pending))
                 continue
             self.set_schema(value['schema'])
-            if value.get('command') in ('get-schema', 'user-task-save', 'user-task-delete'):
+            if value.get('command') in ('get-schema', 'user-task-save', 'user-task-delete',
+                                        'user-bundle-import', 'user-bundle-delete'):
                 self.schema_changed.emit(self.schema)
             self.status.setText('配置已保存。' if value.get('command') != 'get-schema' else '配置已加载。')
             self.response_received.emit(value)

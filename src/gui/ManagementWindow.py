@@ -64,6 +64,7 @@ class ManagementWindow(QMainWindow):
         self.maintenance_tab = None
         self.schedule_tab = None
         self.user_task_tab = None
+        self.character_code_tab = None
         self._pending_maintenance = False
         self._configuration_restart_message = None
         self._maintenance_committed_failure = False
@@ -80,6 +81,10 @@ class ManagementWindow(QMainWindow):
             self.user_task_tab = NativeUserTaskTab(self.configuration_tab)
             self.tabs.addTab(self.user_task_tab, '用户任务代码')
             self.user_task_tab.busy_changed.connect(self._operation_changed)
+            from src.gui.NativeCharacterCodeTab import NativeCharacterCodeTab
+            self.character_code_tab = NativeCharacterCodeTab(self.configuration_tab)
+            self.tabs.addTab(self.character_code_tab, '角色代码')
+            self.character_code_tab.busy_changed.connect(self._operation_changed)
             self.configuration_tab.busy_changed.connect(self._operation_changed)
             self.maintenance_tab = NativeMaintenanceTab(
                 NativeMaintenanceService(service.root, service.runtime.program_version), self._maintain)
@@ -235,6 +240,7 @@ class ManagementWindow(QMainWindow):
                         self.account_tab.setEnabled(False)
                     self.configuration_tab.setEnabled(False)
                     self.user_task_tab.setEnabled(False)
+                    self.character_code_tab.setEnabled(False)
                     self.maintenance_tab.setEnabled(False)
                     self.status.setText(message + ' 磁盘已提交，请重启管理窗口以重新加载账号；旧账号编辑已停用。')
                 elif not self._closing:
@@ -318,6 +324,7 @@ class ManagementWindow(QMainWindow):
         if details is not None:
             operations.append(details.operation)
         return (self._pending_maintenance or bool(self.user_task_tab and self.user_task_tab.busy)
+                or bool(self.character_code_tab and self.character_code_tab.busy)
                 or bool(self.configuration_tab and self.configuration_tab._pending)
                 or any(operation.busy for operation in operations))
 
