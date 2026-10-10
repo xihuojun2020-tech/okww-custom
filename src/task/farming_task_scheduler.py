@@ -57,12 +57,15 @@ def run_stamina_queue(daily, config, *, activity_ready, used_stamina):
 
 def run_weekly_queue(daily, tasks):
     from src.task.WeeklyBossTask import WeeklyBossTask
-    from src.task.weekly_boss import WeeklyBossResult, weekly_check_window
+    from src.task.weekly_boss import WeeklyBossResult, weekly_check_window, WEEKLY_AUTO, WEEKLY_TARGET
     identity, service = daily._active_profile_id(), daily.integrity_service
     require_resolved_claims(tasks, service, identity)
     window = weekly_check_window()
+    queue = ordered_tasks(tasks, weekly=True)
+    if not queue:
+        return WeeklyBossResult(0, 0, 3, '计划未启用')
     initial, claimed, remaining = None, 0, None
-    for item in ordered_tasks(tasks, weekly=True):
+    for item in queue:
         daily.sleep(.01)
         if weekly_check_window() != window:
             raise RuntimeError('周本执行跨越刷新边界，下次重新核验')
@@ -73,14 +76,26 @@ def run_weekly_queue(daily, tasks):
         daily._overview_event(key, 'running')
         result = daily.get_task_by_class(WeeklyBossTask).run_for_plan(identity, reader, service,
             progress=task_progress(item, service, identity), fallback=False)
-        if initial is None:
+        plan_finished = result.reason in ('目标已达标', '计划未启用')
+        if initial is None and (result.claimed or not plan_finished):
             initial = result.initial
         claimed += result.claimed
         remaining = result.remaining
         done = task_status(item, service, identity)[0]
         daily._overview_event(key, 'completed' if done else
                               'resource_shortfall' if result.reason == '当前体力不足' else 'returned')
-        if result.complete or result.reason not in ('目标已达标', '计划未启用'):
+        if not plan_finished:
             return WeeklyBossResult(initial, claimed, remaining, result.reason)
-    # Completing all finite goals is valid even when the game's weekly quota remains.
-    return WeeklyBossResult(initial or 0, claimed, remaining if remaining is not None else 3, '目标已达标')
+    if weekly_check_window() != window:
+        raise RuntimeError('周本执行跨越刷新边界，下次重新核验')
+
+    def read_fallback():
+        if ordered_tasks(daily._weekly_plan_tasks(), weekly=True) != queue:
+            raise RuntimeError('当前周本刷取任务已删除或目标已修改，请重新启动')
+        return {WEEKLY_TARGET: WEEKLY_AUTO}
+
+    # Finite material goals do not replace the game's three weekly claims.
+    # Keep fallback claims in the existing account journal, outside finite task quotas.
+    result = daily.get_task_by_class(WeeklyBossTask).run_for_plan(identity, read_fallback, service)
+    return WeeklyBossResult(result.initial if initial is None else initial,
+                            claimed + result.claimed, result.remaining, result.reason)

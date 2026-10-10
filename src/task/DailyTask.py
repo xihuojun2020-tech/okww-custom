@@ -21,7 +21,9 @@ from src.task.world_boss_material_plan import MATERIAL_TARGETS, material_plan
 from src.task.GardenTask import GardenTask
 from src.task.WeeklyBossTask import WeeklyBossTask
 from src.task.weekly_boss import (WEEKLY_TARGET, WEEKLY_DISABLED, WEEKLY_BOSSES, WEEKLY_AUTO,
-                                WEEKLY_MONDAY, WEEKLY_SUNDAY, weekly_check_window, weekly_check_due)
+                                WEEKLY_MONDAY, WEEKLY_SUNDAY, weekly_check_window,
+                                weekly_account_plan, weekly_account_check_due,
+                                WeeklyBossSundayVerificationError, WeeklyBossResult)
 from src.task.MergeEchoTask import MergeEchoTask
 from src.task.NightmareNestTask import (FARM_NIGHTMARE_SETTLEMENTS, FARM_TACET_DISCORD_NESTS,
                                         NightmareNestTask)
@@ -30,7 +32,7 @@ from src.task.SimulationTask import SimulationTask
 from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.BaseCombatTask import BaseCombatTask
 from src.task.BaseWWTask import BaseWWTask
-from src.task.weekly_boss_plan import WEEKLY_PLAN, weekly_plan, plan_enabled, plan_revision
+from src.task.weekly_boss_plan import WEEKLY_PLAN
 from src.config_integrity import (
     PROTECTED_TASK_KEYS,
     ConfigIntegrityBlocked,
@@ -1295,12 +1297,17 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         try:
             completed = self.get_last_completed(task_name)
             if task_name in (WEEKLY_MONDAY, WEEKLY_SUNDAY):
-                if not plan_enabled(weekly_plan(self._weekly_plan_tasks())):
+                tasks = self._weekly_plan_tasks()
+                if weekly_account_plan(tasks)[0] == WEEKLY_DISABLED:
                     return '已关闭'
                 current_week = weekly_check_window()[0]
                 try:
                     stamp_week, stamp_slot = weekly_check_window(datetime.fromisoformat(completed))
                     done = stamp_week == current_week and stamp_slot == task_name
+                    if done:
+                        outcome = (self.integrity_service.get_progress('weekly_boss:' + self._active_profile_id(), {})
+                                   if self.integrity_service is not None else {})
+                        done = outcome.get('remaining') == 0 and outcome.get('status') == '已确认次数耗尽'
                 except (ValueError, TypeError):
                     done = False
                 return ('本周已完成' if done else '待检查') + (f'；最近：{completed}' if completed else '')
@@ -1925,30 +1932,34 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
         from src.game_period import beijing_now
 
     def check_weekly_boss(self):
-        from src.task.farming_task_queue import FARMING_TASKS, ordered_tasks
-        from src.config_integrity import fingerprint
+        from src.task.farming_task_queue import FARMING_TASKS
+        from src.task.weekly_boss_progress import confirmed_weekly_claims
         identity = self._active_profile_id()
         window = weekly_check_window()
         tasks = self._weekly_plan_tasks()
         queue = FARMING_TASKS in tasks
-        rows = ordered_tasks(tasks, weekly=True) if queue else weekly_plan(tasks)
-        checked = (identity, window, fingerprint(rows) if queue else plan_revision(rows))
+        target, revision = weekly_account_plan(tasks)
+        checked = (identity, window, revision)
         if getattr(self, '_weekly_checked_run', None) == checked:
             return True
         self.info_set('周本检查结果', '无需检查')
-        target = WEEKLY_AUTO if (bool(rows) if queue else plan_enabled(rows)) else WEEKLY_DISABLED
         completed = self.get_last_completed(window[1])
-        if queue and self.integrity_service.get_progress('weekly_boss:' + identity, {}).get('queue_revision') != fingerprint(rows):
-            completed = None
-        if not weekly_check_due(target, completed):
+        if not weekly_account_check_due(tasks, completed, identity, self.integrity_service):
             return False
         self._weekly_checked_run = checked
         profile_id = self._active_profile_id()
         self.log_info(f'周本检查：账号={profile_id}，目标={target}，检查周期={window}')
-        self._publish_daily_stage('清理体力', '优先检查每周周本')
+        sunday = window[1] == WEEKLY_SUNDAY
+        self._publish_daily_stage('周本复核' if sunday else '清理体力',
+                                  '周日复核本周领奖次数' if sunday else '优先检查每周周本')
         DailyTask._overview_event(self, 'weekly_boss', 'running')
         try:
-            if queue:
+            confirmed = confirmed_weekly_claims(self.integrity_service, profile_id, window[0])
+            if sunday:
+                result = self.get_task_by_class(WeeklyBossTask).verify_weekly_remaining()
+            elif confirmed == 3:
+                result = WeeklyBossResult(0, 0, 0, '本周已确认领取三次')
+            elif queue:
                 from src.task.farming_task_scheduler import run_weekly_queue
                 result = run_weekly_queue(self, tasks)
             else:
@@ -1957,16 +1968,16 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             if result is not None and result.reason == '计划未启用':
                 self.info_set('周本检查结果', '计划未启用')
                 return False
-            if result is not None and not result.complete and getattr(result, 'reason', '') == '当前体力不足':
+            if not sunday and result is not None and not result.complete and getattr(result, 'reason', '') == '当前体力不足':
                 status = f'待补检：当前体力不足，本周仍剩余 {result.remaining} 次；未记录完成'
                 self.info_set('周本检查结果', status)
                 self._record_weekly_outcome(target, status, result.remaining)
                 self.log_info(status)
                 DailyTask._overview_event(self, 'weekly_boss', 'resource_shortfall', reason=status)
                 return True
-            goals_complete = queue and result is not None and result.reason == '目标已达标'
-            if result is None or (not result.complete and not goals_complete):
-                raise RuntimeError('周本尚未确认剩余次数为零')
+            if result is None or not result.complete or result.reason == '目标已达标':
+                remaining = result.remaining if result is not None else '未知'
+                raise RuntimeError(f'周本尚未确认剩余次数为零，本周剩余 {remaining} 次')
             if weekly_check_window() != window:
                 raise RuntimeError('周本执行跨越刷新边界，下次重新检查')
             if self.integrity_service is not None:
@@ -1974,12 +1985,11 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
                     profile_id, window[1], datetime.now(timezone(timedelta(hours=8))).isoformat())
             else:
                 self.record_last_completed(window[1], profile_id=profile_id)
-            status = '创建的周本目标已达标' if goals_complete else '已确认次数耗尽'
+            status = '已确认次数耗尽'
             self.info_set('周本检查结果', status)
             self._record_weekly_outcome(target, status, result.remaining)
             DailyTask._overview_event(self, 'weekly_boss', 'completed')
-        except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked,
-                GameProcessLost, FrameUnavailable):
+        except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked):
             raise
         except Exception as error:
             detail = str(error) or f'{type(error).__name__}（周本阶段未完成）'
@@ -1988,7 +1998,23 @@ class DailyTask(WWOneTimeTask, BaseCombatTask):
             weekly = self.get_task_by_class(WeeklyBossTask)
             last = getattr(weekly, 'last_result', None)
             remaining = getattr(last, 'remaining', None)
+            if sunday:
+                warning = f'周日周本复核失败：{detail}。本次任务已停止，请核对该账号本周三次奖励；不会切换下一账号。'
+                self.info_set('周本检查结果', warning)
+                try:
+                    self._record_weekly_outcome(target, f'待补检：{detail}', remaining if isinstance(remaining, int) else None)
+                    self.log_error(warning, error)
+                    self.screenshot('weekly_sunday_verification_failed')
+                except TaskDisabledException:
+                    raise
+                except Exception as evidence_error:
+                    warning += f' 保存复核记录或截图失败：{type(evidence_error).__name__}: {evidence_error}'
+                    self.info_set('周本检查结果', warning)
+                    raise WeeklyBossSundayVerificationError(warning) from evidence_error
+                raise WeeklyBossSundayVerificationError(warning) from error
             self._record_weekly_outcome(target, f'待补检：{detail}', remaining if isinstance(remaining, int) else None)
+            if isinstance(error, (GameProcessLost, FrameUnavailable)):
+                raise
             self.log_error('周本未完成，保留补检资格', error)
             self.screenshot('weekly_daily_pending')
             self.ensure_main(time_out=180)

@@ -30,6 +30,7 @@ from src.task.WWOneTimeTask import WWOneTimeTask
 from src.task.BaseCombatTask import BaseCombatTask
 from src.task.BaseWWTask import LOGIN_TEXTS
 from src.task.MouseResetTask import MouseResetTask
+from src.task.weekly_boss import WeeklyBossSundayVerificationError
 from src.config_integrity import ConfigIntegrityBlocked, ConfigWriteBlocked, get_default_service
 from src.account_switch_evidence import AccountSwitchEvidenceSession
 from src.win32_login_input import force_foreground, send_input_click
@@ -1248,16 +1249,15 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
             return False
         if account in getattr(self, '_weekly_attempted', set()):
             return True
-        from src.task.weekly_boss import WEEKLY_TARGET, weekly_check_window, weekly_check_due
+        from src.task.weekly_boss import WEEKLY_TARGET, weekly_check_window, weekly_account_check_due
         profile = self._load_profiles().get(account) or {}
-        from src.task.weekly_boss_plan import weekly_plan, plan_enabled
         tasks = profile.get('task_config', profile)
-        target = '自动（列表首项）' if plan_enabled(weekly_plan({WEEKLY_TARGET: '无', **tasks})) else '无'
         service = getattr(self, 'integrity_service', None)
         key = weekly_check_window()[1]
-        completion = (service.get_completion(self._profile_id_for(account), key) if service
+        identity = self._profile_id_for(account) if service else account
+        completion = (service.get_completion(identity, key) if service
                       else (profile.get('last_completed') or {}).get(key))
-        return not weekly_check_due(target, completion)
+        return not weekly_account_check_due({WEEKLY_TARGET: '无', **tasks}, completion, identity, service)
 
     def _daily_is_done(self, account):
         """账号是否已完成：多账号断点记录，或今天已单独跑过该账号的每日任务（方案文件 last_completed）。"""
@@ -2190,7 +2190,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                 if isinstance(outcome_info, dict):
                     outcome_info.pop('周本检查结果', None)
                 self.run_task_by_class(DailyTask)
-        except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked):
+        except (TaskDisabledException, ConfigIntegrityBlocked, ConfigWriteBlocked,
+                WeeklyBossSundayVerificationError):
             raise
         except Exception as error:
             observe(self, 'result', False, error)
@@ -3642,9 +3643,10 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
         keys = {MultiAccountDailyTask._failure_key(self, a) for a in sequence} if sequence is not None else None
         failures = [v for k, v in MultiAccountDailyTask._failed_status_records(self).items()
                     if keys is None or k in keys]
-        title = '多账号每日任务部分失败' if failures else '多账号每日任务完成'
         failure_text = ''
         pending = getattr(self, '_weekly_pending', {})
+        title = ('多账号每日任务部分失败' if failures else
+                 '多账号每日任务结束，周本待补检' if pending else '多账号每日任务完成')
         if pending:
             failure_text = '；周本待补检：' + '、'.join(pending)
         if failures:
@@ -3655,7 +3657,8 @@ class MultiAccountDailyTask(WWOneTimeTask, BaseCombatTask):
                     failure_text += f'；{item["account"]}：{detail}'
         location = (f'停留在账号 {profile_status_label(current_account)}'
                     if current_account else '保持当前界面，不再切换账号')
-        outcome = '本轮结束，仍有账号未完成' if failures else '序列本轮已处理完成'
+        outcome = ('本轮结束，仍有账号未完成' if failures else
+                   '每日任务已完成，周本尚待补检' if pending else '序列本轮已处理完成')
         message = f'{outcome}，{location}{failure_text}。'
         if failures and not current_account:
             message += '请检查游戏状态，必要时手动登录。'

@@ -12,6 +12,10 @@ WEEKLY_MONDAY = 'Weekly Boss Monday Check'
 WEEKLY_SUNDAY = 'Weekly Boss Sunday Check'
 
 
+class WeeklyBossSundayVerificationError(RuntimeError):
+    """Stop the foreground run when Sunday's weekly allowance is unverified."""
+
+
 def weekly_check_window(now=None):
     # Simplified-Chinese servers reset at 04:00 UTC+8.
     now = now or datetime.now(timezone(timedelta(hours=8)))
@@ -28,11 +32,6 @@ def weekly_check_due(target, completed, now=None):
         return False
     if target != WEEKLY_AUTO and target not in {boss.key for boss in WEEKLY_BOSSES}:
         raise ValueError('请选择有效的账号周本目标')
-    zone = timezone(timedelta(hours=8))
-    current = now or datetime.now(zone)
-    current = current.replace(tzinfo=zone) if current.tzinfo is None else current.astimezone(zone)
-    if (current - timedelta(hours=4)).weekday() not in (0, 6):
-        return False
     if not completed:
         return True
     try:
@@ -46,6 +45,31 @@ def weekly_check_due(target, completed, now=None):
         return weekly_check_window(stamp) != weekly_check_window(now)
     except (TypeError, ValueError):
         return True
+
+
+def weekly_account_plan(config):
+    from src.task.farming_task_queue import FARMING_TASKS, ordered_tasks
+    from src.task.weekly_boss_plan import weekly_plan, plan_enabled, plan_revision
+    from src.config_integrity import fingerprint
+    if FARMING_TASKS in config:
+        rows = ordered_tasks(config, weekly=True)
+        return (WEEKLY_AUTO if rows else WEEKLY_DISABLED, fingerprint(rows))
+    rows = weekly_plan({WEEKLY_TARGET: WEEKLY_DISABLED, **config})
+    return (WEEKLY_AUTO if plan_enabled(rows) else WEEKLY_DISABLED, plan_revision(rows))
+
+
+def weekly_account_check_due(config, completed, identity, service, now=None):
+    target, revision = weekly_account_plan(config)
+    if weekly_check_due(target, completed, now):
+        return True
+    if target == WEEKLY_DISABLED:
+        return False
+    # Older queues recorded finite material goals as a completed game week.
+    outcome = service.get_progress('weekly_boss:' + identity, {}) if service is not None else {}
+    if outcome.get('remaining') != 0 or outcome.get('status') != '已确认次数耗尽':
+        return True
+    from src.task.farming_task_queue import FARMING_TASKS
+    return FARMING_TASKS in config and outcome.get('queue_revision') != revision
 
 
 @dataclass(frozen=True)

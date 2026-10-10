@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 from src.config_integrity import ConfigIntegrityService
 from src.task.weekly_boss import WEEKLY_AUTO, WEEKLY_BOSSES, WEEKLY_TARGET, WeeklyBossResult
 from src.task.weekly_boss_plan import WEEKLY_PLAN, weekly_plan, choose_weekly_target, plan_revision
-from src.task.weekly_boss_progress import WeeklyBossProgress, preserve_weekly_progress
+from src.task.weekly_boss_progress import WeeklyBossProgress, confirmed_weekly_claims, preserve_weekly_progress
 from src.task.WeeklyBossTask import WeeklyBossTask
 from tests import TestWeeklyBossTask as weekly_tests
 
@@ -78,6 +78,44 @@ class TestWeeklyBossPlan(unittest.TestCase):
         self.progress.correct(A, 3)
         self.assertEqual({A: 3}, self.progress.counts())
         self.assertEqual(1, len(self.progress.read()['corrections']))
+
+    def test_weekly_claim_proof_uses_real_events_across_journals_after_restart(self):
+        self.progress.correct(A, 20)
+        previous = self.progress.begin(A, 'previous-week', 3, 'rev')
+        self.progress.resolve(previous, True)
+        cancelled = self.progress.begin(A, 'this-week', 3, 'rev')
+        self.progress.resolve(cancelled, False)
+        first = self.progress.begin(A, 'this-week', 3, 'rev')
+        self.progress.resolve(first, True)
+
+        task_progress = WeeklyBossProgress(self.service, 'profile-a')
+        task_progress.key += ':task-id'
+        for boss, remaining in ((B, 2), (C, 1)):
+            event = task_progress.begin(boss, 'this-week', remaining, 'rev')
+            task_progress.resolve(event, True)
+        ledger = task_progress.read()
+        ledger['events'][first] = self.progress.read()['events'][first]
+        self.service.set_progress(task_progress.key, ledger)
+
+        # A UUID sharing the text prefix is a different account.
+        other = WeeklyBossProgress(self.service, 'profile-a-other')
+        other_event = other.begin(A, 'this-week', 3, 'rev')
+        other.resolve(other_event, True)
+        restarted = ConfigIntegrityService(self.temp.name)
+        self.assertEqual(3, confirmed_weekly_claims(restarted, 'profile-a', 'this-week'))
+        self.assertEqual(1, confirmed_weekly_claims(restarted, 'profile-a', 'previous-week'))
+        self.assertEqual(0, confirmed_weekly_claims(restarted, 'profile-a', 'next-week'))
+        self.assertEqual(1, confirmed_weekly_claims(restarted, 'profile-a-other', 'this-week'))
+
+    def test_weekly_claim_proof_keeps_old_week_deleted_task_pending_blocking(self):
+        self.assertEqual(0, confirmed_weekly_claims(self.service, 'profile-a', 'this-week'))
+        deleted = WeeklyBossProgress(self.service, 'profile-a')
+        deleted.key += ':deleted-task'
+        event = deleted.begin(A, 'previous-week', 3, 'rev')
+        with self.assertRaisesRegex(RuntimeError, '未核验'):
+            confirmed_weekly_claims(self.service, 'profile-a', 'this-week')
+        deleted.resolve(event, False)
+        self.assertEqual(0, confirmed_weekly_claims(self.service, 'profile-a', 'this-week'))
 
     def test_write_failure_preserves_pending_and_forbids_claim_retry(self):
         event = self.progress.begin(A, 'week', 3, 'rev')

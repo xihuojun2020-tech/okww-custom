@@ -19,6 +19,19 @@ def validate_ledger(value):
     return value
 
 
+def confirmed_weekly_claims(service, profile_id, week):
+    """Count real claims across this account's legacy and task journals."""
+    progress = WeeklyBossProgress(service, profile_id)
+    confirmed = set()
+    for value in service.get_progress_entries(progress.key).values():
+        for event_id, event in validate_ledger(value)['events'].items():
+            if event['state'] == 'pending':
+                raise RuntimeError('存在未核验的周本领取，请在账号周本记录中核对后继续')
+            if event['state'] == 'confirmed' and event['week'] == str(week):
+                confirmed.add(event_id)
+    return len(confirmed)
+
+
 class WeeklyBossProgress:
     def __init__(self, service, profile_id):
         if service is None or not profile_id:

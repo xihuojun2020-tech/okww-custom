@@ -81,6 +81,24 @@ class TestWeeklyBossParsing(unittest.TestCase):
 
 
 class TestWeeklyBossFlow(unittest.TestCase):
+    def test_sunday_verification_only_reads_count_and_does_not_enter_combat(self):
+        from src.task.weekly_boss import WeeklyBossResult
+        for remaining in range(4):
+            with self.subTest(remaining=remaining):
+                task = object.__new__(WeeklyBossTask)
+                task._stage = Mock()
+                task._open_weekly_book = Mock()
+                task._read_remaining = Mock(return_value=remaining)
+                task._enter_challenge = Mock()
+                task._fight_and_claim = Mock()
+                task.ensure_main = Mock()
+                with patch('src.evidence.service.record_task_evidence'):
+                    self.assertEqual(task.verify_weekly_remaining(), WeeklyBossResult(remaining, 0, remaining))
+                task._read_remaining.assert_called_once_with()
+                task._enter_challenge.assert_not_called()
+                task._fight_and_claim.assert_not_called()
+                self.assertEqual(task.ensure_main.call_count, int(remaining == 0))
+
     def task(self, count, stamina=240, final=0):
         task = object.__new__(WeeklyBossTask)
         task.info = {}

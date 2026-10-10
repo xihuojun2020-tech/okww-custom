@@ -114,6 +114,19 @@ class WeeklyBossTask(WWOneTimeTask, BaseCombatTask):
         self._wait_for(lambda: (value,) if (value := self._weekly_book_remaining()) is not None else None,
                        '战歌重奏列表已切换，但未确认本周剩余次数')
 
+    def verify_weekly_remaining(self):
+        self.last_result = None
+        self._stage('周日复核本周剩余次数')
+        self._open_weekly_book()
+        remaining = self._read_remaining()
+        self.last_result = WeeklyBossResult(remaining, 0, remaining)
+        if remaining == 0:
+            from src.evidence.service import record_task_evidence
+            record_task_evidence(self, 'weekly_boss', 'completed', '周日复核已识别本周剩余 0 次',
+                                 progress=dict(remaining=0))
+            self.ensure_main(time_out=60)
+        return self.last_result
+
     def _list_signature(self):
         self.next_frame()
         boxes = self._ocr(self.LIST)

@@ -111,9 +111,66 @@ class TestAccountTaskState(unittest.TestCase):
     def test_weekly_monday_success_requires_sunday_recheck(self):
         from src.task.weekly_boss import WEEKLY_MONDAY
         self.env.integrity.record_completion(self.identity, WEEKLY_MONDAY, self.now.isoformat())
+        self.env.integrity.set_progress('weekly_boss:' + self.identity,
+                                        {'status': '已确认次数耗尽', 'remaining': 0})
         self.assertEqual(self.cards()['weekly_boss'].state, 'completed')
         self.now += timedelta(days=6)
         self.assertEqual(self.cards()['weekly_boss'].state, 'pending')
+
+    def test_legacy_weekly_unconfirmed_days_show_catchup_until_real_completion(self):
+        from src.task.weekly_boss import WEEKLY_MONDAY
+        self.env.integrity.record_completion(self.identity, WEEKLY_MONDAY, self.now.isoformat())
+        self.env.integrity.set_progress('weekly_boss:' + self.identity,
+                                        {'status': '创建的周本目标已达标', 'remaining': 2})
+        for day in range(6, 11):
+            with self.subTest(day=day):
+                self.now = self.now.replace(day=day)
+                card = self.cards()['weekly_boss']
+                self.assertEqual(card.state, 'pending')
+                self.assertIn('每日补检', card.detail)
+                self.assertEqual(card.completed_at, '')
+                self.assertEqual(card.next_at, next_daily_reset(self.now).isoformat())
+        self.env.integrity.set_progress('weekly_boss:' + self.identity,
+                                        {'status': '已确认次数耗尽', 'remaining': 0})
+        card = self.cards()['weekly_boss']
+        self.assertEqual(card.state, 'completed')
+        self.assertIn('周日复核', card.detail)
+        self.assertEqual(card.next_at, (next_weekly_reset(self.now) - timedelta(days=1)).isoformat())
+
+    def test_queue_weekly_material_completion_does_not_mark_weekly_allowance_complete(self):
+        from src.config_integrity import fingerprint
+        from src.task.farming_task_queue import FARMING_TASKS, new_task, ordered_tasks, task_progress
+        from src.task.weekly_boss import WEEKLY_BOSSES, WEEKLY_MONDAY
+        boss = WEEKLY_BOSSES[0].key
+        goal = new_task('weekly', {'boss': boss, 'limit': 1})
+        unfinished = new_task('weekly', {'boss': boss, 'limit': 5})
+        unlimited = new_task('weekly', {'boss': boss, 'limit': -1})
+        self.profile.tasks[FARMING_TASKS] = [goal, unfinished, unlimited]
+        task_progress(goal, self.env.integrity, self.identity).correct(boss, 1)
+        self.env.integrity.record_completion(self.identity, WEEKLY_MONDAY, self.now.isoformat())
+        self.now += timedelta(days=1)
+        revision = fingerprint(ordered_tasks(self.profile.tasks, weekly=True))
+        self.env.integrity.set_progress('weekly_boss:' + self.identity,
+            {'status': '创建的周本目标已达标', 'remaining': 2, 'queue_revision': revision})
+        cards = self.cards()
+        goal_card, unlimited_card = [cards['farming:' + item['id']] for item in (goal, unlimited)]
+        self.assertEqual(goal_card.state, 'completed')
+        self.assertIn('材料目标已达标', goal_card.detail)
+        self.assertIn('本周三次领奖仍待补检', goal_card.detail)
+        self.assertEqual(goal_card.next_at, '')
+        self.assertEqual(unlimited_card.state, 'pending')
+        self.assertEqual(unlimited_card.completed_at, '')
+        self.assertIn('每日补检', unlimited_card.detail)
+        self.assertEqual(unlimited_card.next_at, next_daily_reset(self.now).isoformat())
+        self.env.integrity.set_progress('weekly_boss:' + self.identity,
+            {'status': '已确认次数耗尽', 'remaining': 0, 'queue_revision': revision})
+        cards = self.cards()
+        self.assertEqual(cards['farming:' + unlimited['id']].state, 'completed')
+        self.assertEqual(cards['farming:' + unlimited['id']].next_at,
+                         (next_weekly_reset(self.now) - timedelta(days=1)).isoformat())
+        self.assertEqual(cards['farming:' + unfinished['id']].state, 'waiting')
+        self.assertIn('本周领取次数耗尽，下周继续', cards['farming:' + unfinished['id']].detail)
+        self.assertEqual(cards['farming:' + unfinished['id']].next_at, next_weekly_reset(self.now).isoformat())
 
     def test_abyss_failed_team_and_new_cycle_are_isolated(self):
         journal = AbyssCycleProgress(self.env.integrity, self.identity)

@@ -82,8 +82,8 @@ def build_account_task_cards(profile, service, *, now=None, live=None):
     from src.task.world_boss_material_plan import material_plan
     from src.task.world_boss_material_progress import WorldBossMaterialProgress
     from src.task.world_boss_materials import TARGETS_BY_ID
-    from src.task.weekly_boss_plan import weekly_plan, plan_enabled
-    from src.task.weekly_boss import WEEKLY_MONDAY, WEEKLY_SUNDAY
+    from src.task.weekly_boss import (WEEKLY_DISABLED, weekly_account_plan,
+                                      weekly_account_check_due, weekly_check_window)
     from src.nightmare_nests import DEFAULT_NEST_NAMES
     from datetime import timedelta
 
@@ -124,12 +124,14 @@ def build_account_task_cards(profile, service, *, now=None, live=None):
             detail=f'全部所选聚落：{len(nests) + len(nightmare)} 个', next_at=next_daily_reset(now).isoformat())
 
     from src.task.farming_task_queue import FARMING_TASKS, farming_tasks, task_status, task_order_key, task_target_label
+    weekday = (now - timedelta(hours=4)).weekday()
+    weekly_target, _ = weekly_account_plan(tasks)
+    weekly_stamp = completed.get(weekly_check_window(now)[1])
+    weekly_done = (weekly_target != WEEKLY_DISABLED and
+                   not weekly_account_check_due(tasks, weekly_stamp, identity, service, now))
+    outcome = service.get_progress('weekly_boss:' + identity, {})
+    weekly_review_at = next_weekly_reset(now) - timedelta(days=0 if weekday == 6 else 1)
     if FARMING_TASKS in tasks:
-        weekday = (now - timedelta(hours=4)).weekday()
-        weekly_key = WEEKLY_SUNDAY if weekday == 6 else WEEKLY_MONDAY
-        weekly_stamp = completed.get(weekly_key)
-        weekly_done = completed_in_period(weekly_stamp, weekly=True, now=now)
-        outcome = service.get_progress('weekly_boss:' + identity, {})
         for item in sorted(farming_tasks(tasks), key=task_order_key):
             done, pending, detail, stamp = task_status(item, service, identity)
             key = 'farming:' + item['id']
@@ -139,7 +141,7 @@ def build_account_task_cards(profile, service, *, now=None, live=None):
                       item['kind'] == 'forgery' and item['params']['mode'] == 'materials')
             if not finite:
                 if weekly:
-                    done, stamp = weekly_done, weekly_stamp
+                    done, stamp = weekly_done, weekly_stamp if weekly_done else None
                 else:
                     event = events.get(key, {})
                     done = (event.get('result') == 'returned' and event.get('period_id') == game_day_key(now)
@@ -147,19 +149,21 @@ def build_account_task_cards(profile, service, *, now=None, live=None):
                             and completed_in_period(daily_stamp, now=now))
                     stamp = event.get('finished_at') if done else None
             detail = task_target_label(item) + '；' + detail
+            if weekly and finite and done:
+                detail += '；材料目标已达标；' + ('本周领取次数耗尽' if weekly_done else '本周三次领奖仍待补检')
             state = 'attention' if pending else None
             if not item['enabled'] and not done:
                 state, detail = 'waiting', '已暂停；' + detail
             elif weekly and not done and not pending:
-                quota_used = weekly_done and outcome.get('remaining') == 0
-                if quota_used or weekday not in (0, 6):
+                if weekly_done:
                     state = 'waiting'
-                    detail += '；本周领取次数耗尽，下周继续' if quota_used else '；周一执行，周日复核'
+                    detail += '；本周领取次数耗尽，下周继续'
+                else:
+                    detail += '；周日强制复核' if weekday == 6 else '；本周尚未完成，每日补检'
             if finite and done:
                 next_at = ''
             elif weekly:
-                quota_used = weekly_done and outcome.get('remaining') == 0
-                check_at = next_weekly_reset(now) - timedelta(days=0 if weekday == 6 or quota_used else 1)
+                check_at = (next_weekly_reset(now) if finite else weekly_review_at) if weekly_done else next_daily_reset(now)
                 next_at = check_at.isoformat()
             else:
                 next_at = '' if finite else next_daily_reset(now).isoformat()
@@ -218,17 +222,13 @@ def build_account_task_cards(profile, service, *, now=None, live=None):
                                          next_daily_reset(now).isoformat(), event.get('started_at') or '',
                                          route='stamina', last_attempt_at=event.get('finished_at') or ''))
 
-        if plan_enabled(weekly_plan(tasks)):
-            weekday = (now - timedelta(hours=4)).weekday()
-            key = WEEKLY_SUNDAY if weekday == 6 else WEEKLY_MONDAY
-            stamp = completed.get(key)
-            done = completed_in_period(stamp, weekly=True, now=now)
-            sunday = next_weekly_reset(now) - timedelta(days=1)
-            next_at = next_weekly_reset(now) if weekday == 6 else sunday
-            outcome = service.get_progress('weekly_boss:' + identity, {})
-            detail = ('周日复检' if weekday == 6 else '周一检查') + '；' + str(outcome.get('status', '尚未执行'))
-            add('weekly_boss', '战歌重奏', stamp=stamp, done=done, detail=detail, next_at=next_at.isoformat(),
-                state='waiting' if weekday not in (0, 6) and not done else None)
+        if weekly_target != WEEKLY_DISABLED:
+            next_at = weekly_review_at if weekly_done else next_daily_reset(now)
+            detail = ('周日强制复核' if weekday == 6 else
+                      '本周已完成，周日复核' if weekly_done else '本周尚未完成，每日补检')
+            detail += '；' + str(outcome.get('status', '尚未执行'))
+            add('weekly_boss', '战歌重奏', stamp=weekly_stamp if weekly_done else None,
+                done=weekly_done, detail=detail, next_at=next_at.isoformat())
     mode = tasks.get('Garden Execution Mode', 'closed')
     if mode != 'closed':
         stamp = completed.get('Weekly Garden')

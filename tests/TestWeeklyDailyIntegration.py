@@ -7,7 +7,8 @@ from ok import TaskDisabledException
 from src.task.DailyTask import DailyTask
 from src.task.MultiAccountDailyTask import MultiAccountDailyTask
 from src.task.weekly_boss import (WEEKLY_TARGET, WEEKLY_MONDAY, WEEKLY_SUNDAY,
-                                WEEKLY_BOSSES, WeeklyBossResult, weekly_check_window, weekly_check_due)
+                                WEEKLY_BOSSES, WeeklyBossResult, weekly_check_window, weekly_check_due,
+                                weekly_account_check_due, WeeklyBossSundayVerificationError)
 
 
 class TestWeeklyDailyIntegration(unittest.TestCase):
@@ -253,7 +254,7 @@ class TestWeeklyDailyIntegration(unittest.TestCase):
         target = WEEKLY_BOSSES[0].key
         for day in range(7, 13):
             now = datetime(2026, 9, day, 12)
-            self.assertEqual(day == 7, weekly_check_due(target, None, now))
+            self.assertTrue(weekly_check_due(target, None, now))
             self.assertFalse(weekly_check_due(target, '2026-09-07T12:00:00+08:00', now))
         sunday = datetime(2026, 9, 13, 12)
         self.assertTrue(weekly_check_due(target, '2026-09-07T12:00:00+08:00', sunday))
@@ -272,18 +273,21 @@ class TestWeeklyDailyIntegration(unittest.TestCase):
         with self.assertRaises(ValueError):
             weekly_check_due('invalid', None)
         self.assertTrue(weekly_check_due(WEEKLY_BOSSES[0].key, 'broken'))
-        self.assertFalse(weekly_check_due(WEEKLY_BOSSES[0].key, '2026-09-09T14:00:00+08:00',
+        self.assertTrue(weekly_check_due(WEEKLY_BOSSES[0].key, '2026-09-09T14:00:00+08:00',
                                         datetime(2026, 9, 9, 12)))
 
     def daily(self, result=WeeklyBossResult(3, 3, 0)):
         task = object.__new__(DailyTask)
         task.integrity_service = Mock()
+        task.integrity_service.get_progress_entries.return_value = {}
+        task.integrity_service.get_progress.return_value = {}
         task._active_profile_id = Mock(return_value='uuid-a1')
         task._profile_get = Mock(side_effect=lambda key, default=None:
                                 WEEKLY_BOSSES[0].key if key == WEEKLY_TARGET else default)
         task.get_last_completed = Mock(return_value=None)
         task._publish_daily_stage = Mock()
-        task.get_task_by_class = Mock(return_value=SimpleNamespace(run_for_plan=Mock(return_value=result)))
+        task.get_task_by_class = Mock(return_value=SimpleNamespace(
+            run_for_plan=Mock(return_value=result), verify_weekly_remaining=Mock(return_value=result)))
         task.info_set = Mock()
         task.log_error = Mock()
         task.log_info = Mock()
@@ -339,8 +343,79 @@ class TestWeeklyDailyIntegration(unittest.TestCase):
         windows = [(datetime(2026, 9, 7).date(), WEEKLY_SUNDAY),
                    (datetime(2026, 9, 14).date(), WEEKLY_MONDAY)]
         with patch('src.task.DailyTask.weekly_check_window', side_effect=windows):
-            task.check_weekly_boss()
+            with self.assertRaises(WeeklyBossSundayVerificationError):
+                task.check_weekly_boss()
         task.integrity_service.record_completion.assert_not_called()
+
+    def test_old_material_goal_completion_requires_recheck(self):
+        service = Mock()
+        config = {WEEKLY_TARGET: WEEKLY_BOSSES[0].key}
+        now = datetime(2026, 10, 6, 12)
+        completed = '2026-10-05T12:00:00+08:00'
+        service.get_progress.return_value = {'status': '创建的周本目标已达标', 'remaining': 2}
+        self.assertTrue(weekly_account_check_due(config, completed, 'uuid-a1', service, now))
+        service.get_progress.return_value = {'status': '已确认次数耗尽', 'remaining': 0}
+        self.assertFalse(weekly_account_check_due(config, completed, 'uuid-a1', service, now))
+        self.assertTrue(weekly_account_check_due(config, completed, 'uuid-a1', None, now))
+
+    def test_material_goals_without_game_count_cannot_finish_week(self):
+        task = self.daily(WeeklyBossResult(0, 0, 0, '目标已达标'))
+        task.check_weekly_boss()
+        task.integrity_service.record_completion.assert_not_called()
+        self.assertIn('待补检', task.info_set.call_args.args[1])
+
+    def test_three_real_claims_finish_midweek_but_sunday_still_reads_game(self):
+        task = self.daily()
+        task.integrity_service.get_progress_entries.return_value = {
+            'weekly_boss_claims:uuid-a1': {'counts': {}, 'events': {
+                str(i): {'boss': WEEKLY_BOSSES[i].key, 'state': 'confirmed', 'week': '2026-10-05'}
+                for i in range(3)}}}
+        task.check_weekly_boss()
+        task.get_task_by_class.assert_not_called()
+        task.integrity_service.record_completion.assert_called_once()
+        task._weekly_checked_run = None
+        sunday = (datetime(2026, 10, 5).date(), WEEKLY_SUNDAY)
+        with patch('src.task.DailyTask.weekly_check_window', return_value=sunday):
+            task.check_weekly_boss()
+        task.get_task_by_class.return_value.verify_weekly_remaining.assert_called_once()
+        task.get_task_by_class.return_value.run_for_plan.assert_not_called()
+
+    def test_sunday_nonzero_or_unknown_stops_without_daily_recovery(self):
+        from src.runtime.game_runtime_errors import FrameUnavailable
+        sunday = (datetime(2026, 10, 5).date(), WEEKLY_SUNDAY)
+        for remaining in (1, 2, 3, None):
+            with self.subTest(remaining=remaining):
+                task = self.daily(WeeklyBossResult(remaining, 0, remaining))
+                if remaining is None:
+                    task.get_task_by_class.return_value.verify_weekly_remaining.side_effect = FrameUnavailable('截图不可用')
+                    task.screenshot.side_effect = FrameUnavailable('截图不可用')
+                with patch('src.task.DailyTask.weekly_check_window', return_value=sunday):
+                    with self.assertRaises(WeeklyBossSundayVerificationError):
+                        task.check_weekly_boss()
+                task.integrity_service.record_completion.assert_not_called()
+                task.ensure_main.assert_not_called()
+                task.get_task_by_class.return_value.run_for_plan.assert_not_called()
+                self.assertIn('周日周本复核失败', task.info_set.call_args.args[1])
+
+    def test_sunday_zero_records_independent_completion(self):
+        task = self.daily(WeeklyBossResult(0, 0, 0))
+        sunday = (datetime(2026, 10, 5).date(), WEEKLY_SUNDAY)
+        with patch('src.task.DailyTask.weekly_check_window', return_value=sunday):
+            task.check_weekly_boss()
+        self.assertEqual(task.integrity_service.record_completion.call_args.args[:2], ('uuid-a1', WEEKLY_SUNDAY))
+        task.get_task_by_class.return_value.run_for_plan.assert_not_called()
+
+    def test_sunday_pending_write_failure_keeps_fatal_signal(self):
+        task = self.daily(WeeklyBossResult(1, 0, 1))
+        task.integrity_service.set_progress.side_effect = OSError('磁盘写入失败')
+        sunday = (datetime(2026, 10, 5).date(), WEEKLY_SUNDAY)
+        with patch('src.task.DailyTask.weekly_check_window', return_value=sunday):
+            with self.assertRaisesRegex(WeeklyBossSundayVerificationError, '磁盘写入失败') as stopped:
+                task.check_weekly_boss()
+        self.assertIsInstance(stopped.exception.__cause__, OSError)
+        task.ensure_main.assert_not_called()
+        task.integrity_service.record_completion.assert_not_called()
+
 
     def test_finished_daily_is_selected_for_weekly_retry_once_per_run(self):
         task = object.__new__(MultiAccountDailyTask)

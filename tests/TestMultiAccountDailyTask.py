@@ -127,6 +127,120 @@ class TestPersistentDailyRetry(unittest.TestCase):
         task._run_daily_account('A3')
         self.assertNotIn('A3', task._weekly_pending)
 
+    def test_completed_daily_keeps_queue_weekly_catchup_eligible_on_weekdays(self):
+        from datetime import datetime, timedelta, timezone
+        from unittest.mock import Mock
+        from src.task.farming_task_queue import FARMING_TASKS, new_task
+        from src.task.weekly_boss import WEEKLY_BOSSES, WEEKLY_TARGET
+
+        current = datetime(2026, 10, 6, 12, tzinfo=timezone(timedelta(hours=8)))
+
+        class CatchupClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return current.astimezone(tz) if tz else current.replace(tzinfo=None)
+
+        for day in range(6, 11):
+            with self.subTest(day=day), patch('src.task.weekly_boss.datetime', CatchupClock):
+                current = current.replace(day=day)
+                service = SimpleNamespace(get_completion=lambda *_: None,
+                                          get_progress=lambda _key, default=None: default)
+                task = self.make_task(service)
+                weekly = new_task('weekly', {'boss': WEEKLY_BOSSES[0].key, 'limit': 3})
+                task._load_profiles = lambda: {'A1': {'task_config': {
+                    WEEKLY_TARGET: '无', FARMING_TASKS: [weekly]}}}
+                task.done_set.add('id-A1')
+                child = task.get_task_by_class.return_value
+                child.run_weekly_boss_only = Mock(side_effect=lambda: child.info.update(
+                    {'周本检查结果': '待补检：当前体力不足'}))
+
+                self.assertTrue(task._daily_is_done('A1'))
+                self.assertFalse(task._is_done('A1'))
+                self.assertEqual(task._next_target_account(), 'A1')
+                self.assertEqual(task._run_daily_account('A1'), (True, None))
+                child.run_weekly_boss_only.assert_called_once()
+                task.run_task_by_class.assert_not_called()
+                self.assertTrue(task._is_done('A1'))  # Only one attempt in this run.
+                task._weekly_attempted.clear()  # A fresh run still needs confirmation.
+                self.assertFalse(task._is_done('A1'))
+
+    def test_queue_completion_and_revision_control_completed_daily_selection(self):
+        from datetime import datetime, timedelta, timezone
+        from src.config_integrity import fingerprint
+        from src.task.farming_task_queue import FARMING_TASKS, new_task, ordered_tasks
+        from src.task.weekly_boss import WEEKLY_BOSSES, WEEKLY_TARGET
+
+        class TuesdayClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                current = datetime(2026, 10, 6, 12, tzinfo=timezone(timedelta(hours=8)))
+                return current.astimezone(tz) if tz else current.replace(tzinfo=None)
+
+        weekly = new_task('weekly', {'boss': WEEKLY_BOSSES[0].key, 'limit': 3})
+        tasks = {WEEKLY_TARGET: '无', FARMING_TASKS: [weekly]}
+        outcome = {'status': '已确认次数耗尽', 'remaining': 0,
+                   'queue_revision': fingerprint(ordered_tasks(tasks, weekly=True))}
+        service = SimpleNamespace(get_completion=lambda *_: '2026-10-05T12:00:00+08:00',
+                                  get_progress=lambda _key, _default=None: outcome)
+        task = self.make_task(service)
+        task.done_set.add('id-A1')
+        task._load_profiles = lambda: {'A1': {'task_config': tasks}}
+        with patch('src.task.weekly_boss.datetime', TuesdayClock):
+            self.assertTrue(task._is_done('A1'))
+            weekly['params']['boss'] = WEEKLY_BOSSES[1].key
+            self.assertFalse(task._is_done('A1'))
+            weekly['enabled'] = False
+            self.assertTrue(task._is_done('A1'))
+
+    def test_sunday_verification_error_stops_real_loop_before_logout_or_retry(self):
+        from datetime import datetime, timedelta, timezone
+        from unittest.mock import Mock
+        from src.task.weekly_boss import WeeklyBossSundayVerificationError, WEEKLY_BOSSES, WEEKLY_TARGET
+
+        class SundayClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                current = datetime(2026, 10, 11, 12, tzinfo=timezone(timedelta(hours=8)))
+                return current.astimezone(tz) if tz else current.replace(tzinfo=None)
+
+        for daily_done in (False, True):
+            with self.subTest(daily_done=daily_done):
+                task = self.make_task()
+                if daily_done:
+                    task.done_set.add('A1')
+                task._load_profiles = lambda: {'A1': {WEEKLY_TARGET: WEEKLY_BOSSES[0].key}}
+                task._classify_start_state = Mock(return_value='world')
+                task._select_and_login_account = Mock()
+                error = WeeklyBossSundayVerificationError('周日复核未确认本周周本完成')
+                child = task.get_task_by_class.return_value
+                child.run = Mock(side_effect=error)
+                task.run_task_by_class = Mock(wraps=lambda cls:
+                    MultiAccountDailyTask.run_task_by_class(task, cls))
+                child.run_weekly_boss_only = Mock(side_effect=error)
+
+                with patch('src.task.weekly_boss.datetime', SundayClock), \
+                        self.assertRaisesRegex(WeeklyBossSundayVerificationError, '周日复核'):
+                    task._run_inner(_startup_context=(task.get_sequence_accounts(), 'A1', 'A1'))
+                task._switch_to_login.assert_not_called()
+                task._select_and_login_account.assert_not_called()
+                task.ensure_main.assert_not_called()
+                task._save_today_progress.assert_not_called()
+                task._save_failed_accounts.assert_not_called()
+                self.assertFalse(task.failed_accounts)
+                self.assertFalse(task._retry_phase)
+                self.assertEqual(task._account_attempts, {'A1': 1})
+                self.assertEqual(task.run_task_by_class.call_count, int(not daily_done))
+                self.assertEqual(child.run_weekly_boss_only.call_count, int(daily_done))
+
+    def test_pending_weekly_summary_does_not_claim_sequence_complete(self):
+        task = self.make_task()
+        task._weekly_pending = {'A3': '待补检：本周仍剩余一次'}
+        task._finish_sequence('A4')
+        title, message = task._notify_user.call_args.args
+        self.assertIn('周本待补检', title)
+        self.assertIn('周本尚待补检', message)
+        self.assertNotIn('序列本轮已处理完成', message)
+
     def test_unavailable_target_stays_pending_without_same_run_retry(self):
         from src.task.ui_transition import TargetUnavailable
         task = self.make_task()

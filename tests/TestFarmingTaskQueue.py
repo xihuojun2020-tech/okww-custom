@@ -10,7 +10,7 @@ from src.task.farming_task_queue import (FARMING_TASKS, new_task, migrate_farmin
     farming_tasks, ordered_tasks, task_progress, task_status, fresh_farming_tasks,
     instance_reader, require_resolved_claims)
 from src.task.world_boss_materials import TARGETS_BY_ID
-from src.task.weekly_boss import WEEKLY_BOSSES, WeeklyBossResult
+from src.task.weekly_boss import WEEKLY_AUTO, WEEKLY_BOSSES, WeeklyBossResult
 from src.task.forgery_quota_plan import FORGERY_GOALS, FORGERY_MODE
 
 
@@ -123,23 +123,98 @@ class TestFarmingTaskQueue(unittest.TestCase):
         self.assertEqual(calls, ['world_boss_material_claims:' + self.identity + ':' + a['id'],
                                 'world_boss_material_claims:' + self.identity + ':' + b['id'], 'forgery', 'tacet'])
 
-    def test_weekly_finite_complete_does_not_use_implicit_fallback(self):
+    def test_weekly_finite_goals_then_game_list_first_exhaust_remaining_claims(self):
+        from src.task.WeeklyBossTask import WeeklyBossTask
         from src.task.farming_task_scheduler import run_weekly_queue
-        a = new_task('weekly', dict(boss=self.weekly, limit=1))
-        b = new_task('weekly', dict(boss=self.weekly, limit=1))
+        from src.task.weekly_boss_progress import WeeklyBossProgress
+        target = WEEKLY_BOSSES[1].key
+        a = new_task('weekly', dict(boss=target, limit=1))
+        b = new_task('weekly', dict(boss=target, limit=1))
         tasks = {FARMING_TASKS: [a, b]}
         remaining = [3]
-        def run(*args, progress, fallback):
-            self.assertFalse(fallback)
+        task = object.__new__(WeeklyBossTask)
+        task.sleep = Mock()
+        task._stage = Mock()
+        def run(target, max_claims=None):
             before = remaining[0]
-            progress.resolve(progress.begin(self.weekly, 'week', before, 'r'), True)
-            remaining[0] -= 1
-            return WeeklyBossResult(before, 1, remaining[0], '目标已达标')
-        runner = {'WeeklyBossTask': SimpleNamespace(run_for_plan=run)}
+            claims = min(before, max_claims) if max_claims is not None else before
+            boss = self.weekly if target == WEEKLY_AUTO else target
+            for _ in range(claims):
+                progress = task._claim_progress
+                progress.resolve(progress.begin(boss, task._claim_week, remaining[0], 'r'), True)
+                remaining[0] -= 1
+            return WeeklyBossResult(before, claims, remaining[0],
+                                    '目标领取额度已达' if remaining[0] else '')
+        task.run_for_target = Mock(side_effect=run)
+        runner = {'WeeklyBossTask': task}
         result = run_weekly_queue(self.daily(tasks, runner), tasks)
-        self.assertEqual((result.claimed, result.remaining, result.reason), (2, 1, '目标已达标'))
+        self.assertEqual((result.initial, result.claimed, result.remaining), (3, 3, 0))
+        self.assertEqual([call.args[0] for call in task.run_for_target.call_args_list],
+                         [target, target, WEEKLY_AUTO])
+        self.assertEqual(task_progress(a, self.env.integrity, self.identity).counts(), {target: 1})
+        self.assertEqual(task_progress(b, self.env.integrity, self.identity).counts(), {target: 1})
+        self.assertEqual(WeeklyBossProgress(self.env.integrity, self.identity).counts(), {self.weekly: 1})
         result = run_weekly_queue(self.daily(tasks, runner), tasks)
-        self.assertEqual(result.claimed, 0)
+        self.assertEqual((result.initial, result.claimed, result.remaining), (0, 0, 0))
+
+    def test_weekly_historical_material_goals_still_read_and_claim_current_week(self):
+        from src.task.WeeklyBossTask import WeeklyBossTask
+        from src.task.farming_task_scheduler import run_weekly_queue
+        item = new_task('weekly', dict(boss=self.weekly, limit=1))
+        tasks = {FARMING_TASKS: [item]}
+        task_progress(item, self.env.integrity, self.identity).correct(self.weekly, 1)
+        task = object.__new__(WeeklyBossTask)
+        task.sleep = Mock()
+        task._stage = Mock()
+        task.run_for_target = Mock(return_value=WeeklyBossResult(2, 2, 0))
+        result = run_weekly_queue(self.daily(tasks, {'WeeklyBossTask': task}), tasks)
+        self.assertEqual((result.initial, result.claimed, result.remaining), (2, 2, 0))
+        task.run_for_target.assert_called_once_with(WEEKLY_AUTO, max_claims=None)
+
+    def test_weekly_disabled_queue_does_not_start_fallback(self):
+        from src.task.farming_task_scheduler import run_weekly_queue
+        item = new_task('weekly', dict(boss=self.weekly, limit=1))
+        item['enabled'] = False
+        task = SimpleNamespace(run_for_plan=Mock())
+        result = run_weekly_queue(self.daily({FARMING_TASKS: [item]}, {'WeeklyBossTask': task}),
+                                  {FARMING_TASKS: [item]})
+        self.assertFalse(result.complete)
+        self.assertEqual(result.reason, '计划未启用')
+        task.run_for_plan.assert_not_called()
+
+    def test_weekly_partial_claim_returns_without_fallback(self):
+        from src.task.farming_task_scheduler import run_weekly_queue
+        item = new_task('weekly', dict(boss=self.weekly, limit=2))
+        tasks = {FARMING_TASKS: [item]}
+        run = Mock(return_value=WeeklyBossResult(3, 1, 2, '当前体力不足'))
+        result = run_weekly_queue(self.daily(tasks, {'WeeklyBossTask': SimpleNamespace(run_for_plan=run)}), tasks)
+        self.assertEqual((result.claimed, result.remaining, result.reason), (1, 2, '当前体力不足'))
+        run.assert_called_once()
+
+    def test_weekly_plan_only_zero_does_not_replace_actual_remaining_check(self):
+        from src.task.farming_task_scheduler import run_weekly_queue
+        for reason in ('目标已达标', '计划未启用'):
+            with self.subTest(reason=reason):
+                item = new_task('weekly', dict(boss=self.weekly, limit=1))
+                tasks = {FARMING_TASKS: [item]}
+                run = Mock(side_effect=[WeeklyBossResult(0, 0, 0, reason),
+                                        WeeklyBossResult(3, 0, 3, '当前体力不足')])
+                result = run_weekly_queue(
+                    self.daily(tasks, {'WeeklyBossTask': SimpleNamespace(run_for_plan=run)}), tasks)
+                self.assertEqual((result.initial, result.claimed, result.remaining), (3, 0, 3))
+                self.assertFalse(result.complete)
+                self.assertEqual(run.call_count, 2)
+
+    def test_weekly_pending_deleted_task_blocks_fallback(self):
+        from src.task.farming_task_scheduler import run_weekly_queue
+        item = new_task('weekly', dict(boss=self.weekly, limit=1))
+        task_progress(item, self.env.integrity, self.identity).begin(self.weekly, 'week', 3, 'r')
+        replacement = new_task('weekly', dict(boss=WEEKLY_BOSSES[1].key, limit=1))
+        tasks = {FARMING_TASKS: [replacement]}
+        task = SimpleNamespace(run_for_plan=Mock())
+        with self.assertRaisesRegex(RuntimeError, '待核验'):
+            run_weekly_queue(self.daily(tasks, {'WeeklyBossTask': task}), tasks)
+        task.run_for_plan.assert_not_called()
 
     def test_weekly_quota_exhausted_preserves_next_target(self):
         from src.task.farming_task_scheduler import run_weekly_queue
