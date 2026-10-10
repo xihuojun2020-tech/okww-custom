@@ -62,3 +62,5 @@ ok-ww-*.exe
 # 大体积安装包（非项目文件）
 ok-ww-*.exe
 *-setup.exe
+# Kernel lock files remain on disk after ownership ends.
+.gameframe-locks/

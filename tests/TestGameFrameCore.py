@@ -11,7 +11,7 @@ import numpy as np
 
 from gameframe.api import Cancelled
 from gameframe.devices.replay import ReplayDevice
-from gameframe.packages import PackageManifest, discover, install_archive
+from gameframe.packages import PackageManifest, discover, install_archive, verify_index
 from gameframe.runtime import Runtime
 from gameframe.state import RunStore
 
@@ -233,6 +233,8 @@ class TestGameFrameCore(unittest.TestCase):
                 {name: hashlib.sha256(data).hexdigest() for name, data in files.items()}))
         installed = install_archive(archive, self.root / 'packages')
         self.assertEqual(installed.load().name, 'installed-relative-module')
+        verify_index(installed.root, required=True)
+        self.assertEqual(list(installed.root.rglob('*.pyc')), [])
         private = installed.root / 'configs' / 'local.json'
         private.parent.mkdir()
         private.write_text('private data')

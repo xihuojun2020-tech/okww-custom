@@ -10,6 +10,8 @@ from pathlib import Path
 import psutil
 
 from gameframe.process_ownership import PROTECTED_PROCESSES_ENV, protected_process_identities
+from gameframe.process_locks import package_lease
+from gameframe.packages import PackageManifest
 
 
 class Controller:
@@ -39,12 +41,16 @@ class Controller:
         if manifest.execution == 'legacy-application':
             if config or device:
                 raise ValueError('Legacy tasks use their production configuration and device selection')
-            launch = manifest.load().legacy_command(task_id, data_dir)
+            with package_lease(manifest.root):
+                if PackageManifest.read(manifest.root).version != manifest.version:
+                    raise ValueError('Gamepack version changed before launch')
+                launch = manifest.load().legacy_command(task_id, data_dir)
             command, cwd, environment = launch['command'], launch['cwd'], launch['env']
         else:
             if device is None:
                 raise ValueError('A native task requires an explicit device configuration')
             command = [sys.executable, '-m', 'gameframe.worker', '--package', str(manifest.root),
+                       '--expected-version', manifest.version,
                        '--task', task_id, '--data-dir', str(data_dir),
                        '--device', json.dumps(device), '--config', json.dumps(config or {})]
             if session:
@@ -63,7 +69,10 @@ class Controller:
             raise ValueError('This package does not provide a management application')
         if self.process is not None and self.process.poll() is None:
             raise RuntimeError('A management process is already running')
-        launch = manifest.load().management_command(Path(data_dir).resolve())
+        with package_lease(manifest.root):
+            if PackageManifest.read(manifest.root).version != manifest.version:
+                raise ValueError('Gamepack version changed before management launch')
+            launch = manifest.load().management_command(Path(data_dir).resolve())
         return self._launch(launch['command'], launch['cwd'], launch['env'], 'management', False)
 
     def _launch(self, command, cwd, environment, execution, session):
@@ -76,6 +85,7 @@ class Controller:
         environment[PROTECTED_PROCESSES_ENV] = str(self._protected_path)
         environment['PYTHONIOENCODING'] = 'utf-8'
         environment['PYTHONUNBUFFERED'] = '1'
+        environment['PYTHONDONTWRITEBYTECODE'] = '1'
         options = {'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}
         try:
             self.process = subprocess.Popen(command, cwd=cwd, env=environment,

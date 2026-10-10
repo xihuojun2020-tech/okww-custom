@@ -141,10 +141,15 @@ def main(argv=None):
     parser.add_argument('--version', required=True)
     parser.add_argument('--manifest', type=Path, required=True)
     args = parser.parse_args(argv)
+    from contextlib import ExitStack
+    from gameframe.process_locks import data_lease, package_lease
     def emit(value):
         print(json.dumps(value, ensure_ascii=False), flush=True)
     host = None
+    leases = ExitStack()
     try:
+        leases.enter_context(package_lease(args.manifest.parent))
+        leases.enter_context(data_lease(args.data_dir))
         host = create_configuration_host(args.data_dir, args.version, args.manifest, emit)
         emit({'event': 'configuration-ready'})
         for line in sys.stdin:
@@ -164,9 +169,12 @@ def main(argv=None):
         emit({'event': 'configuration-failed', 'error': {'type': type(error).__name__, 'message': str(error)}})
         return 1
     finally:
-        if host is not None:
-            from src.evidence.service import get_evidence_service
-            get_evidence_service().close()
+        try:
+            if host is not None:
+                from src.evidence.service import get_evidence_service
+                get_evidence_service().close()
+        finally:
+            leases.close()
 
 
 if __name__ == '__main__':

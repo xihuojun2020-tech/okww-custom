@@ -9,8 +9,8 @@
 从独立 wheel 安装核心，界面和 Windows 捕获按需要安装可选依赖：
 
 ```powershell
-python -m pip install "gameframe-runtime[gui,windows] @ file:///C:/your/path/gameframe_runtime-1.97.67-py3-none-any.whl"
-gameframe install .\wuthering_waves_native-1.97.67.zip
+python -m pip install "gameframe-runtime[gui,windows] @ file:///C:/your/path/gameframe_runtime-1.97.68-py3-none-any.whl"
+gameframe install .\wuthering_waves_native-1.97.68.zip
 gameframe list
 gameframe gui
 ```
@@ -25,7 +25,7 @@ gameframe gui
 
 GUI 支持安装 ZIP、选择任务、保存原生任务 JSON 与设备配置、执行、暂停/恢复、停止，显示执行器原始输出及退出码。支持会话的包在同一执行器中串行运行多个辅助服务和排队任务；前台任务独占输入，结束后继续后台服务。关闭某个服务使用 Disable selected service；Stop 结束执行器并保留服务偏好。兼容鸣潮任务使用其完整生产配置与设备选择，具体业务完成由原程序的完成检查判断。退出码 0 只表示进程正常返回。
 
-独立规则包 `wuthering_waves_native-1.97.67.zip` 按包内 `requirements.txt` 安装执行依赖；管理窗口另需 `requirements-management.txt`。Manage gamepack 打开账号、序列、完整性检查、配置包及完成记录；全新安装须经明确表单/预览/确认建立首账号，或导入自己的配置包，任务入口不会创建空 master。ZIP 已完成禁止旧框架导入的实际生产轮转与停止验收，管理页也在安装载荷中打开并正常关闭；29项任务的代表性离线分支范围详见验收报告，不代表全部实战流程完成。
+独立规则包 `wuthering_waves_native-1.97.68.zip` 按包内 `requirements.txt` 安装执行依赖；管理窗口另需 `requirements-management.txt`。Manage gamepack 打开账号、序列、完整性检查、配置包及完成记录；全新安装须经明确表单/预览/确认建立首账号，或导入自己的配置包，任务入口不会创建空 master。ZIP 已完成禁止旧框架导入的实际生产轮转与停止验收，管理页也在安装载荷中打开并正常关闭；29项任务的代表性离线分支范围详见验收报告，不代表全部实战流程完成。
 
 默认安装与框架状态位于当前 Windows 用户的 `~/.gameframe`。Windows 用户由人手动切换；在各用户目录分别安装游戏包，可以保留各自的游戏包配置和账号组。源模式鸣潮包使用当前源码安装的数据路径；它不会自动复制或迁移私人账号配置。安装拒绝覆盖同 ID 的已有包，避免把更新当成重装而丢失包内配置。
 
@@ -35,7 +35,11 @@ Manage gamepack 的“任务与配置”页读取生产任务和全局配置的�
 
 已安装且带 `files.json` 的包可从 Update gamepack 选择本地 ZIP，也可在管理页“游戏包更新”检查独立发布源并下载。原生发布路径为 `GameFrame-Packages/<包ID>/stable/latest.json`，ZIP 名为 `<包ID>-<版本>.zip`。下载暂存于用户数据目录；核心验证完整文件索引、包身份和版本，以及执行/管理 requirements 的实际依赖一致性，再等待本启动器的执行和管理进程退出后替换包代码并重新发现任务。事务日志支持交换中断恢复；用户数据目录不参与替换。源码工作目录不能热更新，真实依赖变化需要完整环境升级。
 
-当前协调范围是同一个启动器持有的进程；跨启动器、CLI 与其他进程的输入及包生命周期锁尚未实现。自定义任务/角色编辑热载、日历定时与耗时视图也尚未完成。
+实际worker在payload导入前取得包共享锁及数据共享锁，在设备创建前取得输入独占锁。Windows输入按当前会话的真实WindowStation/Desktop互斥，因此不同HWND、包和数据目录仍不能同时发键；ADB按serial、MuMu按安装目录/instance互斥。Replay不占用真实输入。包安装、更新、回滚和交换恢复持独占锁，冲突立即报错；锁文件由内核管理且长期保留，不靠PID/超时判断失效。
+
+管理与配置命令使用 `gameframe.package_process` 在同一实际进程的包共享锁内核对版本、导入载荷并运行。原生worker设备、游戏包异步诊断/证据和账本收尾完成后释放锁。数据共享锁用于下一阶段恢复/存储迁移协调，恢复管理页尚未完成。兼容bootstrap持包、source_root数据及桌面输入锁，已加载证据和诊断在返回前收尾；旧direct main.py和直接调用bootstrap.run未纳入此框架入口的锁保障。
+
+ADB与MuMu尚未提供跨backend同实例映射，不能据此保证两个后端操作同一个模拟器时互斥。POSIX锁实现未在本轮Windows环境运行。自定义任务/角色编辑热载、日历定时与耗时视图继续迁移。
 
 原生规则包的单次执行示例：
 
@@ -62,7 +66,7 @@ Manage gamepack 的“任务与配置”页读取生产任务和全局配置的�
 
 Windows 可在现有 `hwnd` 上执行，或明确提供 `launch_command`（绝对程序路径及参数）和 `target_executable`（目标游戏绝对路径），省略 HWND 时按此命令启动。重绑只选择该启动进程家族中的唯一可见目标窗口，验证进程身份并重建 WGC；模糊匹配或无法记录启动家族会报错。设备启动的游戏进程有明确身份登记，强制结束执行器时保留这些进程；“Exit After Task”仅在任务成功收尾后结束选定游戏进程并退出启动器。
 
-游戏包声明 `supports_session` 后提供 `run_session(task_id, context)`，通过 `context.requests` 接收 `run-task` 和 `set-service`；包负责自身任务调度与能力检查，核心保留单一输入所有者。管理扩展声明 `management` 并提供 `management_command(data_dir)`，只在用户打开时启动独立进程。元数据发现与 ZIP 安装均不执行这些入口。
+游戏包声明 `supports_session` 后提供 `run_session(task_id, context)`，通过 `context.requests` 接收 `run-task` 和 `set-service`；包负责自身任务调度与能力检查，核心保留单一输入所有者。管理扩展声明 `management` 并提供 `management_command(data_dir)`，只在用户打开时启动独立进程。管理命令应使用 `gameframe.package_process --package ROOT --expected-version VERSION --module MODULE -- ...`，让实际进程在导入规则前持包锁；任意第三方命令不能由Controller代为保证其运行期持锁。包有异步写入者时提供 `close()`，在返回前完成自身写入者收尾。元数据发现与 ZIP 安装均不执行这些入口。
 
 ## 后台和商业化边界
 

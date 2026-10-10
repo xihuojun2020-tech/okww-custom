@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from gameframe import API_VERSION
+from gameframe.process_locks import package_lease
 
 
 @dataclass(frozen=True)
@@ -153,7 +154,8 @@ def install_archive(archive_path: Path | str, directory: Path | str) -> PackageM
     with tempfile.TemporaryDirectory(prefix='.gameframe-install-', dir=destination) as temporary:
         manifest = extract_archive(archive_path, Path(temporary))
         installed = destination / manifest.id
-        if installed.exists():
-            raise FileExistsError(f'Package already installed: {installed}')
-        manifest.root.rename(installed)
-    return PackageManifest.read(installed)
+        with package_lease(installed, exclusive=True):
+            if installed.exists():
+                raise FileExistsError(f'Package already installed: {installed}')
+            manifest.root.rename(installed)
+            return PackageManifest.read(installed)

@@ -195,15 +195,25 @@ def attach_framework_hooks():
         pass
 
 
-def finish_diagnostics():
-    if _session is None or _session.closed_session:
+def finish_diagnostics(*, timeout=2):
+    global _session
+    session = _session
+    if session is None or (session.closed_session and timeout is not None):
         return
     try:
-        logging.getLogger().removeHandler(_session)
-        _session.capture_last_frame()
-        failed = _session.metadata['process_status'] == 'crashed'
-        _session.finish('crashed' if failed else 'exited', 1 if failed else 0)
-        if not _session.local_only:
-            wake_uploader(_session.root)
+        logging.getLogger().removeHandler(session)
+        try:
+            if not session.closed_session:
+                session.capture_last_frame()
+        finally:
+            failed = session.metadata['process_status'] == 'crashed'
+            try:
+                session.finish('crashed' if failed else 'exited', 1 if failed else 0, timeout=timeout)
+            finally:
+                if timeout is None and not session.worker.is_alive():
+                    _session = None
+        if not session.local_only:
+            wake_uploader(session.root)
     except Exception:
-        pass
+        if timeout is None:
+            raise

@@ -10,6 +10,7 @@ import tempfile
 import uuid
 
 from gameframe.packages import PackageManifest, extract_archive, verify_index
+from gameframe.process_locks import package_lease
 
 
 @dataclass(frozen=True)
@@ -88,20 +89,21 @@ def prepare_update(archive, packages_dir, *, package_id, current_version, target
     directory = Path(packages_dir).resolve()
     transaction = directory / '.gameframe-transactions' / uuid.uuid4().hex
     plan = PreparedUpdate(transaction, package_id, current_version, target_version)
-    _check_installed(plan)
-    extraction = transaction / 'extract'
-    extraction.mkdir(parents=True)
-    try:
-        manifest = extract_archive(archive, extraction, require_index=True)
-        _check_manifest(manifest.root, plan, target_version)
-        _check_dependencies(plan.installed, manifest.root)
-        manifest.root.rename(transaction / 'incoming')
-        extraction.rmdir()
-        _write_journal(plan, 'prepared')
-    except BaseException:
-        shutil.rmtree(transaction)
-        raise
-    return plan
+    with package_lease(plan.installed):
+        _check_installed(plan)
+        extraction = transaction / 'extract'
+        extraction.mkdir(parents=True)
+        try:
+            manifest = extract_archive(archive, extraction, require_index=True)
+            _check_manifest(manifest.root, plan, target_version)
+            _check_dependencies(plan.installed, manifest.root)
+            manifest.root.rename(transaction / 'incoming')
+            extraction.rmdir()
+            _write_journal(plan, 'prepared')
+        except BaseException:
+            shutil.rmtree(transaction)
+            raise
+        return plan
 
 
 def _rollback(plan):
@@ -121,45 +123,46 @@ def _rollback(plan):
 
 
 def apply_update(plan, *, ensure_idle, fault_hook=None):
-    """Replace only package code after the caller checks both owned processes.
+    """Exclusively lease package code, then check the caller's owned processes.
 
     ensure_idle must raise while either worker or management owns the package;
     the launcher must serialize starting owners and this operation.
     Ordinary failures roll back. Process interruption leaves a recovery journal.
     """
-    stored, phase = _read_journal(plan.transaction)
-    if stored != plan or phase != 'prepared':
-        raise ValueError('Update transaction is not prepared')
-    _check_installed(plan)
-    incoming = plan.transaction / 'incoming'
-    _check_manifest(incoming, plan, plan.target_version)
-    verify_index(incoming, required=True)
-    _check_dependencies(plan.installed, incoming)
-    ensure_idle()
-    _write_journal(plan, 'switching')
-    committed = False
-    try:
+    with package_lease(plan.installed, exclusive=True):
+        stored, phase = _read_journal(plan.transaction)
+        if stored != plan or phase != 'prepared':
+            raise ValueError('Update transaction is not prepared')
+        _check_installed(plan)
+        incoming = plan.transaction / 'incoming'
+        _check_manifest(incoming, plan, plan.target_version)
+        verify_index(incoming, required=True)
+        _check_dependencies(plan.installed, incoming)
         ensure_idle()
-        plan.installed.rename(plan.transaction / 'previous')
-        if fault_hook is not None:
-            fault_hook('after_old_rename')
-        incoming.rename(plan.installed)
-        if fault_hook is not None:
-            fault_hook('after_new_rename')
-        manifest = _check_manifest(plan.installed, plan, plan.target_version)
-        verify_index(plan.installed, required=True)
-        if fault_hook is not None:
-            fault_hook('before_commit')
-        _write_journal(plan, 'committed')
-        committed = True
-        if fault_hook is not None:
-            fault_hook('after_commit')
-        shutil.rmtree(plan.transaction)
-        return manifest
-    except Exception:
-        if not committed:
-            _rollback(plan)
-        raise
+        _write_journal(plan, 'switching')
+        committed = False
+        try:
+            ensure_idle()
+            plan.installed.rename(plan.transaction / 'previous')
+            if fault_hook is not None:
+                fault_hook('after_old_rename')
+            incoming.rename(plan.installed)
+            if fault_hook is not None:
+                fault_hook('after_new_rename')
+            manifest = _check_manifest(plan.installed, plan, plan.target_version)
+            verify_index(plan.installed, required=True)
+            if fault_hook is not None:
+                fault_hook('before_commit')
+            _write_journal(plan, 'committed')
+            committed = True
+            if fault_hook is not None:
+                fault_hook('after_commit')
+            shutil.rmtree(plan.transaction)
+            return manifest
+        except Exception:
+            if not committed:
+                _rollback(plan)
+            raise
 
 
 def recover_updates(packages_dir, *, ensure_idle):
@@ -167,18 +170,27 @@ def recover_updates(packages_dir, *, ensure_idle):
     directory = Path(packages_dir).resolve() / '.gameframe-transactions'
     outcomes = []
     for journal in sorted(directory.glob('*/journal.json')):
-        plan, phase = _read_journal(journal.parent)
-        if phase == 'prepared':
-            outcomes.append(UpdateOutcome(plan, 'prepared'))
-            continue
-        ensure_idle()
-        if phase == 'committed':
-            _check_manifest(plan.installed, plan, plan.target_version)
-            verify_index(plan.installed, required=True)
-            shutil.rmtree(plan.transaction)
-            status = 'committed'
-        else:
-            _rollback(plan)
-            status = 'rolled_back'
-        outcomes.append(UpdateOutcome(plan, status))
+        # Read only the identity before locking; phase decisions use a locked reread.
+        plan, _ = _read_journal(journal.parent)
+        with package_lease(plan.installed):
+            plan, phase = _read_journal(journal.parent)
+            if phase == 'prepared':
+                outcomes.append(UpdateOutcome(plan, 'prepared'))
+                continue
+        # Do not upgrade a shared lease: release it, then recheck under exclusive ownership.
+        with package_lease(plan.installed, exclusive=True):
+            plan, phase = _read_journal(journal.parent)
+            if phase == 'prepared':
+                outcomes.append(UpdateOutcome(plan, 'prepared'))
+                continue
+            ensure_idle()
+            if phase == 'committed':
+                _check_manifest(plan.installed, plan, plan.target_version)
+                verify_index(plan.installed, required=True)
+                shutil.rmtree(plan.transaction)
+                status = 'committed'
+            else:
+                _rollback(plan)
+                status = 'rolled_back'
+            outcomes.append(UpdateOutcome(plan, status))
     return tuple(outcomes)

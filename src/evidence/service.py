@@ -81,6 +81,14 @@ _service = None
 _service_lock = threading.Lock()
 
 
+def close_existing_evidence_service():
+    """Wait for existing saves without initializing an unused evidence store."""
+    with _service_lock:
+        service = _service
+    if service is not None:
+        service.close()
+
+
 def get_evidence_service(*, root=None):
     global _service
     with _service_lock:

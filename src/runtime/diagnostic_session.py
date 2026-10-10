@@ -1,6 +1,7 @@
 """Local-only diagnostic sessions and immutable, redacted upload batches."""
 from __future__ import annotations
 
+from contextlib import ExitStack
 import json
 import logging
 import os
@@ -183,6 +184,7 @@ class DiagnosticSession(logging.Handler):
         self.pending = queue.Queue(maxsize=32)
         self.triggers = queue.Queue(maxsize=128)
         self.closed_session = False
+        self._stop_requested = False
         self.local_only = local_only
         self.metadata = {'schema_version': 1, 'version': version, 'policy': POLICY,
                          'device_id': settings(self.root)['device_id'],
@@ -408,8 +410,10 @@ class DiagnosticSession(logging.Handler):
                     if action == 'frame':
                         import cv2
                         saved = folder / (image_id + '.png')
-                        if not cv2.imwrite(str(saved), source):
+                        encoded, image = cv2.imencode('.png', source)
+                        if not encoded:
                             raise OSError('frame encoding failed')
+                        saved.write_bytes(image.tobytes())
                     else:
                         source = Path(source)
                         if (source.suffix.lower() in ('.png', '.jpg', '.jpeg') and not source.is_symlink()
@@ -447,27 +451,44 @@ class DiagnosticSession(logging.Handler):
 
     def finish(self, status='exited', exit_code=0, timeout=2):
         with self.guard:
-            if self.closed_session:
+            if self.closed_session and not self.worker.is_alive():
                 return
-            self.closed_session = True
-            self.metadata.update(process_status=status, exit_code=exit_code,
-                                 ended_at=datetime.now().astimezone().isoformat())
-            self._save_metadata()
-            self.request_batch('final')
-        deadline = time.monotonic() + timeout
-        while self.pending.unfinished_tasks and time.monotonic() < deadline:
-            time.sleep(0.02)
-        # The uploader can recover a final batch if the daemon is cut short at process exit.
-        if not self.pending.unfinished_tasks:
-            self.pending.put(None)
-            self.worker.join(timeout=0.2)
-            with self.guard:
-                for stream in self.streams.values():
-                    stream.close()
-                self.streams.clear()
-            self.lease.close()
-            if self.collector_lease:
-                self.collector_lease.close()
+            first_finish = not self.closed_session
+            if first_finish:
+                self.closed_session = True
+                self.metadata.update(process_status=status, exit_code=exit_code,
+                                     ended_at=datetime.now().astimezone().isoformat())
+        try:
+            if first_finish:
+                with self.guard:
+                    self._save_metadata()
+        finally:
+            if first_finish:
+                if timeout is None:
+                    # Do not drop the final batch when the bounded queue is full.
+                    self.pending.put('final')
+                else:
+                    self.request_batch('final')
+            if timeout is None:
+                self.pending.join()
+            else:
+                deadline = time.monotonic() + timeout
+                while self.pending.unfinished_tasks and time.monotonic() < deadline:
+                    time.sleep(0.02)
+            # Legacy exit remains bounded; native owners wait for actual teardown.
+            if not self.pending.unfinished_tasks:
+                if not self._stop_requested:
+                    self._stop_requested = True
+                    self.pending.put(None)
+                self.worker.join(timeout=None if timeout is None else 0.2)
+                if not self.worker.is_alive():
+                    with self.guard, ExitStack() as closing:
+                        if self.collector_lease:
+                            closing.callback(self.collector_lease.close)
+                        closing.callback(self.lease.close)
+                        for stream in self.streams.values():
+                            closing.callback(stream.close)
+                        self.streams.clear()
 
 
 def recover_sessions(root):

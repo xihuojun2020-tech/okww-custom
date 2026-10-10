@@ -75,6 +75,8 @@ class NativeConfigurationTab(QWidget):
 
     def __init__(self, data_dir, version, manifest_path, parent=None):
         super().__init__(parent)
+        from gameframe.packages import PackageManifest
+        manifest = PackageManifest.read(Path(manifest_path).parent)
         self.schema = None
         self._entries = []
         self._request_id = 0
@@ -112,7 +114,9 @@ class NativeConfigurationTab(QWidget):
         self.process.finished.connect(self._finished)
         self.process.errorOccurred.connect(lambda _: self._fail(self.process.errorString()))
         self.process.started.connect(lambda: self.request('get-schema'))
-        self._arguments = ['-u', '-m', 'src.runtime.native_configuration',
+        self._arguments = ['-u', '-m', 'gameframe.package_process',
+            '--package', str(manifest.root), '--expected-version', manifest.version,
+            '--module', 'src.runtime.native_configuration', '--',
             '--data-dir', str(Path(data_dir).resolve()), '--version', version,
             '--manifest', str(Path(manifest_path).resolve())]
         self.process.start(sys.executable, self._arguments)

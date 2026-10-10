@@ -42,12 +42,23 @@ class WutheringWavesNativePackage:
         environment = os.environ.copy()
         environment['PYTHONPATH'] = os.pathsep.join(
             path for path in (str(self.source), core, environment.get('PYTHONPATH')) if path)
-        return {'command': [sys.executable, '-m', 'src.management', '--data-dir', str(data_dir),
+        return {'command': [sys.executable, '-m', 'gameframe.package_process',
+                            '--package', str(self.root), '--expected-version', self.manifest['version'],
+                            '--module', 'src.management', '--', '--data-dir', str(data_dir),
                             '--version', self.manifest['version'], '--package-root', str(self.root)],
                 'cwd': str(self.source), 'env': environment}
 
     def run(self, task_id, context):
         return self._run(task_id, context, session=False)
+
+    def close(self):
+        self._bind_source()
+        from src.evidence.service import close_existing_evidence_service
+        from src.runtime.native_diagnostics import close_native_diagnostics
+        try:
+            close_existing_evidence_service()
+        finally:
+            close_native_diagnostics()
 
     def run_session(self, task_id, context):
         return self._run(task_id, context, session=True)

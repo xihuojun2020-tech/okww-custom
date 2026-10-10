@@ -49,6 +49,15 @@ class AccountManagementService:
 
 def manage(data_dir, program_version, *, package_root=None):
     """Open existing Qt business widgets without constructing an OK app or device."""
+    from contextlib import ExitStack
+    with ExitStack() as leases:
+        if package_root is not None:
+            from gameframe.process_locks import package_lease
+            leases.enter_context(package_lease(package_root))
+        return _manage(data_dir, program_version, package_root=package_root)
+
+
+def _manage(data_dir, program_version, *, package_root=None):
     from src.runtime import combat_api
     combat_api.configure(native=False, data_dir=data_dir)
     service = AccountManagementService(data_dir, program_version, package_root=package_root)

@@ -20,10 +20,16 @@ class WutheringWavesPackage:
         source = (self.root / self.manifest['source_root']).resolve()
         if not (source / 'main.py').is_file():
             raise FileNotFoundError(f'Missing compatibility application: {source / "main.py"}')
-        command = [sys.executable, str(self.root / 'bootstrap.py'), '--source-root', str(source)]
+        command = [sys.executable, str(self.root / 'bootstrap.py'), '--source-root', str(source),
+                   '--expected-version', self.manifest['version']]
         if task_id != 'application':
             command += ['--task-class', task['class']]
-        return {'command': command, 'cwd': str(source), 'env': dict(os.environ)}
+        import gameframe
+        environment = dict(os.environ)
+        core = str(Path(gameframe.__file__).resolve().parent.parent)
+        environment['PYTHONPATH'] = os.pathsep.join(
+            path for path in (core, environment.get('PYTHONPATH')) if path)
+        return {'command': command, 'cwd': str(source), 'env': environment}
 
     def run(self, task_id, context):
         raise RuntimeError('This compatibility package must run in its legacy application process')

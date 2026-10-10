@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Observe native workers using the existing local diagnostic session."""
 
+import logging
 import sys
 from pathlib import Path
 
@@ -28,6 +29,28 @@ def _failure(error):
     # Diagnostic observers must preserve the task's result/exception, without
     # recursively feeding a failing diagnostic handler through logging.
     print('本地诊断观察失败：' + sanitize_text(error), file=sys.stderr)
+
+
+def close_native_diagnostics():
+    """Drain local observers before the native owner releases its data lease."""
+    session = diagnostic_lifecycle._session
+    if session is None:
+        return
+    logging.getLogger().removeHandler(session)
+    try:
+        if not session.closed_session:
+            session.capture_last_frame()
+    except Exception as error:
+        _failure(error)
+    finally:
+        try:
+            failed = session.metadata['process_status'] == 'crashed'
+            session.finish('crashed' if failed else 'exited', 1 if failed else 0, timeout=None)
+        except Exception as error:
+            _failure(error)
+        finally:
+            if not session.worker.is_alive():
+                diagnostic_lifecycle._session = None
 
 
 def _session():

@@ -1,6 +1,7 @@
 """Native package execution. Merely importing this module never opens a device."""
 
 import argparse
+from contextlib import ExitStack
 import json
 import sys
 import threading
@@ -9,6 +10,7 @@ from pathlib import Path
 
 from gameframe.api import Cancelled
 from gameframe.packages import PackageManifest
+from gameframe.process_locks import data_lease, device_input_lease, package_lease
 from gameframe.runtime import Runtime
 from gameframe.state import RunStore
 
@@ -69,6 +71,7 @@ def listen_stop(stop, pause, requests=None):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--package', type=Path, required=True)
+    parser.add_argument('--expected-version')
     parser.add_argument('--task', required=True)
     parser.add_argument('--data-dir', type=Path, required=True)
     parser.add_argument('--device', type=json_object, required=True)
@@ -80,20 +83,27 @@ def main(argv=None):
     requests = Queue() if options.session else None
     threading.Thread(target=listen_stop, args=(stop, pause, requests), daemon=True).start()
     device = None
+    package = None
     store = None
+    leases = ExitStack()
     try:
+        leases.enter_context(package_lease(options.package))
         manifest = PackageManifest.read(options.package)
+        if options.expected_version is not None and manifest.version != options.expected_version:
+            raise ValueError('Gamepack version changed before the worker started')
         task = manifest.task(options.task)
         if manifest.execution != 'native':
             raise ValueError('Legacy packages use their explicit production bootstrap')
         if options.session and not manifest.supports_session:
             raise ValueError('This package does not provide a shared task session')
+        leases.enter_context(data_lease(options.data_dir))
         package = manifest.load()
         prepare = getattr(package, 'prepare', None)
         if prepare is not None:
             prepare(task.id, options.data_dir)
         if stop.is_set():
             raise Cancelled('Task stopped before device creation')
+        leases.enter_context(device_input_lease(options.device))
         device = create_device(options.device)
         prepare_device = getattr(device, 'prepare', None)
         if prepare_device is not None:
@@ -124,8 +134,16 @@ def main(argv=None):
             if device is not None:
                 device.close()
         finally:
-            if store is not None:
-                store.close()
+            try:
+                try:
+                    close_package = getattr(package, 'close', None)
+                    if close_package is not None:
+                        close_package()
+                finally:
+                    if store is not None:
+                        store.close()
+            finally:
+                leases.close()
 
 
 if __name__ == '__main__':

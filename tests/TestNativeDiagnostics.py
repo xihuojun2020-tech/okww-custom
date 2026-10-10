@@ -34,7 +34,7 @@ class BlockLegacy(importlib.abc.MetaPathFinder):
 sys.meta_path.insert(0, BlockLegacy())
 from src.runtime import diagnostic_lifecycle
 from src.runtime.native_diagnostics import (start_native_diagnostics, attach_native_executor,
-    record_native_event, diagnostic_root)
+    record_native_event, diagnostic_root, close_native_diagnostics)
 from src.runtime.diagnostic_archive import build_archive
 from src.runtime.diagnostic_policy import installation_id
 data_dir = root / 'data'
@@ -50,10 +50,7 @@ boundaries = ('subprocess.Popen', 'src.runtime.diagnostic_policy.ensure_task',
 spies = [external.enter_context(patch(name, side_effect=AssertionError('external boundary ' + name)))
          for name in boundaries]
 def finish():
-    session = diagnostic_lifecycle._session
-    if session is not None and not session.closed_session:
-        session.finish(timeout=5)
-    logging.getLogger().removeHandler(session)
+    close_native_diagnostics()
 def assert_local():
     for spy in spies:
         spy.assert_not_called()
@@ -93,6 +90,117 @@ class TestNativeDiagnostics(unittest.TestCase):
             result = subprocess.run(command, capture_output=True,
                                     text=True, encoding='utf-8', timeout=35)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_close_waits_for_queued_work_and_cached_frame(self):
+        self.run_native('''
+session = start_native_diagnostics(data_dir, 'native-test')
+session.pending.join()
+import numpy as np
+import cv2
+frame = np.ones((32, 48, 3), dtype=np.uint8)
+session.frame_provider = Mock(return_value=frame)
+session.sample_provider = lambda: None
+entered, release = threading.Event(), threading.Event()
+original_collect = session.collector.collect
+def collect(run):
+    entered.set()
+    assert release.wait(5)
+    return original_collect(run)
+session.collector.collect = collect
+session.request_batch('queued-before-close')
+assert entered.wait(5)
+closer = threading.Thread(target=close_native_diagnostics)
+closer.start()
+time.sleep(.05)
+assert closer.is_alive() and session.worker.is_alive()
+assert not session.lease.stream.closed and not session.collector_lease.stream.closed
+release.set()
+closer.join(5)
+assert not closer.is_alive() and not session.worker.is_alive()
+assert session.closed_session and session.pending.unfinished_tasks == 0
+assert session.lease.stream.closed and session.collector_lease.stream.closed
+session.frame_provider.assert_called_once()
+assert list((session.run / 'screenshots').glob('*.png'))
+assert diagnostic_lifecycle._session is None
+before = {path: path.read_bytes() for path in session.run.rglob('*') if path.is_file()}
+error = RuntimeError('original worker cleanup failure')
+diagnostic_lifecycle.record_crash(type(error), error, error.__traceback__)
+diagnostic_lifecycle.finish_diagnostics()
+assert before == {path: path.read_bytes() for path in session.run.rglob('*') if path.is_file()}
+close_native_diagnostics()
+''')
+
+    def test_close_stops_after_timeout_and_metadata_write_failure(self):
+        self.run_native('''
+session = start_native_diagnostics(data_dir, 'native-test')
+session.pending.join()
+entered, release = threading.Event(), threading.Event()
+original_collect = session.collector.collect
+def collect(run):
+    entered.set()
+    assert release.wait(5)
+    return original_collect(run)
+session.collector.collect = collect
+session.request_batch('blocked')
+assert entered.wait(5)
+session.finish(timeout=0)
+assert session.closed_session and session.worker.is_alive()
+release.set()
+close_native_diagnostics()
+assert not session.worker.is_alive() and session.lease.stream.closed
+
+# A real metadata-write boundary failure must still stop the actual daemon.
+diagnostic_lifecycle._session = None
+session = start_native_diagnostics(data_dir, 'native-test')
+session.record_event('before-finalize', {'status': 'success'})
+session.pending.join()
+streams = list(session.streams.values())
+from src.runtime import diagnostic_session
+original_json = diagnostic_session.atomic_json
+def write(path, value):
+    if Path(path).name == 'metadata.json':
+        raise OSError('metadata disk unavailable')
+    return original_json(path, value)
+session.frame_provider = Mock(side_effect=OSError('cached image unavailable'))
+with patch.object(diagnostic_session, 'atomic_json', side_effect=write), \
+     patch('src.runtime.native_diagnostics._failure') as failure:
+    close_native_diagnostics()
+    assert failure.call_count == 2
+    assert 'cached image unavailable' in str(failure.call_args_list[0].args[0])
+    assert 'metadata disk unavailable' in str(failure.call_args_list[1].args[0])
+assert not session.worker.is_alive() and session.pending.unfinished_tasks == 0
+assert all(stream.closed for stream in streams)
+assert session.lease.stream.closed and session.collector_lease.stream.closed
+close_native_diagnostics()
+''')
+
+    def test_close_existing_evidence_drains_without_creating_default_service(self):
+        self.run_native('''
+from src.evidence import service as evidence
+with patch.object(evidence, 'EvidenceRepository', side_effect=AssertionError('default created')):
+    evidence.close_existing_evidence_service()
+assert evidence._service is None
+entered, release = threading.Event(), threading.Event()
+saved = []
+class Repository:
+    def save_run(self, metadata):
+        entered.set()
+        assert release.wait(5)
+        saved.append(metadata)
+service = evidence.EvidenceService(Repository())
+with patch.object(evidence, '_service', service):
+    future = service.submit({'result': 'completed'}, None, run=True)
+    assert entered.wait(5)
+    closer = threading.Thread(target=evidence.close_existing_evidence_service)
+    closer.start()
+    time.sleep(.05)
+    assert closer.is_alive() and not future.done()
+    release.set()
+    closer.join(5)
+    assert not closer.is_alive() and future.done()
+    assert saved == [{'result': 'completed'}]
+    evidence.close_existing_evidence_service()
+''')
 
     def test_real_session_cached_replay_error_and_offline_archive(self):
         self.run_native('''
