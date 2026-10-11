@@ -28,10 +28,11 @@ from gameframe.ui_strings import apply_labels
 
 class GameFrameWindow(QWidget):
     def __init__(self, packages_dir: Path | str, data_dir: Path | str, *, controller=None,
-                 key_state=None):
+                 key_state=None, managed_root=None, login_argv=None, installation_root=None):
         super().__init__()
         self.setWindowTitle("GameFrame")
         self.resize(980, 800)
+        self.managed_root = Path(managed_root).resolve() if managed_root is not None else None
         self.packages_dir = Path(packages_dir)
         self._context_path = Path(data_dir) / 'launcher-context.json'
         self._launcher_context = load_context(self._context_path)
@@ -163,6 +164,11 @@ class GameFrameWindow(QWidget):
         form.addRow('能力匹配', self.compatibility_label)
         form.addRow('启动 / 暂停 / 恢复热键', self.pause_hotkey)
         form.addRow(self.tray_notifications, self.close_to_tray)
+        from gameframe.update_controls import attach_update_controls
+        attach_update_controls(self, form, managed_root=self.managed_root)
+        from gameframe.login_start_controls import attach_login_start
+        attach_login_start(self, form, launch_argv=login_argv,
+                           installation_root=installation_root, managed_root=self.managed_root)
         buttons = QGridLayout()
         for index, button in enumerate((self.start_button, self.session_button, self.stop_button, self.pause_button,
                 self.disable_button, self.manage_button, self.overview_button, self.install_button,
@@ -221,6 +227,7 @@ class GameFrameWindow(QWidget):
             if not self.restoreGeometry(QByteArray(bytes.fromhex(self._launcher_context['window_geometry']))):
                 raise ValueError('Invalid window geometry')
         self._select_package(self.package_select.currentIndex())
+        QTimer.singleShot(0, self.managed_update_bindings.startup)
         QTimer.singleShot(0, self._restore_saved_session)
 
     def _save_launcher_context(self, *_):
@@ -315,6 +322,8 @@ class GameFrameWindow(QWidget):
         schema = event.get('schema', {})
         self._launcher_labels = schema.get('launcher_labels', {})
         apply_labels(self, self._launcher_labels)
+        self.device_editor.apply_labels(self._launcher_labels)
+        self.managed_update_bindings.localize(self._launcher_labels)
         help_text = '启动会话 / 暂停 / 恢复，保留服务启用设置。'
         self.pause_hotkey.setToolTip(self._launcher_labels.get(help_text, help_text))
         self._task_titles = {task['id']: task['name'] for task in schema.get('tasks', ())}
@@ -523,6 +532,8 @@ class GameFrameWindow(QWidget):
         return self.packages[index] if index >= 0 else None
 
     def _select_package(self, index):
+        self.managed_update_bindings.refresh()
+        self.managed_update_bindings.localize({})
         manifest = self._manifest()
         self.user_context_label.setText(f'Windows 用户：{getpass.getuser()}\n资料根：{self.data_dir}'
                                        + (f'\n游戏包资料：{self.data_dir / manifest.id}' if manifest else ''))
@@ -537,6 +548,7 @@ class GameFrameWindow(QWidget):
         self._task_titles = {}
         self._launcher_labels = {}
         apply_labels(self, {})
+        self.device_editor.apply_labels({})
         self.sequence_select.clear()
         self.account_select.clear()
         self.task_list.clear()
@@ -1100,6 +1112,8 @@ class GameFrameWindow(QWidget):
                 kind, value = self._events.get_nowait()
             except queue.Empty:
                 break
+            if self.managed_update_bindings.handle(kind, value):
+                continue
             if kind == 'overview-started':
                 self._overview_starting = False
             elif kind == 'account-context':
@@ -1337,6 +1351,7 @@ class GameFrameWindow(QWidget):
                 self._install_thread.join()
             if self._update_thread is not None:
                 self._update_thread.join()
+            self.managed_update_bindings.wait()
             if self._management_thread is not None:
                 self._management_thread.join()
             self.management_controller.close()
@@ -1354,8 +1369,12 @@ class GameFrameWindow(QWidget):
             self._events.put(("cleanup-done", None))
 
 
-def run_gui(packages_dir: Path | str, data_dir: Path | str) -> int:
-    app = QApplication.instance() or QApplication([])
-    window = GameFrameWindow(packages_dir, data_dir)
-    window.show()
-    return app.exec()
+def run_gui(packages_dir: Path | str, data_dir: Path | str, *, managed_root=None,
+            login_argv=None, installation_root=None) -> int:
+    from gameframe.managed_install import managed_entry
+    with managed_entry(managed_root) as managed:
+        app = QApplication.instance() or QApplication([])
+        window = GameFrameWindow(packages_dir, data_dir, managed_root=managed,
+                                 login_argv=login_argv, installation_root=installation_root)
+        window.show()
+        return app.exec()

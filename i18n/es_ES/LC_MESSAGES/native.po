@@ -975,3 +975,392 @@ msgstr "Método de captura"
 
 msgid "Input method"
 msgstr "Método de entrada"
+
+msgid "手动更新"
+msgstr "Actualización manual"
+
+msgid "自动更新（正式版）"
+msgstr "Actualización automática (estable)"
+
+msgid "自动更新（含预发布）"
+msgstr "Actualización automática (incluye versiones preliminares)"
+
+msgid "更新策略"
+msgstr "Política de actualización"
+
+msgid "检查更新"
+msgstr "Buscar actualizaciones"
+
+msgid "下载完整环境并待下次启动应用"
+msgstr "Descargar el entorno completo; aplicar al iniciar de nuevo"
+
+msgid "重新尝试待应用更新"
+msgstr "Reintentar la actualización pendiente"
+
+msgid "登录后打开 GameFrame"
+msgstr "Abrir GameFrame al iniciar sesión en Windows"
+
+msgid "保存登录自启"
+msgstr "Guardar el inicio automático"
+
+msgid "登录自启未保存：{error}"
+msgstr "No se guardó el inicio automático: {error}"
+
+msgid "登录启动项已更新，界面状态保存失败：{error}"
+msgstr ""
+"Entrada de inicio actualizada; falló el guardado de la interfaz: {error}"
+
+msgid "登录自启已保存"
+msgstr "Inicio automático guardado"
+
+msgid "当前游戏包没有完整环境更新入口。"
+msgstr "Este paquete no permite actualizar el entorno completo."
+
+msgid "当前环境未受管理；可检查发布，完整更新须先迁入受管理环境。"
+msgstr ""
+"Este entorno no está gestionado. Puede consultar versiones; las "
+"actualizaciones completas requieren una instalación gestionada."
+
+msgid "完整环境安装入口（请填入长期路径）："
+msgstr ""
+"Comando de instalación del entorno completo (indique rutas permanentes): "
+
+msgid "完整环境候选已保存，等待下一次正常启动。"
+msgstr ""
+"Entorno candidato guardado; se aplicará en el siguiente inicio normal."
+
+msgid "上次完整环境更新失败："
+msgstr "Falló la actualización anterior del entorno completo: "
+
+msgid "上次更新未完成：{error}"
+msgstr "La actualización anterior no se completó: {error}"
+
+msgid "更新策略已保存；不会停止当前任务。"
+msgstr "Política guardada; la tarea actual continuará."
+
+msgid "手动更新：不会自动检查或下载。"
+msgstr "Actualización manual: sin consultas ni descargas automáticas."
+
+msgid "正在检查并准备完整环境…"
+msgstr "Comprobando y preparando el entorno completo…"
+
+msgid "正在处理更新请求…"
+msgstr "Procesando la solicitud de actualización…"
+
+msgid "完整环境更新失败：{error}"
+msgstr "Falló la actualización del entorno completo: {error}"
+
+msgid "检查完成，当前发行已是最新。"
+msgstr "Consulta completada; la versión instalada está actualizada."
+
+msgid "已配置源尚未发布允许通道。"
+msgstr "La fuente configurada no tiene versiones en los canales permitidos."
+
+msgid "检查到新发行，可下载完整环境。"
+msgstr "Hay una nueva versión; puede descargar el entorno completo."
+
+msgid "完整环境已下载并验证，待下一次正常启动应用。"
+msgstr ""
+"Entorno completo descargado y verificado; se aplicará en el siguiente inicio"
+" normal."
+
+msgid "已允许重试待应用候选；下一次正常启动处理。"
+msgstr "Reintento autorizado; se procesará en el siguiente inicio normal."
+
+msgid "独立游戏包更新源尚未配置，不会访问默认地址。"
+msgstr ""
+"La fuente del paquete no está configurada; no se consultará una dirección "
+"predeterminada."
+
+msgid "已配置的更新源处于停用状态。"
+msgstr "La fuente de actualización configurada está desactivada."
+
+msgid "完整更新须先迁入受管理环境，当前环境保持不变。"
+msgstr ""
+"Las actualizaciones completas requieren una instalación gestionada; este "
+"entorno no cambia."
+
+msgid "当前为源码目录，请使用完整环境安装入口。"
+msgstr ""
+"Este es un directorio de código fuente; use el comando de instalación del "
+"entorno completo."
+
+msgid "旧版本目录计划：请删除后重新创建稳定入口计划。"
+msgstr ""
+"El plan usa un directorio antiguo; elimínelo y créelo con la entrada "
+"estable."
+
+msgid ""
+"交互用户：{user}\n"
+"包：{package}\n"
+"数据：{data_dir}"
+msgstr ""
+"Usuario interactivo: {user}\n"
+"Paquete: {package}\n"
+"Datos: {data_dir}"
+
+msgid "一次"
+msgstr "Una vez"
+
+msgid "每天"
+msgstr "Cada día"
+
+msgid "每周一"
+msgstr "Cada lunes"
+
+msgid "每月1日"
+msgstr "El día 1 de cada mes"
+
+msgid "间隔天"
+msgstr "Cada N días"
+
+msgid "间隔小时"
+msgstr "Cada N horas"
+
+msgid "启用"
+msgstr "Activada"
+
+msgid "任务"
+msgstr "Tarea"
+
+msgid "触发"
+msgstr "Activación"
+
+msgid "本地开始时间 ISO"
+msgstr "Hora local de inicio (ISO)"
+
+msgid "间隔"
+msgstr "Intervalo"
+
+msgid "最长运行小时（0无限制）"
+msgstr "Duración máxima en horas (0: sin límite)"
+
+msgid "设备 JSON（必填）"
+msgstr "JSON del dispositivo (obligatorio)"
+
+msgid "新建表单"
+msgstr "Nuevo formulario"
+
+msgid "预览"
+msgstr "Vista previa"
+
+msgid "创建/更新"
+msgstr "Crear/actualizar"
+
+msgid "计划任务失败"
+msgstr "Error de la tarea programada"
+
+msgid "{task} | {trigger} | {next_run} | 结果 {last_result}"
+msgstr "{task} | {trigger} | {next_run} | Resultado {last_result}"
+
+msgid "请选择可计划执行的任务"
+msgstr "Seleccione una tarea que admita programación"
+
+msgid "计划任务已保存"
+msgstr "Tarea programada guardada"
+
+msgid "更新成功：{name}"
+msgstr "Actualizada correctamente: {name}"
+
+msgid "创建成功：{name}"
+msgstr "Creada correctamente: {name}"
+
+msgid "删除计划任务"
+msgstr "Eliminar tarea programada"
+
+msgid ""
+"删除计划 {name}？\n"
+"任务：{task}"
+msgstr ""
+"¿Eliminar la programación {name}?\n"
+"Tarea: {task}"
+
+msgid "备份包含完整配置。恢复前停止本窗口配置进程；其他执行器或总览仍占用数据时，操作会明确失败。"
+msgstr ""
+"Las copias contienen toda la configuración. Esta ventana detiene su proceso "
+"de configuración antes de restaurar; la operación falla explícitamente si "
+"otro ejecutor o vista general sigue usando los datos."
+
+msgid "数据目录"
+msgstr "Directorio de datos"
+
+msgid "配置目录"
+msgstr "Directorio de configuración"
+
+msgid "备份目录"
+msgstr "Directorio de copias de seguridad"
+
+msgid "待验证或恢复的备份目录"
+msgstr "Directorio de la copia que se verificará o restaurará"
+
+msgid "选择备份目录"
+msgstr "Seleccionar directorio de copia de seguridad"
+
+msgid "创建完整备份"
+msgstr "Crear copia de seguridad completa"
+
+msgid "验证备份"
+msgstr "Verificar copia de seguridad"
+
+msgid "预览并恢复"
+msgstr "Vista previa y restauración"
+
+msgid "检查遗漏序列"
+msgstr "Comprobar secuencias ausentes"
+
+msgid "清理过期备份"
+msgstr "Limpiar copias caducadas"
+
+msgid "等待操作。"
+msgstr "Esperando una acción."
+
+msgid "选择含manifest.json的完整备份目录"
+msgstr "Seleccione un directorio de copia completa que contenga manifest.json"
+
+msgid "请先选择备份目录。"
+msgstr "Seleccione primero un directorio de copia de seguridad."
+
+msgid "完整备份已创建并验证："
+msgstr "Copia completa creada y verificada: "
+
+msgid "备份验证通过：{count}个文件。"
+msgstr "Copia verificada: {count} archivos."
+
+msgid "备份验证失败："
+msgstr "Error al verificar la copia: "
+
+msgid "缺失{missing}，额外{extra}，内容差异{differences}。"
+msgstr ""
+"Ausentes: {missing}; adicionales: {extra}; diferencias de contenido: "
+"{differences}."
+
+msgid "此备份不能恢复："
+msgstr "No se puede restaurar esta copia: "
+
+msgid ""
+"将替换当前完整配置：{accounts}个账号、{sequences}个序列、{files}个文件。\n"
+"恢复前保留当前配置的事务备份。\n"
+"备份：{path}"
+msgstr ""
+"Se reemplazará toda la configuración actual: {accounts} cuentas, {sequences} secuencias y {files} archivos.\n"
+"Antes de restaurar se conserva una copia transaccional de la configuración actual.\n"
+"Copia: {path}"
+
+msgid ""
+"\n"
+"此备份没有可信账号主配置；恢复后可能需要重新锚定。"
+msgstr ""
+"\n"
+"Esta copia no tiene una configuración maestra de cuentas fiable; puede ser necesario volver a establecer el anclaje tras restaurarla."
+
+msgid "确认恢复完整配置"
+msgstr "Confirmar restauración de toda la configuración"
+
+msgid "配置恢复已提交。"
+msgstr "Restauración de la configuración confirmada."
+
+msgid "没有可恢复的遗漏序列。"
+msgstr "No hay secuencias ausentes que se puedan restaurar."
+
+msgid "{name}：{count}个账号"
+msgstr "{name}: {count} cuentas"
+
+msgid "确认恢复遗漏序列"
+msgstr "Confirmar restauración de secuencias ausentes"
+
+msgid ""
+"从{source}恢复以下序列，提交前保存事务备份：\n"
+"{sequences}"
+msgstr ""
+"Restaurar las siguientes secuencias desde {source}; guardar una copia transaccional antes de confirmar:\n"
+"{sequences}"
+
+msgid "遗漏序列已恢复。"
+msgstr "Secuencias ausentes restauradas."
+
+msgid "备份清理已完成。"
+msgstr "Limpieza de copias completada."
+
+msgid "清理未完成，请查看日志中的备份维护警告。"
+msgstr ""
+"La limpieza no se completó; consulte los avisos de mantenimiento de copias "
+"en el registro."
+
+
+msgid "Device backend"
+msgstr "Backend del dispositivo"
+
+msgid "Windows HWND"
+msgstr "Ventana de Windows (HWND)"
+
+msgid "MuMu SDK"
+msgstr "SDK de MuMu"
+
+msgid "Android ADB"
+msgstr "ADB de Android"
+
+msgid "Frame replay"
+msgstr "Reproducción de fotogramas"
+
+msgid "Visible window"
+msgstr "Ventana visible"
+
+msgid "HWND (decimal or 0x)"
+msgstr "HWND (decimal o 0x)"
+
+msgid "Launch command (one argument per line)"
+msgstr "Comando de inicio (un argumento por línea)"
+
+msgid "Target executable (absolute path)"
+msgstr "Ejecutable de destino (ruta absoluta)"
+
+msgid "MuMu installation directory"
+msgstr "Directorio de instalación de MuMu"
+
+msgid "Instance index"
+msgstr "Índice de instancia"
+
+msgid "MuMu SDK DLL path"
+msgstr "Ruta de la DLL del SDK de MuMu"
+
+msgid "Android package name (optional)"
+msgstr "Nombre del paquete de Android (opcional)"
+
+msgid "App index"
+msgstr "Índice de aplicación"
+
+msgid "ADB serial"
+msgstr "Número de serie de ADB"
+
+msgid "ADB executable path"
+msgstr "Ruta del ejecutable de ADB"
+
+msgid "Frame paths (one per line)"
+msgstr "Rutas de fotogramas (una por línea)"
+
+msgid "Refresh to list visible windows"
+msgstr "Actualizar para listar las ventanas visibles"
+
+msgid "Refresh windows"
+msgstr "Actualizar ventanas"
+
+msgid "Select a window or enter HWND below"
+msgstr "Selecciona una ventana o introduce el HWND abajo"
+
+msgid "Capabilities: {capabilities}"
+msgstr "Capacidades: {capabilities}"
+
+msgid "Device options must be a JSON object with a type"
+msgstr "Las opciones del dispositivo deben ser un objeto JSON con type"
+
+msgid "Unknown device type: {kind}"
+msgstr "Tipo de dispositivo desconocido: {kind}"
+
+msgid "{field} must be an integer"
+msgstr "{field} debe ser un entero"
+
+msgid "{field} cannot be negative"
+msgstr "{field} no puede ser negativo"
+
+msgid "Window enumeration failed: {error}"
+msgstr "Error al enumerar ventanas: {error}"

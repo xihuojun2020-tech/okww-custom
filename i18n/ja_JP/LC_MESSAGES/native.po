@@ -899,3 +899,371 @@ msgstr "キャプチャ方式"
 
 msgid "Input method"
 msgstr "入力方式"
+
+msgid "手动更新"
+msgstr "手動更新"
+
+msgid "自动更新（正式版）"
+msgstr "自動更新（安定版）"
+
+msgid "自动更新（含预发布）"
+msgstr "自動更新（プレリリースを含む）"
+
+msgid "更新策略"
+msgstr "更新方針"
+
+msgid "检查更新"
+msgstr "更新を確認"
+
+msgid "下载完整环境并待下次启动应用"
+msgstr "環境全体をダウンロードし、次回起動時に適用"
+
+msgid "重新尝试待应用更新"
+msgstr "保留中の更新を再試行"
+
+msgid "登录后打开 GameFrame"
+msgstr "Windowsへのサインイン後にGameFrameを開く"
+
+msgid "保存登录自启"
+msgstr "サインイン時の起動設定を保存"
+
+msgid "登录自启未保存：{error}"
+msgstr "サインイン時の起動設定を保存できませんでした：{error}"
+
+msgid "登录启动项已更新，界面状态保存失败：{error}"
+msgstr "起動エントリは更新済みですが、画面の状態を保存できませんでした：{error}"
+
+msgid "登录自启已保存"
+msgstr "サインイン時の起動設定を保存しました"
+
+msgid "当前游戏包没有完整环境更新入口。"
+msgstr "このゲームパックは環境全体の更新に対応していません。"
+
+msgid "当前环境未受管理；可检查发布，完整更新须先迁入受管理环境。"
+msgstr "この環境は管理対象外です。リリースの確認はできますが、環境全体の更新には管理対象のインストールが必要です。"
+
+msgid "完整环境安装入口（请填入长期路径）："
+msgstr "環境全体のインストールコマンド（恒久的なパスを指定）："
+
+msgid "完整环境候选已保存，等待下一次正常启动。"
+msgstr "新しい環境を保存しました。次回の通常起動を待っています。"
+
+msgid "上次完整环境更新失败："
+msgstr "前回の環境全体の更新に失敗しました："
+
+msgid "上次更新未完成：{error}"
+msgstr "前回の更新が完了しませんでした：{error}"
+
+msgid "更新策略已保存；不会停止当前任务。"
+msgstr "更新方針を保存しました。現在のタスクは続行します。"
+
+msgid "手动更新：不会自动检查或下载。"
+msgstr "手動更新：自動で確認やダウンロードは行いません。"
+
+msgid "正在检查并准备完整环境…"
+msgstr "環境全体を確認・準備中…"
+
+msgid "正在处理更新请求…"
+msgstr "更新要求を処理中…"
+
+msgid "完整环境更新失败：{error}"
+msgstr "環境全体の更新に失敗しました：{error}"
+
+msgid "检查完成，当前发行已是最新。"
+msgstr "確認が完了しました。現在のリリースは最新です。"
+
+msgid "已配置源尚未发布允许通道。"
+msgstr "設定された配布元には、許可されたチャンネルのリリースがありません。"
+
+msgid "检查到新发行，可下载完整环境。"
+msgstr "新しいリリースがあります。環境全体をダウンロードできます。"
+
+msgid "完整环境已下载并验证，待下一次正常启动应用。"
+msgstr "環境全体のダウンロードと検証が完了しました。次回の通常起動時に適用します。"
+
+msgid "已允许重试待应用候选；下一次正常启动处理。"
+msgstr "保留中の環境の再試行を設定しました。次回の通常起動時に処理します。"
+
+msgid "独立游戏包更新源尚未配置，不会访问默认地址。"
+msgstr "ゲームパックの更新元が未設定です。既定のアドレスにはアクセスしません。"
+
+msgid "已配置的更新源处于停用状态。"
+msgstr "設定された更新元は無効になっています。"
+
+msgid "完整更新须先迁入受管理环境，当前环境保持不变。"
+msgstr "環境全体の更新には管理対象への移行が必要です。現在の環境は変更していません。"
+
+msgid "当前为源码目录，请使用完整环境安装入口。"
+msgstr "ソースコードの作業ディレクトリです。環境全体のインストールコマンドを使用してください。"
+
+msgid "旧版本目录计划：请删除后重新创建稳定入口计划。"
+msgstr "旧バージョンのディレクトリを使う予定です。削除し、固定の起動先で作成し直してください。"
+
+msgid ""
+"交互用户：{user}\n"
+"包：{package}\n"
+"数据：{data_dir}"
+msgstr ""
+"対話ユーザー：{user}\n"
+"パッケージ：{package}\n"
+"データ：{data_dir}"
+
+msgid "一次"
+msgstr "1回"
+
+msgid "每天"
+msgstr "毎日"
+
+msgid "每周一"
+msgstr "毎週月曜日"
+
+msgid "每月1日"
+msgstr "毎月1日"
+
+msgid "间隔天"
+msgstr "指定日数ごと"
+
+msgid "间隔小时"
+msgstr "指定時間ごと"
+
+msgid "启用"
+msgstr "有効"
+
+msgid "任务"
+msgstr "タスク"
+
+msgid "触发"
+msgstr "トリガー"
+
+msgid "本地开始时间 ISO"
+msgstr "開始日時（現地時間、ISO）"
+
+msgid "间隔"
+msgstr "間隔"
+
+msgid "最长运行小时（0无限制）"
+msgstr "最大実行時間（時間、0は無制限）"
+
+msgid "设备 JSON（必填）"
+msgstr "デバイス JSON（必須）"
+
+msgid "新建表单"
+msgstr "新しいフォーム"
+
+msgid "预览"
+msgstr "プレビュー"
+
+msgid "创建/更新"
+msgstr "作成／更新"
+
+msgid "计划任务失败"
+msgstr "スケジュールタスクに失敗しました"
+
+msgid "{task} | {trigger} | {next_run} | 结果 {last_result}"
+msgstr "{task} | {trigger} | {next_run} | 結果 {last_result}"
+
+msgid "请选择可计划执行的任务"
+msgstr "スケジュール実行できるタスクを選択してください"
+
+msgid "计划任务已保存"
+msgstr "スケジュールタスクを保存しました"
+
+msgid "更新成功：{name}"
+msgstr "更新しました：{name}"
+
+msgid "创建成功：{name}"
+msgstr "作成しました：{name}"
+
+msgid "删除计划任务"
+msgstr "スケジュールタスクを削除"
+
+msgid ""
+"删除计划 {name}？\n"
+"任务：{task}"
+msgstr ""
+"スケジュール {name} を削除しますか？\n"
+"タスク：{task}"
+
+msgid "备份包含完整配置。恢复前停止本窗口配置进程；其他执行器或总览仍占用数据时，操作会明确失败。"
+msgstr ""
+"バックアップには設定全体が含まれます。復元前にこのウィンドウの設定プロセスを停止します。他の実行プロセスや概要画面がデータを使用中の場合、操作は明示的に失敗します。"
+
+msgid "数据目录"
+msgstr "データディレクトリ"
+
+msgid "配置目录"
+msgstr "設定ディレクトリ"
+
+msgid "备份目录"
+msgstr "バックアップディレクトリ"
+
+msgid "待验证或恢复的备份目录"
+msgstr "検証または復元するバックアップディレクトリ"
+
+msgid "选择备份目录"
+msgstr "バックアップディレクトリを選択"
+
+msgid "创建完整备份"
+msgstr "完全バックアップを作成"
+
+msgid "验证备份"
+msgstr "バックアップを検証"
+
+msgid "预览并恢复"
+msgstr "プレビューして復元"
+
+msgid "检查遗漏序列"
+msgstr "不足しているシーケンスを確認"
+
+msgid "清理过期备份"
+msgstr "期限切れバックアップを整理"
+
+msgid "等待操作。"
+msgstr "操作を待機しています。"
+
+msgid "选择含manifest.json的完整备份目录"
+msgstr "manifest.json を含む完全バックアップディレクトリを選択"
+
+msgid "请先选择备份目录。"
+msgstr "先にバックアップディレクトリを選択してください。"
+
+msgid "完整备份已创建并验证："
+msgstr "完全バックアップを作成して検証しました："
+
+msgid "备份验证通过：{count}个文件。"
+msgstr "バックアップを検証しました：{count}ファイル。"
+
+msgid "备份验证失败："
+msgstr "バックアップの検証に失敗しました："
+
+msgid "缺失{missing}，额外{extra}，内容差异{differences}。"
+msgstr "不足：{missing}、余分：{extra}、内容の相違：{differences}。"
+
+msgid "此备份不能恢复："
+msgstr "このバックアップは復元できません："
+
+msgid ""
+"将替换当前完整配置：{accounts}个账号、{sequences}个序列、{files}个文件。\n"
+"恢复前保留当前配置的事务备份。\n"
+"备份：{path}"
+msgstr ""
+"現在の設定全体を置き換えます：{accounts}アカウント、{sequences}シーケンス、{files}ファイル。\n"
+"復元前に現在の設定のトランザクションバックアップを保持します。\n"
+"バックアップ：{path}"
+
+msgid ""
+"\n"
+"此备份没有可信账号主配置；恢复后可能需要重新锚定。"
+msgstr ""
+"\n"
+"このバックアップには信頼できるアカウントのマスター設定がありません。復元後に基準を再設定する必要がある場合があります。"
+
+msgid "确认恢复完整配置"
+msgstr "設定全体の復元を確認"
+
+msgid "配置恢复已提交。"
+msgstr "設定の復元を確定しました。"
+
+msgid "没有可恢复的遗漏序列。"
+msgstr "復元できる不足シーケンスはありません。"
+
+msgid "{name}：{count}个账号"
+msgstr "{name}：{count}アカウント"
+
+msgid "确认恢复遗漏序列"
+msgstr "不足シーケンスの復元を確認"
+
+msgid ""
+"从{source}恢复以下序列，提交前保存事务备份：\n"
+"{sequences}"
+msgstr ""
+"{source} から次のシーケンスを復元します。確定前にトランザクションバックアップを保存します：\n"
+"{sequences}"
+
+msgid "遗漏序列已恢复。"
+msgstr "不足シーケンスを復元しました。"
+
+msgid "备份清理已完成。"
+msgstr "バックアップの整理が完了しました。"
+
+msgid "清理未完成，请查看日志中的备份维护警告。"
+msgstr "整理が完了していません。ログのバックアップ保守の警告を確認してください。"
+
+
+msgid "Device backend"
+msgstr "デバイスバックエンド"
+
+msgid "Windows HWND"
+msgstr "Windows ウィンドウ（HWND）"
+
+msgid "MuMu SDK"
+msgstr "MuMu SDK"
+
+msgid "Android ADB"
+msgstr "Android ADB"
+
+msgid "Frame replay"
+msgstr "フレーム再生"
+
+msgid "Visible window"
+msgstr "表示中のウィンドウ"
+
+msgid "HWND (decimal or 0x)"
+msgstr "HWND（10進数または 0x）"
+
+msgid "Launch command (one argument per line)"
+msgstr "起動コマンド（1行に1つの引数）"
+
+msgid "Target executable (absolute path)"
+msgstr "対象の実行ファイル（絶対パス）"
+
+msgid "MuMu installation directory"
+msgstr "MuMu インストールディレクトリ"
+
+msgid "Instance index"
+msgstr "インスタンス番号"
+
+msgid "MuMu SDK DLL path"
+msgstr "MuMu SDK DLL のパス"
+
+msgid "Android package name (optional)"
+msgstr "Android パッケージ名（任意）"
+
+msgid "App index"
+msgstr "アプリ番号"
+
+msgid "ADB serial"
+msgstr "ADB シリアル番号"
+
+msgid "ADB executable path"
+msgstr "ADB 実行ファイルのパス"
+
+msgid "Frame paths (one per line)"
+msgstr "フレームのパス（1行に1つ）"
+
+msgid "Refresh to list visible windows"
+msgstr "更新して表示中のウィンドウを一覧表示"
+
+msgid "Refresh windows"
+msgstr "ウィンドウを更新"
+
+msgid "Select a window or enter HWND below"
+msgstr "ウィンドウを選択するか、下に HWND を入力"
+
+msgid "Capabilities: {capabilities}"
+msgstr "対応機能：{capabilities}"
+
+msgid "Device options must be a JSON object with a type"
+msgstr "デバイス設定は type を含む JSON オブジェクトである必要があります"
+
+msgid "Unknown device type: {kind}"
+msgstr "不明なデバイス種類：{kind}"
+
+msgid "{field} must be an integer"
+msgstr "{field}には整数を入力してください"
+
+msgid "{field} cannot be negative"
+msgstr "{field}には負の値を指定できません"
+
+msgid "Window enumeration failed: {error}"
+msgstr "ウィンドウの列挙に失敗しました：{error}"

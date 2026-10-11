@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from gameframe import API_VERSION
+from gameframe.core_release_version import require_core_version
 from gameframe.process_locks import package_lease
 
 
@@ -49,6 +50,19 @@ class PackageManifest:
     task_catalog: str | None = None
     session_required_capabilities: frozenset[str] = frozenset()
     configuration: bool = False
+    supports_managed_updates: bool = False
+    channel: str = 'stable'
+    revision: int = 0
+    required_core_version: str | None = None
+
+    @property
+    def release_identity(self):
+        return {'id': self.id, 'version': self.version, 'channel': self.channel,
+                'revision': self.revision, 'required_core_version': self.required_core_version}
+
+    def check_release_identity(self, expected):
+        if self.release_identity != expected:
+            raise ValueError('Gamepack release identity changed before the process started')
 
     @classmethod
     def read(cls, directory: Path | str) -> PackageManifest:
@@ -56,6 +70,13 @@ class PackageManifest:
         value = json.loads((root / 'manifest.json').read_text(encoding='utf-8'))
         if value['api_version'] != API_VERSION:
             raise ValueError(f'Unsupported package API: {value["api_version"]}')
+        required_core = value.get('required_core_version')
+        if required_core is not None:
+            require_core_version(required_core)
+        channel, revision = value.get('channel', 'stable'), value.get('revision', 0)
+        if (channel not in ('stable', 'alpha', 'beta') or type(revision) is not int
+                or (revision != 0 if channel == 'stable' else revision <= 0)):
+            raise ValueError('Invalid gamepack release channel/revision')
         if not re.fullmatch(r'[a-z0-9][a-z0-9_-]*', value['id']):
             raise ValueError('Invalid package ID')
         entry, symbol = value['entrypoint'].split(':', 1)
@@ -82,7 +103,7 @@ class PackageManifest:
         execution = value.get('execution', 'native')
         if execution not in {'native', 'legacy-application'}:
             raise ValueError('Unknown package execution mode')
-        for name in ('supports_session', 'management', 'overview', 'configuration'):
+        for name in ('supports_session', 'management', 'overview', 'configuration', 'supports_managed_updates'):
             if not isinstance(value.get(name, False), bool):
                 raise ValueError(f'Package {name} must be a boolean')
         catalog = value.get('task_catalog')
@@ -97,7 +118,8 @@ class PackageManifest:
                    value['entrypoint'], value['license'], tuple(value['platforms']),
                    execution, tasks, value.get('supports_session', False),
                    value.get('management', False), value.get('overview', False), catalog,
-                   frozenset(session_capabilities), value.get('configuration', False))
+                   frozenset(session_capabilities), value.get('configuration', False),
+                   value.get('supports_managed_updates', False), channel, revision, required_core)
 
     def available_tasks(self, data_dir=None) -> tuple[TaskDefinition, ...]:
         if self.task_catalog is None or data_dir is None:

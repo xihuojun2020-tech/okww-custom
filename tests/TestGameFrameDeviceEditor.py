@@ -172,6 +172,89 @@ class TestGameFrameDeviceEditor(unittest.TestCase):
                 assert enumerate_windows() == [{'hwnd': 1, 'title': 'Visible', 'pid': 7}]
         ''')
 
+    def test_six_language_schema_labels_redraw_forms_errors_without_changing_device_values(self):
+        self.run_probe('''
+            import gettext, json
+            from contextlib import ExitStack
+            from gameframe.gui import GameFrameWindow
+            from gameframe.ui_strings import LABELS
+            packages = root / 'packages'
+            package = packages / 'localized-fixture'
+            package.mkdir(parents=True)
+            (package / 'plugin.py').write_text('raise AssertionError("package imported")')
+            (package / 'manifest.json').write_text(json.dumps({
+                'api_version': 1, 'id': 'localized-fixture', 'version': '1.00.00',
+                'entrypoint': 'plugin.py:Package', 'license': 'test', 'platforms': ['windows'],
+                'execution': 'native', 'tasks': []}))
+            context = dict(sequences=[], sequence=None, accounts=[], account=None,
+                           verified_account=None, summary='', reason='')
+            with ExitStack() as stack:
+                stack.enter_context(patch('gameframe.devices.windows.enumerate_windows',
+                    side_effect=AssertionError('real window enumeration')))
+                for backend in (WindowsDevice, MuMuDevice, AdbDevice, ReplayDevice):
+                    stack.enter_context(patch.object(backend, '__init__',
+                        side_effect=AssertionError('device started')))
+                window = GameFrameWindow(packages, root / 'data', key_state=lambda key: False)
+                editor = window.device_editor
+                changes = []
+                editor.options_changed.connect(changes.append)
+                assert editor.refresh_button.text() == 'Refresh windows'
+                assert editor.window_select.itemText(0) == 'Refresh to list visible windows'
+                for locale in ('en_US', 'zh_CN', 'zh_TW', 'ja_JP', 'ko_KR', 'es_ES'):
+                    with (Path(sys.argv[1]) / 'i18n' / locale / 'LC_MESSAGES/native.mo').open('rb') as stream:
+                        translate = gettext.GNUTranslations(stream).gettext
+                    labels = {source: translate(source) for source in LABELS}
+                    options = {'type': 'windows', 'hwnd': 42,
+                               'launch_command': ['C:/User path/launcher.exe', '--game'],
+                               'target_executable': 'C:/User path/game.exe',
+                               'capture_method': 'WGC', 'input_method': 'PostMessage'}
+                    editor.set_options(options)
+                    changes.clear()
+                    window._apply_account_context({'ok': True, 'schema': {'launcher_labels': labels},
+                                                   'result': context})
+                    assert editor.options() == options and changes == []
+                    for source, label in editor._label_widgets:
+                        assert label.text() == translate(source), (locale, source)
+                    assert editor.backend_select.itemText(0) == translate('Windows HWND')
+                    assert editor.backend_select.itemData(0) == 'windows'
+                    assert editor.refresh_button.text() == translate('Refresh windows')
+                    assert editor.fields['windows']['capture_method'].currentText() == 'WGC'
+                    assert editor.fields['windows']['input_method'].currentText() == 'PostMessage'
+                    assert editor.capabilities_label.text() == translate('Capabilities: {capabilities}').format(
+                        capabilities=', '.join(sorted(editor.capabilities())))
+                    editor._window_enumerator = lambda: [{'title': 'User 窗口 title', 'pid': 7, 'hwnd': 42}]
+                    editor.refresh_button.click()
+                    assert editor.window_select.itemText(0) == translate('Select a window or enter HWND below')
+                    assert editor.window_select.itemText(1) == 'User 窗口 title — PID 7 — HWND 0x2a'
+                    assert editor.options() == options and changes == []
+                    editor.fields['windows']['hwnd'].setText('-1')
+                    expected = translate('{field} cannot be negative').format(field=translate('HWND (decimal or 0x)'))
+                    assert editor.error_label.text() == expected
+                    editor.fields['windows']['hwnd'].setText('invalid')
+                    expected = translate('{field} must be an integer').format(field=translate('HWND (decimal or 0x)'))
+                    assert editor.error_label.text() == expected
+                    editor.apply_labels({})
+                    assert editor.error_label.text() == 'HWND (decimal or 0x) must be an integer'
+                    editor.apply_labels(labels)
+                    assert editor.error_label.text() == expected
+                    editor.set_options(options)
+                    def fail(): raise OSError('User path {raw}')
+                    editor._window_enumerator = fail
+                    editor.refresh_button.click()
+                    assert editor.error_label.text() == translate('Window enumeration failed: {error}').format(error='User path {raw}')
+                    editor.apply_labels({})
+                    assert editor.error_label.text() == 'Window enumeration failed: User path {raw}'
+                    try: editor.set_options({'type': 'unknown'})
+                    except ValueError as error: assert str(error) == 'Unknown device type: unknown'
+                    else: raise AssertionError('unknown type accepted')
+                window._select_package(0)
+                assert editor.refresh_button.text() == 'Refresh windows'
+                window.timer.stop()
+                window._closing = True
+                window._cleanup_done = True
+                window.close()
+        ''')
+
 
 if __name__ == '__main__':
     unittest.main()

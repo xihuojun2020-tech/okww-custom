@@ -235,6 +235,7 @@ def create_configuration_host(data_dir, program_version, manifest_path, events):
         registered_tasks=tuple(task['module'] + ':' + task['class'] for task in definitions),
         device_identity='configuration', user_tasks=user_tasks,
         program_preferences=preferences.config)
+    host.supports_managed_updates = bool(manifest.get('supports_managed_updates', False))
     host.task_metadata = {task['id']: task for task in definitions}
     host.program_preferences = host.global_configs[NAME]
     host.applied_revision = store.revision

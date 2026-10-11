@@ -891,3 +891,370 @@ msgstr "截图方式"
 
 msgid "Input method"
 msgstr "输入方式"
+
+msgid "手动更新"
+msgstr "手动更新"
+
+msgid "自动更新（正式版）"
+msgstr "自动更新（正式版）"
+
+msgid "自动更新（含预发布）"
+msgstr "自动更新（含预发布）"
+
+msgid "更新策略"
+msgstr "更新策略"
+
+msgid "检查更新"
+msgstr "检查更新"
+
+msgid "下载完整环境并待下次启动应用"
+msgstr "下载完整环境并待下次启动应用"
+
+msgid "重新尝试待应用更新"
+msgstr "重新尝试待应用更新"
+
+msgid "登录后打开 GameFrame"
+msgstr "登录后打开 GameFrame"
+
+msgid "保存登录自启"
+msgstr "保存登录自启"
+
+msgid "登录自启未保存：{error}"
+msgstr "登录自启未保存：{error}"
+
+msgid "登录启动项已更新，界面状态保存失败：{error}"
+msgstr "登录启动项已更新，界面状态保存失败：{error}"
+
+msgid "登录自启已保存"
+msgstr "登录自启已保存"
+
+msgid "当前游戏包没有完整环境更新入口。"
+msgstr "当前游戏包没有完整环境更新入口。"
+
+msgid "当前环境未受管理；可检查发布，完整更新须先迁入受管理环境。"
+msgstr "当前环境未受管理；可检查发布，完整更新须先迁入受管理环境。"
+
+msgid "完整环境安装入口（请填入长期路径）："
+msgstr "完整环境安装入口（请填入长期路径）："
+
+msgid "完整环境候选已保存，等待下一次正常启动。"
+msgstr "完整环境候选已保存，等待下一次正常启动。"
+
+msgid "上次完整环境更新失败："
+msgstr "上次完整环境更新失败："
+
+msgid "上次更新未完成：{error}"
+msgstr "上次更新未完成：{error}"
+
+msgid "更新策略已保存；不会停止当前任务。"
+msgstr "更新策略已保存；不会停止当前任务。"
+
+msgid "手动更新：不会自动检查或下载。"
+msgstr "手动更新：不会自动检查或下载。"
+
+msgid "正在检查并准备完整环境…"
+msgstr "正在检查并准备完整环境…"
+
+msgid "正在处理更新请求…"
+msgstr "正在处理更新请求…"
+
+msgid "完整环境更新失败：{error}"
+msgstr "完整环境更新失败：{error}"
+
+msgid "检查完成，当前发行已是最新。"
+msgstr "检查完成，当前发行已是最新。"
+
+msgid "已配置源尚未发布允许通道。"
+msgstr "已配置源尚未发布允许通道。"
+
+msgid "检查到新发行，可下载完整环境。"
+msgstr "检查到新发行，可下载完整环境。"
+
+msgid "完整环境已下载并验证，待下一次正常启动应用。"
+msgstr "完整环境已下载并验证，待下一次正常启动应用。"
+
+msgid "已允许重试待应用候选；下一次正常启动处理。"
+msgstr "已允许重试待应用候选；下一次正常启动处理。"
+
+msgid "独立游戏包更新源尚未配置，不会访问默认地址。"
+msgstr "独立游戏包更新源尚未配置，不会访问默认地址。"
+
+msgid "已配置的更新源处于停用状态。"
+msgstr "已配置的更新源处于停用状态。"
+
+msgid "完整更新须先迁入受管理环境，当前环境保持不变。"
+msgstr "完整更新须先迁入受管理环境，当前环境保持不变。"
+
+msgid "当前为源码目录，请使用完整环境安装入口。"
+msgstr "当前为源码目录，请使用完整环境安装入口。"
+
+msgid "旧版本目录计划：请删除后重新创建稳定入口计划。"
+msgstr "旧版本目录计划：请删除后重新创建稳定入口计划。"
+
+msgid ""
+"交互用户：{user}\n"
+"包：{package}\n"
+"数据：{data_dir}"
+msgstr ""
+"交互用户：{user}\n"
+"包：{package}\n"
+"数据：{data_dir}"
+
+msgid "一次"
+msgstr "一次"
+
+msgid "每天"
+msgstr "每天"
+
+msgid "每周一"
+msgstr "每周一"
+
+msgid "每月1日"
+msgstr "每月1日"
+
+msgid "间隔天"
+msgstr "间隔天"
+
+msgid "间隔小时"
+msgstr "间隔小时"
+
+msgid "启用"
+msgstr "启用"
+
+msgid "任务"
+msgstr "任务"
+
+msgid "触发"
+msgstr "触发"
+
+msgid "本地开始时间 ISO"
+msgstr "本地开始时间 ISO"
+
+msgid "间隔"
+msgstr "间隔"
+
+msgid "最长运行小时（0无限制）"
+msgstr "最长运行小时（0无限制）"
+
+msgid "设备 JSON（必填）"
+msgstr "设备 JSON（必填）"
+
+msgid "新建表单"
+msgstr "新建表单"
+
+msgid "预览"
+msgstr "预览"
+
+msgid "创建/更新"
+msgstr "创建/更新"
+
+msgid "计划任务失败"
+msgstr "计划任务失败"
+
+msgid "{task} | {trigger} | {next_run} | 结果 {last_result}"
+msgstr "{task} | {trigger} | {next_run} | 结果 {last_result}"
+
+msgid "请选择可计划执行的任务"
+msgstr "请选择可计划执行的任务"
+
+msgid "计划任务已保存"
+msgstr "计划任务已保存"
+
+msgid "更新成功：{name}"
+msgstr "更新成功：{name}"
+
+msgid "创建成功：{name}"
+msgstr "创建成功：{name}"
+
+msgid "删除计划任务"
+msgstr "删除计划任务"
+
+msgid ""
+"删除计划 {name}？\n"
+"任务：{task}"
+msgstr ""
+"删除计划 {name}？\n"
+"任务：{task}"
+
+msgid "备份包含完整配置。恢复前停止本窗口配置进程；其他执行器或总览仍占用数据时，操作会明确失败。"
+msgstr "备份包含完整配置。恢复前停止本窗口配置进程；其他执行器或总览仍占用数据时，操作会明确失败。"
+
+msgid "数据目录"
+msgstr "数据目录"
+
+msgid "配置目录"
+msgstr "配置目录"
+
+msgid "备份目录"
+msgstr "备份目录"
+
+msgid "待验证或恢复的备份目录"
+msgstr "待验证或恢复的备份目录"
+
+msgid "选择备份目录"
+msgstr "选择备份目录"
+
+msgid "创建完整备份"
+msgstr "创建完整备份"
+
+msgid "验证备份"
+msgstr "验证备份"
+
+msgid "预览并恢复"
+msgstr "预览并恢复"
+
+msgid "检查遗漏序列"
+msgstr "检查遗漏序列"
+
+msgid "清理过期备份"
+msgstr "清理过期备份"
+
+msgid "等待操作。"
+msgstr "等待操作。"
+
+msgid "选择含manifest.json的完整备份目录"
+msgstr "选择含manifest.json的完整备份目录"
+
+msgid "请先选择备份目录。"
+msgstr "请先选择备份目录。"
+
+msgid "完整备份已创建并验证："
+msgstr "完整备份已创建并验证："
+
+msgid "备份验证通过：{count}个文件。"
+msgstr "备份验证通过：{count}个文件。"
+
+msgid "备份验证失败："
+msgstr "备份验证失败："
+
+msgid "缺失{missing}，额外{extra}，内容差异{differences}。"
+msgstr "缺失{missing}，额外{extra}，内容差异{differences}。"
+
+msgid "此备份不能恢复："
+msgstr "此备份不能恢复："
+
+msgid ""
+"将替换当前完整配置：{accounts}个账号、{sequences}个序列、{files}个文件。\n"
+"恢复前保留当前配置的事务备份。\n"
+"备份：{path}"
+msgstr ""
+"将替换当前完整配置：{accounts}个账号、{sequences}个序列、{files}个文件。\n"
+"恢复前保留当前配置的事务备份。\n"
+"备份：{path}"
+
+msgid ""
+"\n"
+"此备份没有可信账号主配置；恢复后可能需要重新锚定。"
+msgstr ""
+"\n"
+"此备份没有可信账号主配置；恢复后可能需要重新锚定。"
+
+msgid "确认恢复完整配置"
+msgstr "确认恢复完整配置"
+
+msgid "配置恢复已提交。"
+msgstr "配置恢复已提交。"
+
+msgid "没有可恢复的遗漏序列。"
+msgstr "没有可恢复的遗漏序列。"
+
+msgid "{name}：{count}个账号"
+msgstr "{name}：{count}个账号"
+
+msgid "确认恢复遗漏序列"
+msgstr "确认恢复遗漏序列"
+
+msgid ""
+"从{source}恢复以下序列，提交前保存事务备份：\n"
+"{sequences}"
+msgstr ""
+"从{source}恢复以下序列，提交前保存事务备份：\n"
+"{sequences}"
+
+msgid "遗漏序列已恢复。"
+msgstr "遗漏序列已恢复。"
+
+msgid "备份清理已完成。"
+msgstr "备份清理已完成。"
+
+msgid "清理未完成，请查看日志中的备份维护警告。"
+msgstr "清理未完成，请查看日志中的备份维护警告。"
+
+
+msgid "Device backend"
+msgstr "设备后端"
+
+msgid "Windows HWND"
+msgstr "Windows 窗口（HWND）"
+
+msgid "MuMu SDK"
+msgstr "MuMu SDK"
+
+msgid "Android ADB"
+msgstr "Android ADB"
+
+msgid "Frame replay"
+msgstr "画面回放"
+
+msgid "Visible window"
+msgstr "可见窗口"
+
+msgid "HWND (decimal or 0x)"
+msgstr "HWND（十进制或 0x）"
+
+msgid "Launch command (one argument per line)"
+msgstr "启动命令（每行一个参数）"
+
+msgid "Target executable (absolute path)"
+msgstr "目标可执行文件（绝对路径）"
+
+msgid "MuMu installation directory"
+msgstr "MuMu 安装目录"
+
+msgid "Instance index"
+msgstr "实例索引"
+
+msgid "MuMu SDK DLL path"
+msgstr "MuMu SDK DLL 路径"
+
+msgid "Android package name (optional)"
+msgstr "Android 包名（可选）"
+
+msgid "App index"
+msgstr "应用索引"
+
+msgid "ADB serial"
+msgstr "ADB 设备序列号"
+
+msgid "ADB executable path"
+msgstr "ADB 可执行文件路径"
+
+msgid "Frame paths (one per line)"
+msgstr "画面文件路径（每行一个）"
+
+msgid "Refresh to list visible windows"
+msgstr "刷新以列出可见窗口"
+
+msgid "Refresh windows"
+msgstr "刷新窗口"
+
+msgid "Select a window or enter HWND below"
+msgstr "选择窗口或在下方输入 HWND"
+
+msgid "Capabilities: {capabilities}"
+msgstr "支持能力：{capabilities}"
+
+msgid "Device options must be a JSON object with a type"
+msgstr "设备选项必须是包含 type 的 JSON 对象"
+
+msgid "Unknown device type: {kind}"
+msgstr "未知设备类型：{kind}"
+
+msgid "{field} must be an integer"
+msgstr "{field}必须是整数"
+
+msgid "{field} cannot be negative"
+msgstr "{field}不能为负数"
+
+msgid "Window enumeration failed: {error}"
+msgstr "窗口枚举失败：{error}"

@@ -24,6 +24,11 @@ def load_context(path):
     if (not isinstance(value, dict) or type(value.get('restore_services')) is not bool
             or (value.get('selected_package') is not None and not isinstance(value['selected_package'], str))):
         raise ValueError('Invalid launcher context')
+    if 'update_policy' in value and value['update_policy'] not in (
+            'MANUAL_UPDATE', 'AUTO_UPDATE', 'AUTO_UPDATE_PRE_RELEASE'):
+        raise ValueError('Invalid launcher update policy')
+    if 'login_start' in value and type(value['login_start']) is not bool:
+        raise ValueError('Invalid login-start preference')
     if 'data_root' in value:
         value['data_root'] = str(local_root(value['data_root']))
     if 'window_geometry' in value and not isinstance(value['window_geometry'], str):

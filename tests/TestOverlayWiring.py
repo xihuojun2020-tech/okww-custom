@@ -167,6 +167,7 @@ assert len(closed)==6
                           '_configuration_querying','_overview_starting','_foreground_requested','_exit_requested'):
                 setattr(obj,field,False)
             obj._events=Queue();obj._live_routes={};obj._account_context=None
+            obj.managed_update_bindings.handle.return_value=False
             obj.task_list.currentRow.return_value=0
             obj._hotkey.poll.return_value=False
             obj._clear_overlay.side_effect=lambda:cls._clear_overlay(obj)

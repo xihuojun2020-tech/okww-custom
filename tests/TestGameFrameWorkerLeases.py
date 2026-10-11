@@ -223,7 +223,7 @@ class TestGameFrameWorkerLeases(unittest.TestCase):
         device.close.side_effect = failure
         package = SimpleNamespace(close=Mock())
         manifest = SimpleNamespace(version='1.00.00', execution='native',
-                                   task=lambda identifier: SimpleNamespace(id=identifier, kind='one-shot'),
+                                   task=lambda identifier, data_dir: SimpleNamespace(id=identifier, kind='one-shot'),
                                    load=lambda: package)
         store = Mock()
         with patch.object(worker.PackageManifest, 'read', return_value=manifest), \

@@ -2,10 +2,12 @@
 
 import argparse
 from pathlib import Path
+import json
 import runpy
 import sys
 
 from gameframe.packages import PackageManifest
+from gameframe.managed_install import managed_entry
 from gameframe.process_locks import package_lease
 
 
@@ -13,11 +15,15 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--package', type=Path, required=True)
     parser.add_argument('--expected-version', required=True)
+    parser.add_argument('--expected-identity', type=json.loads)
+    parser.add_argument('--managed-root', type=Path)
     parser.add_argument('--module', required=True)
     parser.add_argument('arguments', nargs=argparse.REMAINDER)
     options = parser.parse_args(argv)
-    with package_lease(options.package):
+    with managed_entry(options.managed_root), package_lease(options.package):
         manifest = PackageManifest.read(options.package)
+        if options.expected_identity is not None:
+            manifest.check_release_identity(options.expected_identity)
         if manifest.version != options.expected_version:
             raise ValueError('Gamepack version changed before the process started')
         arguments = options.arguments

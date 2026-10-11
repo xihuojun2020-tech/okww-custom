@@ -14,6 +14,15 @@ from gameframe.process_locks import package_lease
 from gameframe.packages import PackageManifest
 
 
+def expected_identity_command(command, manifest):
+    """Bind known GameFrame child entrypoints to the parent's complete release."""
+    command = list(command)
+    if command[1:3] == ['-m', 'gameframe.worker'] or command[1:3] == ['-m', 'gameframe.package_process']:
+        boundary = command.index('--') if '--' in command else len(command)
+        command[boundary:boundary] = ['--expected-identity', json.dumps(manifest.release_identity)]
+    return command
+
+
 class Controller:
     def __init__(self):
         self.process = None
@@ -69,7 +78,7 @@ class Controller:
             module_root = str(Path(__file__).resolve().parents[1])
             environment['PYTHONPATH'] = os.pathsep.join(
                 path for path in (module_root, environment.get('PYTHONPATH')) if path)
-        return self._launch(command, cwd, environment, manifest.execution, session)
+        return self._launch(expected_identity_command(command, manifest), cwd, environment, manifest.execution, session)
 
     def start_management(self, manifest, *, data_dir):
         if not manifest.management:
@@ -80,7 +89,7 @@ class Controller:
             if PackageManifest.read(manifest.root).version != manifest.version:
                 raise ValueError('Gamepack version changed before management launch')
             launch = manifest.load().management_command(Path(data_dir).resolve())
-        return self._launch(launch['command'], launch['cwd'], launch['env'], 'management', False)
+        return self._launch(expected_identity_command(launch['command'], manifest), launch['cwd'], launch['env'], 'management', False)
 
     def start_overview(self, manifest, *, data_dir):
         if not manifest.overview:
@@ -90,7 +99,7 @@ class Controller:
             if PackageManifest.read(manifest.root).version != manifest.version:
                 raise ValueError('Gamepack version changed before overview launch')
             launch = manifest.load().overview_command(Path(data_dir).resolve())
-        return self._launch(launch['command'], launch['cwd'], launch['env'], 'overview', False)
+        return self._launch(expected_identity_command(launch['command'], manifest), launch['cwd'], launch['env'], 'overview', False)
 
     def start_configuration(self, manifest, *, data_dir):
         if not manifest.configuration:
@@ -100,9 +109,12 @@ class Controller:
             if PackageManifest.read(manifest.root).version != manifest.version:
                 raise ValueError('Gamepack version changed before configuration launch')
             launch = manifest.load().configuration_command(Path(data_dir).resolve())
-        return self._launch(launch['command'], launch['cwd'], launch['env'], 'configuration', False)
+        return self._launch(expected_identity_command(launch['command'], manifest), launch['cwd'], launch['env'], 'configuration', False)
 
     def _launch(self, command, cwd, environment, execution, session):
+        managed_root = os.environ.get('GAMEFRAME_MANAGED_ROOT')
+        if managed_root is not None:
+            environment['GAMEFRAME_MANAGED_ROOT'] = managed_root
         if self._protected_path is not None:
             self._protected_path.unlink(missing_ok=True)
         with tempfile.NamedTemporaryFile('w', encoding='utf-8', prefix='gameframe-processes-',

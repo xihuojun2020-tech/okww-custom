@@ -38,6 +38,10 @@ class DeviceEditor(QWidget):
 
     def __init__(self, parent=None, *, window_enumerator=None):
         super().__init__(parent)
+        self._labels = {}
+        self._label_widgets = []
+        self._error_message = None
+        self._window_prompt = 'Refresh to list visible windows'
         self._window_enumerator = window_enumerator
         self._loading = False
         self._dirty = set()
@@ -51,7 +55,7 @@ class DeviceEditor(QWidget):
         self.error_label = QLabel()
         self.error_label.setWordWrap(True)
         self.window_select = QComboBox()
-        self.window_select.addItem('Refresh to list visible windows', None)
+        self.window_select.addItem(self._window_prompt, None)
         self.refresh_button = QPushButton('Refresh windows')
         for kind, (title, _, _) in _BACKENDS.items():
             self.backend_select.addItem(title, kind)
@@ -62,6 +66,7 @@ class DeviceEditor(QWidget):
                 row.addWidget(self.window_select, 1)
                 row.addWidget(self.refresh_button)
                 form.addRow('Visible window', row)
+                self._label_widgets.append(('Visible window', form.labelForField(row)))
             self.fields[kind] = {}
             for key, label, field_type, _ in _FIELDS[kind]:
                 if field_type == 'choice':
@@ -77,10 +82,12 @@ class DeviceEditor(QWidget):
                 signal = field.currentIndexChanged if field_type == 'choice' else field.textChanged
                 signal.connect(lambda *args, name=key: self._field_changed(name))
                 form.addRow(label, field)
+                self._label_widgets.append((label, form.labelForField(field)))
             self.pages.addWidget(page)
         layout = QVBoxLayout(self)
         form = QFormLayout()
         form.addRow('Device backend', self.backend_select)
+        self._label_widgets.append(('Device backend', form.labelForField(self.backend_select)))
         layout.addLayout(form)
         layout.addWidget(self.pages)
         layout.addWidget(self.capabilities_label)
@@ -90,12 +97,35 @@ class DeviceEditor(QWidget):
         self.window_select.currentIndexChanged.connect(self._window_changed)
         self.set_options({'type': 'replay', 'frames': []})
 
+    def _text(self, text, **values):
+        if 'field' in values:
+            values['field'] = self._labels.get(values['field'], values['field'])
+        return self._labels.get(text, text).format(**values) if values else self._labels.get(text, text)
+
+    def _error(self, text, **values):
+        self._error_message = (text, values)
+        return self._text(text, **values)
+
+    def apply_labels(self, labels):
+        self._labels = labels
+        for text, widget in self._label_widgets:
+            widget.setText(self._text(text))
+        for index, (title, _, _) in enumerate(_BACKENDS.values()):
+            self.backend_select.setItemText(index, self._text(title))
+        self.refresh_button.setText(self._text('Refresh windows'))
+        self.window_select.setItemText(0, self._text(self._window_prompt))
+        self.capabilities_label.setText(self._text('Capabilities: {capabilities}',
+            capabilities=', '.join(sorted(self.capabilities()))))
+        if self.error_label.text() and self._error_message is not None:
+            text, values = self._error_message
+            self.error_label.setText(self._text(text, **values))
+
     def set_options(self, options: dict):
         if not isinstance(options, dict) or not isinstance(options.get('type'), str):
-            raise ValueError('Device options must be a JSON object with a type')
+            raise ValueError(self._text('Device options must be a JSON object with a type'))
         kind = options['type']
         if kind not in _BACKENDS:
-            raise ValueError(f'Unknown device type: {kind}')
+            raise ValueError(self._text('Unknown device type: {kind}', kind=kind))
         self._loading = True
         try:
             self._options = deepcopy(options)
@@ -118,7 +148,8 @@ class DeviceEditor(QWidget):
                 else:
                     field.setText(text)
             self.error_label.clear()
-            self.capabilities_label.setText('Capabilities: ' + ', '.join(sorted(self.capabilities())))
+            self.capabilities_label.setText(self._text('Capabilities: {capabilities}',
+                capabilities=', '.join(sorted(self.capabilities()))))
             if kind == 'windows':
                 self._select_hwnd(options.get('hwnd', 0))
         finally:
@@ -137,9 +168,9 @@ class DeviceEditor(QWidget):
                 try:
                     value = int(text, 16 if text.lower().startswith('0x') else 10)
                 except ValueError as error:
-                    raise ValueError(f'{label} must be an integer') from error
+                    raise ValueError(self._error('{field} must be an integer', field=label)) from error
                 if key == 'hwnd' and value < 0:
-                    raise ValueError(f'{label} cannot be negative')
+                    raise ValueError(self._error('{field} cannot be negative', field=label))
                 result[key] = value
             elif field_type == 'list':
                 if key == 'launch_command' and not text:
@@ -174,7 +205,8 @@ class DeviceEditor(QWidget):
             return
         self.error_label.clear()
         self._options = deepcopy(options)
-        self.capabilities_label.setText('Capabilities: ' + ', '.join(sorted(self.capabilities())))
+        self.capabilities_label.setText(self._text('Capabilities: {capabilities}',
+            capabilities=', '.join(sorted(self.capabilities()))))
         if options['type'] == 'windows':
             self._select_hwnd(options.get('hwnd', 0))
         self.options_changed.emit(options)
@@ -202,12 +234,13 @@ class DeviceEditor(QWidget):
                 enumerator = enumerate_windows
             windows = enumerator()
         except Exception as error:
-            self.error_label.setText(f'Window enumeration failed: {error}')
+            self.error_label.setText(self._error('Window enumeration failed: {error}', error=str(error)))
             return
         self.window_select.blockSignals(True)
         try:
             self.window_select.clear()
-            self.window_select.addItem('Select a window or enter HWND below', None)
+            self._window_prompt = 'Select a window or enter HWND below'
+            self.window_select.addItem(self._text(self._window_prompt), None)
             for window in windows:
                 self.window_select.addItem(
                     f"{window['title']} — PID {window['pid']} — HWND {window['hwnd']:#x}", window['hwnd'])

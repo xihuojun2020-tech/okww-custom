@@ -9,6 +9,7 @@ from queue import Queue
 from pathlib import Path
 
 from gameframe.api import Cancelled
+from gameframe.managed_install import managed_entry
 from gameframe.packages import PackageManifest
 from gameframe.process_locks import data_lease, device_input_lease, package_lease
 from gameframe.runtime import Runtime
@@ -74,6 +75,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--package', type=Path, required=True)
     parser.add_argument('--expected-version')
+    parser.add_argument('--expected-identity', type=json_object)
+    parser.add_argument('--managed-root', type=Path)
     initial = parser.add_mutually_exclusive_group(required=True)
     initial.add_argument('--task')
     initial.add_argument('--session-only', action='store_true')
@@ -92,8 +95,11 @@ def main(argv=None):
     store = None
     leases = ExitStack()
     try:
+        leases.enter_context(managed_entry(options.managed_root))
         leases.enter_context(package_lease(options.package))
         manifest = PackageManifest.read(options.package)
+        if options.expected_identity is not None:
+            manifest.check_release_identity(options.expected_identity)
         if options.expected_version is not None and manifest.version != options.expected_version:
             raise ValueError('Gamepack version changed before the worker started')
         task = manifest.task(options.task, options.data_dir) if options.task is not None else None

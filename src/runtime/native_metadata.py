@@ -163,6 +163,7 @@ class TaskMetadata:
                              'current_config': current,
                              'readonly_values': {}, **metadata})
         return {'tasks': tasks, 'globals': globals_,
+                'supports_managed_updates': bool(getattr(self.host, 'supports_managed_updates', False)),
                 'launcher_labels': {text: tr(text) for text in LABELS},
                 'account_context': NativeAccountContext(self.host).snapshot(),
                 'reserved_hotkeys': list(self.host.global_configs['Game Hotkey'].values())

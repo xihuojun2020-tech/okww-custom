@@ -9,8 +9,8 @@
 从独立 wheel 安装核心，界面和 Windows 捕获按需要安装可选依赖：
 
 ```powershell
-python -m pip install "gameframe-runtime[gui,windows] @ file:///C:/your/path/gameframe_runtime-1.97.75-py3-none-any.whl"
-gameframe install .\wuthering_waves_native-1.97.75.zip
+python -m pip install "gameframe-runtime[gui,windows] @ file:///C:/your/path/gameframe_runtime-1.97.76-py3-none-any.whl"
+gameframe install .\wuthering_waves_native-1.97.76.zip
 gameframe list
 gameframe gui
 ```
@@ -25,7 +25,7 @@ gameframe gui
 
 GUI 支持安装 ZIP、选择任务、保存原生任务 JSON 与设备配置、执行、暂停/恢复、停止，显示执行器原始输出及退出码。支持会话的包在同一执行器中串行运行多个辅助服务和排队任务；前台任务独占输入，结束后继续后台服务。关闭某个服务使用 Disable selected service；Stop 结束执行器并保留服务偏好。兼容鸣潮任务使用其完整生产配置与设备选择，具体业务完成由原程序的完成检查判断。退出码 0 只表示进程正常返回。
 
-独立规则包 `wuthering_waves_native-1.97.75.zip` 按包内 `requirements.txt` 安装执行依赖；管理窗口另需 `requirements-management.txt`。Manage gamepack 打开账号、序列、完整性检查、配置包及完成记录；全新安装须经明确表单/预览/确认建立首账号，或导入自己的配置包，任务入口不会创建空 master。ZIP 已完成禁止旧框架导入的实际生产轮转与停止验收，管理页也在安装载荷中打开并正常关闭；29项任务的代表性离线分支范围详见验收报告，不代表全部实战流程完成。
+独立规则包 `wuthering_waves_native-1.97.76.zip` 按包内 `requirements.txt` 安装执行依赖；管理窗口另需 `requirements-management.txt`。Manage gamepack 打开账号、序列、完整性检查、配置包及完成记录；全新安装须经明确表单/预览/确认建立首账号，或导入自己的配置包，任务入口不会创建空 master。ZIP 已完成禁止旧框架导入的实际生产轮转与停止验收，管理页也在安装载荷中打开并正常关闭；29项任务的代表性离线分支范围详见验收报告，不代表全部实战流程完成。
 
 默认安装与框架状态位于当前 Windows 用户的 `~/.gameframe`。Windows 用户由人手动切换；在各用户目录分别安装游戏包，可以保留各自的游戏包配置和账号组。源模式鸣潮包使用当前源码安装的数据路径；它不会自动复制或迁移私人账号配置。安装拒绝覆盖同 ID 的已有包，避免把更新当成重装而丢失包内配置。
 
@@ -39,7 +39,7 @@ Manage gamepack 的“任务与配置”页读取生产任务和全局配置的�
 
 管理与配置命令使用 `gameframe.package_process` 在同一实际进程的包共享锁内核对版本、导入载荷并运行。原生worker设备、游戏包异步诊断/证据和账本收尾完成后释放锁。恢复与整树备份在数据独占锁内执行；维护页先停止配置owner，提交后重建账号缓存。兼容bootstrap持包、source_root数据及桌面输入锁，已加载证据和诊断在返回前收尾；旧direct main.py和直接调用bootstrap.run未纳入此框架入口的锁保障。
 
-ADB与MuMu尚未提供跨backend同实例映射，不能据此保证两个后端操作同一个模拟器时互斥。POSIX锁实现未在本轮Windows环境运行。配置备份、系统定时、只读耗时总览与原生用户任务编辑已接入；角色代码编辑与脚本包导入导出已接入。设备表单、暂停热键、托盘通知、截图/OCR、账号特征码及输出目录入口已接入；程序偏好、六语言与保存辅助恢复已接入；后台后端、UID实时遮罩和显卡告警已接入代码消费者，真实设备效果待实测；登录自启与完整环境更新继续迁移。
+ADB与MuMu尚未提供跨backend同实例映射，不能据此保证两个后端操作同一个模拟器时互斥。POSIX锁实现未在本轮Windows环境运行。配置备份、系统定时、只读耗时总览与原生用户任务编辑已接入；角色代码编辑与脚本包导入导出已接入。设备表单、暂停热键、托盘通知、截图/OCR、账号特征码及输出目录入口已接入；程序偏好、六语言与保存辅助恢复已接入；后台后端、UID实时遮罩和显卡告警已接入代码消费者，真实设备效果待实测；登录自启和完整配套环境更新已接通稳定引导器；受管理定时任务在版本和资料根变化后使用当前活动环境。
 
 用户任务在管理页“用户任务代码”中保存，使用 `NativeBaseTask` / `NativeTriggerTask` 和稳定 UUID。框架只读取 JSON 目录来显示任务；源码在无设备的独立验证进程中执行，属于可信可执行代码，不能视为安全沙箱。运行进程使用 Apply user task reload 明确应用目录更新；单次任务通过重新启动应用。Refresh tasks 只刷新列表，保存不代表所有执行器已重载。执行前核对定义版本，长期设置从持久配置加载，运行 JSON 仅提供明确覆盖值。
 
@@ -50,6 +50,26 @@ ADB与MuMu尚未提供跨backend同实例映射，不能据此保证两个后端
 ```
 
 截图和素材的相对路径以调用者目录解释，包资源建议通过 `Path(__file__).parent` 定位。元数据与安装不会执行游戏包入口；点击运行才导入其 Python 代码。
+
+## 完整配套安装与更新
+
+v1.97.76 的原生包声明最低核心版本；开发环境也须先安装对应核心 wheel，源码目录不能伪造已安装发行版本。以下完整安装入口要求调用环境已有当前核心，并由发行者提供长期保留、支持 venv/pip 的 Windows Python。`bootstrap_pythonw` 和 `base_python` 均位于版本化环境之外。
+
+```powershell
+python -m gameframe.managed_install initialize --managed-root C:\GameFrame\Managed --bootstrap-pythonw C:\GameFramePython\pythonw.exe --base-python C:\GameFramePython\python.exe --data-dir C:\Users\USER\.gameframe
+python -m gameframe.managed_install prepare --managed-root C:\GameFrame\Managed --artifact-root C:\GameFrame\OfflineRelease --bundle C:\GameFrame\OfflineRelease\release.json
+C:\GameFramePython\pythonw.exe C:\GameFrame\Managed\bootstrap.py --managed-root C:\GameFrame\Managed
+```
+
+各 Windows 用户使用自己的安装根和资料根；系统用户切换仍由人完成。初始化只记录入口和稳定资料位置，不复制私人账号。准备过程只使用清单核对过的 wheel，同时解析游戏包执行/管理依赖及核心 GUI/Windows 依赖；缺包或冲突明确失败，不向网络补齐。准备成功只写 pending，稳定引导器在没有活跃环境 owner 时提交 active。正在运行的战斗、配置和管理进程不会被更新器停止。
+
+登录自启只在点击保存时修改当前用户的 GameFrame 启动项；受管理安装登记稳定引导器，保留战斗启用设置。定时任务也从该引导器解析当前活动环境和有效资料根，不绑定旧版本解释器。旧版本目录计划只显示重建提示并允许用户明确删除，不自动改写系统计划。
+
+三档策略为手动、正式版自动、含预发布自动。自动策略每次启动检查一次；未配置独立源时不访问默认地址。已有候选遇到活跃 owner 保持等待；切为手动后自动候选不提交，显式准备同一候选可转为手动意图。更新失败记录与当前 source 错误分别通过已有入口报告，普通失败不关闭战斗或清空服务偏好。
+
+当前受管理发行覆盖一套核心与一个配套鸣潮包。框架支持发现/安装多个游戏包；其他游戏的完整环境自动更新仍需由其发行者提供配套依赖，不能把这套鸣潮发行器当成任意 Python 环境升级器。非受管理 pip 环境和源码环境只提供明确迁入命令。
+
+发行者可用 `scripts/build_native_release.py --core <wheel> --gamepack <ZIP> --wheelhouse <不含核心的依赖目录> --output <新目录>` 生成并验证 schema2 离线目录，再用 `scripts/publish_native_release.py` 发布到明确的本地或共享目录。全部工件回读验证后才替换通道 latest；相同发行身份不同内容、倒退发布均拒绝。SHA256 证明工件与清单一致，源可信性仍来自共享权限或固定证书 HTTPS。
 
 ## 设备合同
 
@@ -88,6 +108,6 @@ WGC 可选择 HWND 采集，但 SendInput 仍需要该会话的前台窗口。�
 
 管理页“输出目录”复用原复制/校验/提交事务，保留原文件；当前数据根是目录配置权威。截图、证据及诊断在切换后重绑真实 owner，完整账号/配置/脚本根与运行控制状态留在数据根。其他worker/总览占用时独占迁移明确失败。
 
-原生通知在管理页配置 Discord、Telegram、企业微信、QQ Guild 及 QQ/微信桌面渠道。密钥字段不回显，保存与清除为明确操作。HTTP 完成与桌面任务边界投递分别报告；桌面交接保留当前 owner 和输入锁，暂停不发送、退出取消排队项。QQ Guild 不上传图片。桌面联系人、剪贴板和真实送达均未实测。v1.97.75 增加 requests 执行依赖，从 v1.97.73 升级需要更新完整执行环境，不能只热替换 ZIP。
+原生通知在管理页配置 Discord、Telegram、企业微信、QQ Guild 及 QQ/微信桌面渠道。密钥字段不回显，保存与清除为明确操作。HTTP 完成与桌面任务边界投递分别报告；桌面交接保留当前 owner 和输入锁，暂停不发送、退出取消排队项。QQ Guild 不上传图片。桌面联系人、剪贴板和真实送达均未实测。v1.97.74 增加 requests 执行依赖，从 v1.97.73 升级需要更新完整执行环境，不能只热替换 ZIP。
 
 v1.97.75 设备 JSON 可设 `capture_method`（WGC / BitBlt_RenderFull / PrintWindow）和 `input_method`（SendInput / PostMessage）。GDI 使用同步渲染调用，不保证超时、新鲜帧或游戏兼容性，最小化会明确拒绝；PostMessage 的窗口消息不抢占键鼠，但目标游戏是否消费它们仍须验证，显式 activate 仍会改变前台。实时 UID 遮罩只在当前可信前台客户区显示；算法留在 AGPL 包，MIT 核心只绘制通用 patch。GPU 告警只读且一次执行，缺失可选接口保持未知；普通视觉或告警故障不关闭战斗。

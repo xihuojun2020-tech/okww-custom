@@ -906,3 +906,372 @@ msgstr "캡처 방식"
 
 msgid "Input method"
 msgstr "입력 방식"
+
+msgid "手动更新"
+msgstr "수동 업데이트"
+
+msgid "自动更新（正式版）"
+msgstr "자동 업데이트 (정식 버전)"
+
+msgid "自动更新（含预发布）"
+msgstr "자동 업데이트 (사전 릴리스 포함)"
+
+msgid "更新策略"
+msgstr "업데이트 정책"
+
+msgid "检查更新"
+msgstr "업데이트 확인"
+
+msgid "下载完整环境并待下次启动应用"
+msgstr "전체 환경 다운로드; 다음 실행 시 적용"
+
+msgid "重新尝试待应用更新"
+msgstr "대기 중인 업데이트 다시 시도"
+
+msgid "登录后打开 GameFrame"
+msgstr "Windows 로그인 후 GameFrame 열기"
+
+msgid "保存登录自启"
+msgstr "로그인 시 시작 설정 저장"
+
+msgid "登录自启未保存：{error}"
+msgstr "로그인 시 시작 설정을 저장하지 못했습니다: {error}"
+
+msgid "登录启动项已更新，界面状态保存失败：{error}"
+msgstr "시작 항목은 업데이트되었으나 UI 상태를 저장하지 못했습니다: {error}"
+
+msgid "登录自启已保存"
+msgstr "로그인 시 시작 설정을 저장했습니다"
+
+msgid "当前游戏包没有完整环境更新入口。"
+msgstr "이 게임 팩은 전체 환경 업데이트를 제공하지 않습니다."
+
+msgid "当前环境未受管理；可检查发布，完整更新须先迁入受管理环境。"
+msgstr "이 환경은 관리되지 않습니다. 릴리스 확인은 가능하지만 전체 업데이트에는 관리형 설치가 필요합니다."
+
+msgid "完整环境安装入口（请填入长期路径）："
+msgstr "전체 환경 설치 명령 (영구 경로 지정): "
+
+msgid "完整环境候选已保存，等待下一次正常启动。"
+msgstr "전체 환경 후보를 저장했습니다. 다음 정상 실행을 기다립니다."
+
+msgid "上次完整环境更新失败："
+msgstr "이전 전체 환경 업데이트 실패: "
+
+msgid "上次更新未完成：{error}"
+msgstr "이전 업데이트가 완료되지 않았습니다: {error}"
+
+msgid "更新策略已保存；不会停止当前任务。"
+msgstr "업데이트 정책을 저장했습니다. 현재 작업은 계속됩니다."
+
+msgid "手动更新：不会自动检查或下载。"
+msgstr "수동 업데이트: 자동 확인 또는 다운로드를 하지 않습니다."
+
+msgid "正在检查并准备完整环境…"
+msgstr "전체 환경 확인 및 준비 중…"
+
+msgid "正在处理更新请求…"
+msgstr "업데이트 요청 처리 중…"
+
+msgid "完整环境更新失败：{error}"
+msgstr "전체 환경 업데이트 실패: {error}"
+
+msgid "检查完成，当前发行已是最新。"
+msgstr "확인 완료. 설치된 릴리스가 최신입니다."
+
+msgid "已配置源尚未发布允许通道。"
+msgstr "설정된 소스의 허용 채널에 릴리스가 없습니다."
+
+msgid "检查到新发行，可下载完整环境。"
+msgstr "새 릴리스가 있습니다. 전체 환경을 다운로드할 수 있습니다."
+
+msgid "完整环境已下载并验证，待下一次正常启动应用。"
+msgstr "전체 환경 다운로드 및 검증 완료. 다음 정상 실행 시 적용합니다."
+
+msgid "已允许重试待应用候选；下一次正常启动处理。"
+msgstr "대기 중인 후보 재시도를 요청했습니다. 다음 정상 실행 시 처리합니다."
+
+msgid "独立游戏包更新源尚未配置，不会访问默认地址。"
+msgstr "게임 팩 업데이트 소스가 설정되지 않았습니다. 기본 주소에 접근하지 않습니다."
+
+msgid "已配置的更新源处于停用状态。"
+msgstr "설정된 업데이트 소스가 비활성화되어 있습니다."
+
+msgid "完整更新须先迁入受管理环境，当前环境保持不变。"
+msgstr "전체 업데이트에는 관리형 설치로의 이전이 필요합니다. 현재 환경은 변경되지 않습니다."
+
+msgid "当前为源码目录，请使用完整环境安装入口。"
+msgstr "소스 작업 디렉터리입니다. 전체 환경 설치 명령을 사용하세요."
+
+msgid "旧版本目录计划：请删除后重新创建稳定入口计划。"
+msgstr "이전 버전 디렉터리를 사용하는 일정입니다. 삭제한 후 고정 진입점으로 다시 만드세요."
+
+msgid ""
+"交互用户：{user}\n"
+"包：{package}\n"
+"数据：{data_dir}"
+msgstr ""
+"대화형 사용자: {user}\n"
+"패키지: {package}\n"
+"데이터: {data_dir}"
+
+msgid "一次"
+msgstr "한 번"
+
+msgid "每天"
+msgstr "매일"
+
+msgid "每周一"
+msgstr "매주 월요일"
+
+msgid "每月1日"
+msgstr "매월 1일"
+
+msgid "间隔天"
+msgstr "지정한 일수마다"
+
+msgid "间隔小时"
+msgstr "지정한 시간마다"
+
+msgid "启用"
+msgstr "사용"
+
+msgid "任务"
+msgstr "작업"
+
+msgid "触发"
+msgstr "트리거"
+
+msgid "本地开始时间 ISO"
+msgstr "시작 현지 시간 (ISO)"
+
+msgid "间隔"
+msgstr "간격"
+
+msgid "最长运行小时（0无限制）"
+msgstr "최대 실행 시간 (시간, 0은 무제한)"
+
+msgid "设备 JSON（必填）"
+msgstr "장치 JSON (필수)"
+
+msgid "新建表单"
+msgstr "새 양식"
+
+msgid "预览"
+msgstr "미리 보기"
+
+msgid "创建/更新"
+msgstr "생성/업데이트"
+
+msgid "计划任务失败"
+msgstr "예약 작업 실패"
+
+msgid "{task} | {trigger} | {next_run} | 结果 {last_result}"
+msgstr "{task} | {trigger} | {next_run} | 결과 {last_result}"
+
+msgid "请选择可计划执行的任务"
+msgstr "예약 실행을 지원하는 작업을 선택하세요"
+
+msgid "计划任务已保存"
+msgstr "예약 작업 저장됨"
+
+msgid "更新成功：{name}"
+msgstr "업데이트 완료: {name}"
+
+msgid "创建成功：{name}"
+msgstr "생성 완료: {name}"
+
+msgid "删除计划任务"
+msgstr "예약 작업 삭제"
+
+msgid ""
+"删除计划 {name}？\n"
+"任务：{task}"
+msgstr ""
+"예약 {name}을(를) 삭제할까요?\n"
+"작업: {task}"
+
+msgid "备份包含完整配置。恢复前停止本窗口配置进程；其他执行器或总览仍占用数据时，操作会明确失败。"
+msgstr ""
+"백업에는 전체 설정이 포함됩니다. 복원 전에 이 창의 설정 프로세스를 중지합니다. 다른 실행기나 개요가 데이터를 사용 중이면 작업이 "
+"명시적으로 실패합니다."
+
+msgid "数据目录"
+msgstr "데이터 디렉터리"
+
+msgid "配置目录"
+msgstr "설정 디렉터리"
+
+msgid "备份目录"
+msgstr "백업 디렉터리"
+
+msgid "待验证或恢复的备份目录"
+msgstr "검증하거나 복원할 백업 디렉터리"
+
+msgid "选择备份目录"
+msgstr "백업 디렉터리 선택"
+
+msgid "创建完整备份"
+msgstr "전체 백업 생성"
+
+msgid "验证备份"
+msgstr "백업 검증"
+
+msgid "预览并恢复"
+msgstr "미리 보고 복원"
+
+msgid "检查遗漏序列"
+msgstr "누락된 시퀀스 확인"
+
+msgid "清理过期备份"
+msgstr "만료된 백업 정리"
+
+msgid "等待操作。"
+msgstr "작업을 기다리는 중입니다."
+
+msgid "选择含manifest.json的完整备份目录"
+msgstr "manifest.json이 포함된 전체 백업 디렉터리 선택"
+
+msgid "请先选择备份目录。"
+msgstr "먼저 백업 디렉터리를 선택하세요."
+
+msgid "完整备份已创建并验证："
+msgstr "전체 백업 생성 및 검증 완료: "
+
+msgid "备份验证通过：{count}个文件。"
+msgstr "백업 검증 완료: 파일 {count}개."
+
+msgid "备份验证失败："
+msgstr "백업 검증 실패: "
+
+msgid "缺失{missing}，额外{extra}，内容差异{differences}。"
+msgstr "누락: {missing}, 추가: {extra}, 내용 차이: {differences}."
+
+msgid "此备份不能恢复："
+msgstr "이 백업을 복원할 수 없습니다: "
+
+msgid ""
+"将替换当前完整配置：{accounts}个账号、{sequences}个序列、{files}个文件。\n"
+"恢复前保留当前配置的事务备份。\n"
+"备份：{path}"
+msgstr ""
+"현재 전체 설정을 교체합니다: 계정 {accounts}개, 시퀀스 {sequences}개, 파일 {files}개.\n"
+"복원 전에 현재 설정의 트랜잭션 백업을 보관합니다.\n"
+"백업: {path}"
+
+msgid ""
+"\n"
+"此备份没有可信账号主配置；恢复后可能需要重新锚定。"
+msgstr ""
+"\n"
+"이 백업에는 신뢰할 수 있는 계정 마스터 설정이 없습니다. 복원 후 기준을 다시 설정해야 할 수 있습니다."
+
+msgid "确认恢复完整配置"
+msgstr "전체 설정 복원 확인"
+
+msgid "配置恢复已提交。"
+msgstr "설정 복원이 확정되었습니다."
+
+msgid "没有可恢复的遗漏序列。"
+msgstr "복원할 수 있는 누락된 시퀀스가 없습니다."
+
+msgid "{name}：{count}个账号"
+msgstr "{name}: 계정 {count}개"
+
+msgid "确认恢复遗漏序列"
+msgstr "누락된 시퀀스 복원 확인"
+
+msgid ""
+"从{source}恢复以下序列，提交前保存事务备份：\n"
+"{sequences}"
+msgstr ""
+"{source}에서 다음 시퀀스를 복원합니다. 확정 전에 트랜잭션 백업을 저장합니다:\n"
+"{sequences}"
+
+msgid "遗漏序列已恢复。"
+msgstr "누락된 시퀀스가 복원되었습니다."
+
+msgid "备份清理已完成。"
+msgstr "백업 정리가 완료되었습니다."
+
+msgid "清理未完成，请查看日志中的备份维护警告。"
+msgstr "정리가 완료되지 않았습니다. 로그의 백업 유지 관리 경고를 확인하세요."
+
+
+msgid "Device backend"
+msgstr "장치 백엔드"
+
+msgid "Windows HWND"
+msgstr "Windows 창 (HWND)"
+
+msgid "MuMu SDK"
+msgstr "MuMu SDK"
+
+msgid "Android ADB"
+msgstr "Android ADB"
+
+msgid "Frame replay"
+msgstr "프레임 재생"
+
+msgid "Visible window"
+msgstr "표시된 창"
+
+msgid "HWND (decimal or 0x)"
+msgstr "HWND (10진수 또는 0x)"
+
+msgid "Launch command (one argument per line)"
+msgstr "실행 명령 (한 줄에 인수 하나)"
+
+msgid "Target executable (absolute path)"
+msgstr "대상 실행 파일 (절대 경로)"
+
+msgid "MuMu installation directory"
+msgstr "MuMu 설치 폴더"
+
+msgid "Instance index"
+msgstr "인스턴스 번호"
+
+msgid "MuMu SDK DLL path"
+msgstr "MuMu SDK DLL 경로"
+
+msgid "Android package name (optional)"
+msgstr "Android 패키지 이름 (선택 사항)"
+
+msgid "App index"
+msgstr "앱 번호"
+
+msgid "ADB serial"
+msgstr "ADB 일련번호"
+
+msgid "ADB executable path"
+msgstr "ADB 실행 파일 경로"
+
+msgid "Frame paths (one per line)"
+msgstr "프레임 경로 (한 줄에 하나)"
+
+msgid "Refresh to list visible windows"
+msgstr "새로 고침하여 표시된 창 목록 보기"
+
+msgid "Refresh windows"
+msgstr "창 새로 고침"
+
+msgid "Select a window or enter HWND below"
+msgstr "창을 선택하거나 아래에 HWND 입력"
+
+msgid "Capabilities: {capabilities}"
+msgstr "지원 기능: {capabilities}"
+
+msgid "Device options must be a JSON object with a type"
+msgstr "장치 옵션은 type이 포함된 JSON 객체여야 합니다"
+
+msgid "Unknown device type: {kind}"
+msgstr "알 수 없는 장치 유형: {kind}"
+
+msgid "{field} must be an integer"
+msgstr "{field}은(는) 정수여야 합니다"
+
+msgid "{field} cannot be negative"
+msgstr "{field}은(는) 음수일 수 없습니다"
+
+msgid "Window enumeration failed: {error}"
+msgstr "창 목록 조회 실패: {error}"

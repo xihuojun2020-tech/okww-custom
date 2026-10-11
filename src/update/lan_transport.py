@@ -21,6 +21,10 @@ class LanTransportError(RuntimeError):
     pass
 
 
+class ReleaseNotPublished(LanTransportError):
+    """The requested resource does not exist; other source errors stay failures."""
+
+
 class CertificatePinError(LanTransportError):
     pass
 
@@ -42,6 +46,8 @@ class FileShareClient:
             if source.stat().st_size > max_bytes:
                 raise LanTransportError("NAS 响应超过大小限制")
             data = source.read_bytes()
+        except FileNotFoundError as exc:
+            raise ReleaseNotPublished("NAS 共享文件不存在") from exc
         except OSError as exc:
             raise LanTransportError("无法读取 NAS 共享文件") from exc
         if len(data) > max_bytes:
@@ -82,6 +88,8 @@ class FileShareClient:
                 raise LanTransportError("更新包长度或 SHA-256 不匹配")
             os.replace(pending, destination)
             return destination
+        except FileNotFoundError as exc:
+            raise ReleaseNotPublished("NAS 共享文件不存在") from exc
         except OSError as exc:
             raise LanTransportError("无法下载 NAS 共享文件") from exc
         finally:
@@ -100,6 +108,8 @@ def _smb_call(operation, payload, timeout):
     except (ValueError,IndexError) as error:
         raise LanTransportError(f'NAS {operation} 工作进程未正常启动或响应无效（退出码 {result.returncode}）') from error
     if result.returncode or 'error' in response:
+        if response.get('error_type') == 'FileNotFoundError' and response.get('error_code') in (2, 3):
+            raise ReleaseNotPublished(f"NAS {operation} 文件不存在")
         raise LanTransportError(f"NAS {operation} 失败：{response.get('error', '工作进程异常退出')}")
     return response
 
@@ -144,6 +154,8 @@ class HttpsPinnedClient:
             target = urllib.parse.urlunsplit(("", "", parsed.path or "/", parsed.query, ""))
             connection.request("GET", target, headers={"Accept-Encoding": "identity"})
             response = connection.getresponse()
+            if response.status == 404:
+                raise ReleaseNotPublished("NAS HTTP 文件不存在")
             if response.status != 200:
                 raise LanTransportError(f"NAS 返回 HTTP {response.status}")
             length = response.getheader("Content-Length")
@@ -214,5 +226,6 @@ if __name__ == '__main__':
         from .worker_process import error_detail
         cause = error.__cause__ or error
         code = getattr(cause, 'winerror', None) or getattr(cause, 'errno', None)
-        print(json.dumps({'error': error_detail(error) + (f'（系统错误码 {code}）' if code else '')}))
+        print(json.dumps({'error': error_detail(error) + (f'（系统错误码 {code}）' if code else ''),
+                          'error_type': type(cause).__name__, 'error_code': code}))
         raise SystemExit(2)

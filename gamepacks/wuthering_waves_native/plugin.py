@@ -93,6 +93,19 @@ class WutheringWavesNativePackage:
                             '--manifest', str(self.root / 'manifest.json')]
         return launch
 
+    def automatic_update_command(self, data_dir):
+        launch = self.management_command(data_dir)
+        launch['command'] = [sys.executable, '-m', 'gameframe.package_process',
+                            '--package', str(self.root), '--expected-version', self.manifest['version'],
+                            '--expected-identity', json.dumps({
+                                'id': self.manifest['id'], 'version': self.manifest['version'],
+                                'channel': self.manifest.get('channel', 'stable'),
+                                'revision': self.manifest.get('revision', 0),
+                                'required_core_version': self.manifest.get('required_core_version')}),
+                            '--module', 'src.runtime.native_release_cli', '--',
+                            '--manifest', str(self.root / 'manifest.json'), '--data-dir', str(data_dir)]
+        return launch
+
     def close(self):
         self._bind_source()
         from src.evidence.service import close_existing_evidence_service
@@ -185,6 +198,7 @@ class WutheringWavesNativePackage:
                                    for task in self.manifest['tasks']},
                 device_identity=type(context.device).__name__, live_status=writer,
                 user_tasks=user_tasks, program_preferences=preferences.config)
+            host.supports_managed_updates = bool(self.manifest.get('supports_managed_updates', False))
             host.task_metadata = {task['id']: task for task in self.manifest['tasks']}
             host.program_preferences = host.global_configs[NAME]
             from src.runtime.native_desktop_notifications import create_owner_desktop_notifications

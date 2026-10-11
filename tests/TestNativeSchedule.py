@@ -1,5 +1,6 @@
 import json
 import ctypes
+import tempfile
 from pathlib import Path
 import unittest
 from unittest.mock import Mock
@@ -76,3 +77,70 @@ class TestNativeSchedule(unittest.TestCase):
         self.assertNotEqual(backend.prefix, other.prefix)
         with self.assertRaises(ValueError):
             other.delete(backend.prefix + 'schedule')
+
+    def test_managed_schedule_stable_command_and_ownership_survive_active_switch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            installation = {'managed_root': str(root), 'bootstrap_pythonw': str(root / 'stable/pythonw.exe')}
+            (root / 'installation.json').write_text(json.dumps(installation), encoding='utf-8')
+            def backend(environment, data):
+                package = root / 'versions' / environment / 'gamepacks/fixture_pack'
+                package.mkdir(parents=True)
+                (package / 'manifest.json').write_text('{"id":"fixture_pack"}', encoding='utf-8')
+                (root / 'active.json').write_text(json.dumps({'environment': 'versions/' + environment,
+                    'bundle': {'package_id': 'fixture_pack'}}), encoding='utf-8')
+                return NativeSchedule(package, root / data, user='DOMAIN\\User',
+                                      managed_root=root, service=self.service)
+            first = backend('old', 'old-data')
+            value = first.preview('daily', {'type': 'windows'}, start='2026-10-12T09:00:00')
+            name = first.prefix + 'owned'
+            second = backend('new', 'new-data')
+            self.assertEqual(first.prefix, second.prefix)
+            self.assertEqual(value['command'], installation['bootstrap_pythonw'])
+            self.assertEqual(value['argv'][:5], [str(root / 'bootstrap.py'), '--managed-root', str(root),
+                                               '--package-id', 'fixture_pack'])
+            self.assertNotIn(str(root / 'versions'), value['arguments'])
+            self.assertNotIn('--data-dir', value['argv'])
+            xml = ET.fromstring(value['xml'])
+            self.assertEqual(xml.findtext(f'{{{NS}}}Actions/{{{NS}}}Exec/{{{NS}}}WorkingDirectory'), str(root))
+            own = Mock(Name=name, Xml=value['xml'], Enabled=True, NextRunTime='tomorrow', LastTaskResult=0)
+            self.folder.GetTasks.return_value = [own]
+            records = second.list()
+            self.assertEqual(records[0]['name'], name)
+            self.assertFalse(records[0]['requires_migration'])
+            second.delete(name)
+            self.service.GetFolder.return_value.DeleteTask.assert_called_once_with(name, 0)
+
+    def test_managed_legacy_identification_and_explicit_delete_are_owned_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            package = root / 'versions/old/gamepacks/fixture_pack'
+            package.mkdir(parents=True)
+            (package / 'manifest.json').write_text('{"id":"fixture_pack"}', encoding='utf-8')
+            (root / 'installation.json').write_text(json.dumps({'managed_root': str(root),
+                'bootstrap_pythonw': str(root / 'stable/pythonw.exe')}), encoding='utf-8')
+            (root / 'active.json').write_text(json.dumps({'environment': 'versions/old',
+                'bundle': {'package_id': 'fixture_pack'}}), encoding='utf-8')
+            old = NativeSchedule(package, root / 'data', user='DOMAIN\\User', service=self.service)
+            other_user = NativeSchedule(package, root / 'data', user='DOMAIN\\Other', service=self.service)
+            foreign = NativeSchedule(root / 'unmanaged', root / 'data', user='DOMAIN\\User', service=self.service)
+            records = []
+            for backend in (old, other_user, foreign):
+                value = backend.preview('daily', {'type': 'windows'}, start='2026-10-12T09:00:00')
+                records.append(Mock(Name=backend.prefix + 'owned', Xml=value['xml'], Enabled=True,
+                                    NextRunTime='tomorrow', LastTaskResult=0))
+            self.folder.GetTasks.return_value = records
+            managed = NativeSchedule(package, root / 'data', user='DOMAIN\\User',
+                                     managed_root=root, service=self.service)
+            with self.assertRaises(ValueError): managed.delete(records[0].Name)
+            identified = managed.list()
+            self.assertEqual([record['name'] for record in identified], [records[0].Name])
+            self.assertTrue(identified[0]['requires_migration'])
+            self.assertIn('删除后重新创建', identified[0]['migration_notice'])
+            self.folder.RegisterTask.assert_not_called()
+            with self.assertRaises(ValueError): managed.create(managed.preview('daily', {'type': 'windows'},
+                start='2026-10-12T09:00:00'), name=records[0].Name)
+            managed.delete(records[0].Name)
+            self.service.GetFolder.return_value.DeleteTask.assert_called_once_with(records[0].Name, 0)
+            with self.assertRaises(ValueError): managed.delete(records[1].Name)
+            with self.assertRaises(ValueError): managed.delete(records[2].Name)

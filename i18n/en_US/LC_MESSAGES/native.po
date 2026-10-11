@@ -958,3 +958,388 @@ msgstr "Capture method"
 
 msgid "Input method"
 msgstr "Input method"
+
+msgid "手动更新"
+msgstr "Manual updates"
+
+msgid "自动更新（正式版）"
+msgstr "Automatic updates (stable)"
+
+msgid "自动更新（含预发布）"
+msgstr "Automatic updates (including prereleases)"
+
+msgid "更新策略"
+msgstr "Update policy"
+
+msgid "检查更新"
+msgstr "Check for updates"
+
+msgid "下载完整环境并待下次启动应用"
+msgstr "Download complete environment; apply on next launch"
+
+msgid "重新尝试待应用更新"
+msgstr "Retry pending update"
+
+msgid "登录后打开 GameFrame"
+msgstr "Open GameFrame after Windows sign-in"
+
+msgid "保存登录自启"
+msgstr "Save sign-in startup"
+
+msgid "登录自启未保存：{error}"
+msgstr "Sign-in startup was not saved: {error}"
+
+msgid "登录启动项已更新，界面状态保存失败：{error}"
+msgstr "Startup entry updated; saving UI state failed: {error}"
+
+msgid "登录自启已保存"
+msgstr "Sign-in startup saved"
+
+msgid "当前游戏包没有完整环境更新入口。"
+msgstr "This gamepack does not provide complete environment updates."
+
+msgid "当前环境未受管理；可检查发布，完整更新须先迁入受管理环境。"
+msgstr ""
+"This environment is unmanaged. Releases can be checked; complete updates "
+"require a managed installation."
+
+msgid "完整环境安装入口（请填入长期路径）："
+msgstr "Complete environment installation command (supply permanent paths): "
+
+msgid "完整环境候选已保存，等待下一次正常启动。"
+msgstr ""
+"Complete environment candidate saved; waiting for the next normal launch."
+
+msgid "上次完整环境更新失败："
+msgstr "Previous complete environment update failed: "
+
+msgid "上次更新未完成：{error}"
+msgstr "Previous update did not complete: {error}"
+
+msgid "更新策略已保存；不会停止当前任务。"
+msgstr "Update policy saved; the current task will continue."
+
+msgid "手动更新：不会自动检查或下载。"
+msgstr "Manual updates: no automatic checks or downloads."
+
+msgid "正在检查并准备完整环境…"
+msgstr "Checking and preparing the complete environment…"
+
+msgid "正在处理更新请求…"
+msgstr "Processing update request…"
+
+msgid "完整环境更新失败：{error}"
+msgstr "Complete environment update failed: {error}"
+
+msgid "检查完成，当前发行已是最新。"
+msgstr "Check complete; the installed release is up to date."
+
+msgid "已配置源尚未发布允许通道。"
+msgstr "The configured source has no release in the allowed channels."
+
+msgid "检查到新发行，可下载完整环境。"
+msgstr "A new release is available; download the complete environment."
+
+msgid "完整环境已下载并验证，待下一次正常启动应用。"
+msgstr ""
+"Complete environment downloaded and verified; apply on the next normal "
+"launch."
+
+msgid "已允许重试待应用候选；下一次正常启动处理。"
+msgstr "Pending candidate retry requested; process on the next normal launch."
+
+msgid "独立游戏包更新源尚未配置，不会访问默认地址。"
+msgstr ""
+"The gamepack update source is not configured; no default address will be "
+"accessed."
+
+msgid "已配置的更新源处于停用状态。"
+msgstr "The configured update source is disabled."
+
+msgid "完整更新须先迁入受管理环境，当前环境保持不变。"
+msgstr ""
+"Complete updates require migration to a managed installation; this "
+"environment is unchanged."
+
+msgid "当前为源码目录，请使用完整环境安装入口。"
+msgstr ""
+"This is a source checkout; use the complete environment installation "
+"command."
+
+msgid "旧版本目录计划：请删除后重新创建稳定入口计划。"
+msgstr ""
+"Schedule uses an old version directory; delete it and recreate it with the "
+"stable entrypoint."
+
+msgid ""
+"交互用户：{user}\n"
+"包：{package}\n"
+"数据：{data_dir}"
+msgstr ""
+"Interactive user: {user}\n"
+"Package: {package}\n"
+"Data: {data_dir}"
+
+msgid "一次"
+msgstr "Once"
+
+msgid "每天"
+msgstr "Daily"
+
+msgid "每周一"
+msgstr "Every Monday"
+
+msgid "每月1日"
+msgstr "First day of each month"
+
+msgid "间隔天"
+msgstr "Every N days"
+
+msgid "间隔小时"
+msgstr "Every N hours"
+
+msgid "启用"
+msgstr "Enabled"
+
+msgid "任务"
+msgstr "Task"
+
+msgid "触发"
+msgstr "Trigger"
+
+msgid "本地开始时间 ISO"
+msgstr "Local start time (ISO)"
+
+msgid "间隔"
+msgstr "Interval"
+
+msgid "最长运行小时（0无限制）"
+msgstr "Maximum runtime in hours (0: unlimited)"
+
+msgid "设备 JSON（必填）"
+msgstr "Device JSON (required)"
+
+msgid "新建表单"
+msgstr "New form"
+
+msgid "预览"
+msgstr "Preview"
+
+msgid "创建/更新"
+msgstr "Create/update"
+
+msgid "计划任务失败"
+msgstr "Scheduled task failed"
+
+msgid "{task} | {trigger} | {next_run} | 结果 {last_result}"
+msgstr "{task} | {trigger} | {next_run} | Result {last_result}"
+
+msgid "请选择可计划执行的任务"
+msgstr "Select a task that supports scheduling"
+
+msgid "计划任务已保存"
+msgstr "Scheduled task saved"
+
+msgid "更新成功：{name}"
+msgstr "Updated successfully: {name}"
+
+msgid "创建成功：{name}"
+msgstr "Created successfully: {name}"
+
+msgid "删除计划任务"
+msgstr "Delete scheduled task"
+
+msgid ""
+"删除计划 {name}？\n"
+"任务：{task}"
+msgstr ""
+"Delete schedule {name}?\n"
+"Task: {task}"
+
+msgid "备份包含完整配置。恢复前停止本窗口配置进程；其他执行器或总览仍占用数据时，操作会明确失败。"
+msgstr ""
+"Backups contain the complete configuration. This window stops its "
+"configuration process before restoring; the operation fails explicitly if "
+"another executor or overview still holds the data."
+
+msgid "数据目录"
+msgstr "Data directory"
+
+msgid "配置目录"
+msgstr "Configuration directory"
+
+msgid "备份目录"
+msgstr "Backup directory"
+
+msgid "待验证或恢复的备份目录"
+msgstr "Backup directory to verify or restore"
+
+msgid "选择备份目录"
+msgstr "Select backup directory"
+
+msgid "创建完整备份"
+msgstr "Create complete backup"
+
+msgid "验证备份"
+msgstr "Verify backup"
+
+msgid "预览并恢复"
+msgstr "Preview and restore"
+
+msgid "检查遗漏序列"
+msgstr "Check missing sequences"
+
+msgid "清理过期备份"
+msgstr "Clean up expired backups"
+
+msgid "等待操作。"
+msgstr "Waiting for an action."
+
+msgid "选择含manifest.json的完整备份目录"
+msgstr "Select a complete backup directory containing manifest.json"
+
+msgid "请先选择备份目录。"
+msgstr "Select a backup directory first."
+
+msgid "完整备份已创建并验证："
+msgstr "Complete backup created and verified: "
+
+msgid "备份验证通过：{count}个文件。"
+msgstr "Backup verified: {count} files."
+
+msgid "备份验证失败："
+msgstr "Backup verification failed: "
+
+msgid "缺失{missing}，额外{extra}，内容差异{differences}。"
+msgstr ""
+"Missing: {missing}; extra: {extra}; content differences: {differences}."
+
+msgid "此备份不能恢复："
+msgstr "This backup cannot be restored: "
+
+msgid ""
+"将替换当前完整配置：{accounts}个账号、{sequences}个序列、{files}个文件。\n"
+"恢复前保留当前配置的事务备份。\n"
+"备份：{path}"
+msgstr ""
+"Replace the complete current configuration: {accounts} accounts, {sequences} sequences, {files} files.\n"
+"A transaction backup of the current configuration is retained before restoring.\n"
+"Backup: {path}"
+
+msgid ""
+"\n"
+"此备份没有可信账号主配置；恢复后可能需要重新锚定。"
+msgstr ""
+"\n"
+"This backup has no trusted master account configuration; re-anchoring may be required after restoring."
+
+msgid "确认恢复完整配置"
+msgstr "Confirm complete configuration restore"
+
+msgid "配置恢复已提交。"
+msgstr "Configuration restore committed."
+
+msgid "没有可恢复的遗漏序列。"
+msgstr "No missing sequences can be restored."
+
+msgid "{name}：{count}个账号"
+msgstr "{name}: {count} accounts"
+
+msgid "确认恢复遗漏序列"
+msgstr "Confirm missing sequence restore"
+
+msgid ""
+"从{source}恢复以下序列，提交前保存事务备份：\n"
+"{sequences}"
+msgstr ""
+"Restore the following sequences from {source}; save a transaction backup before committing:\n"
+"{sequences}"
+
+msgid "遗漏序列已恢复。"
+msgstr "Missing sequences restored."
+
+msgid "备份清理已完成。"
+msgstr "Backup cleanup completed."
+
+msgid "清理未完成，请查看日志中的备份维护警告。"
+msgstr ""
+"Cleanup is incomplete; check the backup maintenance warnings in the log."
+
+
+msgid "Device backend"
+msgstr "Device backend"
+
+msgid "Windows HWND"
+msgstr "Windows HWND"
+
+msgid "MuMu SDK"
+msgstr "MuMu SDK"
+
+msgid "Android ADB"
+msgstr "Android ADB"
+
+msgid "Frame replay"
+msgstr "Frame replay"
+
+msgid "Visible window"
+msgstr "Visible window"
+
+msgid "HWND (decimal or 0x)"
+msgstr "HWND (decimal or 0x)"
+
+msgid "Launch command (one argument per line)"
+msgstr "Launch command (one argument per line)"
+
+msgid "Target executable (absolute path)"
+msgstr "Target executable (absolute path)"
+
+msgid "MuMu installation directory"
+msgstr "MuMu installation directory"
+
+msgid "Instance index"
+msgstr "Instance index"
+
+msgid "MuMu SDK DLL path"
+msgstr "MuMu SDK DLL path"
+
+msgid "Android package name (optional)"
+msgstr "Android package name (optional)"
+
+msgid "App index"
+msgstr "App index"
+
+msgid "ADB serial"
+msgstr "ADB serial"
+
+msgid "ADB executable path"
+msgstr "ADB executable path"
+
+msgid "Frame paths (one per line)"
+msgstr "Frame paths (one per line)"
+
+msgid "Refresh to list visible windows"
+msgstr "Refresh to list visible windows"
+
+msgid "Refresh windows"
+msgstr "Refresh windows"
+
+msgid "Select a window or enter HWND below"
+msgstr "Select a window or enter HWND below"
+
+msgid "Capabilities: {capabilities}"
+msgstr "Capabilities: {capabilities}"
+
+msgid "Device options must be a JSON object with a type"
+msgstr "Device options must be a JSON object with a type"
+
+msgid "Unknown device type: {kind}"
+msgstr "Unknown device type: {kind}"
+
+msgid "{field} must be an integer"
+msgstr "{field} must be an integer"
+
+msgid "{field} cannot be negative"
+msgstr "{field} cannot be negative"
+
+msgid "Window enumeration failed: {error}"
+msgstr "Window enumeration failed: {error}"

@@ -23,6 +23,11 @@ Their exact source strings have no entries in the existing `ok` catalogs, so
 these translations were authored here. GPU vendor names and device method IDs
 remain unchanged; GPU availability remains unknown when a check is unavailable.
 
+The v76 sign-in startup and paired update controls, native schedule and
+maintenance pages, and device editor add 114 entries per locale. Existing
+translations are preserved. Policy IDs, paths, device JSON and user content
+remain unchanged.
+
 No catalogs or other resources were copied from the installed `ok-script`,
 Qt or qfluentwidgets dependencies. qfluentwidgets' translator is loaded from
 the installed dependency at runtime. Package catalogs stay in the AGPL

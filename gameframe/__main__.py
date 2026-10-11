@@ -7,6 +7,7 @@ import threading
 from pathlib import Path
 
 from gameframe.controller import Controller
+from gameframe.managed_install import managed_entry
 from gameframe.packages import PackageManifest, discover, install_archive
 
 
@@ -38,7 +39,20 @@ def main(argv=None):
     gui = commands.add_parser('gui', help='Open the framework launcher')
     gui.add_argument('--packages', type=Path, default=Path.home() / '.gameframe' / 'gamepacks')
     gui.add_argument('--data-dir', type=Path, default=Path.home() / '.gameframe')
+    gui.add_argument('--installed-root', type=Path)
+    gui.add_argument('--login-pythonw', type=Path)
+    for command in (running, managing, overview, gui):
+        command.add_argument('--managed-root', type=Path)
     args = parser.parse_args(argv)
+    if args.command == 'gui' and ((args.installed_root is None) != (args.login_pythonw is None)):
+        parser.error('--installed-root and --login-pythonw must be supplied together')
+    if args.command in ('run', 'manage', 'overview', 'gui'):
+        with managed_entry(args.managed_root) as root:
+            return execute(args, root)
+    return execute(args, None)
+
+
+def execute(args, managed_root):
     if args.command == 'run':
         args.session = args.session or args.session_only
     if args.command == 'install':
@@ -56,6 +70,9 @@ def main(argv=None):
         print(json.dumps({'id': package.id, 'execution': package.execution,
                           'supports_session': package.supports_session, 'management': package.management,
                           'overview': package.overview,
+                          'supports_managed_updates': package.supports_managed_updates,
+                          'channel': package.channel, 'revision': package.revision,
+                          'required_core_version': package.required_core_version,
                           'license': package.license, 'tasks': [
                               {'id': task.id, 'title': task.title, 'kind': task.kind,
                                'default_config': task.default_config,
@@ -64,7 +81,11 @@ def main(argv=None):
         return 0
     if args.command == 'gui':
         from gameframe.gui import run_gui
-        return run_gui(args.packages, args.data_dir)
+        login_argv = ([str(args.login_pythonw), '-m', 'gameframe', 'gui',
+                       '--packages', str(args.packages.resolve()), '--data-dir', str(args.data_dir.resolve())]
+                      if args.login_pythonw is not None else None)
+        return run_gui(args.packages, args.data_dir, managed_root=managed_root,
+                       login_argv=login_argv, installation_root=args.installed_root)
     controller = Controller()
     try:
         manifest = PackageManifest.read(args.package)
